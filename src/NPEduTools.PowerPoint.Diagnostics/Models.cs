@@ -2,7 +2,11 @@ namespace NPEduTools.PowerPoint.Diagnostics;
 
 public sealed record ShowTarget(string Id, long Hwnd, int ProcessId, long ProcessStartedUtcTicks,
     int Left, int Top, int Right, int Bottom, uint Dpi, bool FullScreen,
-    int SlideId, int SlideIndex, int ClickIndex, int ClickCount, int PointerType, int State);
+    int SlideId, int SlideIndex, int ClickIndex, int ClickCount, int PointerType, int State,
+    SlideFeatures? Features = null);
+
+public sealed record SlideFeatures(DateTimeOffset At, string Coverage, int ShapeCount, int ActionShapes,
+    int Hyperlinks, int InteractiveSequences, int MediaShapes, int GroupShapes, string? Error = null);
 
 public sealed record ShowSnapshot(DateTimeOffset At, string Status, string? OfficeVersion = null,
     ShowTarget[]? Targets = null, string? Error = null, string? OfficeBuild = null)

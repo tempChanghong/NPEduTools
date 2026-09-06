@@ -1,18 +1,24 @@
+[CmdletBinding(DefaultParameterSetName = 'Observe')]
 param(
-    [ValidateRange(1, 1800)][int]$Seconds = 120,
-    [string]$OutputPath,
-    [switch]$Probe,
+    [Parameter(ParameterSetName = 'Observe')][ValidateRange(1, 1800)][int]$Seconds = 120,
+    [Parameter(ParameterSetName = 'Observe')][string]$OutputPath,
+    [Parameter(ParameterSetName = 'Probe', Mandatory)][switch]$Probe,
+    [Parameter(ParameterSetName = 'Analyze', Mandatory)][string]$Analyze,
     [switch]$NoBuild
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $runner = Join-Path $PSScriptRoot 'dotnet.ps1'
 if (-not $NoBuild) {
-    & $runner build src/NPEduTools.PowerPoint.Diagnostics --configuration Release --locked-mode
+    & $runner restore src/NPEduTools.PowerPoint.Diagnostics --locked-mode
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & $runner build src/NPEduTools.PowerPoint.Diagnostics --configuration Release --no-restore
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 $diagnosticExe = Join-Path $projectRoot 'src/NPEduTools.PowerPoint.Diagnostics/bin/Release/net10.0/NPEduTools.PowerPoint.Diagnostics.exe'
-if ($Probe) {
+if ($Analyze) {
+    & $diagnosticExe --analyze $Analyze
+} elseif ($Probe) {
     & $diagnosticExe --probe
 } else {
     if (-not $OutputPath) {

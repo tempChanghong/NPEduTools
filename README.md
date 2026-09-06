@@ -4,6 +4,8 @@
 
 新增独立的 [PowerPoint 触摸诊断原型](docs/POWERPOINT-DIAGNOSTICS.md)：可读取真实放映及动画状态，观察目标窗口的兼容鼠标输入并导出记录。它只读、不会触发翻页，目标 Office 2024 大屏仍需实机触摸验证。运行 `./scripts/start-powerpoint-diagnostics.ps1`，或使用包含运行时的独立诊断包。
 
+诊断结束会自动生成中文报告；也可用 `./scripts/start-powerpoint-diagnostics.ps1 -Analyze <日志路径>` 分析旧日志。新版记录包含有限页面交互清单，测试包附五页动画/链接/触发器/书写测试文稿，详见上述说明。
+
 当前已实现 WPF 窗口与 CLI → Named Pipe Host → 隔离工作进程 → ClassIsland IPC 的课程状态闭环，支持持续监听、自动重连和完整状态同步。WPF 还支持配置 ClassIsland 路径、启动本体、验证就绪并查看保存的启动结果。
 
 窗口会按需启动 Host；关闭窗口后 Host 继续运行并完成已受理的启动验证，也可选择“停止后台并退出”。停止 Host 不会关闭 ClassIsland。本阶段尚未实现场景执行、关闭外部软件或开机启动。

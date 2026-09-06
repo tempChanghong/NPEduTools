@@ -16,8 +16,14 @@ internal static class Program
         if (args.SequenceEqual(["--com-worker"])) return ProbeSession.Worker();
         if (args.SequenceEqual(["--help"]))
         {
-            Console.WriteLine("PowerPoint diagnostic (read-only)\n  --probe\n  --seconds 120 --output FILE.jsonl\nCtrl+C stops observation. No clicks are intercepted and no keys are sent.");
+            Console.WriteLine("PowerPoint diagnostic (read-only)\n  --probe\n  --seconds 120 --output FILE.jsonl\n  --analyze FILE.jsonl\nCtrl+C stops observation. No clicks are intercepted and no keys are sent.");
             return 0;
+        }
+        if (args.Length == 2 && args[0] == "--analyze")
+        {
+            try { Console.WriteLine(TraceAnalysis.WriteReport(args[1])); return 0; }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            { Console.Error.WriteLine($"分析失败：{error.GetType().Name}。原始日志未修改。"); return 1; }
         }
         bool probe = args.SequenceEqual(["--probe"]);
         int seconds = 120;
@@ -79,7 +85,7 @@ internal static class Program
                 architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
                 digitizerFlags = Native.GetSystemMetrics(94), maximumTouches = Native.GetSystemMetrics(95),
                 readOnly = true, targetEnvironment = "Office 2024 touch device (user-specified; not auto-verified)",
-                limitation = "Compatibility mouse events only; no complete multitouch or interactive-object recognition." });
+                limitation = "Compatibility mouse events and limited slide inventory only; no complete multitouch or hit testing." });
             using var observer = new InputObserver(session);
             monitor = session.RunAsync(s => { if (!snapshots.Writer.TryWrite(s)) Interlocked.Increment(ref droppedSnapshots); }, cancellation.Token);
             Console.WriteLine($"只读诊断已开始，最多 {seconds} 秒。请在 PowerPoint 中放映并测试轻点、鼠标、拖动和菜单。\n不会辅助翻页。Ctrl+C 结束。\n记录：{output}");
@@ -124,6 +130,10 @@ internal static class Program
                 callbackErrors = observer.CallbackErrors, droppedSnapshots = Interlocked.Read(ref droppedSnapshots),
                 limitReached, pendingInputTailMayBeOmitted = true, targetTouchValidationPassed = false });
             Console.WriteLine($"诊断结束：{inputCount} 个输入事件，{candidates} 个触摸轻点候选。候选不代表可以安全翻页。");
+            writer.Flush();
+            try { Console.WriteLine($"分析报告：{TraceAnalysis.WriteReport(output)}"); }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            { Console.Error.WriteLine($"报告生成失败（{error.GetType().Name}），原始日志已保留，可稍后用 --analyze 重试。"); }
             return 0;
         }
         finally

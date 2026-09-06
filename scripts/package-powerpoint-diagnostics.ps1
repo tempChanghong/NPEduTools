@@ -12,8 +12,19 @@ cd /d "%~dp0"
 app\NPEduTools.PowerPoint.Diagnostics.exe --seconds 180
 echo.
 echo Diagnostics ended. Logs are in app\diagnostics.
+echo A Markdown analysis report is saved next to each completed log.
 pause
 '@ | Set-Content -LiteralPath (Join-Path $packageRoot 'Start-Diagnostics.cmd') -Encoding ascii
+@'
+@echo off
+if "%~1"=="" (
+    echo Drag a diagnostic .jsonl file onto this script to analyze it.
+    pause
+    exit /b 2
+)
+"%~dp0app\NPEduTools.PowerPoint.Diagnostics.exe" --analyze "%~f1"
+pause
+'@ | Set-Content -LiteralPath (Join-Path $packageRoot 'Analyze-Log.cmd') -Encoding ascii
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/POWERPOINT-DIAGNOSTICS.md') -Destination (Join-Path $packageRoot 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/POWERPOINT-TOUCH-ASSIST-PLAN.md') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $packageRoot

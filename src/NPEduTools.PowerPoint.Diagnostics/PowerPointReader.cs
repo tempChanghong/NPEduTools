@@ -10,6 +10,9 @@ namespace NPEduTools.PowerPoint.Diagnostics;
 internal sealed class PowerPointReader
 {
     private readonly string _session = Guid.NewGuid().ToString("N");
+    private string? _featureKey;
+    private SlideFeatures? _features;
+    private long _featuresReadAt;
 
     public ShowSnapshot Read()
     {
@@ -87,10 +90,18 @@ internal sealed class PowerPointReader
                 string name = (string)presentation.FullName;
                 string id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_session + name + hwnd)))[..24];
                 stage = "SlideState";
+                int slideId = (int)slide.SlideID;
+                string featureKey = id + ":" + slideId;
+                if (_featureKey != featureKey || Stopwatch.GetElapsedTime(_featuresReadAt).TotalSeconds >= 3)
+                {
+                    _features = ReadFeatures((object)slide, Keep);
+                    _featureKey = featureKey;
+                    _featuresReadAt = Stopwatch.GetTimestamp();
+                }
                 targets.Add(new(id, hwnd.ToInt64(), process.Id, process.StartTime.ToUniversalTime().Ticks,
                     origin.X, origin.Y, origin.X + rect.Right, origin.Y + rect.Bottom, Native.GetDpiForWindow(hwnd),
-                    (int)window.IsFullScreen != 0, (int)slide.SlideID, (int)slide.SlideIndex,
-                    (int)view.GetClickIndex(), (int)view.GetClickCount(), (int)view.PointerType, (int)view.State));
+                    (int)window.IsFullScreen != 0, slideId, (int)slide.SlideIndex,
+                    (int)view.GetClickIndex(), (int)view.GetClickCount(), (int)view.PointerType, (int)view.State, _features));
             }
             return new(DateTimeOffset.UtcNow, count == 0 ? "NoSlideShow" : "Showing", version, targets.ToArray(), OfficeBuild: officeBuild);
         }
@@ -106,5 +117,34 @@ internal sealed class PowerPointReader
             while (objects.TryPop(out var value))
                 if (Marshal.IsComObject(value)) Marshal.ReleaseComObject(value);
         }
+    }
+
+    private static SlideFeatures ReadFeatures(object slideObject, Func<object, object> keep)
+    {
+        try
+        {
+            dynamic slide = slideObject;
+            dynamic links = keep((object)slide.Hyperlinks);
+            dynamic timeline = keep((object)slide.TimeLine);
+            dynamic interactive = keep((object)timeline.InteractiveSequences);
+            dynamic shapes = keep((object)slide.Shapes);
+            int count = (int)shapes.Count, actions = 0, media = 0, groups = 0;
+            // Bounded top-level inventory, not hit testing. Never read action commands or link addresses.
+            for (int i = 1; i <= Math.Min(64, count); i++)
+            {
+                dynamic shape = keep((object)shapes.Item(i));
+                int type = (int)shape.Type;
+                if (type == 16) media++; // msoMedia
+                if (type == 6) groups++; // msoGroup; descendants are not inventoried.
+                dynamic settings = keep((object)shape.ActionSettings);
+                dynamic click = keep((object)settings.Item(1));
+                dynamic hover = keep((object)settings.Item(2));
+                if ((int)click.Action != 0 || (int)hover.Action != 0) actions++;
+            }
+            return new(DateTimeOffset.UtcNow, count > 64 ? "PartialTopLevel" : "TopLevelOnly",
+                count, actions, (int)links.Count, (int)interactive.Count, media, groups);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        { return new(DateTimeOffset.UtcNow, "Unavailable", 0, 0, 0, 0, 0, 0, error.GetType().Name); }
     }
 }
