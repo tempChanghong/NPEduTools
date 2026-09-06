@@ -34,7 +34,10 @@ public partial class MainWindow
     {
         // Initialize the edge and services without ever showing the main window on a quiet login.
         _quick = new QuickAccessWindow(_pipe, () => TouchPowerClicked(this, new RoutedEventArgs()),
-            () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings);
+            () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings,
+            entry => _ = OpenShortcutAsync(entry), ShowShortcutManager, RepairShortcut);
+        _quick.SetShortcuts(_shortcuts);
+        RefreshShortcutControls();
         _quick.Show();
         DockLeft.IsChecked = _quick.LeftSide;
         DockRight.IsChecked = !_quick.LeftSide;

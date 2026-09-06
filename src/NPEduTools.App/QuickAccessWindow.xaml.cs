@@ -16,14 +16,18 @@ public partial class QuickAccessWindow : Window
     private sealed record Placement(bool LeftSide = false, double RelativeY = 0.78, string? Display = null);
     private readonly string _settingsPath;
     private readonly Action _power, _pause, _startClassIsland, _settings;
+    private readonly Action<ShortcutEntry> _openShortcut;
+    private readonly Action _manageShortcuts, _repairShortcut;
     private Placement _placement = new();
     private nint _handle, _previous;
     private bool _expanded, _dragging, _closing, _positioning;
     private Point? _dragStart;
 
-    public QuickAccessWindow(string endpoint, Action power, Action pause, Action startClassIsland, Action settings)
+    public QuickAccessWindow(string endpoint, Action power, Action pause, Action startClassIsland, Action settings,
+        Action<ShortcutEntry> openShortcut, Action manageShortcuts, Action repairShortcut)
     {
         _power = power; _pause = pause; _startClassIsland = startClassIsland; _settings = settings;
+        _openShortcut = openShortcut; _manageShortcuts = manageShortcuts; _repairShortcut = repairShortcut;
         _settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "ui",
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(endpoint)))[..24] + ".json");
         try
@@ -36,6 +40,7 @@ public partial class QuickAccessWindow : Window
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
+        SelectShortcutPage(false);
         SourceInitialized += (_, _) =>
         {
             _handle = new WindowInteropHelper(this).Handle;
@@ -85,7 +90,7 @@ public partial class QuickAccessWindow : Window
             // WPF handles WM_DPICHANGED; its DpiChanged event reapplies bounds on the new monitor.
             var screen = Screen; var area = screen.WorkingArea; double scale = Scale();
             int width = (int)Math.Round((_expanded ? 352 : 64) * scale);
-            int height = Math.Min((int)Math.Round((_expanded ? 422 : 84) * scale), area.Height);
+            int height = Math.Min((int)Math.Round((_expanded ? 484 : 84) * scale), area.Height);
             double anchor = area.Top + (area.Height - 84 * scale) * _placement.RelativeY;
             int y = (int)Math.Clamp(anchor + (_expanded ? 84 * scale - height : 0), area.Top, area.Bottom - height);
             int x = _placement.LeftSide ? area.Left : area.Right - width;
@@ -169,6 +174,35 @@ public partial class QuickAccessWindow : Window
     private void PauseClicked(object sender, RoutedEventArgs e) => _pause();
     private void ClassIslandClicked(object sender, RoutedEventArgs e) => _startClassIsland();
     private void SettingsClicked(object sender, RoutedEventArgs e) { Collapse(false); _settings(); }
+    public void SetShortcuts(ShortcutEntry[] items)
+    {
+        ShortcutItems.ItemsSource = items;
+        ShortcutsEmpty.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public void SetShortcutStatus(string message, bool available, bool repair)
+    {
+        ShortcutStatus.Text = message; ShortcutItems.IsEnabled = ShortcutRepair.IsEnabled = available;
+        ShortcutRepair.Visibility = repair ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ToolsTabClicked(object sender, RoutedEventArgs e) => SelectShortcutPage(false);
+    private void ShortcutsTabClicked(object sender, RoutedEventArgs e) => SelectShortcutPage(true);
+    private void SelectShortcutPage(bool shortcuts)
+    {
+        ToolsPage.Visibility = SettingsFooter.Visibility = shortcuts ? Visibility.Collapsed : Visibility.Visible;
+        ShortcutsPage.Visibility = ShortcutsFooter.Visibility = shortcuts ? Visibility.Visible : Visibility.Collapsed;
+        var active = (System.Windows.Media.Brush)FindResource("Accent");
+        var inactive = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(238, 242, 243));
+        ToolsTab.Background = shortcuts ? inactive : active;
+        ToolsTab.Foreground = shortcuts ? System.Windows.Media.Brushes.DarkSlateGray : System.Windows.Media.Brushes.White;
+        ShortcutsTab.Background = shortcuts ? active : inactive;
+        ShortcutsTab.Foreground = shortcuts ? System.Windows.Media.Brushes.White : System.Windows.Media.Brushes.DarkSlateGray;
+    }
+    private void ShortcutClicked(object sender, RoutedEventArgs e)
+    { if (sender is FrameworkElement { DataContext: ShortcutEntry entry }) _openShortcut(entry); }
+    private void ManageShortcutsClicked(object sender, RoutedEventArgs e) { Collapse(false); _manageShortcuts(); }
+    private void RepairShortcutClicked(object sender, RoutedEventArgs e) { Collapse(false); _repairShortcut(); }
     private void CollapseClicked(object sender, RoutedEventArgs e) => Collapse();
 
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);

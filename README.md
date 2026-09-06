@@ -2,6 +2,8 @@
 
 面向 Windows 教室大屏的本地软件集成与控制层。主程序提供屏幕贴边快捷入口和“常用／设置”主窗口，已集成 PowerPoint 触摸翻页。默认右侧偏下的 `n` 入口可上下拖动，点击即可直接开启、暂停或停止辅助。运行 `./scripts/start-app.ps1` 查看实际窗口，界面与生命周期见 [主界面设计](docs/MAIN-WINDOW-DESIGN.md)。
 
+新增 [自定义快捷启动](docs/CUSTOM-SHORTCUTS.md)：在主窗口“快捷启动”添加应用、文件和网址，支持编辑、排序、移除与撤销。主页及贴边面板“我的快捷”同步显示入口；路径失效时可直接进入编辑器重新选择。
+
 新增可运行的 [PowerPoint 触摸翻页工具](docs/POWERPOINT-TOUCH-ASSIST.md)：按参考项目 PowerPoint-Touch-Assist 的效果，轻点放映画面后补发空格，推进动画或下一页，提供暂停和退出。运行 `./scripts/start-powerpoint-assist.ps1`；便携包完整解压即可运行，无需安装 .NET。默认只响应触摸标记，鼠标保持原行为。开发机真实 PowerPoint 的模拟触摸链路已通过，目标 Office 2024 大屏的物理触摸仍需现场试用。
 
 另保留独立的 [PowerPoint 触摸诊断工具](docs/POWERPOINT-DIAGNOSTICS.md)：可读取真实放映及动画状态，观察目标窗口的兼容鼠标输入并导出记录。运行 `./scripts/start-powerpoint-diagnostics.ps1`；此入口只读，不触发翻页。

@@ -37,6 +37,7 @@ public partial class MainWindow : Window
         DataContext = _model;
         InitializeTray();
         InitializeStartupPreferences();
+        InitializeShortcuts();
         Activated += (_, _) => RefreshLoginStartup();
         Closing += (_, e) =>
         {
@@ -159,6 +160,8 @@ public partial class MainWindow : Window
     private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
     private void SelectPage(bool settings)
     {
+        ShortcutPage.Visibility = Visibility.Collapsed;
+        ShortcutNav.Tag = null;
         HomePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
         SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
         HomeNav.Tag = settings ? null : "active";

@@ -19,6 +19,7 @@
       <Grid>
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
           <RowDefinition />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -33,7 +34,12 @@
           </StackPanel>
           <Button x:Name="CollapseButton" Grid.Column="1" Content="›" FontSize="25" Width="44" Padding="0" Style="{StaticResource Quiet}" Click="CollapseClicked" AutomationProperties.AutomationId="CollapseQuick" AutomationProperties.Name="收起快捷工具" />
         </Grid>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Grid.Row="1" Margin="0,0,0,14">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+          <Button x:Name="ToolsTab" Content="课堂工具" Padding="8" Click="ToolsTabClicked" AutomationProperties.AutomationId="QuickToolsTab" Margin="0,0,4,0" />
+          <Button x:Name="ShortcutsTab" Grid.Column="1" Content="我的快捷" Padding="8" Click="ShortcutsTabClicked" AutomationProperties.AutomationId="QuickShortcutsTab" Margin="4,0,0,0" />
+        </Grid>
+        <ScrollViewer x:Name="ToolsPage" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
             <Grid>
               <Grid.ColumnDefinitions>
@@ -71,7 +77,25 @@
             </Grid>
           </StackPanel>
         </ScrollViewer>
-        <Button Grid.Row="2" Content="打开设置  →" Margin="0,16,0,0" HorizontalAlignment="Stretch" Style="{StaticResource Quiet}" Click="SettingsClicked" AutomationProperties.AutomationId="QuickOpenSettings" />
+        <ScrollViewer x:Name="ShortcutsPage" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel>
+            <StackPanel x:Name="ShortcutsEmpty" Margin="4,18">
+              <TextBlock Text="把常用内容放到这里" FontSize="17" FontWeight="SemiBold" />
+              <TextBlock Text="添加应用、课件或网址，下次点开就能用。" FontSize="13" Foreground="#718089" TextWrapping="Wrap" Margin="0,12,0,20" />
+              <Button Content="添加快捷启动" Style="{StaticResource Primary}" Click="ManageShortcutsClicked" AutomationProperties.AutomationId="QuickAddShortcut" />
+            </StackPanel>
+            <ItemsControl x:Name="ShortcutItems">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate><DataTemplate>
+                <Button Content="{Binding}" ContentTemplate="{StaticResource ShortcutContent}" HorizontalContentAlignment="Stretch" Padding="8,12" Margin="0,0,5,6" MinHeight="76" ToolTip="{Binding Tip}" Click="ShortcutClicked" AutomationProperties.AutomationId="{Binding OpenId}" AutomationProperties.Name="{Binding Name}" />
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock x:Name="ShortcutStatus" FontSize="12" Foreground="#718089" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.AutomationId="QuickShortcutMessage" />
+            <Button x:Name="ShortcutRepair" Content="编辑此项" Click="RepairShortcutClicked" Visibility="Collapsed" Margin="0,10,0,0" AutomationProperties.AutomationId="QuickRepairShortcut" />
+          </StackPanel>
+        </ScrollViewer>
+        <Button x:Name="SettingsFooter" Grid.Row="3" Content="打开设置  →" Margin="0,16,0,0" HorizontalAlignment="Stretch" Style="{StaticResource Quiet}" Click="SettingsClicked" AutomationProperties.AutomationId="QuickOpenSettings" />
+        <Button x:Name="ShortcutsFooter" Grid.Row="3" Content="管理快捷启动  →" Visibility="Collapsed" Margin="0,16,0,0" HorizontalAlignment="Stretch" Style="{StaticResource Quiet}" Click="ManageShortcutsClicked" AutomationProperties.AutomationId="QuickManageShortcuts" />
       </Grid>
     </Border>
   </Grid>
