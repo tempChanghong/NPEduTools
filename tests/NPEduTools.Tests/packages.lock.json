@@ -252,6 +252,9 @@
           "NPEduTools.Core": "[1.0.0, )",
           "dotnetCampus.Ipc": "[2.0.0-alpha410, )"
         }
+      },
+      "npedutools.powerpoint.diagnostics": {
+        "type": "Project"
       }
     }
   }

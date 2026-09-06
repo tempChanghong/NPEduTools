@@ -9,6 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" PrivateAssets="all" />
     <ProjectReference Include="../../src/NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
     <ProjectReference Include="../../src/NPEduTools.Host/NPEduTools.Host.csproj" />
+    <ProjectReference Include="../../src/NPEduTools.PowerPoint.Diagnostics/NPEduTools.PowerPoint.Diagnostics.csproj" />
     <ProjectReference Include="../../src/NPEduTools.Cli/NPEduTools.Cli.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../NPEduTools.ClassIsland.TestPeer/NPEduTools.ClassIsland.TestPeer.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>

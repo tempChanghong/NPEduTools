@@ -4,6 +4,8 @@
 > 日期：2026-09-06。
 > 本文描述目标架构。已完成 M0 只读查询原型并进入 M1，实际范围见 [M0 验证记录](M0-VALIDATION.md)和 [M1 只读桌面验收记录](M1-READONLY-VALIDATION.md)，不能将目标设计视为全部已实现。
 
+> 当前优先级调整（2026-09-06）：下一项工作为 Microsoft PowerPoint 触摸单击换页辅助，见 [专项设计](POWERPOINT-TOUCH-ASSIST-PLAN.md)。WPS 不纳入本功能；ClassIsland 自然语言换课、LLM 接入和管理员自启动管理暂缓。下文的通用场景引擎及 M2–M4 保留为早期设想，不再代表当前实施顺序。
+
 实施更新：M0 使用 CLI 验证进程边界；M1 已建立 WPF 窗口、常驻只读监听、自动重连与完整快照订阅，并新增 ClassIsland 路径配置、启动验证、持久化意图和结果记录，见 [启动验收记录](M1-LAUNCH-VALIDATION.md)。ClassIsland 同步 IPC 调用在隔离进程中执行；Host 自有通信不依赖该第三方 IPC 库。通用能力调度、场景编排和补偿恢复仍未实现。
 
 ## 1. 项目定位
