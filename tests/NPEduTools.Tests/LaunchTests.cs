@@ -25,6 +25,34 @@ public sealed class LaunchTests : IDisposable
     }
 
     [Fact]
+    public async Task VerificationNeverStartsAnExitedProcess()
+    {
+        var target = new FakeTarget();
+        await using var service = new LaunchService(_directory, target, new FakeReader());
+        await ConfigureAsync(service);
+        var request = new HostRequest(Protocol.Version, Guid.NewGuid(), "classisland.verify", ExecutablePath: @"C:\Test\ClassIsland.exe", ExpectedRevision: 1);
+        Assert.Null(Protocol.Validate(request));
+        await service.HandleAsync(request, default);
+        Assert.Equal("ClassIslandExited", (await FinishedAsync(service)).ErrorCode);
+        Assert.Equal(0, target.Starts);
+    }
+
+    [Fact]
+    public async Task VerificationPersistsReadinessWithoutStartingOrUsingChangedConfiguration()
+    {
+        var target = new FakeTarget { Running = true };
+        await using var service = new LaunchService(_directory, target, new FakeReader());
+        await ConfigureAsync(service);
+        var request = new HostRequest(Protocol.Version, Guid.NewGuid(), "classisland.verify", ExecutablePath: @"C:\Test\ClassIsland.exe", ExpectedRevision: 1);
+        Assert.Equal("ConfigurationConflict", (await service.HandleAsync(request with { ExpectedRevision = 0 }, default)).ErrorCode);
+        Assert.Equal("ConfigurationConflict", (await service.HandleAsync(request with { ExecutablePath = @"C:\Other\ClassIsland.exe" }, default)).ErrorCode);
+        await service.HandleAsync(request, default);
+        Assert.Equal("Succeeded", (await FinishedAsync(service)).Outcome);
+        Assert.Equal("Succeeded", (await service.HandleAsync(request, default)).Outcome);
+        Assert.Equal(0, target.Starts);
+    }
+
+    [Fact]
     public async Task DuplicateRequestSurvivesHostRestartWithoutAnotherLaunch()
     {
         var target = new FakeTarget();

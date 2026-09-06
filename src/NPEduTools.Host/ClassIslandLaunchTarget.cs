@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
 using NPEduTools.Core;
 
 namespace NPEduTools.Host;
@@ -22,7 +24,7 @@ public sealed class ClassIslandLaunchTarget : IClassIslandLaunchTarget
                     {
                         if (process.HasExited) continue;
                         if (process.SessionId != current.SessionId ||
-                            !string.Equals(process.MainModule?.FileName, executablePath, StringComparison.OrdinalIgnoreCase))
+                            !string.Equals(ProcessPath(process), executablePath, StringComparison.OrdinalIgnoreCase))
                             throw new LaunchTargetException("DifferentClassIslandInstance",
                                 "已有其他位置或会话的 ClassIsland 正在运行，请核对路径后重试。");
                         matched = true;
@@ -62,4 +64,17 @@ public sealed class ClassIslandLaunchTarget : IClassIslandLaunchTarget
             throw new LaunchTargetException("ProcessStartFailed", "系统未能启动 ClassIsland，请检查运行环境和权限。");
         }
     }
+
+    private static string ProcessPath(Process process)
+    {
+        if (!OperatingSystem.IsWindows()) return process.MainModule?.FileName ?? "";
+        using var handle = OpenProcess(0x1000, false, process.Id);
+        if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        var path = new StringBuilder(32768); int length = path.Capacity;
+        if (!QueryFullProcessImageName(handle, 0, path, ref length)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        return path.ToString();
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern Microsoft.Win32.SafeHandles.SafeProcessHandle OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool QueryFullProcessImageName(Microsoft.Win32.SafeHandles.SafeProcessHandle process, uint flags, StringBuilder path, ref int length);
 }

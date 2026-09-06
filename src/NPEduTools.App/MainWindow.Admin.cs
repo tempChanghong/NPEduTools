@@ -63,10 +63,7 @@ public partial class MainWindow
             _adminPath = path;
             if (result.Status is { } status)
             {
-                _adminStatus = status;
-                AdminTaskStatus.Text = status.TaskMessage;
-                AdminProcessStatus.Text = status.ProcessMessage;
-                AdminPluginStatus.Text = status.PluginInstalled ? "兼容已安装的 StartUpAsAdmin，共用同一计划任务。" : "兼容 StartUpAsAdmin；未安装插件也可管理此任务。";
+                ApplyAdminStatus(path, status);
             }
             else if (result.Outcome != "Cancelled")
             {

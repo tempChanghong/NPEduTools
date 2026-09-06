@@ -7,7 +7,7 @@ using NPEduTools.Core;
 namespace NPEduTools.ClassIsland.Admin;
 
 [SupportedOSPlatform("windows")]
-public sealed class ScheduledStartup : IDisposable
+public sealed partial class ScheduledStartup : IDisposable
 {
     private readonly dynamic _service;
     private readonly dynamic _folder;
@@ -65,18 +65,19 @@ public sealed class ScheduledStartup : IDisposable
         using var identity = WindowsIdentity.GetCurrent();
         if (identity.User?.Value != request.UserSid || System.Diagnostics.Process.GetCurrentProcess().SessionId != request.SessionId)
             return new("Rejected", "请使用当前登录用户授权，不能替其他账户配置或重启 ClassIsland。");
-        if (request.Action is not ("status" or "inspect" or "create" or "delete" or "elevate")) return new("Rejected", "不支持的管理员操作。");
+        if (request.Action is not ("status" or "inspect" or "create" or "delete" or "elevate" or "launch" or "launch-elevated")) return new("Rejected", "不支持的管理员操作。");
         string executable = ClassIslandExecutable.Validate(request.Executable);
         request = request with { Executable = executable };
         if (request.Action == "status") return new("Succeeded", "已读取状态。", Status(request));
-        if (!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)) return new("Rejected", "此操作需要 Windows 管理员授权。");
+        if (request.Action != "launch" && !new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)) return new("Rejected", "此操作需要 Windows 管理员授权。");
         if (request.Action == "inspect") return new("Succeeded", "已使用管理员权限核实状态。", Status(request));
-        using var gate = new Mutex(false, @"Global\NPEduTools.ClassIsland.Admin.Operation");
+        using var gate = new Mutex(false, $@"Local\NPEduTools.ClassIsland.Operation.{request.UserSid}");
         bool acquired;
         try { acquired = gate.WaitOne(0); } catch (AbandonedMutexException) { acquired = true; }
         if (!acquired) return new("Rejected", "另一项 ClassIsland 管理员操作正在执行，请稍后刷新。");
         try
         {
+            if (request.Action is "launch" or "launch-elevated") return Launch(request);
             if (request.Action == "elevate")
             {
                 // Keep the mutex on this thread: synchronous wrapper around the bounded process workflow.

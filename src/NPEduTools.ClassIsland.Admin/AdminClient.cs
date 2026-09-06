@@ -17,7 +17,7 @@ public static class AdminClient
         string name = "NPEduTools.Admin." + Guid.NewGuid().ToString("N");
         using var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        bool elevate = action != "status";
+        bool elevate = action is not ("status" or "launch");
         var start = new ProcessStartInfo(helper)
         {
             UseShellExecute = elevate, Verb = elevate ? "runas" : "", CreateNoWindow = true,
@@ -30,7 +30,7 @@ public static class AdminClient
         {
             worker = await Task.Run(() => Process.Start(start));
             if (worker is null) return new("Failed", "无法启动管理员操作组件。");
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(elevate ? 70 : 12));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(action == "status" ? 12 : 70));
             var connect = server.WaitForConnectionAsync(deadline.Token);
             var exited = worker.WaitForExitAsync(deadline.Token);
             if (await Task.WhenAny(connect, exited) == exited && !server.IsConnected)

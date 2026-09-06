@@ -75,10 +75,10 @@ public static class Protocol
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch" or
-            "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.execution.get" or
+            "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
-        if (request.Capability == "classisland.config.set")
+        if (request.Capability is "classisland.config.set" or "classisland.verify")
         {
             if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
                 request.ExpectedRevision is null or < 0) return "InvalidConfiguration";

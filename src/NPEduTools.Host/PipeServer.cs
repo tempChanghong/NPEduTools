@@ -62,7 +62,7 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 else if (request.Capability.StartsWith("presentation.touch.", StringComparison.Ordinal))
                     response = touch is not null ? await touch.HandleAsync(request, token)
                         : new(Protocol.Version, request.RequestId, "Rejected", "TouchUnavailable", "此后台未启用触摸辅助。");
-                else if (request.Capability is "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.execution.get")
+                else if (request.Capability is "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get")
                     response = launch is not null ? await launch.HandleAsync(request, token)
                         : new(Protocol.Version, request.RequestId, "Rejected", "LaunchUnavailable", "此后台未启用启动功能。");
                 else

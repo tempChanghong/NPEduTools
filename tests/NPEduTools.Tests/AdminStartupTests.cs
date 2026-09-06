@@ -5,6 +5,22 @@ namespace NPEduTools.Tests;
 
 public class AdminStartupTests
 {
+    [Theory]
+    [InlineData("Stopped", "Enabled", LaunchChoice.ScheduledTask)]
+    [InlineData("Stopped", "Missing", LaunchChoice.Ordinary)]
+    [InlineData("Stopped", "Disabled", LaunchChoice.Ordinary)]
+    [InlineData("Stopped", "Conflict", LaunchChoice.Reject)]
+    [InlineData("Stopped", "Unreadable", LaunchChoice.Reject)]
+    [InlineData("Standard", "Enabled", LaunchChoice.OfferAdministratorRestart)]
+    [InlineData("Standard", "Missing", LaunchChoice.Existing)]
+    [InlineData("Standard", "Disabled", LaunchChoice.Existing)]
+    [InlineData("Administrator", "Enabled", LaunchChoice.Existing)]
+    [InlineData("Administrator", "Conflict", LaunchChoice.Existing)]
+    [InlineData("Unknown", "Enabled", LaunchChoice.Reject)]
+    [InlineData("Unknown", "Missing", LaunchChoice.Reject)]
+    public void LaunchHonorsPrivilegePreferenceWithoutReplacingExistingInstances(string process, string task, LaunchChoice expected)
+        => Assert.Equal(expected, ClassIslandLaunchPolicy.Choose(process, task));
+
     private const string Exe = @"C:\教室工具 & 教学\ClassIsland.exe";
     private const string Sid = "S-1-5-21-100-200-300-1001";
     private static string? Resolve(string value) => value is "Teacher" or Sid ? Sid : value;

@@ -59,7 +59,12 @@ public partial class MainWindow : Window
             else StopClicked(this, new RoutedEventArgs());
         };
         Closed += (_, _) => { _lifetime.Cancel(); _quick?.Shutdown(); _tray?.Dispose(); };
-        _model.PropertyChanged += (_, _) => RefreshQuick();
+        _model.PropertyChanged += (_, _) =>
+        {
+            // After success, the next live snapshot owns the quick panel status again.
+            if (_launchSucceeded && !_actionInProgress && _unifiedVerification is null) _launchMessage = null;
+            RefreshQuick();
+        };
     }
 
     private async Task WatchAsync(CancellationToken token)
@@ -240,7 +245,8 @@ public partial class MainWindow : Window
     }
 
     private void RefreshQuick() => _quick?.Update(_touchState, TouchStatusText.Text, TouchPowerButton.IsEnabled,
-        _actionInProgress ? "正在启动…" : _model.Connection, StartButton.IsEnabled && !_exitBusy && !_lifetime.IsCancellationRequested);
+        _launchMessage ?? _model.Connection, StartButton.IsEnabled && !_actionInProgress && !_adminBusy && !_exitBusy && !_lifetime.IsCancellationRequested,
+        _restartOfferedFor is null ? "启动" : "管理员重启");
 
     private async Task ChangeTouchAsync(string action)
     {
@@ -275,12 +281,12 @@ public partial class MainWindow : Window
             try
             {
                 var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.execution.get", OperationId: _pendingStartId));
-                ShowLaunchData(response);
+                if (!_actionInProgress) ShowLaunchData(response);
             }
             catch (Exception ex) when (IsManagementError(ex))
             {
                 StartButton.IsEnabled = false;
-                if (!token.IsCancellationRequested) LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
+                if (!token.IsCancellationRequested && !_actionInProgress) LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
             }
             RefreshQuick();
             try { await Task.Delay(1000, token); }
@@ -300,12 +306,23 @@ public partial class MainWindow : Window
         {
             _configurationRevision = data.Settings.Revision;
             _savedPath = data.Settings.ExecutablePath;
+            if (_restartOfferedFor != _savedPath) { _restartOfferedFor = null; StartButton.Content = "启动"; }
             ExecutablePathBox.Text = _savedPath ?? "";
             _configurationLoaded = true;
             ConfigurationMessage.Text = _savedPath is null ? "请选择本机 ClassIsland 程序，然后保存路径。" : "已读取保存的程序路径。";
         }
         if (data.StorageWarning is not null) ConfigurationMessage.Text = data.StorageWarning;
         var operation = data.Execution;
+        if (_unifiedVerification is { } verifying && operation?.RequestId == verifying)
+        {
+            if (operation.Outcome == "Running") SetLaunchMessage("ClassIsland 进程已确认，正在等待课程接口…");
+            else { SetLaunchMessage(operation.Message); _launchSucceeded = operation.Outcome == "Succeeded"; _unifiedVerification = null; }
+        }
+        else if (_unifiedVerification is not null && response.ErrorCode == "ExecutionNotFound")
+        {
+            _unifiedVerification = _pendingStartId = null;
+            SetLaunchMessage("连接验证请求未记录，请重新核实当前实例。再次点击会先检查是否已运行。");
+        }
         if (_pendingStartId is null || operation?.RequestId == _pendingStartId)
         {
             LaunchResultText.Text = operation?.Message ?? "暂无启动记录";
@@ -313,7 +330,7 @@ public partial class MainWindow : Window
                 $"{operation.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}  ·  {OutcomeName(operation.Outcome)}";
             if (operation?.Outcome != "Running") _pendingStartId = null;
         }
-        StartButton.IsEnabled = !_actionInProgress && operation?.Outcome != "Running" && data.StorageWarning is null && response.Outcome != "Failed";
+        StartButton.IsEnabled = !_actionInProgress && _pendingStartId is null && operation?.Outcome != "Running" && data.StorageWarning is null && response.Outcome != "Failed";
         if (_adminBusy) StartButton.IsEnabled = false;
         RefreshAdminControls();
     }
@@ -367,40 +384,12 @@ public partial class MainWindow : Window
         catch (Exception ex) when (IsManagementError(ex)) { ConfigurationMessage.Text = "后台未连接，暂时无法读取配置。"; }
     }
 
-    private async void StartClicked(object sender, RoutedEventArgs e)
-    {
-        if (_actionInProgress || _adminBusy) return;
-        if (string.IsNullOrWhiteSpace(_savedPath) || !string.Equals(ExecutablePathBox.Text.Trim(), _savedPath, StringComparison.OrdinalIgnoreCase))
-        {
-            ConfigurationMessage.Text = "请先保存当前程序路径，再启动 ClassIsland。";
-            SelectPage(true);
-            RestoreWindow();
-            return;
-        }
-        _actionInProgress = true;
-        StartButton.IsEnabled = false;
-        _pendingStartId ??= Guid.NewGuid();
-        try
-        {
-            var response = await ManagementRequestAsync(new(Protocol.Version, _pendingStartId.Value, "classisland.start"));
-            ShowLaunchData(response);
-            LaunchResultText.Text = response.Message;
-            HomeMessage.Text = response.Message;
-            if (response.Outcome == "Rejected") _pendingStartId = null;
-        }
-        catch (Exception ex) when (IsManagementError(ex))
-        {
-            LaunchResultText.Text = "尚未确认启动请求结果，将查询同一请求；重试不会重复启动。";
-        }
-        finally { _actionInProgress = false; }
-    }
-
     private static bool IsManagementError(Exception ex) => ex is IOException or InvalidDataException or JsonException or
         TimeoutException or OperationCanceledException or UnauthorizedAccessException;
 
     private async void StopClicked(object sender, RoutedEventArgs e)
     {
-        if (_exitBusy || _adminBusy) return;
+        if (_exitBusy || _adminBusy || _actionInProgress) return;
         _exitBusy = true;
         ExitButton.IsEnabled = false;
         HomeMessage.Text = "正在停止辅助与后台…";

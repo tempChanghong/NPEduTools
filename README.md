@@ -16,6 +16,8 @@
 
 ## 打开桌面窗口
 
+首页和贴边面板现已共用 [ClassIsland 统一启动](docs/CLASSISLAND-UNIFIED-LAUNCH.md)：优先使用匹配且启用的管理员任务，否则普通启动；已运行时复用实例，需要切换权限时明确提供“管理员重启”。进程与课程接口分别验证，避免连接等待导致重复启动。
+
 新增 [ClassIsland 管理员自启动管理](docs/CLASSISLAND-ADMIN-STARTUP.md)：首页 ClassIsland 的“自启动”进入管理区，可查询、创建／更新、删除 StartUpAsAdmin 使用的同名任务，以及请求管理员启动／重启。提权由 Windows UAC 授权，NPEduTools 主窗口保持普通权限。用户已实测授权后创建任务成功，并确认普通／管理员状态显示大体正常；删除、重新登录自启动及完整重启链路等剩余验收见说明。
 
 完成下述构建验证后，从仓库根目录运行：

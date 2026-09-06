@@ -152,7 +152,7 @@ public partial class QuickAccessWindow : Window
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 
-    public void Update(TouchAssistState? state, string status, bool available, string classIslandStatus, bool canStart)
+    public void Update(TouchAssistState? state, string status, bool available, string classIslandStatus, bool canStart, string startLabel = "启动")
     {
         StatusText.Text = status;
         PowerButton.Content = state?.Running == true ? "停止辅助" : "开启辅助";
@@ -161,6 +161,7 @@ public partial class QuickAccessWindow : Window
         PauseButton.Visibility = state?.Running == true ? Visibility.Visible : Visibility.Collapsed;
         PauseButton.IsEnabled = available;
         ClassIslandStatus.Text = classIslandStatus; ClassIslandButton.IsEnabled = canStart;
+        ClassIslandButton.Content = startLabel;
     }
 
     private void HandleClicked(object sender, RoutedEventArgs e) => OpenPanel();
