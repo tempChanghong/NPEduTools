@@ -1,136 +1,185 @@
-<Window x:Class="NPEduTools.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="NPEduTools" Width="760" Height="640" MinWidth="560" MinHeight="540" WindowStartupLocation="CenterScreen" Background="#F3F6F3" Foreground="#203831" FontFamily="Microsoft YaHei UI" UseLayoutRounding="True">
+<Window x:Class="NPEduTools.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="NPEduTools" Width="900" Height="670" MinWidth="760" MinHeight="570" WindowStartupLocation="CenterScreen" WindowStyle="None" Background="#F5F7F9" Foreground="#202E35" FontFamily="Microsoft YaHei UI" UseLayoutRounding="True">
+  <WindowChrome.WindowChrome>
+    <WindowChrome CaptionHeight="52" ResizeBorderThickness="6" CornerRadius="14" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+  </WindowChrome.WindowChrome>
   <Window.Resources>
-    <Style x:Key="Panel" TargetType="Border">
+    <Style x:Key="Surface" TargetType="Border">
       <Setter Property="Background" Value="White" />
-      <Setter Property="CornerRadius" Value="14" />
-      <Setter Property="BorderBrush" Value="#DFE7DF" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="20" />
-      <Setter Property="Margin" Value="0,0,0,16" />
-    </Style>
-    <Style TargetType="TabItem">
-      <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
-      <Setter Property="Foreground" Value="#203831" />
-      <Setter Property="FontSize" Value="15" />
-      <Setter Property="MinWidth" Value="96" />
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="TabItem">
-            <Border x:Name="TabBorder" CornerRadius="8" Padding="22,12" Margin="0,0,8,12" Background="Transparent">
-              <ContentPresenter x:Name="TabLabel" ContentSource="Header" HorizontalAlignment="Center" />
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="TabBorder" Property="Background" Value="White" />
-                <Setter TargetName="TabLabel" Property="TextElement.Foreground" Value="#286B51" />
-                <Setter TargetName="TabLabel" Property="TextElement.FontWeight" Value="SemiBold" />
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="24" />
+      <Setter Property="Margin" Value="0,0,0,18" />
     </Style>
   </Window.Resources>
-  <Grid Margin="28,20">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-    <Grid Margin="4,0,4,22">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <StackPanel>
-        <TextBlock Text="NPEduTools" FontSize="25" FontWeight="SemiBold" />
-        <TextBlock Text="课堂常用工具，随用随开。" Foreground="#63776B" FontSize="13" Margin="0,5,0,0" />
-      </StackPanel>
-      <Border Grid.Column="1" Background="#E5EEE7" CornerRadius="10" Width="44" Height="44" VerticalAlignment="Center">
-        <TextBlock Text="N" Foreground="#286B51" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-      </Border>
-    </Grid>
-    <TabControl x:Name="Pages" Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="0">
-      <TabItem Header="常用" AutomationProperties.AutomationId="HomeTab">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel Margin="0,2,0,0">
-            <Border Style="{StaticResource Panel}">
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="172" />
+      <ColumnDefinition />
+    </Grid.ColumnDefinitions>
+    <Border Background="#1C2B33">
+      <Grid Margin="16,24,16,18">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Margin="8,0,0,0">
+          <Border Background="#3DCCAE" CornerRadius="9" Width="34" Height="34" HorizontalAlignment="Left">
+            <TextBlock Text="n" Foreground="#163B36" FontFamily="Segoe UI" FontSize="29" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,-6,0,0" />
+          </Border>
+          <TextBlock Text="NPEduTools" Foreground="White" FontFamily="Segoe UI" FontSize="17" FontWeight="SemiBold" Margin="0,16,0,3" />
+          <TextBlock Text="课堂工具" Foreground="#82969F" FontSize="12" />
+        </StackPanel>
+        <StackPanel Grid.Row="1" Margin="0,36,0,0">
+          <Button x:Name="HomeNav" Tag="active" Style="{StaticResource Navigation}" Click="HomeNavClicked" AutomationProperties.AutomationId="HomeTab">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" />
+              <TextBlock Text="常用工具" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="SettingsNav" Style="{StaticResource Navigation}" Click="SettingsNavClicked" AutomationProperties.AutomationId="SettingsTab">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" />
+              <TextBlock Text="偏好设置" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+        <StackPanel Grid.Row="2">
+          <Button Content="打开快捷面板" Style="{StaticResource Navigation}" Click="OpenQuickClicked" AutomationProperties.AutomationId="OpenQuick" />
+          <Border Height="1" Background="#33434A" Margin="10,14" />
+          <Button x:Name="ExitButton" Content="退出 NPEduTools" Style="{StaticResource Navigation}" FontSize="12" Click="StopClicked" AutomationProperties.AutomationId="StopHost" />
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="52" />
+        <RowDefinition />
+      </Grid.RowDefinitions>
+      <Grid Margin="28,0,10,0">
+        <TextBlock Text="工作台" Foreground="#87939B" FontSize="12" VerticalAlignment="Center" />
+        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
+          <Button Content="−" Style="{StaticResource Quiet}" Width="44" MinHeight="40" Padding="0" FontSize="20" Click="MinimizeClicked" AutomationProperties.AutomationId="MinimizeWindow" />
+          <Button Content="×" Style="{StaticResource Quiet}" Width="44" MinHeight="40" Padding="0" FontSize="22" Click="CloseClicked" AutomationProperties.AutomationId="CloseWindow" />
+        </StackPanel>
+      </Grid>
+      <Grid x:Name="Pages" Grid.Row="1" Margin="28,8,28,22">
+        <ScrollViewer x:Name="HomePage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel>
+            <TextBlock Text="常用工具" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="常用操作，也能在屏幕侧边直接完成。" Foreground="#7B8991" FontSize="13" Margin="0,8,0,26" />
+            <Border Style="{StaticResource Surface}">
               <StackPanel>
-                <TextBlock Text="PowerPoint 触摸翻页" FontSize="22" FontWeight="SemiBold" />
-                <TextBlock Text="轻点放映画面，推进动画或下一页。" FontSize="14" Foreground="#63776B" Margin="0,8,0,0" />
-                <TextBlock x:Name="TouchStatusText" Text="正在连接后台…" FontSize="17" Foreground="#286B51" Margin="0,24,0,20" TextWrapping="Wrap" AutomationProperties.AutomationId="TouchStatus" />
-                <WrapPanel>
-                  <Button x:Name="TouchPowerButton" Content="开启辅助" Background="#286B51" Foreground="White" BorderBrush="#286B51" MinWidth="152" MinHeight="52" Click="TouchPowerClicked" Margin="0,0,12,4" IsEnabled="False" AutomationProperties.AutomationId="TouchPower" />
-                  <Button x:Name="TouchPauseButton" Content="暂停辅助" Click="TouchPauseClicked" MinHeight="52" Visibility="Collapsed" Margin="0,0,0,4" AutomationProperties.AutomationId="TouchPause" />
-                </WrapPanel>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition />
+                  </Grid.ColumnDefinitions>
+                  <Border Background="#FFF0E8" CornerRadius="12" Width="50" Height="50" Margin="0,0,16,0">
+                    <TextBlock Text="P" Foreground="#CC6944" FontFamily="Segoe UI" FontSize="26" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="PowerPoint" FontFamily="Segoe UI" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="触摸翻页" Foreground="#7B8991" FontSize="13" Margin="0,4,0,0" />
+                  </StackPanel>
+                </Grid>
+                <TextBlock Text="轻点放映画面，依次推进动画与幻灯片。" Foreground="#5C6E78" FontSize="14" Margin="0,22,0,22" />
+                <Border Background="#F5F8F8" CornerRadius="9" Padding="12,9">
+                  <StackPanel Orientation="Horizontal">
+                    <Ellipse x:Name="TouchStatusDot" Fill="#9BA8AD" Width="6" Height="6" Margin="0,0,9,0" />
+                    <TextBlock x:Name="TouchStatusText" Text="正在连接后台…" Foreground="#5C6E78" FontSize="12" TextWrapping="Wrap" MaxWidth="430" AutomationProperties.AutomationId="TouchStatus" />
+                  </StackPanel>
+                </Border>
+                <Grid Margin="0,20,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Button x:Name="TouchPowerButton" Content="开启辅助" Style="{StaticResource Primary}" MinWidth="150" HorizontalAlignment="Left" IsEnabled="False" Click="TouchPowerClicked" AutomationProperties.AutomationId="TouchPower" />
+                  <Button x:Name="TouchPauseButton" Grid.Column="1" Content="暂停辅助" Click="TouchPauseClicked" Visibility="Collapsed" AutomationProperties.AutomationId="TouchPause" />
+                </Grid>
               </StackPanel>
             </Border>
-            <Border Style="{StaticResource Panel}">
+            <Border Style="{StaticResource Surface}" Padding="20">
               <Grid>
                 <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
                   <ColumnDefinition />
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                  <TextBlock Text="ClassIsland" FontSize="18" FontWeight="SemiBold" />
-                  <TextBlock Text="{Binding Connection}" Foreground="#63776B" FontSize="13" Margin="0,7,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Connection" />
+                <Border Background="#EFEDFB" CornerRadius="11" Width="44" Height="44" Margin="0,0,14,0">
+                  <TextBlock Text="" FontFamily="Segoe MDL2 Assets" Foreground="#7C71AB" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <TextBlock Text="ClassIsland" FontFamily="Segoe UI" FontWeight="SemiBold" FontSize="17" />
+                  <TextBlock Text="{Binding Connection}" Foreground="#7B8991" FontSize="11" Margin="0,5,8,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Connection" />
                 </StackPanel>
-                <Button x:Name="StartButton" Grid.Column="1" Content="启动 ClassIsland" Click="StartClicked" VerticalAlignment="Center" AutomationProperties.AutomationId="StartClassIsland" />
+                <Button x:Name="StartButton" Grid.Column="2" Content="启动" MinWidth="76" Click="StartClicked" AutomationProperties.AutomationId="StartClassIsland" />
               </Grid>
             </Border>
-            <TextBlock x:Name="HomeMessage" Foreground="#63776B" FontSize="13" TextWrapping="Wrap" Margin="4,0,4,8">
-              <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
-                <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger>
-              </Style.Triggers></Style></TextBlock.Style>
+            <TextBlock x:Name="HomeMessage" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="4,0,4,10">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Style.Triggers>
+                    <Trigger Property="Text" Value="">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                    </Trigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
             </TextBlock>
           </StackPanel>
         </ScrollViewer>
-      </TabItem>
-      <TabItem x:Name="SettingsTab" Header="设置" AutomationProperties.AutomationId="SettingsTab">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel Margin="0,2,0,0">
-            <Border Style="{StaticResource Panel}">
+        <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel>
+            <TextBlock Text="偏好设置" FontSize="28" FontWeight="SemiBold" />
+            <TextBlock Text="按你的课堂习惯调整。" Foreground="#7B8991" FontSize="13" Margin="0,8,0,26" />
+            <Border Style="{StaticResource Surface}">
               <StackPanel>
-                <TextBlock Text="触摸翻页" FontSize="18" FontWeight="SemiBold" />
-                <CheckBox x:Name="TouchCompatibility" Content="兼容未标记的触摸" FontSize="15" Margin="0,18,0,10" MinHeight="32" VerticalContentAlignment="Center" Checked="TouchCompatibilityChanged" Unchecked="TouchCompatibilityChanged" AutomationProperties.AutomationId="TouchCompatibility" />
-                <TextBlock Text="开启后也会响应普通鼠标。默认关闭，仅对本次后台运行生效。" Foreground="#63776B" FontSize="13" TextWrapping="Wrap" />
+                <TextBlock Text="快捷入口" FontSize="16" FontWeight="SemiBold" />
+                <TextBlock Text="屏幕贴边显示，可拖动调整位置。" Foreground="#7B8991" FontSize="12" Margin="0,6,0,16" />
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition />
+                  </Grid.ColumnDefinitions>
+                  <Button Content="靠左显示" Click="DockLeftClicked" Margin="0,0,6,0" AutomationProperties.AutomationId="DockLeft" />
+                  <Button Content="靠右显示" Click="DockRightClicked" Grid.Column="1" Margin="6,0,0,0" AutomationProperties.AutomationId="DockRight" />
+                </Grid>
               </StackPanel>
             </Border>
-            <Border Style="{StaticResource Panel}">
+            <Border Style="{StaticResource Surface}">
               <StackPanel>
-                <TextBlock Text="ClassIsland 程序" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
-                <TextBox x:Name="ExecutablePathBox" FontSize="14" Padding="10" MinHeight="46" VerticalContentAlignment="Center" AutomationProperties.AutomationId="ExecutablePath" AutomationProperties.Name="ClassIsland 程序路径" />
-                <WrapPanel Margin="0,12,0,4">
-                  <Button Content="选择文件…" Click="BrowseClicked" Margin="0,0,10,8" AutomationProperties.AutomationId="BrowseExecutable" />
-                  <Button Content="保存路径" Click="SavePathClicked" Margin="0,0,10,8" AutomationProperties.AutomationId="SaveExecutable" />
-                  <Button Content="重新读取" Click="ReloadClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ReloadConfiguration" />
+                <CheckBox x:Name="TouchCompatibility" Style="{StaticResource Switch}" Content="兼容未标记的触摸" Checked="TouchCompatibilityChanged" Unchecked="TouchCompatibilityChanged" AutomationProperties.AutomationId="TouchCompatibility" />
+                <TextBlock Text="仅在轻点无效时尝试。开启后也会响应普通鼠标。" Foreground="#7B8991" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="ClassIsland 程序" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,16" />
+                <TextBox x:Name="ExecutablePathBox" AutomationProperties.AutomationId="ExecutablePath" AutomationProperties.Name="ClassIsland 程序路径" />
+                <WrapPanel Margin="0,12,0,6">
+                  <Button Content="选择文件" Click="BrowseClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="BrowseExecutable" />
+                  <Button Content="保存" Style="{StaticResource Primary}" Click="SavePathClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SaveExecutable" />
+                  <Button Content="重新读取" Style="{StaticResource Quiet}" Click="ReloadClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ReloadConfiguration" />
                 </WrapPanel>
-                <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#63776B" FontSize="13" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
-                <Expander Header="启动记录与连接详情" FontSize="14" Margin="0,20,0,0" AutomationProperties.AutomationId="ClassIslandDetails">
+                <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#718089" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
+                <Expander Header="启动记录与连接详情" FontSize="13" Margin="0,20,0,0" AutomationProperties.AutomationId="ClassIslandDetails">
                   <StackPanel Margin="0,12,0,0">
                     <TextBlock x:Name="LaunchResultText" Text="暂无启动记录" TextWrapping="Wrap" AutomationProperties.AutomationId="LaunchResult" />
-                    <TextBlock x:Name="LaunchTimeText" Foreground="#63776B" FontSize="12" Margin="0,5,0,14" TextWrapping="Wrap" />
+                    <TextBlock x:Name="LaunchTimeText" Foreground="#718089" FontSize="12" Margin="0,5,0,14" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding State}" AutomationProperties.AutomationId="LessonState" />
                     <TextBlock Text="{Binding Subject}" FontSize="20" Margin="0,5,0,8" AutomationProperties.AutomationId="Subject" />
-                    <TextBlock Text="{Binding Detail}" Foreground="#63776B" TextWrapping="Wrap" AutomationProperties.AutomationId="Detail" />
-                    <TextBlock Text="{Binding LessonPlan}" Foreground="#63776B" Margin="0,8,0,0" />
-                    <TextBlock Text="{Binding Updated}" Foreground="#63776B" />
-                    <TextBlock Text="{Binding Events}" Foreground="#63776B" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Detail}" Foreground="#718089" TextWrapping="Wrap" AutomationProperties.AutomationId="Detail" />
+                    <TextBlock Text="{Binding LessonPlan}" Foreground="#718089" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding Updated}" Foreground="#718089" />
+                    <TextBlock Text="{Binding Events}" Foreground="#718089" TextWrapping="Wrap" />
                   </StackPanel>
                 </Expander>
               </StackPanel>
             </Border>
           </StackPanel>
         </ScrollViewer>
-      </TabItem>
-    </TabControl>
-    <Grid Grid.Row="2" Margin="0,14,0,0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <Button Content="收起到托盘" HorizontalAlignment="Left" Click="CloseClicked" AutomationProperties.AutomationId="CloseWindow" />
-      <Button x:Name="ExitButton" Grid.Column="1" Content="停止后台并退出" Click="StopClicked" AutomationProperties.AutomationId="StopHost" />
+      </Grid>
     </Grid>
   </Grid>
 </Window>

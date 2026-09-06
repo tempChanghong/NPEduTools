@@ -9,9 +9,15 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class SmokeWindowCapture {
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 }
 '@
 $appExe = Join-Path $projectRoot "src/NPEduTools.App/bin/$Configuration/net10.0-windows/NPEduTools.App.exe"
@@ -53,10 +59,18 @@ function Start-App {
 
 function Find-Control([Diagnostics.Process]$process, [string]$id) {
     $process.Refresh()
-    if ($process.HasExited -or $process.MainWindowHandle -eq [IntPtr]::Zero) { return $null }
-    $root = [Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
+    if ($process.HasExited) { return $null }
+    $root = Find-Main $process
+    if (-not $root) { return $null }
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty,$id)
     return $root.FindFirst([Windows.Automation.TreeScope]::Descendants,$condition)
+}
+
+function Find-Main([Diagnostics.Process]$process) {
+    $condition = [Windows.Automation.AndCondition]::new(
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id),
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'NPEduTools'))
+    return [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children, $condition)
 }
 
 function Wait-Text([Diagnostics.Process]$process, [string]$id, [string]$expected) {
@@ -77,7 +91,7 @@ function Click-Control([Diagnostics.Process]$process, [string]$id) {
 }
 
 function Select-Page([Diagnostics.Process]$process, [string]$id) {
-    (Find-Control $process $id).GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    (Find-Control $process $id).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
     Start-Sleep -Milliseconds 150
     if ($id -eq 'SettingsTab') {
         (Find-Control $process 'ClassIslandDetails').GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
@@ -93,25 +107,115 @@ function Find-OwnedHost {
 
 function Save-Window([Diagnostics.Process]$process, [string]$name) {
     $process.Refresh()
+    $hwnd = [IntPtr](Find-Main $process).Current.NativeWindowHandle
     $rect = [SmokeWindowCapture+Rect]::new()
-    if (-not [SmokeWindowCapture]::GetWindowRect($process.MainWindowHandle,[ref]$rect)) { throw 'Cannot read window bounds.' }
+    if (-not [SmokeWindowCapture]::GetWindowRect($hwnd,[ref]$rect)) { throw 'Cannot read window bounds.' }
     $bitmap = [Drawing.Bitmap]::new($rect.Right-$rect.Left,$rect.Bottom-$rect.Top)
     $graphics = [Drawing.Graphics]::FromImage($bitmap)
     $hdc = $graphics.GetHdc()
     try {
-        if (-not [SmokeWindowCapture]::PrintWindow($process.MainWindowHandle,$hdc,2)) { throw 'Cannot capture test window.' }
+        if (-not [SmokeWindowCapture]::PrintWindow($hwnd,$hdc,2)) { throw 'Cannot capture test window.' }
     } finally { $graphics.ReleaseHdc($hdc); $graphics.Dispose() }
     try { $bitmap.Save((Join-Path $runRoot $name),[Drawing.Imaging.ImageFormat]::Png) }
     finally { $bitmap.Dispose() }
+}
+
+function Find-Quick([Diagnostics.Process]$process, [string]$id) {
+    $condition = [Windows.Automation.AndCondition]::new(
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id),
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'NPEduTools 快捷工具'))
+    $quick = [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children, $condition)
+    if (-not $id) { return $quick }
+    $idCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
+    return $quick.FindFirst([Windows.Automation.TreeScope]::Descendants,$idCondition)
+}
+
+function Click-Quick([Diagnostics.Process]$process, [string]$id) {
+    (Find-Quick $process $id).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Start-Sleep -Milliseconds 500
+}
+
+function Save-Quick([Diagnostics.Process]$process, [string]$name) {
+    $quick = Find-Quick $process ''
+    $hwnd = [IntPtr]$quick.Current.NativeWindowHandle
+    $rect = [SmokeWindowCapture+Rect]::new()
+    $null = [SmokeWindowCapture]::GetWindowRect($hwnd,[ref]$rect)
+    $bitmap = [Drawing.Bitmap]::new($rect.Right-$rect.Left,$rect.Bottom-$rect.Top)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    $hdc = $graphics.GetHdc()
+    try { $null = [SmokeWindowCapture]::PrintWindow($hwnd,$hdc,2) }
+    finally { $graphics.ReleaseHdc($hdc); $graphics.Dispose() }
+    try { $bitmap.Save((Join-Path $runRoot $name),[Drawing.Imaging.ImageFormat]::Png) } finally { $bitmap.Dispose() }
+}
+
+function Exercise-EdgePointer([Diagnostics.Process]$process) {
+    $original = [SmokeWindowCapture+Point]::new()
+    $null = [SmokeWindowCapture]::GetCursorPos([ref]$original)
+    try {
+        $quick = Find-Quick $process ''
+        $hwnd = [IntPtr]$quick.Current.NativeWindowHandle
+        $rect = [SmokeWindowCapture+Rect]::new()
+        $null = [SmokeWindowCapture]::GetWindowRect($hwnd,[ref]$rect)
+        $startY = $rect.Top
+        $point = [SmokeWindowCapture+Point]::new()
+        $point.X = [int](($rect.Left+$rect.Right)/2); $point.Y = [int](($rect.Top+$rect.Bottom)/2)
+        $null = [SmokeWindowCapture]::SetCursorPos($point.X,$point.Y)
+        if ([SmokeWindowCapture]::WindowFromPoint($point) -ne $hwnd) { throw 'Test handle is obscured; no pointer input sent.' }
+        [SmokeWindowCapture]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 80
+        for ($offset=12; $offset -le 120; $offset+=12) {
+            $null = [SmokeWindowCapture]::SetCursorPos($point.X,$point.Y-$offset)
+            Start-Sleep -Milliseconds 35
+        }
+        [SmokeWindowCapture]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 250
+        $null = [SmokeWindowCapture]::GetWindowRect($hwnd,[ref]$rect)
+        if ($rect.Top -ge $startY-50 -or $rect.Bottom-$rect.Top -gt 200) { throw 'Edge drag did not move the collapsed handle.' }
+        $point.X = [int](($rect.Left+$rect.Right)/2); $point.Y = [int](($rect.Top+$rect.Bottom)/2)
+        $null = [SmokeWindowCapture]::SetCursorPos($point.X,$point.Y)
+        if ([SmokeWindowCapture]::WindowFromPoint($point) -ne $hwnd) { throw 'Moved handle is obscured.' }
+        [SmokeWindowCapture]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 80
+        [SmokeWindowCapture]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 400
+        $null = [SmokeWindowCapture]::GetWindowRect($hwnd,[ref]$rect)
+        if ($rect.Bottom-$rect.Top -lt 300) { throw 'A physical pointer click did not expand the panel.' }
+    }
+    finally {
+        [SmokeWindowCapture]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+        $null = [SmokeWindowCapture]::SetCursorPos($original.X,$original.Y)
+    }
 }
 
 Write-Output "UI smoke artifacts: $runRoot"
 try {
     $peer = Start-Peer 'healthy'
     $app = Start-App
+    Start-Sleep -Milliseconds 1000
     Wait-Text $app 'Connection' '已连接 ClassIsland'
     Wait-Text $app 'TouchStatus' '已关闭'
     Save-Window $app 'home.png'
+    Click-Control $app 'CloseWindow'
+    Start-Sleep -Milliseconds 300
+    Save-Quick $app 'edge.png'
+    Exercise-EdgePointer $app
+    $checks.Add('Physical pointer drag repositions the edge handle; a short click opens the panel')
+    if ((Find-Quick $app 'QuickTouchPower').Current.Name -ne '开启辅助') { throw 'Quick panel is not ready.' }
+    Save-Quick $app 'quick.png'
+    Click-Quick $app 'QuickTouchPower'
+    if ((Find-Quick $app 'QuickTouchPower').Current.Name -ne '停止辅助') { throw 'Quick enable did not reach Host.' }
+    Click-Quick $app 'QuickTouchPause'
+    if ((Find-Quick $app 'QuickTouchPause').Current.Name -ne '继续') { throw 'Quick pause failed.' }
+    Click-Quick $app 'QuickTouchPower'
+    $quickHwnd = [IntPtr](Find-Quick $app '').Current.NativeWindowHandle
+    $null = [SmokeWindowCapture]::PostMessage($quickHwnd,0x10,[IntPtr]::Zero,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    if (-not (Find-Quick $app 'EdgeHandle')) { throw 'Closing the quick panel removed the edge entry.' }
+    Click-Quick $app 'EdgeHandle'
+    Click-Quick $app 'QuickOpenSettings'
+    if (-not (Find-Control $app 'TouchCompatibility')) { throw 'Quick settings did not open the main window.' }
+    Select-Page $app 'HomeTab'
+    $checks.Add('Edge handle opens controls without tray; quick enable/pause/stop and settings work')
     Click-Control $app 'TouchPower'
     Wait-Text $app 'TouchPower' '停止辅助'
     Click-Control $app 'TouchPause'
@@ -119,7 +223,7 @@ try {
     Click-Control $app 'TouchPause'
     Wait-Text $app 'TouchPause' '暂停辅助'
     $checks.Add('PowerPoint assist enable, pause, resume use actual Host state')
-    $element = [Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+    $element = Find-Main $app
     $element.GetCurrentPattern([Windows.Automation.TransformPattern]::Pattern).Resize(620,600)
     Start-Sleep -Milliseconds 300
     Save-Window $app 'compact.png'
@@ -129,13 +233,13 @@ try {
 
     Click-Control $app 'CloseWindow'
     Start-Sleep -Milliseconds 300
-    if ($app.HasExited) { throw 'Hide to tray unexpectedly exited App.' }
+    if ($app.HasExited) { throw 'Hide to edge unexpectedly exited App.' }
     if (-not (Find-OwnedHost)) { throw 'Hiding App unexpectedly stopped Host.' }
     $duplicate = Start-App
     if (-not $duplicate.WaitForExit(5000)) { throw 'Duplicate App did not exit.' }
     Wait-Text $app 'TouchPower' '停止辅助'
     if ((Find-OwnedHost).ProcessId -ne $firstHost.ProcessId) { throw 'App reopen replaced the Host.' }
-    $checks.Add('Hide to tray and single-instance activation retain running assist and Host')
+    $checks.Add('Hide to edge and single-instance activation retain running assist and Host')
     Click-Control $app 'TouchPower'
     Wait-Text $app 'TouchStatus' '已关闭'
     Select-Page $app 'SettingsTab'
@@ -169,10 +273,18 @@ try {
     Wait-Text $app 'TouchPower' '停止辅助'
     $checks.Add('App reconnects and resynchronizes after Host termination')
 
+    $savedEdgeTop = (Find-Quick $app '').Current.BoundingRectangle.Top
     Click-Control $app 'StopHost'
     if (-not $app.WaitForExit(15000)) { throw 'Stop background did not exit App.' }
     if (Find-OwnedHost) { throw 'Stop background left Host running.' }
     $checks.Add('Stop background and exit waits for Host termination')
+    $app = Start-App
+    Wait-Text $app 'TouchStatus' '已关闭'
+    $restoredEdgeTop = (Find-Quick $app '').Current.BoundingRectangle.Top
+    if ([Math]::Abs($restoredEdgeTop-$savedEdgeTop) -gt 2) { throw 'Edge position was not restored after a full restart.' }
+    Click-Control $app 'StopHost'
+    if (-not $app.WaitForExit(15000) -or (Find-OwnedHost)) { throw 'Restarted App did not shut down cleanly.' }
+    $checks.Add('Edge position survives a full App restart; closing the panel preserves its handle')
     @{Passed=$true;Checks=@($checks);CompletedAt=[DateTimeOffset]::Now} | ConvertTo-Json -Depth 5 |
         Set-Content -LiteralPath (Join-Path $runRoot 'summary.json') -Encoding utf8
     Write-Output 'PASS: actual WPF controls, App reopen, target restart, Host restart, and shutdown.'

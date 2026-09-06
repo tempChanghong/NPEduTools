@@ -24,9 +24,10 @@ public partial class MainWindow : Window
     private Guid? _hostStream;
     private Task? _touchPoll;
     private TouchAssistState? _touchState;
-    private bool _touchBusy, _updatingTouch, _exitBusy, _exiting, _trayHint;
+    private bool _touchBusy, _updatingTouch, _exitBusy, _exiting, _entryHint;
     private Forms.NotifyIcon? _tray;
     private Forms.ToolStripMenuItem? _trayPause;
+    private QuickAccessWindow? _quick;
 
     public MainWindow(string pipe, string? upstream)
     {
@@ -37,6 +38,13 @@ public partial class MainWindow : Window
         InitializeTray();
         Loaded += (_, _) =>
         {
+            if (_quick is null)
+            {
+                _quick = new QuickAccessWindow(_pipe, () => TouchPowerClicked(this, new RoutedEventArgs()),
+                    () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings);
+                _quick.Show();
+                RefreshQuick();
+            }
             _watch ??= WatchAsync(_lifetime.Token);
             _management ??= ManagementLoopAsync(_lifetime.Token);
             _touchPoll ??= TouchPollAsync(_lifetime.Token);
@@ -45,10 +53,11 @@ public partial class MainWindow : Window
         {
             if (_exiting) return;
             e.Cancel = true;
-            if (_tray is not null) HideToTray();
+            if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _tray?.Dispose(); };
+        Closed += (_, _) => { _lifetime.Cancel(); _quick?.Shutdown(); _tray?.Dispose(); };
+        _model.PropertyChanged += (_, _) => RefreshQuick();
     }
 
     private async Task WatchAsync(CancellationToken token)
@@ -140,23 +149,41 @@ public partial class MainWindow : Window
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             _tray?.Dispose(); _tray = null;
-            HomeMessage.Text = "托盘不可用，关闭窗口将停止后台并退出。";
+            HomeMessage.Text = "托盘不可用，仍可通过屏幕侧边入口操作。";
         }
     }
 
     public void RestoreWindow()
     {
+        _quick?.Collapse(false);
         Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
     }
 
-    private void HideToTray()
+    private void ShowSettings() { SelectPage(true); RestoreWindow(); }
+    private void HomeNavClicked(object sender, RoutedEventArgs e) => SelectPage(false);
+    private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
+    private void SelectPage(bool settings)
+    {
+        HomePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
+        SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
+        HomeNav.Tag = settings ? null : "active";
+        SettingsNav.Tag = settings ? "active" : null;
+    }
+    private void OpenQuickClicked(object sender, RoutedEventArgs e) { Hide(); _quick?.OpenPanel(); }
+    private void MinimizeClicked(object sender, RoutedEventArgs e) => HideToEdge();
+    private void DockLeftClicked(object sender, RoutedEventArgs e) => _quick?.SetSide(true);
+    private void DockRightClicked(object sender, RoutedEventArgs e) => _quick?.SetSide(false);
+
+    private void HideToEdge()
     {
         Hide();
-        if (!_trayHint && _tray is not null)
+        _quick?.Collapse(false);
+        _quick?.Show();
+        if (!_entryHint && _tray is not null)
         {
-            _trayHint = true;
-            _tray.ShowBalloonTip(3000, "NPEduTools 已收起", "后台继续运行。点击托盘图标或再次打开程序即可返回。", Forms.ToolTipIcon.Info);
+            _entryHint = true;
+            _tray.ShowBalloonTip(3000, "NPEduTools 已收起", "点击屏幕侧边的快捷入口即可操作，后台继续运行。", Forms.ToolTipIcon.Info);
         }
     }
 
@@ -203,13 +230,21 @@ public partial class MainWindow : Window
             _trayPause.Enabled = TouchPowerButton.IsEnabled && _touchState?.Running == true;
             _trayPause.Text = _touchState?.Paused == true ? "继续触摸辅助" : "暂停触摸辅助";
         }
+        TouchStatusDot.Fill = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
+                _touchState?.Error is not null ? "#CD7552" : _touchState?.Running != true ? "#9BA8AD" : _touchState.Paused ? "#C69A4F" : "#147D68"));
+        RefreshQuick();
     }
+
+    private void RefreshQuick() => _quick?.Update(_touchState, TouchStatusText.Text, TouchPowerButton.IsEnabled,
+        _actionInProgress ? "正在启动…" : _model.Connection, StartButton.IsEnabled && !_exitBusy && !_lifetime.IsCancellationRequested);
 
     private async Task ChangeTouchAsync(string action)
     {
         if (_touchBusy || _exitBusy || _lifetime.IsCancellationRequested) return;
         _touchBusy = true; RefreshTouchControls();
         TouchStatusText.Text = action == "disable" ? "正在停止辅助…" : "正在应用操作…";
+        RefreshQuick();
         try { ApplyTouch(await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch." + action))); }
         catch (Exception ex) when (IsManagementError(ex))
         { _touchState = null; TouchStatusText.Text = "暂未确认结果，正在重新读取状态…"; }
@@ -244,6 +279,7 @@ public partial class MainWindow : Window
                 StartButton.IsEnabled = false;
                 if (!token.IsCancellationRequested) LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
             }
+            RefreshQuick();
             try { await Task.Delay(1000, token); }
             catch (OperationCanceledException) { break; }
         }
@@ -332,7 +368,8 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(_savedPath) || !string.Equals(ExecutablePathBox.Text.Trim(), _savedPath, StringComparison.OrdinalIgnoreCase))
         {
             ConfigurationMessage.Text = "请先保存当前程序路径，再启动 ClassIsland。";
-            Pages.SelectedItem = SettingsTab;
+            SelectPage(true);
+            RestoreWindow();
             return;
         }
         _actionInProgress = true;
