@@ -1,15 +1,29 @@
 # NPEduTools
 
-面向 Windows 教室大屏的本地软件集成与控制层。项目正在进行 M0 技术验证，产品架构见 [架构规划](docs/ARCHITECTURE.md)。
+面向 Windows 教室大屏的本地软件集成与控制层。项目已完成 ClassIsland 只读原型验证，进入 M1 最小桌面版本，产品架构见 [架构规划](docs/ARCHITECTURE.md)。
 
-当前已实现命令行客户端 → Named Pipe Host → 隔离探测进程 → ClassIsland IPC 的只读查询闭环。可以查询课程状态、科目、课表启用/加载状态，并在指定观察窗口内统计课程事件。
+当前已实现 WPF 窗口与 CLI → Named Pipe Host → 隔离工作进程 → ClassIsland IPC 的只读闭环。支持持续课程监听、自动重连、完整状态同步，以及原有单次查询。
 
-本阶段没有 WPF 界面、场景执行、软件启动/关闭、配置恢复或后台自动启动。查询不会修改 ClassIsland 档案，也不会终止 ClassIsland。
+窗口会按需启动 Host；关闭窗口后 Host 继续运行，也可选择“停止后台并退出”。本阶段尚未实现 ClassIsland 启动/关闭、场景执行、配置恢复或开机启动。
+
+## 打开桌面窗口
+
+完成下述构建验证后，从仓库根目录运行：
+
+```powershell
+./scripts/start-app.ps1
+```
+
+窗口显示连接状态、课程、课表状态、最近同步时间及本次连接的上课/课间事件计数。ClassIsland 未运行或断开时会显示原因并自动重试；旧课程不会作为可用状态保留。需要自行启动 ClassIsland 本体。
+
+也可以直接打开 `src/NPEduTools.App/bin/Release/net10.0-windows/NPEduTools.App.exe`，请保留旁边的 `Host` 子目录。桌面窗口需要 .NET 10 Desktop Runtime。当前交付为构建目录，尚未制作安装包或验证 `dotnet publish` 分发。
+
+实现细节、验收证据与剩余范围见 [M1 只读桌面验收记录](docs/M1-READONLY-VALIDATION.md)。
 
 ## 开发环境
 
 - Windows x64；本次验证环境为 Windows build 26200。
-- .NET SDK `10.0.400`，由 `global.json` 固定；运行目标为 `net10.0`。
+- .NET SDK `10.0.400`，由 `global.json` 固定；后台目标为 `net10.0`，WPF 为 `net10.0-windows`。
 - PowerShell，初次还原依赖时需要连接 NuGet。
 
 当前开发机已安装系统 SDK 8.0.424、9.0.317 和 10.0.400。NPEduTools 使用 10.0.400，旁边的 ClassIsland 源码使用 9.0.317。可以直接使用 `dotnet`，或通过包装脚本完成验证：
@@ -50,6 +64,19 @@ Host 默认管道按用户 SID 和会话区分，仅接受同一用户、同一�
 
 Host 用 Ctrl+C 停止；CLI 可以独立退出并重新查询。CLI 退出不会关闭 Host；已受理的查询继续执行至完成或期限结束。查询超时最多额外需要 2 秒清理探测进程。Host 意外退出时，孤立探测进程最多存活约 20 秒。
 
+### 持续监听
+
+```powershell
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' watch
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' stop
+```
+
+`watch` 持续输出每行一条 JSON，Ctrl+C 结束客户端监听。Host 共享一条常驻上游连接，事件触发状态读取，并定期补充同步；界面和 CLI 最多同时占用两个订阅槽位。目标断线后使用有上限的退避重连，失败快照的 `status` 为 `null`。
+
+每帧都是完整快照：`streamId` 区分 Host 监听实例，`sequence` 标识状态更新，`connectionId` 区分上游连接；事件计数仅对同一个 `connectionId` 累加有效。心跳可以重复序号，跳号无需补增量。断线期间的历史事件无法补发，重连以完整课程状态为准。CLI 的 Host 连接断开时会退出，桌面窗口会自动重连。
+
+`stop` 仅停止 NPEduTools Host 及其工作进程，不关闭 ClassIsland。窗口的停止按钮还会等待后台结束；CLI 响应表示请求已受理。已连接窗口收到主动停止通知后不会自动重启 Host，重新打开窗口可以再次启动。
+
 ### 输出与错误
 
 CLI 在标准输出返回 JSON，在标准错误输出连接问题。失败结果的 `status` 为 `null`，不会用空科目或默认枚举伪装成成功。
@@ -64,7 +91,7 @@ CLI 在标准输出返回 JSON，在标准错误输出连接问题。失败结�
 
 ClassIsland 未运行时可能返回 `ClassIslandDeadlineExceeded`，它仅说明没有在期限内完成查询，不能据此判断软件未安装。权限拒绝、已连接接口超时和连接断开分别使用不同错误码。
 
-Host 诊断日志写入标准错误，仅记录请求标识、结果、耗时及脱敏错误类别，不记录科目正文。M0 不提供日志落盘、历史结果查询或 RequestId 持久化去重；目前全部能力只读，不自动重试。
+Host 诊断日志写入标准错误，仅记录请求标识、结果、耗时及脱敏错误类别，不记录科目正文。当前不提供日志落盘、历史结果查询或 RequestId 持久化去重；单次查询不自动重试，常驻只读监听自动重连。
 
 ## 无 ClassIsland 时的演示
 
@@ -98,8 +125,12 @@ Host 诊断日志写入标准错误，仅记录请求标识、结果、耗时及
 
 ```powershell
 ./scripts/test-classisland-live.ps1
+./scripts/test-classisland-live.ps1 -Watch
+./scripts/test-app-smoke.ps1
 ```
 
 脚本会复制构建产物、生成临时课表并启动真实本体，观察自然事件，再关闭并重启本次创建的实例。已有 ClassIsland 正在运行时会拒绝启动；整个过程约一分钟，结果保存在 `.artifacts/classisland-live/`。
+
+`-Watch` 通过同一订阅观察课程变化及本体重启；窗口验收脚本使用私有模拟服务端，通过实际 WPF 控件验证自动启动、窗口重开和恢复，保存结果与截图到 `.artifacts/app-smoke/`。这些 IPC 测试需要普通用户权限下的本机命名管道访问，受限开发沙箱可能拒绝第三方管道连接。
 
 根目录 [LICENSE](LICENSE) 为 GPL v3。第三方依赖的许可与固定版本见 [依赖说明](docs/DEPENDENCIES.md)。

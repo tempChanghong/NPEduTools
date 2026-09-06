@@ -30,7 +30,7 @@ public sealed record HostResponse(
     string Message,
     LessonStatusDto? Status = null);
 
-/// <summary>One request and one response per connection. Length-prefixed UTF-8 JSON.</summary>
+/// <summary>Length-prefixed UTF-8 JSON. watch returns a stream of full WatchSnapshot frames.</summary>
 public static class Protocol
 {
     public const int Version = 1;
@@ -67,10 +67,11 @@ public static class Protocol
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("host.ping" or "classisland.status")) return "UnknownCapability";
+        if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch")) return "UnknownCapability";
         if (request.TimeoutMs is < 250 or > 15000) return "InvalidTimeout";
         if (request.ObserveMs < 0 || request.ObserveMs > 5000 || request.ObserveMs >= request.TimeoutMs)
             return "InvalidObservationWindow";
+        if (request.Capability == "classisland.watch" && request.ObserveMs != 0) return "InvalidObservationWindow";
         return null;
     }
 }

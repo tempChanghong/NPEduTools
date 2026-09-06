@@ -1,5 +1,6 @@
 param(
-    [string]$ClassIslandBinary = 'D:/WebstormProjects/ClassIsland/ClassIsland.Desktop/bin/Debug/net8.0-windows10.0.19041.0/ClassIsland.Desktop.exe'
+    [string]$ClassIslandBinary = 'D:/WebstormProjects/ClassIsland/ClassIsland.Desktop/bin/Debug/net8.0-windows10.0.19041.0/ClassIsland.Desktop.exe',
+    [switch]$Watch
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
@@ -49,6 +50,13 @@ function Start-OwnedProcess([string]$Executable, [string[]]$Arguments, [string]$
 }
 
 function Query-Status([int]$ObserveMs = 0, [int]$TimeoutMs = 5000) {
+    if ($Watch) {
+        $line = $watchProcess.StandardOutput.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(6)).GetAwaiter().GetResult()
+        if (-not $line) { throw 'Watch stream ended unexpectedly.' }
+        $response = $line | ConvertFrom-Json
+        $results.Add($response)
+        return $response
+    }
     $info = [Diagnostics.ProcessStartInfo]::new($dotnetHost)
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -115,6 +123,18 @@ try {
     $appExe = Join-Path $appDirectory (Split-Path $ClassIslandBinary -Leaf)
     $app = Start-OwnedProcess $appExe @('--quiet','-dm') 'classisland' @{ClassIsland_PackageRoot=$packageRoot;ClassIsland_WaitDebuggers='0'}
     $hostProcess = Start-OwnedProcess $dotnetHost @($hostDll,'--pipe',$pipe) 'host'
+    if ($Watch) {
+        $watchInfo = [Diagnostics.ProcessStartInfo]::new($dotnetHost)
+        $watchInfo.UseShellExecute = $false
+        $watchInfo.CreateNoWindow = $true
+        $watchInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+        $watchInfo.RedirectStandardOutput = $true
+        $watchInfo.RedirectStandardError = $true
+        foreach ($argument in @($cliDll,'watch','--pipe',$pipe)) { $watchInfo.ArgumentList.Add($argument) }
+        $watchProcess = [Diagnostics.Process]::Start($watchInfo)
+        $owned.Add($watchProcess)
+        $logs.Add(@{Name='watch';Out=[Threading.Tasks.Task]::FromResult('');Err=$watchProcess.StandardError.ReadToEndAsync()})
+    }
     $startupDeadline = [DateTime]::UtcNow.AddSeconds(25)
     do {
         if ($app.HasExited) { throw "ClassIsland exited during startup: $($app.ExitCode)" }
@@ -135,8 +155,14 @@ try {
         $sample = Query-Status 5000 10000
         if ($sample.outcome -ne 'Succeeded') { throw "Live observation failed: $($sample.errorCode)" }
         $null = $seenStates.Add($sample.status.state)
-        $onClass += $sample.status.observedEvents.'classisland.lessonsService.onClass'
-        $onBreak += $sample.status.observedEvents.'classisland.lessonsService.onBreakingTime'
+        if ($Watch) {
+            if ($sample.connectionId -ne $first.connectionId) { throw 'Healthy monitor unexpectedly replaced its connection.' }
+            $onClass = $sample.status.observedEvents.'classisland.lessonsService.onClass'
+            $onBreak = $sample.status.observedEvents.'classisland.lessonsService.onBreakingTime'
+        } else {
+            $onClass += $sample.status.observedEvents.'classisland.lessonsService.onClass'
+            $onBreak += $sample.status.observedEvents.'classisland.lessonsService.onBreakingTime'
+        }
         Write-Output "Observed: $($sample.status.state) / $($sample.status.subject); class=$onClass break=$onBreak"
         if ($sample.status.subject -eq 'NPEduTools 实机联调 B' -and $onClass -gt 0 -and $onBreak -gt 0) { break }
     } while ([DateTime]::UtcNow -lt $observeDeadline)
@@ -147,8 +173,14 @@ try {
     # Terminate only the disposable app created above to exercise target loss and restart.
     $app.Kill($true)
     if (-not $app.WaitForExit(5000)) { throw 'Test app did not stop.' }
-    $offline = Query-Status 0 600
-    if ($offline.outcome -ne 'TimedOut') { throw 'Expected a bounded timeout while ClassIsland is stopped.' }
+    $offlineDeadline = [DateTime]::UtcNow.AddSeconds(12)
+    do { $offline = Query-Status 0 600 }
+    while ($Watch -and $offline.outcome -eq 'Succeeded' -and [DateTime]::UtcNow -lt $offlineDeadline)
+    if ($Watch) {
+        if ($offline.outcome -notin @('Unavailable','TimedOut','Failed') -or $null -ne $offline.status) {
+            throw 'Monitor did not clear stale state after target loss.'
+        }
+    } elseif ($offline.outcome -ne 'TimedOut') { throw 'Expected a bounded timeout while ClassIsland is stopped.' }
     $app = Start-OwnedProcess $appExe @('--quiet','-dm') 'classisland-restarted' @{ClassIsland_PackageRoot=$packageRoot;ClassIsland_WaitDebuggers='0'}
     $restartDeadline = [DateTime]::UtcNow.AddSeconds(25)
     do {
@@ -160,8 +192,11 @@ try {
     if ($restarted.outcome -ne 'Succeeded' -or $restarted.status.subject -ne 'NPEduTools 实机联调 B') {
         throw 'Host did not reconnect to the restarted real ClassIsland.'
     }
+    if ($Watch -and ($restarted.streamId -ne $first.streamId -or $restarted.connectionId -eq $first.connectionId)) {
+        throw 'Expected the same subscription stream and a fresh target connection after restart.'
+    }
     @{Passed=$true;ClassIslandBinary=$ClassIslandBinary;RunRoot=$runRoot;OnClassEvents=$onClass;OnBreakEvents=$onBreak;
-      States=@($seenStates);OfflineOutcome=$offline.outcome;RestartSubject=$restarted.status.subject;CompletedAt=[DateTimeOffset]::Now} |
+      Watch=[bool]$Watch;States=@($seenStates);OfflineOutcome=$offline.outcome;RestartSubject=$restarted.status.subject;CompletedAt=[DateTimeOffset]::Now} |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runRoot 'summary.json') -Encoding utf8
     Write-Output 'PASS: real status, natural schedule events, target loss, and restart.'
 } finally {

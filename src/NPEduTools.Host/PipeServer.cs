@@ -10,8 +10,10 @@ using NPEduTools.Core;
 namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
-public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log)
+public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
+    StatusMonitor? monitor = null, Action? stop = null)
 {
+    private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
     {
         // Four fixed accept loops bound active connections, parsing buffers and stalled clients.
@@ -40,10 +42,21 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 var watch = Stopwatch.StartNew();
                 HostResponse response;
                 string? error = Protocol.Validate(request);
+                if (error is null && request.Capability == "classisland.watch")
+                {
+                    await WatchAsync(pipe, request, token);
+                    continue;
+                }
                 if (error is not null)
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
+                else if (request.Capability == "host.stop")
+                {
+                    if (stop is not null && monitor is not null) await monitor.StopAsync();
+                    response = new(Protocol.Version, request.RequestId, stop is null ? "Rejected" : "Succeeded",
+                        stop is null ? "StopUnavailable" : null, "停止后台请求已受理。");
+                }
                 else
                 {
                     // Client disconnection does not cancel an accepted read-only operation.
@@ -63,7 +76,17 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 }, Protocol.Json));
                 using var writeDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 writeDeadline.CancelAfter(TimeSpan.FromSeconds(2));
-                await Protocol.WriteAsync(pipe, response, writeDeadline.Token);
+                if (error is null && request.Capability == "host.stop" && stop is not null)
+                {
+                    try { await Protocol.WriteAsync(pipe, response, writeDeadline.Token); }
+                    finally
+                    {
+                        // An accepted shutdown survives client disconnection. Other windows get one heartbeat.
+                        await Task.Delay(TimeSpan.FromMilliseconds(1500), token);
+                        stop();
+                    }
+                }
+                else await Protocol.WriteAsync(pipe, response, writeDeadline.Token);
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
@@ -71,6 +94,26 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 log(JsonSerializer.Serialize(new { timestamp = DateTimeOffset.UtcNow, error = "ClientTransportError", type = ex.GetType().Name }));
             }
         }
+    }
+
+    private async Task WatchAsync(Stream pipe, HostRequest request, CancellationToken token)
+    {
+        bool accepted = monitor is not null && await _subscriptions.WaitAsync(0, token);
+        try
+        {
+            do
+            {
+                var snapshot = accepted ? monitor!.Snapshot(request.RequestId) : new WatchSnapshot(
+                    Protocol.Version, request.RequestId, Guid.Empty, 0, Guid.Empty, DateTimeOffset.UtcNow,
+                    "Rejected", "SubscriptionLimit", "状态订阅已达上限，请关闭多余窗口后重试。", null);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                deadline.CancelAfter(TimeSpan.FromSeconds(2));
+                await Protocol.WriteAsync(pipe, snapshot, deadline.Token);
+                if (!accepted || snapshot.Outcome == "Stopped") return;
+                await Task.Delay(TimeSpan.FromSeconds(1), token);
+            } while (!token.IsCancellationRequested);
+        }
+        finally { if (accepted) _subscriptions.Release(); }
     }
 
     private static bool IsCurrentSession(NamedPipeServerStream pipe)

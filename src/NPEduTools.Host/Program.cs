@@ -17,8 +17,9 @@ if (args.Contains("--help"))
 }
 
 bool workerMode = args.Length > 0 && args[0] == "--ipc-worker";
+bool monitorMode = args.Length > 0 && args[0] == "--monitor-worker";
 var options = new Dictionary<string, string>();
-for (int i = workerMode ? 1 : 0; i < args.Length; i += 2)
+for (int i = workerMode || monitorMode ? 1 : 0; i < args.Length; i += 2)
 {
     if (i + 1 >= args.Length || args[i] is not ("--pipe" or "--classisland-pipe" or "--observe-ms") ||
         !options.TryAdd(args[i], args[i + 1]) || args[i + 1].Length is 0 or > 200)
@@ -33,6 +34,33 @@ if (pipeName.IndexOfAny(['/', '\\', ':']) >= 0 || classIslandPipe.IndexOfAny(['/
 {
     Console.Error.WriteLine("Invalid pipe name.");
     return 2;
+}
+
+if (monitorMode)
+{
+    // A renewable stdin lease bounds orphan lifetime without periodically dropping a healthy IPC connection.
+    long lastLease = Stopwatch.GetTimestamp();
+    using var leaseTimer = new Timer(_ =>
+    {
+        if (Stopwatch.GetElapsedTime(Interlocked.Read(ref lastLease)) > TimeSpan.FromSeconds(8))
+            Environment.Exit(124);
+    }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    var leaseReader = new Thread(() =>
+    {
+        try
+        {
+            var input = Console.OpenStandardInput();
+            while (input.ReadByte() != -1) Interlocked.Exchange(ref lastLease, Stopwatch.GetTimestamp());
+        }
+        catch (IOException) { }
+        Environment.Exit(124);
+    }) { IsBackground = true, Name = "Host lease reader" };
+    leaseReader.Start();
+    var output = Console.OpenStandardOutput();
+    Console.SetOut(Console.Error);
+    await ClassIslandProbe.MonitorAsync(classIslandPipe,
+        result => Protocol.WriteAsync(output, result, CancellationToken.None), CancellationToken.None);
+    return 0;
 }
 
 if (workerMode)
@@ -58,26 +86,28 @@ if (!createdNew)
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
-using var reader = new IsolatedStatusReader(query =>
+ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0)
 {
     var start = new ProcessStartInfo(Environment.ProcessPath!)
     {
         UseShellExecute = false, CreateNoWindow = true,
-        RedirectStandardOutput = true, RedirectStandardError = true
+        RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = monitor
     };
     if (string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet", StringComparison.OrdinalIgnoreCase))
         start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
-    start.ArgumentList.Add("--ipc-worker");
+    start.ArgumentList.Add(monitor ? "--monitor-worker" : "--ipc-worker");
     start.ArgumentList.Add("--classisland-pipe");
     start.ArgumentList.Add(classIslandPipe);
     start.ArgumentList.Add("--observe-ms");
-    start.ArgumentList.Add(((int)query.ObservationWindow.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    start.ArgumentList.Add(observeMs.ToString(System.Globalization.CultureInfo.InvariantCulture));
     return start;
-});
+}
+using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds));
+await using var monitor = new StatusMonitor(() => WorkerStart(true), Console.Error.WriteLine);
 Console.WriteLine($"Host ready: {pipeName}");
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

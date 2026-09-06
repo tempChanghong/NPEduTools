@@ -6,7 +6,7 @@
 
 | 位置 | 用途 |
 | --- | --- |
-| `D:\WebstormProjects\NPEduTools` | 集成 Host、CLI、Adapter 与测试 |
+| `D:\WebstormProjects\NPEduTools` | WPF App、Host、CLI、Adapter 与测试 |
 | `D:\WebstormProjects\ClassIsland` | ClassIsland 本体与插件开发源码、后续真实联调目标 |
 | `docs/classisland-docs-next` | 本地开发文档，优先查阅对应章节，再与当前源码核对 |
 
@@ -36,7 +36,7 @@ NPEduTools 的 `global.json` 选择 `10.0.400`。包装脚本在 NPEduTools 根�
 
 先前下载的 `.tools/dotnet` 保留作为备用，不需要再安装 SDK，也不需要修改系统环境变量。初次缺少 SDK 的记录属于历史情况，不代表当前环境。
 
-本轮通过包装脚本确认实际使用 `C:\Program Files\dotnet\sdk\10.0.400`，Release 构建 0 警告、0 错误，21 项测试全部通过。
+通过包装脚本确认实际使用 `C:\Program Files\dotnet\sdk\10.0.400`，M1 Release 构建 0 警告、0 错误，27 项测试全部通过。桌面窗口使用 .NET 10 Desktop Runtime，启动与窗口验收见 [M1 记录](M1-READONLY-VALIDATION.md)。
 
 ## ClassIsland 的 SDK 解析（已解决）
 

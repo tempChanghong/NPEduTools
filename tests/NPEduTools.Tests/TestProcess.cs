@@ -58,4 +58,6 @@ internal sealed class TestProcess : IAsyncDisposable
         }
         finally { _process.Dispose(); }
     }
+
+    public Task WaitForExitAsync() => _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
 }
