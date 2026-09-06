@@ -115,6 +115,8 @@ public partial class QuickAccessWindow : Window
         if (restoreFocus && wasExpanded && GetForegroundWindow() == _handle && _previous != 0 && IsWindow(_previous)) SetForegroundWindow(_previous);
     }
 
+    public bool LeftSide => _placement.LeftSide;
+
     public void SetSide(bool leftSide)
     { _placement = _placement with { LeftSide = leftSide }; Collapse(); Position(); Save(); }
 

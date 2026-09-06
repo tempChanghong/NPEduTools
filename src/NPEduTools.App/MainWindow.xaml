@@ -3,6 +3,37 @@
     <WindowChrome CaptionHeight="52" ResizeBorderThickness="6" CornerRadius="14" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
   </WindowChrome.WindowChrome>
   <Window.Resources>
+    <Style x:Key="PositionChoice" TargetType="RadioButton">
+      <Setter Property="MinHeight" Value="52" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Choice" Background="#F5F7F9" BorderBrush="#E2E8EA" BorderThickness="1" CornerRadius="10" Padding="16,12">
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Border x:Name="Ring" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#8B999F" Margin="0,0,10,0">
+                  <Ellipse x:Name="Mark" Width="8" Height="8" Fill="#147D68" Visibility="Hidden" />
+                </Border>
+                <ContentPresenter VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Choice" Property="Background" Value="#EAF6F2" />
+                <Setter TargetName="Choice" Property="BorderBrush" Value="#147D68" />
+                <Setter TargetName="Ring" Property="BorderBrush" Value="#147D68" />
+                <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+                <Setter Property="Foreground" Value="#147D68" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Choice" Property="BorderBrush" Value="#202E35" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="Surface" TargetType="Border">
       <Setter Property="Background" Value="White" />
       <Setter Property="CornerRadius" Value="16" />
@@ -136,15 +167,16 @@
             <Border Style="{StaticResource Surface}">
               <StackPanel>
                 <TextBlock Text="快捷入口" FontSize="16" FontWeight="SemiBold" />
-                <TextBlock Text="屏幕贴边显示，可拖动调整位置。" Foreground="#7B8991" FontSize="12" Margin="0,6,0,16" />
+                <TextBlock Text="选择顺手的一侧，上下位置可直接拖动入口调整。" TextWrapping="Wrap" Foreground="#7B8991" FontSize="12" Margin="0,6,0,16" />
                 <Grid>
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition />
                     <ColumnDefinition />
                   </Grid.ColumnDefinitions>
-                  <Button Content="靠左显示" Click="DockLeftClicked" Margin="0,0,6,0" AutomationProperties.AutomationId="DockLeft" />
-                  <Button Content="靠右显示" Click="DockRightClicked" Grid.Column="1" Margin="6,0,0,0" AutomationProperties.AutomationId="DockRight" />
+                  <RadioButton x:Name="DockLeft" Content="屏幕左侧" GroupName="EntrySide" Style="{StaticResource PositionChoice}" Checked="DockLeftClicked" Margin="0,0,6,0" AutomationProperties.AutomationId="DockLeft" />
+                  <RadioButton x:Name="DockRight" Content="屏幕右侧" GroupName="EntrySide" Style="{StaticResource PositionChoice}" Checked="DockRightClicked" Grid.Column="1" Margin="6,0,0,0" AutomationProperties.AutomationId="DockRight" />
                 </Grid>
+                <TextBlock Text="更改即时生效，位置会在下次启动时保留。" Foreground="#7B8991" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0" />
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Surface}">

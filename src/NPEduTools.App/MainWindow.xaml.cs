@@ -43,6 +43,8 @@ public partial class MainWindow : Window
                 _quick = new QuickAccessWindow(_pipe, () => TouchPowerClicked(this, new RoutedEventArgs()),
                     () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings);
                 _quick.Show();
+                DockLeft.IsChecked = _quick.LeftSide;
+                DockRight.IsChecked = !_quick.LeftSide;
                 RefreshQuick();
             }
             _watch ??= WatchAsync(_lifetime.Token);
