@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using NPEduTools.Contracts;
+using Forms = System.Windows.Forms;
 
 namespace NPEduTools.App;
 
@@ -21,6 +22,11 @@ public partial class MainWindow : Window
     private bool _actionInProgress;
     private Guid? _pendingStartId;
     private Guid? _hostStream;
+    private Task? _touchPoll;
+    private TouchAssistState? _touchState;
+    private bool _touchBusy, _updatingTouch, _exitBusy, _exiting, _trayHint;
+    private Forms.NotifyIcon? _tray;
+    private Forms.ToolStripMenuItem? _trayPause;
 
     public MainWindow(string pipe, string? upstream)
     {
@@ -28,12 +34,21 @@ public partial class MainWindow : Window
         _upstream = upstream;
         InitializeComponent();
         DataContext = _model;
+        InitializeTray();
         Loaded += (_, _) =>
         {
             _watch ??= WatchAsync(_lifetime.Token);
             _management ??= ManagementLoopAsync(_lifetime.Token);
+            _touchPoll ??= TouchPollAsync(_lifetime.Token);
         };
-        Closed += (_, _) => _lifetime.Cancel();
+        Closing += (_, e) =>
+        {
+            if (_exiting) return;
+            e.Cancel = true;
+            if (_tray is not null) HideToTray();
+            else StopClicked(this, new RoutedEventArgs());
+        };
+        Closed += (_, _) => { _lifetime.Cancel(); _tray?.Dispose(); };
     }
 
     private async Task WatchAsync(CancellationToken token)
@@ -49,6 +64,9 @@ public partial class MainWindow : Window
                     {
                         _model.Disconnected(snapshot.Message);
                         _lifetime.Cancel();
+                        _touchState = null;
+                        TouchStatusText.Text = "后台已停止，请退出后重新打开。";
+                        RefreshTouchControls();
                         return;
                     }
                     if (_hostStream != snapshot.StreamId)
@@ -104,6 +122,106 @@ public partial class MainWindow : Window
     }
 
     private void CloseClicked(object sender, RoutedEventArgs e) => Close();
+
+    private void InitializeTray()
+    {
+        try
+        {
+            var menu = new Forms.ContextMenuStrip();
+            menu.Items.Add("打开 NPEduTools", null, (_, _) => Dispatcher.Invoke(RestoreWindow));
+            _trayPause = new Forms.ToolStripMenuItem("暂停触摸辅助") { Enabled = false };
+            _trayPause.Click += (_, _) => Dispatcher.Invoke(() => TouchPauseClicked(this, new RoutedEventArgs()));
+            menu.Items.Add(_trayPause);
+            menu.Items.Add(new Forms.ToolStripSeparator());
+            menu.Items.Add("停止后台并退出", null, (_, _) => Dispatcher.Invoke(() => StopClicked(this, new RoutedEventArgs())));
+            _tray = new Forms.NotifyIcon { Text = "NPEduTools", Icon = System.Drawing.SystemIcons.Application, ContextMenuStrip = menu, Visible = true };
+            _tray.MouseClick += (_, e) => { if (e.Button == Forms.MouseButtons.Left) Dispatcher.Invoke(RestoreWindow); };
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            _tray?.Dispose(); _tray = null;
+            HomeMessage.Text = "托盘不可用，关闭窗口将停止后台并退出。";
+        }
+    }
+
+    public void RestoreWindow()
+    {
+        Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        if (!_trayHint && _tray is not null)
+        {
+            _trayHint = true;
+            _tray.ShowBalloonTip(3000, "NPEduTools 已收起", "后台继续运行。点击托盘图标或再次打开程序即可返回。", Forms.ToolTipIcon.Info);
+        }
+    }
+
+    private async Task TouchPollAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            if (!_touchBusy)
+            {
+                try
+                {
+                    var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch.status"));
+                    if (!_touchBusy) ApplyTouch(response);
+                }
+                catch (Exception ex) when (IsManagementError(ex))
+                {
+                    if (!_touchBusy) { _touchState = null; TouchStatusText.Text = "后台未连接，正在重连…"; RefreshTouchControls(); }
+                }
+            }
+            try { await Task.Delay(800, token); } catch (OperationCanceledException) { break; }
+        }
+    }
+
+    private void ApplyTouch(HostResponse response)
+    {
+        _touchState = response.TouchAssist;
+        TouchStatusText.Text = _touchState?.Error ?? _touchState?.State ?? "后台版本不支持触摸辅助，请停止后台后重新打开。";
+        _updatingTouch = true;
+        TouchCompatibility.IsChecked = _touchState?.AllowUnmarkedMouse ?? false;
+        _updatingTouch = false;
+        RefreshTouchControls();
+    }
+
+    private void RefreshTouchControls()
+    {
+        TouchPowerButton.IsEnabled = !_touchBusy && !_exitBusy && !_lifetime.IsCancellationRequested && _touchState is not null;
+        TouchPowerButton.Content = _touchState?.Running == true ? "停止辅助" : "开启辅助";
+        TouchPauseButton.Visibility = _touchState?.Running == true ? Visibility.Visible : Visibility.Collapsed;
+        TouchPauseButton.IsEnabled = TouchPowerButton.IsEnabled;
+        TouchPauseButton.Content = _touchState?.Paused == true ? "继续辅助" : "暂停辅助";
+        TouchCompatibility.IsEnabled = TouchPowerButton.IsEnabled;
+        if (_trayPause is not null)
+        {
+            _trayPause.Enabled = TouchPowerButton.IsEnabled && _touchState?.Running == true;
+            _trayPause.Text = _touchState?.Paused == true ? "继续触摸辅助" : "暂停触摸辅助";
+        }
+    }
+
+    private async Task ChangeTouchAsync(string action)
+    {
+        if (_touchBusy || _exitBusy || _lifetime.IsCancellationRequested) return;
+        _touchBusy = true; RefreshTouchControls();
+        TouchStatusText.Text = action == "disable" ? "正在停止辅助…" : "正在应用操作…";
+        try { ApplyTouch(await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch." + action))); }
+        catch (Exception ex) when (IsManagementError(ex))
+        { _touchState = null; TouchStatusText.Text = "暂未确认结果，正在重新读取状态…"; }
+        finally { _touchBusy = false; RefreshTouchControls(); }
+    }
+
+    private async void TouchPowerClicked(object sender, RoutedEventArgs e) => await ChangeTouchAsync(_touchState?.Running == true ? "disable" : "enable");
+    private async void TouchPauseClicked(object sender, RoutedEventArgs e) => await ChangeTouchAsync(_touchState?.Paused == true ? "resume" : "pause");
+    private async void TouchCompatibilityChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_updatingTouch && IsLoaded) await ChangeTouchAsync(TouchCompatibility.IsChecked == true ? "compat.on" : "compat.off");
+    }
 
     private async Task<HostResponse> ManagementRequestAsync(HostRequest request)
     {
@@ -214,6 +332,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(_savedPath) || !string.Equals(ExecutablePathBox.Text.Trim(), _savedPath, StringComparison.OrdinalIgnoreCase))
         {
             ConfigurationMessage.Text = "请先保存当前程序路径，再启动 ClassIsland。";
+            Pages.SelectedItem = SettingsTab;
             return;
         }
         _actionInProgress = true;
@@ -224,6 +343,7 @@ public partial class MainWindow : Window
             var response = await ManagementRequestAsync(new(Protocol.Version, _pendingStartId.Value, "classisland.start"));
             ShowLaunchData(response);
             LaunchResultText.Text = response.Message;
+            HomeMessage.Text = response.Message;
             if (response.Outcome == "Rejected") _pendingStartId = null;
         }
         catch (Exception ex) when (IsManagementError(ex))
@@ -238,13 +358,21 @@ public partial class MainWindow : Window
 
     private async void StopClicked(object sender, RoutedEventArgs e)
     {
+        if (_exitBusy) return;
+        _exitBusy = true;
+        ExitButton.IsEnabled = false;
+        HomeMessage.Text = "正在停止辅助与后台…";
+        RefreshTouchControls();
         // Stop reconnecting before requesting shutdown, so this App cannot restart the Host it just stopped.
         _lifetime.Cancel();
         try
         {
             if (_watch is not null) await _watch;
             if (_management is not null) await _management;
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            if (_touchPoll is not null) await _touchPoll;
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            if (!Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var existing)) { _exiting = true; Close(); return; }
+            existing.Dispose();
             var response = await HostClient.RequestAsync(_pipe, "host.stop", deadline.Token);
             if (response.Outcome != "Succeeded") throw new InvalidOperationException(response.Message);
             // The response acknowledges acceptance; wait for the instance to release its ownership handle.
@@ -253,12 +381,15 @@ public partial class MainWindow : Window
                 instance.Dispose();
                 await Task.Delay(100, deadline.Token);
             }
-            Close();
+            _exiting = true; Close();
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or TimeoutException or
             OperationCanceledException or UnauthorizedAccessException or InvalidOperationException)
         {
             _model.Disconnected("未能确认后台已停止。可重试停止，或关闭窗口后重新打开。 ");
+            HomeMessage.Text = "未能确认后台已停止，请重试“停止后台并退出”。";
+            RestoreWindow();
         }
+        finally { _exitBusy = false; ExitButton.IsEnabled = true; }
     }
 }

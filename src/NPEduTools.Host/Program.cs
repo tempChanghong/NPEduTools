@@ -16,6 +16,14 @@ if (args.Contains("--help"))
     return 0;
 }
 
+if (args.SequenceEqual(["--powerpoint-worker"]))
+{
+    var thread = new Thread(() => { if (OperatingSystem.IsWindows()) NPEduTools.PowerPoint.Diagnostics.PowerPointTouchAssist.RunProbeWorker(); });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start(); thread.Join();
+    return 0;
+}
+
 bool workerMode = args.Length > 0 && args[0] == "--ipc-worker";
 bool monitorMode = args.Length > 0 && args[0] == "--monitor-worker";
 var options = new Dictionary<string, string>();
@@ -109,10 +117,19 @@ string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeE
     : Path.Combine(Path.GetTempPath(), "NPEduTools", "instances",
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(pipeName)))[..24]));
 await using var launch = new LaunchService(dataDirectory, new ClassIslandLaunchTarget(), reader);
+await using var touch = new TouchAssistService(() =>
+{
+    var start = new ProcessStartInfo(Environment.ProcessPath!)
+    { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true };
+    if (Path.GetFileNameWithoutExtension(start.FileName).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
+    start.ArgumentList.Add("--powerpoint-worker");
+    return start;
+});
 Console.WriteLine($"Host ready: {pipeName}");
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

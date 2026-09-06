@@ -5,6 +5,9 @@ namespace NPEduTools.App;
 
 public partial class App : Application
 {
+    private Mutex? _instance;
+    private EventWaitHandle? _activation;
+    private RegisteredWaitHandle? _activationWait;
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -22,7 +25,18 @@ public partial class App : Application
             if (e.Args[i] == "--pipe") pipe = e.Args[i + 1];
             else upstream = e.Args[i + 1];
         }
+        _activation = new EventWaitHandle(false, EventResetMode.AutoReset, $@"Local\{pipe}.App.Activate");
+        _instance = new Mutex(false, $@"Local\{pipe}.App", out bool created);
+        if (!created) { _activation.Set(); Shutdown(); return; }
         MainWindow = new MainWindow(pipe, upstream);
+        _activationWait = ThreadPool.RegisterWaitForSingleObject(_activation, (_, _) =>
+            Dispatcher.BeginInvoke(() => ((MainWindow)MainWindow).RestoreWindow()), null, Timeout.Infinite, false);
         MainWindow.Show();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _activationWait?.Unregister(null); _activation?.Dispose(); _instance?.Dispose();
+        base.OnExit(e);
     }
 }

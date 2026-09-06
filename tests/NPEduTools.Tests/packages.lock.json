@@ -242,7 +242,8 @@
         "dependencies": {
           "NPEduTools.Contracts": "[1.0.0, )",
           "NPEduTools.Core": "[1.0.0, )",
-          "NPEduTools.Integrations.ClassIsland": "[1.0.0, )"
+          "NPEduTools.Integrations.ClassIsland": "[1.0.0, )",
+          "NPEduTools.PowerPoint.Diagnostics": "[1.0.0, )"
         }
       },
       "npedutools.integrations.classisland": {

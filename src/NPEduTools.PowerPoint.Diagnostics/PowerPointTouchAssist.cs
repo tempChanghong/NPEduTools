@@ -14,10 +14,13 @@ public sealed class PowerPointTouchAssist
     public bool Enabled { get => _enabled; set => _enabled = value; }
     public bool AllowUnmarkedMouse { get => _allowUnmarked; set => _allowUnmarked = value; }
     public event Action<AssistStatus>? StatusChanged;
-    public static int RunProbeWorker() => ProbeSession.Worker();
+    public static int RunProbeWorker() { Native.SetProcessDpiAwarenessContext(-4); return ProbeSession.Worker(); }
 
     public async Task RunAsync(Func<ProcessStartInfo> workerStart, CancellationToken cancellationToken)
     {
+        Native.SetProcessDpiAwarenessContext(-4);
+        using var instance = new Mutex(false, $"Local\\NPEduTools.PowerPoint.TouchAssist.{Environment.UserName}.{Process.GetCurrentProcess().SessionId}", out bool created);
+        if (!created) throw new InvalidOperationException("触摸辅助已由另一个实例运行，请先停止该实例。");
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var probe = new ProbeSession(workerStart);
         Task monitor = probe.RunAsync(_ => { }, stop.Token);

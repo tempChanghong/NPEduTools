@@ -2,6 +2,7 @@
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" />
+    <ProjectReference Include="../NPEduTools.PowerPoint.Diagnostics/NPEduTools.PowerPoint.Diagnostics.csproj" />
     <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
     <ProjectReference Include="../NPEduTools.Integrations.ClassIsland/NPEduTools.Integrations.ClassIsland.csproj" />
   </ItemGroup>

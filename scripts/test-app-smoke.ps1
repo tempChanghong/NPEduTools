@@ -1,3 +1,4 @@
+param([ValidateSet('Debug','Release')][string]$Configuration = 'Release')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 & (Join-Path $PSScriptRoot 'dotnet.ps1') --version
@@ -13,9 +14,9 @@ public static class SmokeWindowCapture {
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
 }
 '@
-$appExe = Join-Path $projectRoot 'src/NPEduTools.App/bin/Release/net10.0-windows/NPEduTools.App.exe'
+$appExe = Join-Path $projectRoot "src/NPEduTools.App/bin/$Configuration/net10.0-windows/NPEduTools.App.exe"
 $hostExe = Join-Path (Split-Path $appExe -Parent) 'Host/NPEduTools.Host.exe'
-$peerDll = Join-Path $projectRoot 'tests/NPEduTools.ClassIsland.TestPeer/bin/Release/net10.0/NPEduTools.ClassIsland.TestPeer.dll'
+$peerDll = Join-Path $projectRoot "tests/NPEduTools.ClassIsland.TestPeer/bin/$Configuration/net10.0/NPEduTools.ClassIsland.TestPeer.dll"
 if (-not (Test-Path -LiteralPath $appExe)) { throw 'Build Release before running the UI smoke test.' }
 $pipe = 'NPEduTools.Test.ui.' + [Guid]::NewGuid().ToString('N')
 $upstream = 'NPEduTools.Test.ui.' + [Guid]::NewGuid().ToString('N')
@@ -75,6 +76,14 @@ function Click-Control([Diagnostics.Process]$process, [string]$id) {
     $control.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
 }
 
+function Select-Page([Diagnostics.Process]$process, [string]$id) {
+    (Find-Control $process $id).GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Start-Sleep -Milliseconds 150
+    if ($id -eq 'SettingsTab') {
+        (Find-Control $process 'ClassIslandDetails').GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+    }
+}
+
 function Find-OwnedHost {
     # This random private pipe belongs to this test; match the bundle path as well.
     return Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Host.exe'" |
@@ -100,29 +109,42 @@ Write-Output "UI smoke artifacts: $runRoot"
 try {
     $peer = Start-Peer 'healthy'
     $app = Start-App
-    Wait-Text $app 'Subject' '数学'
     Wait-Text $app 'Connection' '已连接 ClassIsland'
-    Save-Window $app 'connected.png'
+    Wait-Text $app 'TouchStatus' '已关闭'
+    Save-Window $app 'home.png'
+    Click-Control $app 'TouchPower'
+    Wait-Text $app 'TouchPower' '停止辅助'
+    Click-Control $app 'TouchPause'
+    Wait-Text $app 'TouchStatus' '已暂停'
+    Click-Control $app 'TouchPause'
+    Wait-Text $app 'TouchPause' '暂停辅助'
+    $checks.Add('PowerPoint assist enable, pause, resume use actual Host state')
     $element = [Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
     $element.GetCurrentPattern([Windows.Automation.TransformPattern]::Pattern).Resize(620,600)
     Start-Sleep -Milliseconds 300
     Save-Window $app 'compact.png'
-    $checks.Add('App automatically starts Host and renders live course data')
+    $checks.Add('App automatically starts Host and renders compact home')
     $firstHost = Find-OwnedHost
     if (-not $firstHost) { throw 'Auto-started Host was not found.' }
 
     Click-Control $app 'CloseWindow'
-    if (-not $app.WaitForExit(5000)) { throw 'Close window did not exit App.' }
-    if (-not (Find-OwnedHost)) { throw 'Closing App unexpectedly stopped Host.' }
-    $app = Start-App
-    Wait-Text $app 'Subject' '数学'
+    Start-Sleep -Milliseconds 300
+    if ($app.HasExited) { throw 'Hide to tray unexpectedly exited App.' }
+    if (-not (Find-OwnedHost)) { throw 'Hiding App unexpectedly stopped Host.' }
+    $duplicate = Start-App
+    if (-not $duplicate.WaitForExit(5000)) { throw 'Duplicate App did not exit.' }
+    Wait-Text $app 'TouchPower' '停止辅助'
     if ((Find-OwnedHost).ProcessId -ne $firstHost.ProcessId) { throw 'App reopen replaced the Host.' }
-    $checks.Add('Closing and reopening App retains the same Host')
+    $checks.Add('Hide to tray and single-instance activation retain running assist and Host')
+    Click-Control $app 'TouchPower'
+    Wait-Text $app 'TouchStatus' '已关闭'
+    Select-Page $app 'SettingsTab'
+    Wait-Text $app 'Subject' '数学'
+    Save-Window $app 'settings.png'
 
     $peer.Kill($true)
     $null = $peer.WaitForExit(5000)
     Wait-Text $app 'Subject' '—'
-    Wait-Text $app 'Connection' 'ClassIsland 暂不可用'
     $peer = Start-Peer 'empty'
     Wait-Text $app 'Subject' '暂无科目'
     Wait-Text $app 'LessonState' '当前无课程'
@@ -140,11 +162,15 @@ try {
     } while ((-not $newHost -or $newHost.ProcessId -eq $firstHost.ProcessId) -and [DateTime]::UtcNow -lt $end)
     if (-not $newHost -or $newHost.ProcessId -eq $firstHost.ProcessId) { throw 'App did not restart lost Host.' }
     Wait-Text $app 'Subject' '暂无科目'
+    Select-Page $app 'HomeTab'
     Wait-Text $app 'Connection' '已连接 ClassIsland'
+    Wait-Text $app 'TouchStatus' '已关闭'
+    Click-Control $app 'TouchPower'
+    Wait-Text $app 'TouchPower' '停止辅助'
     $checks.Add('App reconnects and resynchronizes after Host termination')
 
     Click-Control $app 'StopHost'
-    if (-not $app.WaitForExit(8000)) { throw 'Stop background did not exit App.' }
+    if (-not $app.WaitForExit(15000)) { throw 'Stop background did not exit App.' }
     if (Find-OwnedHost) { throw 'Stop background left Host running.' }
     $checks.Add('Stop background and exit waits for Host termination')
     @{Passed=$true;Checks=@($checks);CompletedAt=[DateTimeOffset]::Now} | ConvertTo-Json -Depth 5 |

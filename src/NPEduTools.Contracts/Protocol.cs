@@ -32,7 +32,10 @@ public sealed record HostResponse(
     string? ErrorCode,
     string Message,
     LessonStatusDto? Status = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LaunchData? Launch = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LaunchData? Launch = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TouchAssistState? TouchAssist = null);
+
+public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
 /// <summary>Length-prefixed UTF-8 JSON. watch returns a stream of full WatchSnapshot frames.</summary>
 public static class Protocol
@@ -72,7 +75,9 @@ public static class Protocol
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch" or
-            "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.execution.get")) return "UnknownCapability";
+            "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.execution.get" or
+            "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
+            "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
         if (request.Capability == "classisland.config.set")
         {
             if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
