@@ -25,6 +25,13 @@ if "%~1"=="" (
 "%~dp0app\NPEduTools.PowerPoint.Diagnostics.exe" --analyze "%~f1"
 pause
 '@ | Set-Content -LiteralPath (Join-Path $packageRoot 'Analyze-Log.cmd') -Encoding ascii
+@'
+@echo off
+echo EXPERIMENT: request one animation step or slide advance in the current PowerPoint show.
+echo Simple test slides only. This command can change the current show position.
+"%~dp0app\NPEduTools.PowerPoint.Diagnostics.exe" --step-once-experiment
+pause
+'@ | Set-Content -LiteralPath (Join-Path $packageRoot 'EXPERIMENT-Step-Once.cmd') -Encoding ascii
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/POWERPOINT-DIAGNOSTICS.md') -Destination (Join-Path $packageRoot 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/POWERPOINT-TOUCH-ASSIST-PLAN.md') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $packageRoot

@@ -14,7 +14,7 @@ internal sealed class PowerPointReader
     private SlideFeatures? _features;
     private long _featuresReadAt;
 
-    public ShowSnapshot Read()
+    public ShowSnapshot Read(bool refreshFeatures = false)
     {
         string stage = "ProcessDiscovery";
         var objects = new Stack<object>();
@@ -88,11 +88,11 @@ internal sealed class PowerPointReader
                 dynamic presentation = Keep((object)window.Presentation);
                 // Salt per worker: correlate a document within a run without exporting its name or path.
                 string name = (string)presentation.FullName;
-                string id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_session + name + hwnd)))[..24];
+                string id = TargetId(name, hwnd);
                 stage = "SlideState";
                 int slideId = (int)slide.SlideID;
                 string featureKey = id + ":" + slideId;
-                if (_featureKey != featureKey || Stopwatch.GetElapsedTime(_featuresReadAt).TotalSeconds >= 3)
+                if (refreshFeatures || _featureKey != featureKey || Stopwatch.GetElapsedTime(_featuresReadAt).TotalSeconds >= 3)
                 {
                     _features = ReadFeatures((object)slide, Keep);
                     _featureKey = featureKey;
@@ -118,6 +118,9 @@ internal sealed class PowerPointReader
                 if (Marshal.IsComObject(value)) Marshal.ReleaseComObject(value);
         }
     }
+
+    internal string TargetId(string name, nint hwnd) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_session + name + hwnd)))[..24];
 
     private static SlideFeatures ReadFeatures(object slideObject, Func<object, object> keep)
     {

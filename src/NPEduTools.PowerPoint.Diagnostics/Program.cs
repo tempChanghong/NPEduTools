@@ -14,9 +14,16 @@ internal static class Program
         if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Windows is required."); return 2; }
         Native.SetProcessDpiAwarenessContext(-4);
         if (args.SequenceEqual(["--com-worker"])) return ProbeSession.Worker();
+        if (args.Length == 2 && args[0] == "--step-worker" && Guid.TryParse(args[1], out var stepId)) return StepExperiment.Worker(stepId);
+        if (args.SequenceEqual(["--step-once-experiment"]))
+        {
+            try { return StepExperiment.Run(); }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            { Console.Error.WriteLine($"实验执行器失败：{error.GetType().Name}。请核对当前放映；不会重试。"); return 1; }
+        }
         if (args.SequenceEqual(["--help"]))
         {
-            Console.WriteLine("PowerPoint diagnostic (read-only)\n  --probe\n  --seconds 120 --output FILE.jsonl\n  --analyze FILE.jsonl\nCtrl+C stops observation. No clicks are intercepted and no keys are sent.");
+            Console.WriteLine("PowerPoint tools\nRead-only: --probe | --seconds 120 --output FILE.jsonl | --analyze FILE.jsonl\nExplicit mutation: --step-once-experiment (simple test slides only)\nCtrl+C stops observation. Observation never intercepts clicks or sends keys.");
             return 0;
         }
         if (args.Length == 2 && args[0] == "--analyze")

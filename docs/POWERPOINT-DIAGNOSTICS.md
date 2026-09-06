@@ -1,6 +1,6 @@
 # PowerPoint 触摸诊断原型
 
-这是只读诊断工具，尚未启用单击辅助翻页。适用于验证 Microsoft PowerPoint 放映及触摸兼容性；用户的目标环境是 Office 2024 触摸大屏，当前开发机与目标机不同。
+默认观察与日志分析保持只读，尚未启用触摸自动翻页。工具另提供显式“单次推进实验”入口，会改变当前放映位置，仅面向已验证的简单测试文稿。用户的目标环境是 Office 2024 触摸大屏，当前开发机与目标机不同。
 
 ## 在目标大屏运行
 
@@ -27,6 +27,20 @@
 - 低级钩子有系统超时及驱动兼容限制。没有事件不等于没有触摸；只有状态正常也不等于钩子在所有设备上持续有效。队列溢出/回调异常计入结果，并取消不完整手势；会话结束时队列尾部可能省略。
 
 工作进程在专用 STA 中读取 COM。5 秒无响应时父进程清理自有工作进程并报告超时；父进程退出导致 stdin 关闭时工作进程退出，租约超过 8 秒也会自行退出。不会终止 PowerPoint。工具是单独运行的原型，尚未接入 NPEduTools 主窗口开关。
+
+## 单次推进实验（会改变放映）
+
+明确需要测试推进时，运行 `EXPERIMENT-Step-Once.cmd`，或开发机的 `./scripts/step-powerpoint-experiment.ps1`。每次运行发起一个新的请求；没有接入全局鼠标或触摸监听，观察模式不会调用此入口。
+
+先使用附带测试文稿，在 PowerPoint 全屏放映中选择箭头指针。第一页第一次调用应显示按次动画，第二次调用应进入第二页。第二页继续调用会拒绝，因为下一页包含交互链接。笔模式会拒绝；最后一页返回 `NoOp/EndOfShow`，不会退出放映。
+
+当前支持范围有意限定为：单进程、单全屏放映、箭头或自动箭头、正常放映状态、普通全范围且不循环；页面最多 64 个顶层普通形状/文本框；只有即时、无延迟的 Appear 动画且每次点击对应一个效果。已知链接、动作、触发器、媒体、组合、隐藏页、自动换页、过渡效果和其他动画拒绝执行。此范围面向实验文稿，不表示完整覆盖母版、布局或复杂文稿的行为。
+
+执行前读取实际文稿/窗口/页码/动画状态，规划调用一次 `GotoClick` 或 `Next`，再次复核状态后执行并回读。PowerPoint 的读取与修改没有跨进程原子事务；用户或其他程序同时操作仍可能改变结果。因此“预期状态已观察到”不能推广为真实触摸恰好执行一次的保证。[GotoClick](https://learn.microsoft.com/en-us/office/vba/api/powerpoint.slideshowview.gotoclick)、[Next](https://learn.microsoft.com/en-us/office/vba/api/powerpoint.slideshowview.next)
+
+同一会话中的实验请求串行互斥，忙时直接拒绝。父进程最多等待 7 秒，工作进程另有 8 秒硬期限；超时只清理自有工作进程，结果标为 `Unknown`，不自动重试或回滚。PowerPoint 内已经接收的 COM 调用可能继续完成，因此应核对放映位置。
+
+结果为 `Succeeded`、`NoOp`、`Refused` 或 `Unknown`，分别表示观察到预期状态、无需操作、未发出操作或无法确认。意图先写入并刷新到 `app/diagnostics/step-*.step.jsonl`，随后保存结果；这些记录不用于自动重放，缺少结果的记录保持不确定。步进记录与观察日志格式不同，不使用 `Analyze-Log.cmd` 分析。退出码为 0（成功/无需操作）、3（拒绝）、4（不确定），执行器启动或记录错误为 1。
 
 ## 中文分析报告
 
@@ -56,6 +70,12 @@
 # 独立真实 Office 测试：已有 PowerPoint 运行时拒绝执行。
 ./scripts/test-powerpoint-diagnostics.ps1
 
+# 显式改变当前放映的实验命令（简单文稿）。
+./scripts/step-powerpoint-experiment.ps1
+
+# 在独立测试文稿中验证动画→换页、拒绝交互页/笔模式和末页保持。
+./scripts/test-powerpoint-diagnostics.ps1 -StepExperiment
+
 # 生成包含运行时的 ZIP；可选附带测试生成的 PPTX。
 ./scripts/package-powerpoint-diagnostics.ps1 -TestPresentation <测试文稿的实际路径>
 ```
@@ -73,5 +93,9 @@
 本次扩展：PowerPoint 专项测试 36 项通过（原有 19 项，加 17 项日志分析与报告测试），覆盖旧日志、坏行/截断、丢失、身份/采样中断、输入标记、只读文件分析和报告不覆盖。真实 Office 扩展联调已验证：第三页有 1 个动作形状和 1 个内部链接，第四页有 1 个触发器序列，第五页可读到笔指针状态，观察结束自动生成中文报告。相关实现依据为微软的 [ActionSetting.Action](https://learn.microsoft.com/en-us/office/vba/api/powerpoint.actionsetting.action) 与 [InteractiveSequences](https://learn.microsoft.com/en-us/office/vba/api/powerpoint.timeline.interactivesequences) 文档。
 
 扩展后完整回归共 75 项通过，0 跳过；Debug 全解决方案构建为 0 警告、0 错误。源码启动脚本也修正了构建命令的参数：先执行锁定还原，再执行不还原的构建。
+
+单次推进实验新增 12 项规划/状态/结果测试，PowerPoint 专项共 48 项通过。真实 Office 实验已验证动画推进、换页、拒绝链接/触发器页与笔模式、最后一页保持放映。尚未进行目标大屏的自动触摸触发验收。
+
+加入执行侧原型后完整回归共 87 项通过，0 跳过；真实 Office 执行实验记录在 `.artifacts/powerpoint-live/1a1d57a57d3649fa807fac355ec9604c/summary.json`。未运行 PowerPoint 时，单次推进返回 `Refused/NotRunning`，不会启动 Office。
 
 目标 Office 2024 触摸大屏的轻点、重复推进、菜单/书写及多显示器行为尚未验收。当前交付只用于取得这些验证所需的诊断证据，后续实施关卡见 [专项设计](POWERPOINT-TOUCH-ASSIST-PLAN.md)。

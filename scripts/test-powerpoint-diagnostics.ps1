@@ -1,4 +1,4 @@
-param([switch]$NoBuild, [string]$DiagnosticExe)
+param([switch]$NoBuild, [string]$DiagnosticExe, [switch]$StepExperiment)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 if (Get-Process POWERPNT -ErrorAction SilentlyContinue) {
@@ -15,6 +15,7 @@ $diagnosticExe = (Get-Item -LiteralPath $DiagnosticExe).FullName
 $testDirectory = Join-Path $projectRoot ('.artifacts/powerpoint-live/' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $testDirectory
 $evidence = [System.Collections.Generic.List[object]]::new()
+$stepEvidence = [System.Collections.Generic.List[object]]::new()
 $pptApp = $null
 $presentation = $null
 $show = $null
@@ -26,6 +27,16 @@ function Read-Probe([string]$ExpectedStatus) {
     $evidence.Add($snapshot)
     if ($snapshot.Status -ne $ExpectedStatus) { throw "Expected $ExpectedStatus; got $($snapshot.Status)." }
     return $snapshot
+}
+function Invoke-TestStep([string]$ExpectedOutcome, [string]$ExpectedAction) {
+    $json = & $diagnosticExe --step-once-experiment
+    $stepExit = $LASTEXITCODE
+    $step = $json | ConvertFrom-Json
+    $stepEvidence.Add($step)
+    if ($step.Outcome -ne $ExpectedOutcome -or $step.Plan.Action -ne $ExpectedAction) {
+        throw "Unexpected step result (exit $stepExit): $json"
+    }
+    return $step
 }
 try {
     $null = Read-Probe 'NotRunning'
@@ -64,9 +75,23 @@ try {
     $writingArea.Fill.ForeColor.RGB = 0xF0F0F0
     $presentation.SaveAs((Join-Path $testDirectory 'diagnostic-slides.pptx'), 24)
     $show = $presentation.SlideShowSettings.Run()
+    if ($StepExperiment) { $show.View.PointerType = 1 }
     $first = Read-Probe 'Showing'
     if ($first.Targets.Count -ne 1 -or $first.Targets[0].SlideIndex -ne 1 -or $first.Targets[0].ClickCount -ne 1) {
         throw 'Initial slide or animation count mismatch.'
+    }
+    if ($StepExperiment) {
+        $animationStep = Invoke-TestStep 'Succeeded' 'Animation'
+        if ($animationStep.After.SlideIndex -ne 1 -or $animationStep.After.ClickIndex -ne 1) { throw 'Step skipped the animation.' }
+        $slideStep = Invoke-TestStep 'Succeeded' 'Slide'
+        if ($slideStep.After.SlideIndex -ne 2) { throw 'Step did not advance to slide 2.' }
+        $null = Invoke-TestStep 'Refused' 'Refuse' # Next page contains an internal link.
+        if ((Read-Probe 'Showing').Targets[0].SlideIndex -ne 2) { throw 'Refused step changed the slide.' }
+        $show.View.GotoSlide(3)
+        $null = Invoke-TestStep 'Refused' 'Refuse'
+        $show.View.GotoSlide(4)
+        $null = Invoke-TestStep 'Refused' 'Refuse'
+        $show.View.GotoSlide(1)
     }
     $start = [System.Diagnostics.ProcessStartInfo]::new($diagnosticExe)
     $start.UseShellExecute = $false
@@ -98,7 +123,12 @@ try {
     $show.View.PointerType = 2 # ppSlideShowPointerPen; affects only this test-owned show.
     $pen = Read-Probe 'Showing'
     if ($pen.Targets[0].PointerType -ne 2) { throw 'Pen state was not observed.' }
+    if ($StepExperiment) { $null = Invoke-TestStep 'Refused' 'Refuse' }
     $show.View.PointerType = 1
+    if ($StepExperiment) {
+        $null = Invoke-TestStep 'NoOp' 'None'
+        if ((Read-Probe 'Showing').Targets[0].SlideIndex -ne 5) { throw 'End-of-show step unexpectedly exited.' }
+    }
     if (-not $observer.WaitForExit(15000)) { throw 'Diagnostic observer did not terminate.' }
     $stdout.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $testDirectory 'observer.stdout.txt')
     $stderr.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $testDirectory 'observer.stderr.txt')
@@ -114,7 +144,7 @@ try {
     $show.View.Exit()
     $show = $null
     $null = Read-Probe 'NoSlideShow'
-    [ordered]@{ passed = $true; syntheticTouchUsed = $false; targetTouchValidationPassed = $false; snapshots = $evidence } |
+    [ordered]@{ passed = $true; syntheticTouchUsed = $false; targetTouchValidationPassed = $false; snapshots = $evidence; stepResults = $stepEvidence } |
         ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $testDirectory 'summary.json')
     Write-Output "PowerPoint COM and observer smoke test passed: $testDirectory"
 } finally {

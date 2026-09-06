@@ -6,6 +6,8 @@
 
 诊断结束会自动生成中文报告；也可用 `./scripts/start-powerpoint-diagnostics.ps1 -Analyze <日志路径>` 分析旧日志。新版记录包含有限页面交互清单，测试包附五页动画/链接/触发器/书写测试文稿，详见上述说明。
 
+另有显式单次推进实验：`./scripts/step-powerpoint-experiment.ps1` 会尝试推进当前 PowerPoint 的一个简单动画步骤或换页，并回读结果。仅支持已验证的简单文稿，未连接触摸监听；默认诊断模式仍只读。
+
 当前已实现 WPF 窗口与 CLI → Named Pipe Host → 隔离工作进程 → ClassIsland IPC 的课程状态闭环，支持持续监听、自动重连和完整状态同步。WPF 还支持配置 ClassIsland 路径、启动本体、验证就绪并查看保存的启动结果。
 
 窗口会按需启动 Host；关闭窗口后 Host 继续运行并完成已受理的启动验证，也可选择“停止后台并退出”。停止 Host 不会关闭 ClassIsland。本阶段尚未实现场景执行、关闭外部软件或开机启动。

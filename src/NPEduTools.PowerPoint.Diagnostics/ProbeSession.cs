@@ -13,18 +13,18 @@ internal sealed class ProbeSession
     private readonly Func<ProcessStartInfo> _start;
     private readonly TimeSpan _readTimeout;
     public ProbeSession(Func<ProcessStartInfo>? start = null, TimeSpan? readTimeout = null)
-    { _start = start ?? StartInfo; _readTimeout = readTimeout ?? TimeSpan.FromSeconds(5); }
+    { _start = start ?? (() => StartInfo()); _readTimeout = readTimeout ?? TimeSpan.FromSeconds(5); }
     private SnapshotFrame _latest = new(new(DateTimeOffset.UtcNow, "Starting"), Stopwatch.GetTimestamp());
     public SnapshotFrame Latest => Volatile.Read(ref _latest);
 
-    internal static ProcessStartInfo StartInfo()
+    internal static ProcessStartInfo StartInfo(string mode = "--com-worker")
     {
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Missing executable path.");
         var start = new ProcessStartInfo(executable)
         { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardInput = true };
         if (Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
             start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
-        start.ArgumentList.Add("--com-worker");
+        start.ArgumentList.Add(mode);
         return start;
     }
 
