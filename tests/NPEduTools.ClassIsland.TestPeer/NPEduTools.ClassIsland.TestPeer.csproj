@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><PackageReference Include="ClassIsland.Shared.IPC" Version="2.1.0.1" /></ItemGroup>
+</Project>
