@@ -171,6 +171,7 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
         HomeNav.Tag = settings ? null : "active";
         SettingsNav.Tag = settings ? "active" : null;
+        if (settings) _ = RefreshAdminAsync();
     }
     private void OpenQuickClicked(object sender, RoutedEventArgs e) { Hide(); _quick?.OpenPanel(); }
     private void MinimizeClicked(object sender, RoutedEventArgs e) => HideToEdge();
@@ -313,6 +314,8 @@ public partial class MainWindow : Window
             if (operation?.Outcome != "Running") _pendingStartId = null;
         }
         StartButton.IsEnabled = !_actionInProgress && operation?.Outcome != "Running" && data.StorageWarning is null && response.Outcome != "Failed";
+        if (_adminBusy) StartButton.IsEnabled = false;
+        RefreshAdminControls();
     }
 
     private static string OutcomeName(string outcome) => outcome switch
@@ -332,7 +335,7 @@ public partial class MainWindow : Window
 
     private async void SavePathClicked(object sender, RoutedEventArgs e)
     {
-        if (_actionInProgress) return;
+        if (_actionInProgress || _adminBusy) return;
         _actionInProgress = true;
         StartButton.IsEnabled = false;
         try
@@ -366,7 +369,7 @@ public partial class MainWindow : Window
 
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
-        if (_actionInProgress) return;
+        if (_actionInProgress || _adminBusy) return;
         if (string.IsNullOrWhiteSpace(_savedPath) || !string.Equals(ExecutablePathBox.Text.Trim(), _savedPath, StringComparison.OrdinalIgnoreCase))
         {
             ConfigurationMessage.Text = "请先保存当前程序路径，再启动 ClassIsland。";
@@ -397,7 +400,7 @@ public partial class MainWindow : Window
 
     private async void StopClicked(object sender, RoutedEventArgs e)
     {
-        if (_exitBusy) return;
+        if (_exitBusy || _adminBusy) return;
         _exitBusy = true;
         ExitButton.IsEnabled = false;
         HomeMessage.Text = "正在停止辅助与后台…";

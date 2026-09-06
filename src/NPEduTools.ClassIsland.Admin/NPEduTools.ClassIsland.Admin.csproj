@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
+    <ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" />
+  </ItemGroup>
+</Project>

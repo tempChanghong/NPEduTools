@@ -12,6 +12,7 @@
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
+    <ProjectReference Include="../NPEduTools.ClassIsland.Admin/NPEduTools.ClassIsland.Admin.csproj" />
     <ProjectReference Include="../NPEduTools.Host/NPEduTools.Host.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <Target Name="CopyHostBundle" AfterTargets="Build">
@@ -19,5 +20,9 @@
       <HostBundle Include="../NPEduTools.Host/bin/$(Configuration)/net10.0/**/*" />
     </ItemGroup>
     <Copy SourceFiles="@(HostBundle)" DestinationFiles="@(HostBundle->'$(OutDir)Host/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyAdminBundle" AfterTargets="Build">
+    <ItemGroup><AdminBundle Include="../NPEduTools.ClassIsland.Admin/bin/$(Configuration)/net10.0/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(AdminBundle)" DestinationFiles="@(AdminBundle->'$(OutDir)Admin/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

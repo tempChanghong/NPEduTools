@@ -144,7 +144,10 @@
                   <TextBlock Text="ClassIsland" FontFamily="Segoe UI" FontWeight="SemiBold" FontSize="17" />
                   <TextBlock Text="{Binding Connection}" Foreground="#7B8991" FontSize="11" Margin="0,5,8,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Connection" />
                 </StackPanel>
-                <Button x:Name="StartButton" Grid.Column="2" Content="启动" MinWidth="76" Click="StartClicked" AutomationProperties.AutomationId="StartClassIsland" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                  <Button Content="自启动" Style="{StaticResource Quiet}" Click="AdminPanelClicked" AutomationProperties.AutomationId="OpenAdminStartup" Padding="10,10" Margin="0,0,6,0" />
+                  <Button x:Name="StartButton" Content="启动" MinWidth="76" Click="StartClicked" AutomationProperties.AutomationId="StartClassIsland" />
+                </StackPanel>
               </Grid>
             </Border>
             <TextBlock x:Name="HomeMessage" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="4,0,4,10">
@@ -207,6 +210,26 @@
                     <TextBlock Text="{Binding Events}" Foreground="#718089" TextWrapping="Wrap" />
                   </StackPanel>
                 </Expander>
+              </StackPanel>
+            </Border>
+            <Border x:Name="AdminSection" Style="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="ClassIsland 管理员自启动" FontSize="16" FontWeight="SemiBold" />
+                <TextBlock Text="当前用户登录 Windows 时，以管理员身份启动已保存的 ClassIsland。" FontSize="12" Foreground="#7B8991" TextWrapping="Wrap" Margin="0,6,0,16" />
+                <TextBlock x:Name="AdminTaskStatus" Text="等待检查计划任务" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="AdminTaskStatus" />
+                <TextBlock x:Name="AdminProcessStatus" Text="运行权限尚未检查" FontSize="12" Foreground="#718089" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="AdminProcessStatus" />
+                <WrapPanel Margin="0,16,0,0">
+                  <Button x:Name="AdminCreate" Content="启用管理员自启动" Style="{StaticResource Primary}" Click="AdminCreateClicked" IsEnabled="False" Margin="0,0,8,8" AutomationProperties.AutomationId="AdminCreate" />
+                  <Button x:Name="AdminDelete" Content="删除自启动任务" Click="AdminDeleteClicked" IsEnabled="False" Margin="0,0,0,8" AutomationProperties.AutomationId="AdminDelete" />
+                </WrapPanel>
+                <WrapPanel>
+                  <Button x:Name="AdminElevate" Content="管理员启动／重启" Click="AdminElevateClicked" IsEnabled="False" Margin="0,0,8,8" AutomationProperties.AutomationId="AdminElevate" />
+                  <Button x:Name="AdminRefresh" Content="刷新" Style="{StaticResource Quiet}" Click="AdminRefreshClicked" Margin="0,0,4,8" AutomationProperties.AutomationId="AdminRefresh" />
+                  <Button x:Name="AdminInspect" Content="管理员检查" Style="{StaticResource Quiet}" Click="AdminInspectClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="AdminInspect" />
+                </WrapPanel>
+                <TextBlock x:Name="AdminMessage" FontSize="12" Foreground="#147D68" TextWrapping="Wrap" Margin="0,4,0,8" AutomationProperties.AutomationId="AdminMessage" />
+                <TextBlock x:Name="AdminPluginStatus" Text="兼容 StartUpAsAdmin 的计划任务。" FontSize="11" Foreground="#7B8991" TextWrapping="Wrap" />
+                <TextBlock Text="需要时由 Windows 请求管理员授权。删除任务不会关闭当前程序；管理员重启会先请求原实例正常退出。" FontSize="11" Foreground="#7B8991" TextWrapping="Wrap" Margin="0,6,0,0" />
               </StackPanel>
             </Border>
           </StackPanel>

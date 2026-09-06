@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "npedutools.contracts": {
+        "type": "Project"
+      },
+      "npedutools.core": {
+        "type": "Project"
+      }
+    }
+  }
+}
