@@ -47,11 +47,12 @@ function Start-Peer([string]$mode) {
     return $process
 }
 
-function Start-App {
+function Start-App([switch]$AtLogin) {
     $start = [Diagnostics.ProcessStartInfo]::new($appExe)
     $start.UseShellExecute = $false
     # The WPF window is deliberately visible for actual layout / accessibility verification.
     foreach ($arg in @('--pipe',$pipe,'--classisland-pipe',$upstream)) { $start.ArgumentList.Add($arg) }
+    if ($AtLogin) { $start.ArgumentList.Add('--startup') }
     $process = [Diagnostics.Process]::Start($start)
     $owned.Add($process)
     return $process
@@ -282,9 +283,67 @@ try {
     Wait-Text $app 'TouchStatus' '已关闭'
     $restoredEdgeTop = (Find-Quick $app '').Current.BoundingRectangle.Top
     if ([Math]::Abs($restoredEdgeTop-$savedEdgeTop) -gt 2) { throw 'Edge position was not restored after a full restart.' }
+    Select-Page $app 'SettingsTab'
+    if ((Find-Control $app 'LoginStartup').Current.IsEnabled) { throw 'Private instance can modify real login startup.' }
+    (Find-Control $app 'AutoTouchAtLaunch').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    Wait-Text $app 'StartupPreferencesMessage' '已保存，下次启动时生效。'
+    Select-Page $app 'HomeTab'
+    Wait-Text $app 'TouchStatus' '已关闭'
     Click-Control $app 'StopHost'
     if (-not $app.WaitForExit(15000) -or (Find-OwnedHost)) { throw 'Restarted App did not shut down cleanly.' }
     $checks.Add('Edge position survives a full App restart; closing the panel preserves its handle')
+
+    $app = Start-App -AtLogin
+    $end = [DateTime]::UtcNow.AddSeconds(20)
+    do {
+        Start-Sleep -Milliseconds 150
+        if ($app.HasExited) { throw 'Quiet login exited unexpectedly.' }
+        if (Find-Main $app) { throw 'Quiet login displayed the main window.' }
+        $edge = Find-Quick $app ''
+    } while (-not $edge -and [DateTime]::UtcNow -lt $end)
+    if (-not $edge) { throw 'Quiet login did not create an edge entry.' }
+    $duplicate = Start-App -AtLogin
+    if (-not $duplicate.WaitForExit(5000)) { throw 'Duplicate login did not exit.' }
+    Start-Sleep -Milliseconds 400
+    if (Find-Main $app) { throw 'Duplicate login unexpectedly opened the main window.' }
+    $duplicate = Start-App
+    if (-not $duplicate.WaitForExit(5000)) { throw 'Manual reopen did not reuse quiet instance.' }
+    Wait-Text $app 'TouchPower' '停止辅助'
+    $checks.Add('Quiet login shows only edge; manual reopen reveals the same instance with automatically enabled assist')
+    Click-Control $app 'TouchPause'
+    Wait-Text $app 'TouchStatus' '已暂停'
+    $duplicate = Start-App -AtLogin
+    if (-not $duplicate.WaitForExit(5000)) { throw 'Duplicate login did not exit.' }
+    Wait-Text $app 'TouchStatus' '已暂停'
+    Click-Control $app 'TouchPower'
+    Wait-Text $app 'TouchStatus' '已关闭'
+    $oldHost = Find-OwnedHost
+    $hostProcess = [Diagnostics.Process]::GetProcessById([int]$oldHost.ProcessId)
+    $hostProcess.Kill()
+    $null = $hostProcess.WaitForExit(5000)
+    $hostProcess.Dispose()
+    $end = [DateTime]::UtcNow.AddSeconds(25)
+    do {
+        Start-Sleep -Milliseconds 200
+        $newHost = Find-OwnedHost
+    } while ((-not $newHost -or $newHost.ProcessId -eq $oldHost.ProcessId) -and [DateTime]::UtcNow -lt $end)
+    if (-not $newHost -or $newHost.ProcessId -eq $oldHost.ProcessId) { throw 'Host did not recover during startup test.' }
+    Wait-Text $app 'TouchStatus' '已关闭'
+    Start-Sleep -Milliseconds 1500
+    Wait-Text $app 'TouchStatus' '已关闭'
+    $checks.Add('Duplicate login preserves pause; Host recovery does not replay startup enable after manual stop')
+    Select-Page $app 'SettingsTab'
+    if ((Find-Control $app 'AutoTouchAtLaunch').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { throw 'Auto touch preference was not persisted.' }
+    Save-Window $app 'startup-settings.png'
+    (Find-Control $app 'AutoTouchAtLaunch').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    (Find-Control $app 'EdgeOnlyAtLogin').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    Click-Control $app 'StopHost'
+    if (-not $app.WaitForExit(15000)) { throw 'Quiet-start instance did not exit.' }
+    $app = Start-App -AtLogin
+    Wait-Text $app 'TouchStatus' '已关闭'
+    Click-Control $app 'StopHost'
+    if (-not $app.WaitForExit(15000) -or (Find-OwnedHost)) { throw 'Login with main window did not exit cleanly.' }
+    $checks.Add('Disabling edge-only login reveals main window; disabling automatic assist takes effect next launch')
     @{Passed=$true;Checks=@($checks);CompletedAt=[DateTimeOffset]::Now} | ConvertTo-Json -Depth 5 |
         Set-Content -LiteralPath (Join-Path $runRoot 'summary.json') -Encoding utf8
     Write-Output 'PASS: actual WPF controls, App reopen, target restart, Host restart, and shutdown.'

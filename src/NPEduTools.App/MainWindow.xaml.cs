@@ -36,21 +36,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = _model;
         InitializeTray();
-        Loaded += (_, _) =>
-        {
-            if (_quick is null)
-            {
-                _quick = new QuickAccessWindow(_pipe, () => TouchPowerClicked(this, new RoutedEventArgs()),
-                    () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings);
-                _quick.Show();
-                DockLeft.IsChecked = _quick.LeftSide;
-                DockRight.IsChecked = !_quick.LeftSide;
-                RefreshQuick();
-            }
-            _watch ??= WatchAsync(_lifetime.Token);
-            _management ??= ManagementLoopAsync(_lifetime.Token);
-            _touchPoll ??= TouchPollAsync(_lifetime.Token);
-        };
+        InitializeStartupPreferences();
+        Activated += (_, _) => RefreshLoginStartup();
         Closing += (_, e) =>
         {
             if (_exiting) return;
@@ -211,6 +198,7 @@ public partial class MainWindow : Window
                     if (!_touchBusy) { _touchState = null; TouchStatusText.Text = "后台未连接，正在重连…"; RefreshTouchControls(); }
                 }
             }
+            await TryStartupTouchAsync();
             try { await Task.Delay(800, token); } catch (OperationCanceledException) { break; }
         }
     }
@@ -260,8 +248,16 @@ public partial class MainWindow : Window
         finally { _touchBusy = false; RefreshTouchControls(); }
     }
 
-    private async void TouchPowerClicked(object sender, RoutedEventArgs e) => await ChangeTouchAsync(_touchState?.Running == true ? "disable" : "enable");
-    private async void TouchPauseClicked(object sender, RoutedEventArgs e) => await ChangeTouchAsync(_touchState?.Paused == true ? "resume" : "pause");
+    private async void TouchPowerClicked(object sender, RoutedEventArgs e)
+    {
+        _startupTouchPending = false;
+        await ChangeTouchAsync(_touchState?.Running == true ? "disable" : "enable");
+    }
+    private async void TouchPauseClicked(object sender, RoutedEventArgs e)
+    {
+        _startupTouchPending = false;
+        await ChangeTouchAsync(_touchState?.Paused == true ? "resume" : "pause");
+    }
     private async void TouchCompatibilityChanged(object sender, RoutedEventArgs e)
     {
         if (!_updatingTouch && IsLoaded) await ChangeTouchAsync(TouchCompatibility.IsChecked == true ? "compat.on" : "compat.off");

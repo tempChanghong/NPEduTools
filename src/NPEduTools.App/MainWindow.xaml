@@ -169,6 +169,20 @@
             <TextBlock Text="按你的课堂习惯调整。" Foreground="#7B8991" FontSize="13" Margin="0,8,0,26" />
             <Border Style="{StaticResource Surface}">
               <StackPanel>
+                <TextBlock Text="启动与就绪" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+                <CheckBox x:Name="LoginStartupToggle" Style="{StaticResource Switch}" Content="登录 Windows 时启动" Checked="LoginStartupChanged" Unchecked="LoginStartupChanged" AutomationProperties.AutomationId="LoginStartup" />
+                <TextBlock x:Name="LoginStartupMessage" Foreground="#7B8991" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,8" AutomationProperties.AutomationId="LoginStartupMessage" />
+                <Button Content="Windows 启动应用 ↗" Style="{StaticResource Quiet}" HorizontalAlignment="Left" FontSize="12" MinHeight="36" Padding="0,6" Click="OpenWindowsStartupClicked" />
+                <Border Height="1" Background="#EEF2F3" Margin="0,12,0,16" />
+                <CheckBox x:Name="EdgeOnlyAtLogin" Style="{StaticResource Switch}" Content="自启动时仅显示贴边入口" Checked="StartupPreferenceChanged" Unchecked="StartupPreferenceChanged" AutomationProperties.AutomationId="EdgeOnlyAtLogin" />
+                <TextBlock Text="手动打开程序时，仍会显示主窗口。" Foreground="#7B8991" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,16" />
+                <CheckBox x:Name="AutoTouchAtLaunch" Style="{StaticResource Switch}" Content="启动时开启触摸翻页" Checked="StartupPreferenceChanged" Unchecked="StartupPreferenceChanged" AutomationProperties.AutomationId="AutoTouchAtLaunch" />
+                <TextBlock Text="后台就绪后开启 PowerPoint 辅助，可随时从贴边入口暂停或停止。" Foreground="#7B8991" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock x:Name="StartupPreferencesMessage" Foreground="#147D68" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0" AutomationProperties.AutomationId="StartupPreferencesMessage" />
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Surface}">
+              <StackPanel>
                 <TextBlock Text="快捷入口" FontSize="16" FontWeight="SemiBold" />
                 <TextBlock Text="选择顺手的一侧，上下位置可直接拖动入口调整。" TextWrapping="Wrap" Foreground="#7B8991" FontSize="12" Margin="0,6,0,16" />
                 <Grid>
