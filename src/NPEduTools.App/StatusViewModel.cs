@@ -26,7 +26,7 @@ public sealed class StatusViewModel : INotifyPropertyChanged
             "OnClass" => "正在上课", "Breaking" => "课间休息", "AfterSchool" => "已放学",
             "None" => "当前无课程", null => "等待课程状态", _ => "课程状态：" + s.State
         };
-        Subject = s?.Subject ?? (healthy ? "暂无科目" : "—");
+        Subject = !healthy ? "—" : s is { IsClassPlanLoaded: false } ? "暂无科目" : s?.Subject ?? "暂无科目";
         Detail = healthy ? (s!.IsTimerRunning ? "课程状态自动同步中。" : "ClassIsland 计时已暂停。") : snapshot.Message;
         Updated = s is null ? "当前状态不可用" : "最近同步  " + s.SampleCompletedAt.ToLocalTime().ToString("HH:mm:ss");
         LessonPlan = s is null ? "—" : !s.IsClassPlanLoaded ? "未加载课表" : s.IsClassPlanEnabled ? "课表已启用" : "课表已停用";

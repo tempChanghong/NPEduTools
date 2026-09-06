@@ -2,9 +2,9 @@
 
 面向 Windows 教室大屏的本地软件集成与控制层。项目已完成 ClassIsland 只读原型验证，进入 M1 最小桌面版本，产品架构见 [架构规划](docs/ARCHITECTURE.md)。
 
-当前已实现 WPF 窗口与 CLI → Named Pipe Host → 隔离工作进程 → ClassIsland IPC 的只读闭环。支持持续课程监听、自动重连、完整状态同步，以及原有单次查询。
+当前已实现 WPF 窗口与 CLI → Named Pipe Host → 隔离工作进程 → ClassIsland IPC 的课程状态闭环，支持持续监听、自动重连和完整状态同步。WPF 还支持配置 ClassIsland 路径、启动本体、验证就绪并查看保存的启动结果。
 
-窗口会按需启动 Host；关闭窗口后 Host 继续运行，也可选择“停止后台并退出”。本阶段尚未实现 ClassIsland 启动/关闭、场景执行、配置恢复或开机启动。
+窗口会按需启动 Host；关闭窗口后 Host 继续运行并完成已受理的启动验证，也可选择“停止后台并退出”。停止 Host 不会关闭 ClassIsland。本阶段尚未实现场景执行、关闭外部软件或开机启动。
 
 ## 打开桌面窗口
 
@@ -14,11 +14,15 @@
 ./scripts/start-app.ps1
 ```
 
-窗口显示连接状态、课程、课表状态、最近同步时间及本次连接的上课/课间事件计数。ClassIsland 未运行或断开时会显示原因并自动重试；旧课程不会作为可用状态保留。需要自行启动 ClassIsland 本体。
+窗口显示连接状态、课程、课表状态、最近同步时间及本次连接的上课/课间事件计数。ClassIsland 未运行或断开时会显示原因并自动重试；旧课程不会作为可用状态保留。
+
+首次使用：点击“选择文件…”选择 `ClassIsland.exe` 或 `ClassIsland.Desktop.exe`，点击“保存路径”，再点击“启动 ClassIsland”。已有对应实例时只验证接口，不重复启动；只有读到课程状态后才记录“已就绪”。首次运行的许可、隐私同意等向导需要用户在 ClassIsland 中完成；接口未就绪时会记录超时，稍后可以再次点击启动以验证已有进程。
+
+路径和最近启动结果会在窗口、Host 重启后保留。默认保存位置为 `%LocalAppData%/NPEduTools/config/classisland.json`，使用版本化 JSON、原子替换及备份。损坏记录不会被静默重置或自动重放，详情见 [启动与持久化记录](docs/M1-LAUNCH-VALIDATION.md)。
 
 也可以直接打开 `src/NPEduTools.App/bin/Release/net10.0-windows/NPEduTools.App.exe`，请保留旁边的 `Host` 子目录。桌面窗口需要 .NET 10 Desktop Runtime。当前交付为构建目录，尚未制作安装包或验证 `dotnet publish` 分发。
 
-实现细节、验收证据与剩余范围见 [M1 只读桌面验收记录](docs/M1-READONLY-VALIDATION.md)。
+实现细节、验收证据与剩余范围见 [M1 只读桌面验收记录](docs/M1-READONLY-VALIDATION.md)和 [M1 启动验收记录](docs/M1-LAUNCH-VALIDATION.md)。
 
 ## 开发环境
 
@@ -91,7 +95,7 @@ CLI 在标准输出返回 JSON，在标准错误输出连接问题。失败结�
 
 ClassIsland 未运行时可能返回 `ClassIslandDeadlineExceeded`，它仅说明没有在期限内完成查询，不能据此判断软件未安装。权限拒绝、已连接接口超时和连接断开分别使用不同错误码。
 
-Host 诊断日志写入标准错误，仅记录请求标识、结果、耗时及脱敏错误类别，不记录科目正文。当前不提供日志落盘、历史结果查询或 RequestId 持久化去重；单次查询不自动重试，常驻只读监听自动重连。
+Host 诊断日志写入标准错误，仅记录请求标识、结果、耗时及脱敏错误类别，不记录科目正文。启动操作另外保存执行记录与 RequestId 去重信息；课程查询不保存历史。单次查询不自动重试，常驻只读监听自动重连。文件日志轮转和诊断导出仍未实现。
 
 ## 无 ClassIsland 时的演示
 

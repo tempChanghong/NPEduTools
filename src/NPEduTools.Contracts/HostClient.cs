@@ -6,10 +6,12 @@ namespace NPEduTools.Contracts;
 public static class HostClient
 {
     public static async Task<HostResponse> RequestAsync(string pipeName, string capability, CancellationToken token)
+        => await RequestAsync(pipeName, new HostRequest(Protocol.Version, Guid.NewGuid(), capability), token);
+
+    public static async Task<HostResponse> RequestAsync(string pipeName, HostRequest request, CancellationToken token)
     {
         await using var pipe = CreatePipe(pipeName);
         await pipe.ConnectAsync(1500, token);
-        var request = new HostRequest(Protocol.Version, Guid.NewGuid(), capability);
         await Protocol.WriteAsync(pipe, request, token);
         var response = await Protocol.ReadAsync<HostResponse>(pipe, token);
         if (response.Version != Protocol.Version || response.RequestId != request.RequestId)

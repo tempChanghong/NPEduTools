@@ -9,7 +9,10 @@ public sealed record HostRequest(
     Guid RequestId,
     string Capability,
     int TimeoutMs = 3000,
-    int ObserveMs = 0);
+    int ObserveMs = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExecutablePath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ExpectedRevision = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? OperationId = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -28,7 +31,8 @@ public sealed record HostResponse(
     string Outcome,
     string? ErrorCode,
     string Message,
-    LessonStatusDto? Status = null);
+    LessonStatusDto? Status = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LaunchData? Launch = null);
 
 /// <summary>Length-prefixed UTF-8 JSON. watch returns a stream of full WatchSnapshot frames.</summary>
 public static class Protocol
@@ -67,7 +71,16 @@ public static class Protocol
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch")) return "UnknownCapability";
+        if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch" or
+            "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.execution.get")) return "UnknownCapability";
+        if (request.Capability == "classisland.config.set")
+        {
+            if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
+                request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
+        }
+        else if (request.ExecutablePath is not null || request.ExpectedRevision is not null) return "UnexpectedParameters";
+        if (request.OperationId is not null && (request.Capability != "classisland.execution.get" || request.OperationId == Guid.Empty))
+            return "UnexpectedParameters";
         if (request.TimeoutMs is < 250 or > 15000) return "InvalidTimeout";
         if (request.ObserveMs < 0 || request.ObserveMs > 5000 || request.ObserveMs >= request.TimeoutMs)
             return "InvalidObservationWindow";

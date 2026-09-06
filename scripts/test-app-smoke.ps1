@@ -104,7 +104,7 @@ try {
     Wait-Text $app 'Connection' '已连接 ClassIsland'
     Save-Window $app 'connected.png'
     $element = [Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
-    $element.GetCurrentPattern([Windows.Automation.TransformPattern]::Pattern).Resize(620,550)
+    $element.GetCurrentPattern([Windows.Automation.TransformPattern]::Pattern).Resize(620,600)
     Start-Sleep -Milliseconds 300
     Save-Window $app 'compact.png'
     $checks.Add('App automatically starts Host and renders live course data')

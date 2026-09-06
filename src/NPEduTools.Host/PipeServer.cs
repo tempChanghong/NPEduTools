@@ -11,7 +11,7 @@ namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
 public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
-    StatusMonitor? monitor = null, Action? stop = null)
+    StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
@@ -53,10 +53,14 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
                 else if (request.Capability == "host.stop")
                 {
+                    if (stop is not null && launch is not null) await launch.StopAsync();
                     if (stop is not null && monitor is not null) await monitor.StopAsync();
                     response = new(Protocol.Version, request.RequestId, stop is null ? "Rejected" : "Succeeded",
                         stop is null ? "StopUnavailable" : null, "停止后台请求已受理。");
                 }
+                else if (request.Capability is "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.execution.get")
+                    response = launch is not null ? await launch.HandleAsync(request, token)
+                        : new(Protocol.Version, request.RequestId, "Rejected", "LaunchUnavailable", "此后台未启用启动功能。");
                 else
                 {
                     // Client disconnection does not cancel an accepted read-only operation.

@@ -21,8 +21,8 @@ bool monitorMode = args.Length > 0 && args[0] == "--monitor-worker";
 var options = new Dictionary<string, string>();
 for (int i = workerMode || monitorMode ? 1 : 0; i < args.Length; i += 2)
 {
-    if (i + 1 >= args.Length || args[i] is not ("--pipe" or "--classisland-pipe" or "--observe-ms") ||
-        !options.TryAdd(args[i], args[i + 1]) || args[i + 1].Length is 0 or > 200)
+    if (i + 1 >= args.Length || args[i] is not ("--pipe" or "--classisland-pipe" or "--observe-ms" or "--data-dir") ||
+        !options.TryAdd(args[i], args[i + 1]) || args[i + 1].Length is 0 or > 2048)
     {
         Console.Error.WriteLine("Invalid arguments. Use --help.");
         return 2;
@@ -30,7 +30,7 @@ for (int i = workerMode || monitorMode ? 1 : 0; i < args.Length; i += 2)
 }
 string pipeName = options.GetValueOrDefault("--pipe", PipeEndpoint.DefaultName);
 string classIslandPipe = options.GetValueOrDefault("--classisland-pipe", ClassIslandProbe.DefaultPipeName);
-if (pipeName.IndexOfAny(['/', '\\', ':']) >= 0 || classIslandPipe.IndexOfAny(['/', '\\', ':']) >= 0)
+if (pipeName.Length > 200 || classIslandPipe.Length > 200 || pipeName.IndexOfAny(['/', '\\', ':']) >= 0 || classIslandPipe.IndexOfAny(['/', '\\', ':']) >= 0)
 {
     Console.Error.WriteLine("Invalid pipe name.");
     return 2;
@@ -104,10 +104,15 @@ ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0)
 }
 using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds));
 await using var monitor = new StatusMonitor(() => WorkerStart(true), Console.Error.WriteLine);
+string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeEndpoint.DefaultName
+    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "config")
+    : Path.Combine(Path.GetTempPath(), "NPEduTools", "instances",
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(pipeName)))[..24]));
+await using var launch = new LaunchService(dataDirectory, new ClassIslandLaunchTarget(), reader);
 Console.WriteLine($"Host ready: {pipeName}");
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
