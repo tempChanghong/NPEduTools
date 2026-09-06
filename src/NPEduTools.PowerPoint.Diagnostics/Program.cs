@@ -14,6 +14,15 @@ internal static class Program
         if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Windows is required."); return 2; }
         Native.SetProcessDpiAwarenessContext(-4);
         if (args.SequenceEqual(["--com-worker"])) return ProbeSession.Worker();
+        if (args.Length == 2 && args[0] == "--assist-seconds" && int.TryParse(args[1], out int assistSeconds) && assistSeconds is >= 1 and <= 1800)
+        {
+            using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(assistSeconds));
+            var assist = new PowerPointTouchAssist();
+            assist.StatusChanged += status => Console.WriteLine(JsonSerializer.Serialize(status));
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
+            assist.RunAsync(() => OperatingSystem.IsWindows() ? ProbeSession.StartInfo() : throw new PlatformNotSupportedException(), stop.Token).GetAwaiter().GetResult();
+            return 0;
+        }
         if (args.Length == 2 && args[0] == "--step-worker" && Guid.TryParse(args[1], out var stepId)) return StepExperiment.Worker(stepId);
         if (args.SequenceEqual(["--step-once-experiment"]))
         {

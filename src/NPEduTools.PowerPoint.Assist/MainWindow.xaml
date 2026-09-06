@@ -1,0 +1,21 @@
+<Window x:Class="NPEduTools.PowerPoint.Assist.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NPEduTools · PowerPoint 触摸翻页" Width="460" Height="390" MinWidth="420" MinHeight="370"
+        WindowStartupLocation="CenterScreen" FontFamily="Microsoft YaHei UI" Background="#F3F6F4" Foreground="#203831">
+    <Grid Margin="28">
+        <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock Text="PowerPoint 触摸翻页" FontSize="24" FontWeight="SemiBold"/>
+            <TextBlock Text="放映时轻点画面，推进动画或下一页。" Margin="0,10,0,22" FontSize="14"/>
+            <TextBlock x:Name="StatusText" Text="正在启动…" FontSize="17" Foreground="#286B51" TextWrapping="Wrap" AutomationProperties.AutomationId="AssistStatus"/>
+            <TextBlock x:Name="CountText" Margin="0,8,0,18" FontSize="12" Foreground="#62776D"/>
+            <CheckBox x:Name="Compatibility" Content="兼容未标记触摸（也会响应鼠标）" Checked="CompatibilityChanged" Unchecked="CompatibilityChanged"/>
+            <TextBlock Text="默认保留鼠标原行为。可最小化此窗口继续辅助；关闭窗口即停止。" TextWrapping="Wrap" FontSize="12" Foreground="#62776D" Margin="0,12,0,0"/>
+        </StackPanel>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="ToggleButton" Content="暂停辅助" Padding="18,9" Click="ToggleClicked" AutomationProperties.AutomationId="ToggleAssist"/>
+            <Button Content="退出" Padding="18,9" Margin="10,0,0,0" Click="ExitClicked"/>
+        </StackPanel>
+    </Grid>
+</Window>

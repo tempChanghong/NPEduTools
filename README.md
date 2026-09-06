@@ -2,7 +2,9 @@
 
 面向 Windows 教室大屏的本地软件集成与控制层。项目已完成 ClassIsland 只读原型验证，进入 M1 最小桌面版本，产品架构见 [架构规划](docs/ARCHITECTURE.md)。
 
-新增独立的 [PowerPoint 触摸诊断原型](docs/POWERPOINT-DIAGNOSTICS.md)：可读取真实放映及动画状态，观察目标窗口的兼容鼠标输入并导出记录。它只读、不会触发翻页，目标 Office 2024 大屏仍需实机触摸验证。运行 `./scripts/start-powerpoint-diagnostics.ps1`，或使用包含运行时的独立诊断包。
+新增可运行的 [PowerPoint 触摸翻页工具](docs/POWERPOINT-TOUCH-ASSIST.md)：按参考项目 PowerPoint-Touch-Assist 的效果，轻点放映画面后补发空格，推进动画或下一页，提供暂停和退出。运行 `./scripts/start-powerpoint-assist.ps1`；便携包完整解压即可运行，无需安装 .NET。默认只响应触摸标记，鼠标保持原行为。开发机真实 PowerPoint 的模拟触摸链路已通过，目标 Office 2024 大屏的物理触摸仍需现场试用。
+
+另保留独立的 [PowerPoint 触摸诊断工具](docs/POWERPOINT-DIAGNOSTICS.md)：可读取真实放映及动画状态，观察目标窗口的兼容鼠标输入并导出记录。运行 `./scripts/start-powerpoint-diagnostics.ps1`；此入口只读，不触发翻页。
 
 诊断结束会自动生成中文报告；也可用 `./scripts/start-powerpoint-diagnostics.ps1 -Analyze <日志路径>` 分析旧日志。新版记录包含有限页面交互清单，测试包附五页动画/链接/触发器/书写测试文稿，详见上述说明。
 
