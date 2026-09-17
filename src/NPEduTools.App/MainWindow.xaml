@@ -129,6 +129,13 @@
                 </Grid>
               </Border>
             </Grid>
+            <Border Style="{StaticResource Surface}" Padding="18">
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Border Background="#FBE9E8" CornerRadius="12" Width="42" Height="42" Margin="0,0,12,0"><TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" Foreground="#B95853" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0"><TextBlock Text="录制微课" FontSize="17" FontWeight="SemiBold" /><TextBlock x:Name="RecordingHomeStatus" Text="准备录制" Foreground="#718089" FontSize="12" Margin="0,5,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="RecordingHomeStatus" /></StackPanel>
+                <Button x:Name="RecordingHomeButton" Grid.Column="2" Content="配置与录制" Click="OpenRecordingClicked" AutomationProperties.AutomationId="OpenRecording" Padding="14,10" />
+              </Grid>
+            </Border>
             <DockPanel Margin="0,0,0,10">
               <Button DockPanel.Dock="Right" Content="管理  →" Style="{StaticResource Quiet}" Click="ShortcutNavClicked" Padding="10,6" AutomationProperties.AutomationId="ManageHomeShortcuts" />
               <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="我的快捷" FontSize="17" FontWeight="SemiBold" /><TextBlock x:Name="HomeShortcutCount" Foreground="#8A9891" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center" /></StackPanel>

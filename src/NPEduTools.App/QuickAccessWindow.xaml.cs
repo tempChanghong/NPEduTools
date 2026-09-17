@@ -27,6 +27,7 @@ public partial class QuickAccessWindow : Window
     private bool _expanded, _dragging, _closing, _positioning, _shortcutsSelected;
     private Point? _dragStart;
     private double _dragOffsetY;
+    private Action? _openRecording, _pauseRecording, _stopRecording;
 
     public QuickAccessWindow(string endpoint, Action power, Action pause, Action startClassIsland, Action settings,
         Action<ShortcutEntry> openShortcut, Action manageShortcuts, Action repairShortcut)
@@ -206,6 +207,19 @@ public partial class QuickAccessWindow : Window
     }
 
     private void HandleClicked(object sender, RoutedEventArgs e) { if (_expanded) Collapse(); else OpenPanel(); }
+    public void SetRecordingActions(Action open, Action pause, Action stop)
+    { _openRecording = open; _pauseRecording = pause; _stopRecording = stop; }
+    public void UpdateRecording(RecordingState state)
+    {
+        RecordingStatus.Text = state.Active ? $"{state.Message} · {TimeSpan.FromSeconds(Math.Max(0, state.Seconds)):hh\\:mm\\:ss}" : state.Message;
+        RecordingButton.Content = state.Active ? "控制" : "录制";
+        RecordingControls.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
+        RecordingPause.IsEnabled = RecordingStop.IsEnabled = !state.Busy;
+        RecordingPause.Content = state.Phase == "Paused" ? "继续" : "暂停";
+    }
+    private void RecordingClicked(object sender, RoutedEventArgs e) { Collapse(false); _openRecording?.Invoke(); }
+    private void RecordingPauseClicked(object sender, RoutedEventArgs e) => _pauseRecording?.Invoke();
+    private void RecordingStopClicked(object sender, RoutedEventArgs e) => _stopRecording?.Invoke();
     private void RailToolsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(false); OpenPanel(); }
     private void RailShortcutsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(true); OpenPanel(); }
     private void PowerClicked(object sender, RoutedEventArgs e) => _power();

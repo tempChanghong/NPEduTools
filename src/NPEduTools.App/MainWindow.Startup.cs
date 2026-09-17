@@ -37,6 +37,10 @@ public partial class MainWindow
             () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings,
             entry => _ = OpenShortcutAsync(entry), ShowShortcutManager, RepairShortcut);
         _quick.SetShortcuts(_shortcuts);
+        _quick.SetRecordingActions(ShowRecording,
+            () => _ = _recording.SendAsync(_recording.State.Phase == "Paused" ? "resume" : "pause"),
+            () => _ = _recording.SendAsync("stop"));
+        RefreshRecording(_recording.State);
         RefreshShortcutControls();
         _quick.Show();
         DockLeft.IsChecked = _quick.LeftSide;

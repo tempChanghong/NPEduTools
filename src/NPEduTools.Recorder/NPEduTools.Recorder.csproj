@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>../NPEduTools.PowerPoint.Assist/app.manifest</ApplicationManifest>
+    <!-- The manifest owns DPI setup; WinForms is used only for physical monitor bounds. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+  <Target Name="CopyRecordingRuntime" AfterTargets="Build">
+    <ItemGroup><RecordingRuntime Include="../../.tools/recording/ffmpeg.exe;../../.tools/recording/ffprobe.exe;../../.tools/recording/LICENSE;../../.tools/recording/README.txt;../../.tools/recording/manifest.json" Condition="Exists('../../.tools/recording/manifest.json')" /></ItemGroup>
+    <Copy SourceFiles="@(RecordingRuntime)" DestinationFolder="$(OutDir)Tools" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -45,6 +45,11 @@
             </Grid>
           </StackPanel></Border>
           <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="14" Padding="16" Margin="0,12,0,0"><StackPanel>
+            <DockPanel><Button x:Name="RecordingButton" DockPanel.Dock="Right" Content="录制" Padding="12,8" Click="RecordingClicked" AutomationProperties.AutomationId="QuickOpenRecording" /><TextBlock Text="录制微课" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel>
+            <TextBlock x:Name="RecordingStatus" Text="准备录制" FontSize="12" Foreground="#718089" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="QuickRecordingStatus" />
+            <WrapPanel x:Name="RecordingControls" Visibility="Collapsed" Margin="0,12,0,0"><Button x:Name="RecordingPause" Content="暂停" Padding="12,8" Click="RecordingPauseClicked" AutomationProperties.AutomationId="QuickRecordingPause" Margin="0,0,6,0" /><Button x:Name="RecordingStop" Content="停止并保存" Padding="12,8" Click="RecordingStopClicked" AutomationProperties.AutomationId="QuickRecordingStop" /></WrapPanel>
+          </StackPanel></Border>
+          <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="14" Padding="16" Margin="0,12,0,0"><StackPanel>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
               <Border Background="#EFEDFB" CornerRadius="12" Width="42" Height="42" Margin="0,0,12,0"><TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" Foreground="#7C71AB" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
               <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="ClassIsland" FontFamily="Segoe UI" FontSize="17" FontWeight="SemiBold" /><TextBlock Text="课表与课堂信息" Foreground="#87968C" FontSize="12" Margin="0,3,0,0" /></StackPanel>

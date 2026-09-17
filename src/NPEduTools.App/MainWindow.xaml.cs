@@ -38,6 +38,7 @@ public partial class MainWindow : Window
         InitializeTray();
         InitializeStartupPreferences();
         InitializeShortcuts();
+        InitializeRecording();
         Activated += (_, _) => { RefreshLoginStartup(); RefreshToday(); };
         RefreshToday();
         Closing += (_, e) =>
@@ -47,7 +48,7 @@ public partial class MainWindow : Window
             if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _quick?.Shutdown(); _tray?.Dispose(); };
+        Closed += (_, _) => { _lifetime.Cancel(); _quick?.Shutdown(); _tray?.Dispose(); _recordingWindow?.Shutdown(); _recording.Detach(); };
         _model.PropertyChanged += (_, _) =>
         {
             // After success, the next live snapshot owns the quick panel status again.
@@ -397,14 +398,20 @@ public partial class MainWindow : Window
         HomeMessage.Text = "正在停止辅助与后台…";
         RefreshTouchControls();
         // Stop reconnecting before requesting shutdown, so this App cannot restart the Host it just stopped.
-        _lifetime.Cancel();
         try
         {
+            if (_recording.State.Active)
+            {
+                HomeMessage.Text = "正在保存微课，完成后退出…";
+                if (!await _recording.StopAndSaveAsync())
+                { HomeMessage.Text = "微课未能完成保存，请先查看录制状态和保留片段。"; ShowRecording(); return; }
+            }
+            _lifetime.Cancel();
             if (_watch is not null) await _watch;
             if (_management is not null) await _management;
             if (_touchPoll is not null) await _touchPoll;
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-            if (!Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var existing)) { _exiting = true; Close(); return; }
+            if (!Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var existing)) { await _recording.DisposeAsync(); _exiting = true; Close(); return; }
             existing.Dispose();
             var response = await HostClient.RequestAsync(_pipe, "host.stop", deadline.Token);
             if (response.Outcome != "Succeeded") throw new InvalidOperationException(response.Message);
@@ -414,6 +421,7 @@ public partial class MainWindow : Window
                 instance.Dispose();
                 await Task.Delay(100, deadline.Token);
             }
+            await _recording.DisposeAsync();
             _exiting = true; Close();
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or TimeoutException or

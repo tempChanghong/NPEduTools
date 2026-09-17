@@ -4,6 +4,8 @@
 
 新增 [自定义快捷启动](docs/CUSTOM-SHORTCUTS.md)：在主窗口“快捷启动”添加应用、文件和网址，支持编辑、排序、移除与撤销。主页及贴边面板“我的快捷”同步显示入口；路径失效时可直接进入编辑器重新选择。
 
+新增 [独立微课录制](docs/MICROLESSON-RECORDING.md)：主窗口配置屏幕与音源，侧边栏暂停、继续和停止；支持系统声音与麦克风混录，8/15 fps、720p/1080p 上限，保存本地 MP4。借鉴 C30 的低帧率和进程隔离设计，使用独立采集实现。开发机录制与片段恢复已验证，目标大屏整课稳定性仍待现场测试。
+
 新增可运行的 [PowerPoint 触摸翻页工具](docs/POWERPOINT-TOUCH-ASSIST.md)：按参考项目 PowerPoint-Touch-Assist 的效果，轻点放映画面后补发空格，推进动画或下一页，提供暂停和退出。运行 `./scripts/start-powerpoint-assist.ps1`；便携包完整解压即可运行，无需安装 .NET。默认只响应触摸标记，鼠标保持原行为。开发机真实 PowerPoint 的模拟触摸链路已通过，目标 Office 2024 大屏的物理触摸仍需现场试用。
 
 另保留独立的 [PowerPoint 触摸诊断工具](docs/POWERPOINT-DIAGNOSTICS.md)：可读取真实放映及动画状态，观察目标窗口的兼容鼠标输入并导出记录。运行 `./scripts/start-powerpoint-diagnostics.ps1`；此入口只读，不触发翻页。
@@ -36,7 +38,7 @@
 
 路径和最近启动结果会在窗口、Host 重启后保留。默认保存位置为 `%LocalAppData%/NPEduTools/config/classisland.json`，使用版本化 JSON、原子替换及备份。损坏记录不会被静默重置或自动重放，详情见 [启动与持久化记录](docs/M1-LAUNCH-VALIDATION.md)。
 
-也可以直接打开 `src/NPEduTools.App/bin/Release/net10.0-windows/NPEduTools.App.exe`，请保留旁边的 `Host` 子目录。桌面窗口需要 .NET 10 Desktop Runtime。当前交付为构建目录，尚未制作安装包或验证 `dotnet publish` 分发。
+也可以直接打开 `src/NPEduTools.App/bin/Release/net10.0-windows/NPEduTools.App.exe`，请保留旁边的 `Host` 和 `Recorder` 子目录。桌面窗口需要 .NET 10 Desktop Runtime。当前交付为构建目录，尚未制作安装包或验证 `dotnet publish` 分发。
 
 实现细节、验收证据与剩余范围见 [M1 只读桌面验收记录](docs/M1-READONLY-VALIDATION.md)和 [M1 启动验收记录](docs/M1-LAUNCH-VALIDATION.md)。
 
@@ -49,6 +51,7 @@
 当前开发机已安装系统 SDK 8.0.424、9.0.317 和 10.0.400。NPEduTools 使用 10.0.400，旁边的 ClassIsland 源码使用 9.0.317。可以直接使用 `dotnet`，或通过包装脚本完成验证：
 
 ```powershell
+./scripts/bootstrap-recorder.ps1 # 首次准备微课录制组件，校验固定版本及哈希
 ./scripts/verify.ps1
 ```
 
