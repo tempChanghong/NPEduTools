@@ -63,8 +63,8 @@ function Wait-For([scriptblock]$condition,[string]$message) {
  throw $message
 }
 function Set-Text($root,[string]$id,[string]$text) { (Control $root $id).GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($text) }
-function Edit-Entry([string]$name,[string]$target,[string]$kind,[switch]$Existing) {
- if ($Existing) { Click 'EditShortcut' } else { Click 'AddShortcut' }
+function Edit-Entry([string]$name,[string]$target,[string]$kind,[switch]$Existing,[switch]$FromHome) {
+ if ($FromHome) { Click 'HomeAddShortcut' } elseif ($Existing) { Click 'EditShortcut' } else { Click 'AddShortcut' }
  $title = if ($Existing) { '编辑快捷启动' } else { '添加快捷启动' }
  Wait-For { $null -ne (Window $title) } 'Editor did not open.'
  $editor = Window $title
@@ -106,8 +106,7 @@ try {
  $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($registryPaths[1] + '\shell\open\command'); $key.SetValue('','"' + $fixtureExe + '" "%1"'); $key.Dispose()
  $app = Start-TestApp
  Wait-For { $null -ne (MainControl 'ShortcutsTab') } 'Main window unavailable.'
- Click 'ShortcutsTab'
- Edit-Entry '课堂工具' $fixtureExe '应用'
+ Edit-Entry '课堂工具' $fixtureExe '应用' -FromHome
  Edit-Entry '当天课件' $file '文件'
  Edit-Entry '教学平台' 'https://example.com/lesson?q=1&mode=2' '网址'
  if ((Entries).Count -ne 3) { throw 'Three entry types were not saved.' }
@@ -131,6 +130,8 @@ try {
  Wait-For { (MainControl $fileId).Current.IsEnabled } 'File launch did not recover.'
  Capture (Window 'NPEduTools') 'manager.png'
  $checks.Add('App launch and default file association reach a real owned executable; spaces and ampersands remain literal')
+ Click 'HomeTab'
+ Capture (Window 'NPEduTools') 'home-shortcuts.png'
  Click 'OpenQuick'
  $quick = Window 'NPEduTools 快捷工具'
  (Control $quick 'QuickShortcutsTab').GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
@@ -164,6 +165,7 @@ try {
  Set-Content -LiteralPath $settingsFile -Value '{broken'
  $app = Start-TestApp
  Wait-For { $null -ne (MainControl 'ShortcutsTab') } 'Corrupt-config startup crashed.'
+ if ((MainControl 'HomeAddShortcut').Current.IsEnabled) { throw 'Home add action did not reflect the unreadable catalog.' }
  Click 'ShortcutsTab'
  if ((MainControl 'AddShortcut').Current.IsEnabled -or (Get-Content -LiteralPath $settingsFile -Raw).Trim() -ne '{broken') { throw 'Corrupt catalog was silently overwritten.' }
  Set-Content -LiteralPath $settingsFile -Value $originalJson

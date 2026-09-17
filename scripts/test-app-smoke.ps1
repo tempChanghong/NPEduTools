@@ -159,7 +159,8 @@ function Exercise-EdgePointer([Diagnostics.Process]$process) {
         $null = [SmokeWindowCapture]::GetWindowRect($hwnd,[ref]$rect)
         $startY = $rect.Top
         $point = [SmokeWindowCapture+Point]::new()
-        $point.X = [int](($rect.Left+$rect.Right)/2); $point.Y = [int](($rect.Top+$rect.Bottom)/2)
+        $grip = (Find-Quick $process 'EdgeHandle').Current.BoundingRectangle
+        $point.X = [int]($grip.Left+$grip.Width/2); $point.Y = [int]($grip.Top+$grip.Height/2)
         $null = [SmokeWindowCapture]::SetCursorPos($point.X,$point.Y)
         if ([SmokeWindowCapture]::WindowFromPoint($point) -ne $hwnd) { throw 'Test handle is obscured; no pointer input sent.' }
         [SmokeWindowCapture]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
@@ -171,8 +172,9 @@ function Exercise-EdgePointer([Diagnostics.Process]$process) {
         [SmokeWindowCapture]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
         Start-Sleep -Milliseconds 250
         $null = [SmokeWindowCapture]::GetWindowRect($hwnd,[ref]$rect)
-        if ($rect.Top -ge $startY-50 -or $rect.Bottom-$rect.Top -gt 200) { throw 'Edge drag did not move the collapsed handle.' }
-        $point.X = [int](($rect.Left+$rect.Right)/2); $point.Y = [int](($rect.Top+$rect.Bottom)/2)
+        if ($rect.Top -ge $startY-50 -or $rect.Right-$rect.Left -gt 200) { throw 'Edge drag did not move the collapsed rail.' }
+        $grip = (Find-Quick $process 'EdgeHandle').Current.BoundingRectangle
+        $point.X = [int]($grip.Left+$grip.Width/2); $point.Y = [int]($grip.Top+$grip.Height/2)
         $null = [SmokeWindowCapture]::SetCursorPos($point.X,$point.Y)
         if ([SmokeWindowCapture]::WindowFromPoint($point) -ne $hwnd) { throw 'Moved handle is obscured.' }
         [SmokeWindowCapture]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
@@ -196,6 +198,11 @@ try {
     Wait-Text $app 'Connection' '已连接 ClassIsland'
     Wait-Text $app 'TouchStatus' '已关闭'
     Save-Window $app 'home.png'
+    # Exercise physical dragging away from Windows' notification area. This
+    # preference belongs only to the random test endpoint; both sides are checked below.
+    Select-Page $app 'SettingsTab'
+    (Find-Control $app 'DockLeft').GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Select-Page $app 'HomeTab'
     Click-Control $app 'CloseWindow'
     Start-Sleep -Milliseconds 300
     Save-Quick $app 'edge.png'
@@ -212,9 +219,28 @@ try {
     $null = [SmokeWindowCapture]::PostMessage($quickHwnd,0x10,[IntPtr]::Zero,[IntPtr]::Zero)
     Start-Sleep -Milliseconds 200
     if (-not (Find-Quick $app 'EdgeHandle')) { throw 'Closing the quick panel removed the edge entry.' }
-    Click-Quick $app 'EdgeHandle'
+    Click-Quick $app 'RailShortcuts'
+    if (-not (Find-Quick $app 'QuickAddShortcut')) { throw 'The collapsed rail did not open the shortcuts page.' }
+    Save-Quick $app 'quick-empty.png'
+    Click-Quick $app 'RailTools'
+    if (-not (Find-Quick $app 'QuickTouchPower')) { throw 'Rail navigation did not switch back to classroom tools.' }
     Click-Quick $app 'QuickOpenSettings'
     if (-not (Find-Control $app 'TouchCompatibility')) { throw 'Quick settings did not open the main window.' }
+    (Find-Control $app 'DockLeft').GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Click-Control $app 'OpenQuick'
+    Start-Sleep -Milliseconds 300
+    $leftGrip = (Find-Quick $app 'EdgeHandle').Current.BoundingRectangle
+    $leftPower = (Find-Quick $app 'QuickTouchPower').Current.BoundingRectangle
+    if ($leftPower.Left -le $leftGrip.Right) { throw 'Left-side panel did not expand inward from its rail.' }
+    Save-Quick $app 'quick-left.png'
+    Click-Quick $app 'CollapseQuick'
+    Click-Quick $app 'RailSettings'
+    (Find-Control $app 'DockRight').GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Click-Control $app 'OpenQuick'
+    Start-Sleep -Milliseconds 300
+    if ((Find-Quick $app 'QuickTouchPower').Current.BoundingRectangle.Right -ge (Find-Quick $app 'EdgeHandle').Current.BoundingRectangle.Left) { throw 'Right-side panel did not expand inward from its rail.' }
+    Click-Quick $app 'QuickOpenSettings'
+    $checks.Add('Persistent rail switches tools/shortcuts, opens settings, and expands inward on either screen edge')
     Select-Page $app 'HomeTab'
     $checks.Add('Edge handle opens controls without tray; quick enable/pause/stop and settings work')
     Click-Control $app 'TouchPower'

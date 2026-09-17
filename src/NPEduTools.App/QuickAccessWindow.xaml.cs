@@ -6,6 +6,9 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using NPEduTools.Contracts;
 using Forms = System.Windows.Forms;
 
@@ -13,6 +16,7 @@ namespace NPEduTools.App;
 
 public partial class QuickAccessWindow : Window
 {
+    private const double RailWidth = 80, RailHeight = 284, PanelWidth = 440, PanelHeight = 620;
     private sealed record Placement(bool LeftSide = false, double RelativeY = 0.78, string? Display = null);
     private readonly string _settingsPath;
     private readonly Action _power, _pause, _startClassIsland, _settings;
@@ -20,8 +24,9 @@ public partial class QuickAccessWindow : Window
     private readonly Action _manageShortcuts, _repairShortcut;
     private Placement _placement = new();
     private nint _handle, _previous;
-    private bool _expanded, _dragging, _closing, _positioning;
+    private bool _expanded, _dragging, _closing, _positioning, _shortcutsSelected;
     private Point? _dragStart;
+    private double _dragOffsetY;
 
     public QuickAccessWindow(string endpoint, Action power, Action pause, Action startClassIsland, Action settings,
         Action<ShortcutEntry> openShortcut, Action manageShortcuts, Action repairShortcut)
@@ -53,14 +58,16 @@ public partial class QuickAccessWindow : Window
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplayChanged;
         Closed += (_, _) => { _closing = true; Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplayChanged; };
         EdgeHandle.PreviewMouseLeftButtonDown += (_, e) =>
-        { _dragStart = PointToScreen(e.GetPosition(this)); _dragging = false; EdgeHandle.CaptureMouse(); e.Handled = true; };
+        { BeginDrag(PointToScreen(e.GetPosition(this))); EdgeHandle.CaptureMouse(); e.Handled = true; };
         EdgeHandle.PreviewMouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && _dragStart is not null) MoveHandle(PointToScreen(e.GetPosition(this))); };
         EdgeHandle.PreviewMouseLeftButtonUp += (_, e) =>
-        { if (_dragStart is null) return; EdgeHandle.ReleaseMouseCapture(); FinishDrag(); e.Handled = true; };
+        { if (_dragStart is null) return; FinishDrag(); EdgeHandle.ReleaseMouseCapture(); e.Handled = true; };
         EdgeHandle.PreviewTouchDown += (_, e) =>
-        { _dragStart = PointToScreen(e.GetTouchPoint(this).Position); _dragging = false; EdgeHandle.CaptureTouch(e.TouchDevice); e.Handled = true; };
+        { BeginDrag(PointToScreen(e.GetTouchPoint(this).Position)); EdgeHandle.CaptureTouch(e.TouchDevice); e.Handled = true; };
         EdgeHandle.PreviewTouchMove += (_, e) => { if (_dragStart is not null) MoveHandle(PointToScreen(e.GetTouchPoint(this).Position)); e.Handled = true; };
-        EdgeHandle.PreviewTouchUp += (_, e) => { EdgeHandle.ReleaseTouchCapture(e.TouchDevice); FinishDrag(); e.Handled = true; };
+        EdgeHandle.PreviewTouchUp += (_, e) => { FinishDrag(); EdgeHandle.ReleaseTouchCapture(e.TouchDevice); e.Handled = true; };
+        EdgeHandle.LostMouseCapture += (_, _) => CancelDrag();
+        EdgeHandle.LostTouchCapture += (_, _) => CancelDrag();
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { Collapse(); e.Handled = true; } };
     }
 
@@ -89,11 +96,18 @@ public partial class QuickAccessWindow : Window
         {
             // WPF handles WM_DPICHANGED; its DpiChanged event reapplies bounds on the new monitor.
             var screen = Screen; var area = screen.WorkingArea; double scale = Scale();
-            int width = (int)Math.Round((_expanded ? 352 : 64) * scale);
-            int height = Math.Min((int)Math.Round((_expanded ? 484 : 84) * scale), area.Height);
-            double anchor = area.Top + (area.Height - 84 * scale) * _placement.RelativeY;
-            int y = (int)Math.Clamp(anchor + (_expanded ? 84 * scale - height : 0), area.Top, area.Bottom - height);
+            int width = Math.Min((int)Math.Round((_expanded ? PanelWidth : RailWidth) * scale), area.Width);
+            int height = Math.Min((int)Math.Round((_expanded ? PanelHeight : RailHeight) * scale), area.Height);
+            double anchor = area.Top + Math.Max(0, area.Height - RailHeight * scale) * _placement.RelativeY;
+            int y = (int)Math.Clamp(anchor + (_expanded ? RailHeight * scale - height : 0), area.Top, area.Bottom - height);
             int x = _placement.LeftSide ? area.Left : area.Right - width;
+            var rail = new GridLength(RailWidth - 12);
+            var panel = _expanded ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            LeftColumn.Width = _placement.LeftSide ? rail : panel;
+            RightColumn.Width = _placement.LeftSide ? panel : rail;
+            Grid.SetColumn(Rail, _placement.LeftSide ? 0 : 1);
+            Grid.SetColumn(PanelSurface, _placement.LeftSide ? 1 : 0);
+            PanelSurface.Margin = _placement.LeftSide ? new Thickness(8, 0, 0, 0) : new Thickness(0, 0, 8, 0);
             SetWindowPos(_handle, new nint(-1), x, y, width, height, 0x10); // SWP_NOACTIVATE
             CollapseButton.Content = _placement.LeftSide ? "‹" : "›";
         }
@@ -103,11 +117,14 @@ public partial class QuickAccessWindow : Window
     public void OpenPanel()
     {
         if (_closing) return;
-        _previous = GetForegroundWindow();
+        if (!_expanded) _previous = GetForegroundWindow();
+        bool animate = !_expanded && SystemParameters.ClientAreaAnimation;
         _expanded = true;
-        EdgeHandle.Visibility = Visibility.Collapsed; PanelSurface.Visibility = Visibility.Visible;
+        PanelSurface.Visibility = Visibility.Visible;
+        RefreshRail();
         if (!IsVisible) Show();
         Position(); Activate();
+        if (animate) PanelSurface.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)) { FillBehavior = FillBehavior.Stop });
     }
 
     public void Collapse(bool restoreFocus = true)
@@ -115,7 +132,9 @@ public partial class QuickAccessWindow : Window
         if (_closing) return;
         bool wasExpanded = _expanded;
         _expanded = false;
-        PanelSurface.Visibility = Visibility.Collapsed; EdgeHandle.Visibility = Visibility.Visible;
+        PanelSurface.BeginAnimation(OpacityProperty, null);
+        PanelSurface.Visibility = Visibility.Collapsed;
+        RefreshRail();
         Position();
         if (restoreFocus && wasExpanded && GetForegroundWindow() == _handle && _previous != 0 && IsWindow(_previous)) SetForegroundWindow(_previous);
     }
@@ -127,13 +146,27 @@ public partial class QuickAccessWindow : Window
 
     public void Shutdown() { _closing = true; Close(); }
 
+    private void BeginDrag(Point point)
+    {
+        _dragStart = point; _dragging = false;
+        _dragOffsetY = point.Y - PointToScreen(new Point(0, 0)).Y;
+    }
+
+    private void CancelDrag()
+    {
+        // A release handled below clears _dragStart first; unexpected capture loss only ends the drag.
+        if (_dragStart is null) return;
+        if (_dragging) Save();
+        _dragStart = null; _dragging = false;
+    }
+
     private void MoveHandle(Point point)
     {
         if (_expanded || _dragStart is not { } start || (!_dragging && (point - start).Length < 8)) return;
         _dragging = true;
         var screen = Forms.Screen.FromPoint(new System.Drawing.Point((int)point.X, (int)point.Y));
-        double available = screen.WorkingArea.Height - 84 * Scale();
-        double ratio = available <= 0 ? 0 : (point.Y - screen.WorkingArea.Top - 42 * Scale()) / available;
+        double available = screen.WorkingArea.Height - RailHeight * Scale();
+        double ratio = available <= 0 ? 0 : (point.Y - screen.WorkingArea.Top - _dragOffsetY) / available;
         _placement = _placement with { RelativeY = Math.Clamp(ratio, 0, 1), Display = screen.DeviceName };
         Position();
     }
@@ -142,7 +175,7 @@ public partial class QuickAccessWindow : Window
     {
         if (_dragStart is null) return;
         _dragStart = null;
-        if (_dragging) Save(); else OpenPanel();
+        if (_dragging) Save(); else if (_expanded) Collapse(); else OpenPanel();
         _dragging = false;
     }
 
@@ -167,9 +200,14 @@ public partial class QuickAccessWindow : Window
         PauseButton.IsEnabled = available;
         ClassIslandStatus.Text = classIslandStatus; ClassIslandButton.IsEnabled = canStart;
         ClassIslandButton.Content = startLabel;
+        RailStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(
+            state?.Error is not null ? "#CD7552" : state?.Running != true ? "#A5B3AB" : state.Paused ? "#C69A4F" : "#147D68"));
+        RailTools.ToolTip = "课堂工具 · " + status;
     }
 
-    private void HandleClicked(object sender, RoutedEventArgs e) => OpenPanel();
+    private void HandleClicked(object sender, RoutedEventArgs e) { if (_expanded) Collapse(); else OpenPanel(); }
+    private void RailToolsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(false); OpenPanel(); }
+    private void RailShortcutsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(true); OpenPanel(); }
     private void PowerClicked(object sender, RoutedEventArgs e) => _power();
     private void PauseClicked(object sender, RoutedEventArgs e) => _pause();
     private void ClassIslandClicked(object sender, RoutedEventArgs e) => _startClassIsland();
@@ -190,14 +228,23 @@ public partial class QuickAccessWindow : Window
     private void ShortcutsTabClicked(object sender, RoutedEventArgs e) => SelectShortcutPage(true);
     private void SelectShortcutPage(bool shortcuts)
     {
+        _shortcutsSelected = shortcuts;
         ToolsPage.Visibility = SettingsFooter.Visibility = shortcuts ? Visibility.Collapsed : Visibility.Visible;
         ShortcutsPage.Visibility = ShortcutsFooter.Visibility = shortcuts ? Visibility.Visible : Visibility.Collapsed;
         var active = (System.Windows.Media.Brush)FindResource("Accent");
-        var inactive = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(238, 242, 243));
+        var inactive = Brushes.Transparent;
         ToolsTab.Background = shortcuts ? inactive : active;
         ToolsTab.Foreground = shortcuts ? System.Windows.Media.Brushes.DarkSlateGray : System.Windows.Media.Brushes.White;
         ShortcutsTab.Background = shortcuts ? active : inactive;
         ShortcutsTab.Foreground = shortcuts ? System.Windows.Media.Brushes.White : System.Windows.Media.Brushes.DarkSlateGray;
+        RefreshRail();
+    }
+    private void RefreshRail()
+    {
+        RailTools.Tag = _expanded && !_shortcutsSelected ? "active" : null;
+        RailShortcuts.Tag = _expanded && _shortcutsSelected ? "active" : null;
+        System.Windows.Automation.AutomationProperties.SetName(EdgeHandle,
+            _expanded ? "收起快捷工具" : "展开快捷工具，可上下拖动");
     }
     private void ShortcutClicked(object sender, RoutedEventArgs e)
     { if (sender is FrameworkElement { DataContext: ShortcutEntry entry }) _openShortcut(entry); }

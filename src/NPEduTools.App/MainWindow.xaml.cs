@@ -38,7 +38,8 @@ public partial class MainWindow : Window
         InitializeTray();
         InitializeStartupPreferences();
         InitializeShortcuts();
-        Activated += (_, _) => RefreshLoginStartup();
+        Activated += (_, _) => { RefreshLoginStartup(); RefreshToday(); };
+        RefreshToday();
         Closing += (_, e) =>
         {
             if (_exiting) return;
@@ -160,6 +161,7 @@ public partial class MainWindow : Window
     private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
     private void SelectPage(bool settings)
     {
+        PageBreadcrumb.Text = settings ? "偏好设置" : "概览";
         ShortcutPage.Visibility = Visibility.Collapsed;
         ShortcutNav.Tag = null;
         HomePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
@@ -168,6 +170,7 @@ public partial class MainWindow : Window
         SettingsNav.Tag = settings ? "active" : null;
         if (settings) _ = RefreshAdminAsync();
     }
+    private void RefreshToday() => TodayText.Text = DateTime.Now.ToString("M月d日 dddd", System.Globalization.CultureInfo.GetCultureInfo("zh-CN"));
     private void OpenQuickClicked(object sender, RoutedEventArgs e) { Hide(); _quick?.OpenPanel(); }
     private void MinimizeClicked(object sender, RoutedEventArgs e) => HideToEdge();
     private void DockLeftClicked(object sender, RoutedEventArgs e) => _quick?.SetSide(true);

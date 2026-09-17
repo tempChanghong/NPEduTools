@@ -45,6 +45,7 @@ public partial class MainWindow
         ShortcutList.SelectedItem = _shortcuts.FirstOrDefault(item => item.Id == selection);
         ShortcutEmpty.Visibility = _shortcuts.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         HomeShortcutEmpty.Visibility = ShortcutEmpty.Visibility;
+        HomeShortcutCount.Text = _shortcutsReadable ? $"{_shortcuts.Length} 项" : "暂不可用";
         ShortcutCount.Text = $"{_shortcuts.Length} / {ShortcutCatalog.MaximumItems} 项 · 顺序同步到贴边面板";
         _quick?.SetShortcuts(_shortcuts);
         RefreshShortcutControls();
@@ -79,6 +80,7 @@ public partial class MainWindow
         SelectPage(false);
         HomePage.Visibility = Visibility.Collapsed; ShortcutPage.Visibility = Visibility.Visible;
         HomeNav.Tag = null; ShortcutNav.Tag = "active";
+        PageBreadcrumb.Text = "快捷启动";
         RestoreWindow();
     }
 
