@@ -1,8 +1,10 @@
 param(
     [string]$ClassIslandBinary = 'D:/WebstormProjects/ClassIsland/ClassIsland.Desktop/bin/Debug/net8.0-windows10.0.19041.0/ClassIsland.Desktop.exe',
-    [switch]$Watch
+    [switch]$Watch,
+    [switch]$Schedule
 )
 $ErrorActionPreference = 'Stop'
+if ($Watch -and $Schedule) { throw 'Choose Watch or Schedule.' }
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $runner = Join-Path $PSScriptRoot 'dotnet.ps1'
 & $runner --version
@@ -49,7 +51,7 @@ function Start-OwnedProcess([string]$Executable, [string[]]$Arguments, [string]$
     return $process
 }
 
-function Query-Status([int]$ObserveMs = 0, [int]$TimeoutMs = 5000) {
+function Query-Status([int]$ObserveMs = 0, [int]$TimeoutMs = 5000, [string]$Capability = 'status') {
     if ($Watch) {
         $line = $watchProcess.StandardOutput.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(6)).GetAwaiter().GetResult()
         if (-not $line) { throw 'Watch stream ended unexpectedly.' }
@@ -62,7 +64,7 @@ function Query-Status([int]$ObserveMs = 0, [int]$TimeoutMs = 5000) {
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
-    foreach ($argument in @($cliDll,'status','--pipe',$pipe,'--timeout-ms',"$TimeoutMs",'--observe-ms',"$ObserveMs")) {
+    foreach ($argument in @($cliDll,$Capability,'--pipe',$pipe,'--timeout-ms',"$TimeoutMs",'--observe-ms',"$ObserveMs")) {
         $info.ArgumentList.Add($argument)
     }
     $client = [Diagnostics.Process]::Start($info)
@@ -147,6 +149,19 @@ try {
     }
     if ($first.status.subject -ne 'NPEduTools 实机联调 A') { throw 'Unexpected initial subject.' }
     Write-Output "Initial: $($first.status.state) / $($first.status.subject)"
+    if ($Schedule) {
+        $day = Query-Status 0 12000 'schedule'
+        if ($day.outcome -ne 'Succeeded' -or $day.schedule.lessons.Count -ne 2 -or
+            $day.schedule.lessons[0].subject -ne 'NPEduTools 实机联调 A' -or
+            $day.schedule.lessons[1].subject -ne 'NPEduTools 实机联调 B' -or -not $day.schedule.clockVerified) {
+            $day | ConvertTo-Json -Depth 10 | Write-Output
+            throw 'Real IPC timetable / clock validation failed.'
+        }
+        @{Passed=$true;Schedule=$day.schedule;CompletedAt=[DateTimeOffset]::Now} | ConvertTo-Json -Depth 10 |
+            Set-Content -LiteralPath (Join-Path $runRoot 'summary.json') -Encoding utf8
+        Write-Output 'PASS: real ClassIsland profile serialization, effective plan, lesson mapping and clock alignment.'
+        return
+    }
     $seenStates = [Collections.Generic.HashSet[string]]::new()
     $onClass = 0L
     $onBreak = 0L

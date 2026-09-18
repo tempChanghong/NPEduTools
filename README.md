@@ -6,6 +6,8 @@
 
 新增 [独立微课录制](docs/MICROLESSON-RECORDING.md)：主窗口配置屏幕与音源，侧边栏暂停、继续和停止；支持系统声音与麦克风混录，8/15 fps、720p/1080p 上限，保存本地 MP4。借鉴 C30 的低帧率和进程隔离设计，使用独立采集实现。开发机录制与片段恢复已验证，目标大屏整课稳定性仍待现场测试。
 
+新增 [自动录课：今日计划与预演](docs/AUTO-LESSON-RECORDING-PREVIEW.md)：读取 ClassIsland 当前生效课表，按星期、科目、节次配置计划，默认课前 2 分钟至课后 5 分钟。主窗口“自动录课计划”或侧边栏“今日计划与预演”进入；当前阶段只模拟开始与结束，不采集屏幕或声音，尚未连接自动录制器。
+
 新增可运行的 [PowerPoint 触摸翻页工具](docs/POWERPOINT-TOUCH-ASSIST.md)：按参考项目 PowerPoint-Touch-Assist 的效果，轻点放映画面后补发空格，推进动画或下一页，提供暂停和退出。运行 `./scripts/start-powerpoint-assist.ps1`；便携包完整解压即可运行，无需安装 .NET。默认只响应触摸标记，鼠标保持原行为。开发机真实 PowerPoint 的模拟触摸链路已通过，目标 Office 2024 大屏的物理触摸仍需现场试用。
 
 另保留独立的 [PowerPoint 触摸诊断工具](docs/POWERPOINT-DIAGNOSTICS.md)：可读取真实放映及动画状态，观察目标窗口的兼容鼠标输入并导出记录。运行 `./scripts/start-powerpoint-diagnostics.ps1`；此入口只读，不触发翻页。

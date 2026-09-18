@@ -7,6 +7,16 @@ public partial class MainWindow
 {
     private RecordingClient _recording = null!;
     private RecordingWindow? _recordingWindow;
+    private AutoRecordingWindow? _autoRecordingWindow;
+    private void OpenRecordingPlanClicked(object sender, RoutedEventArgs e) => ShowRecordingPlan();
+    private void ShowRecordingPlan()
+    {
+        _quick?.Collapse(false);
+        _autoRecordingWindow ??= new AutoRecordingWindow(_pipe);
+        _autoRecordingWindow.Show();
+        if (_autoRecordingWindow.WindowState == WindowState.Minimized) _autoRecordingWindow.WindowState = WindowState.Normal;
+        _autoRecordingWindow.Activate();
+    }
     private void InitializeRecording()
     {
         // An explicitly private test endpoint may record an owned fixture instead of the desktop.

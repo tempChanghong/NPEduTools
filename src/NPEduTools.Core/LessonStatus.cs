@@ -11,9 +11,10 @@ public sealed record LessonStatus(
     int CurrentSelectedIndex,
     IReadOnlyDictionary<string, long> ObservedEvents);
 
-public sealed record StatusQuery(TimeSpan Timeout, TimeSpan ObservationWindow);
+public sealed record StatusQuery(TimeSpan Timeout, TimeSpan ObservationWindow, bool IncludeSchedule = false);
 
-public sealed record StatusResult(string Outcome, string? ErrorCode, string Message, LessonStatus? Status = null);
+public sealed record StatusResult(string Outcome, string? ErrorCode, string Message, LessonStatus? Status = null,
+    NPEduTools.Contracts.DaySchedule? Schedule = null);
 
 public interface ILessonStatusReader
 {

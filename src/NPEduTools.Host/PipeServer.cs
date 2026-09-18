@@ -69,12 +69,12 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 {
                     // Client disconnection does not cancel an accepted read-only operation.
                     var result = await reader.ReadAsync(new(TimeSpan.FromMilliseconds(request.TimeoutMs),
-                        TimeSpan.FromMilliseconds(request.ObserveMs)), token);
+                        TimeSpan.FromMilliseconds(request.ObserveMs), request.Capability == "classisland.schedule"), token);
                     var status = result.Status;
                     response = new(Protocol.Version, request.RequestId, result.Outcome, result.ErrorCode, result.Message,
                         status is null ? null : new(status.SampleStartedAt, status.SampleCompletedAt, status.State,
                             status.Subject, status.IsTimerRunning, status.IsClassPlanLoaded, status.IsClassPlanEnabled,
-                            status.CurrentSelectedIndex, status.ObservedEvents));
+                            status.CurrentSelectedIndex, status.ObservedEvents), Schedule: result.Schedule);
                 }
                 // Structured diagnostics contain identifiers and outcomes, never lesson contents.
                 log(JsonSerializer.Serialize(new

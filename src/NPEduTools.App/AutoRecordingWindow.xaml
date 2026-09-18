@@ -1,0 +1,35 @@
+<Window x:Class="NPEduTools.App.AutoRecordingWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="自动录课 · 计划与预演" Width="1060" Height="800" MinWidth="880" MinHeight="640" Background="#F6F8F7" Foreground="#203D32" FontFamily="Microsoft YaHei UI" WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
+  <Window.Resources>
+    <Style TargetType="ComboBox"><Setter Property="MinHeight" Value="36" /><Setter Property="Padding" Value="8,4" /></Style>
+    <Style TargetType="DataGrid"><Setter Property="AutoGenerateColumns" Value="False" /><Setter Property="IsReadOnly" Value="True" /><Setter Property="CanUserAddRows" Value="False" /><Setter Property="CanUserDeleteRows" Value="False" /><Setter Property="HeadersVisibility" Value="Column" /><Setter Property="GridLinesVisibility" Value="Horizontal" /><Setter Property="HorizontalGridLinesBrush" Value="#E5EBE7" /><Setter Property="RowHeight" Value="42" /><Setter Property="BorderBrush" Value="#E5EBE7" /><Setter Property="Background" Value="White" /><Setter Property="SelectionMode" Value="Single" /></Style>
+  </Window.Resources>
+  <Grid Margin="24">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,12"><Button DockPanel.Dock="Right" Content="刷新日程" Click="RefreshClicked" AutomationProperties.AutomationId="AutoRefresh" VerticalAlignment="Center" /><StackPanel><TextBlock Text="自动录课计划" FontSize="25" FontWeight="SemiBold" /><TextBlock Text="本阶段为预演：只记录应开始、应停止的时刻，不采集屏幕和声音。" TextWrapping="Wrap" Foreground="#718089" Margin="0,7,16,0" /></StackPanel></DockPanel>
+    <Border Grid.Row="1" Background="#EAF2EC" CornerRadius="10" Padding="12" Margin="0,0,0,14"><StackPanel><TextBlock x:Name="SourceStatus" Text="正在读取 ClassIsland 日程…" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoSourceStatus" /><TextBlock x:Name="PreviewStatus" Text="预演未启动" FontSize="13" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoPreviewStatus" /></StackPanel></Border>
+    <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="230" /><ColumnDefinition Width="18" /><ColumnDefinition /></Grid.ColumnDefinitions>
+      <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+        <TextBlock Text="规则设置" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,14" />
+        <TextBlock Text="课前提前量" Margin="0,0,0,6" /><ComboBox x:Name="LeadMinutes" AutomationProperties.AutomationId="AutoLeadMinutes" />
+        <TextBlock Text="课后继续录制（至多 5 分钟）" Margin="0,12,0,6" /><ComboBox x:Name="TailMinutes" AutomationProperties.AutomationId="AutoTailMinutes" />
+        <TextBlock Text="生效星期" Margin="0,14,0,8" />
+        <WrapPanel x:Name="Weekdays"><CheckBox Content="一" Tag="1" Margin="0,0,10,8" /><CheckBox Content="二" Tag="2" Margin="0,0,10,8" /><CheckBox Content="三" Tag="3" Margin="0,0,10,8" /><CheckBox Content="四" Tag="4" Margin="0,0,10,8" /><CheckBox Content="五" Tag="5" Margin="0,0,10,8" /><CheckBox Content="六" Tag="6" Margin="0,0,10,8" /><CheckBox Content="日" Tag="0" Margin="0,0,10,8" /></WrapPanel>
+        <TextBlock Text="节次（留空为全部）" Margin="0,8,0,6" /><TextBox x:Name="Numbers" ToolTip="例如：1,2,5" AutomationProperties.AutomationId="AutoLessonNumbers" />
+        <CheckBox x:Name="AllSubjects" Content="全部科目" Margin="0,14,0,8" Checked="SubjectsChanged" Unchecked="SubjectsChanged" AutomationProperties.AutomationId="AutoAllSubjects" />
+        <ListBox x:Name="Subjects" SelectionMode="Multiple" DisplayMemberPath="Name" MinHeight="80" MaxHeight="180" AutomationProperties.AutomationId="AutoSubjects" />
+        <TextBlock Text="关闭“全部科目”后，可逐项点击选择。科目来自当前课表。" TextWrapping="Wrap" FontSize="11" Foreground="#718089" Margin="0,6,0,12" />
+        <Button x:Name="ApplyRules" Content="应用并保存规则" Click="ApplyClicked" AutomationProperties.AutomationId="AutoApplyRules" />
+        <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="#AA5337" FontSize="12" Margin="0,10,0,0" AutomationProperties.AutomationId="AutoError" />
+      </StackPanel></ScrollViewer>
+      <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /><RowDefinition Height="160" /></Grid.RowDefinitions>
+        <DockPanel Margin="0,0,0,10"><Button DockPanel.Dock="Right" Content="跳过 / 结束选中节" Click="SkipClicked" Padding="10,6" AutomationProperties.AutomationId="AutoSkipLesson" /><TextBlock Text="今日计划" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel>
+        <DataGrid x:Name="Plans" Grid.Row="1" AutomationProperties.AutomationId="AutoPlans"><DataGrid.Columns>
+          <DataGridTextColumn Header="节次" Binding="{Binding Number}" Width="48" /><DataGridTextColumn Header="科目" Binding="{Binding Subject}" Width="*" /><DataGridTextColumn Header="正式课时" Binding="{Binding ClassTime}" Width="108" /><DataGridTextColumn Header="录制窗口" Binding="{Binding CaptureTime}" Width="108" /><DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="150" />
+        </DataGrid.Columns></DataGrid>
+        <TextBlock Grid.Row="2" Text="预演记录（最近 200 条）" FontSize="14" FontWeight="SemiBold" Margin="0,14,0,8" />
+        <ListBox x:Name="Events" Grid.Row="3" BorderBrush="#E5EBE7" AutomationProperties.AutomationId="AutoEvents"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" Margin="4,5" /></DataTemplate></ListBox.ItemTemplate></ListBox>
+      </Grid>
+    </Grid>
+    <WrapPanel Grid.Row="3" Margin="0,16,0,0"><Button x:Name="TogglePreview" Content="启动预演" Style="{StaticResource Primary}" Click="ToggleClicked" AutomationProperties.AutomationId="AutoTogglePreview" Margin="0,0,8,0" /><Button x:Name="SkipDay" Content="今天不再预演" Click="SkipDayClicked" AutomationProperties.AutomationId="AutoSkipDay" Margin="0,0,8,0" /><Button Content="收起窗口" Style="{StaticResource Quiet}" Click="HideClicked" AutomationProperties.AutomationId="AutoHide" /></WrapPanel>
+  </Grid>
+</Window>

@@ -7,3 +7,4 @@ using NPEduTools.Integrations.ClassIsland;
 // The shape is client-only: the factory ignores JointType for IpcShape classes.
 // Remove this bridge only after upgrading AND rerunning the real IPC regression tests.
 [assembly: AssemblyIpcProxyJoint(typeof(StrictLessonsShape), typeof(__StrictLessonsShapeIpcProxy), typeof(object))]
+[assembly: AssemblyIpcProxyJoint(typeof(StrictProfileShape), typeof(__StrictProfileShapeIpcProxy), typeof(object))]

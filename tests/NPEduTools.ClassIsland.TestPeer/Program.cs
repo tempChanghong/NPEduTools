@@ -9,11 +9,17 @@ using dotnetCampus.Ipc.Pipes;
 
 // Test-only server. Never occupy the real ClassIsland endpoint.
 if (args.Length != 2 || !args[0].StartsWith("NPEduTools.Test.", StringComparison.Ordinal) ||
-    args[1] is not ("healthy" or "hang" or "drop" or "error" or "empty")) return 2;
+    args[1] is not ("healthy" or "hang" or "drop" or "error" or "empty" or "schedule" or "schedule-clock" or "schedule-switch" or "schedule-undefined")) return 2;
 using var provider = new IpcProvider(args[0]);
 var routed = new JsonIpcDirectRoutedProvider(provider);
 var clients = new ConcurrentBag<string>();
-provider.CreateIpcJoint<IPublicLessonsService>(new FakeLessons(args[1]));
+if (args[1].StartsWith("schedule", StringComparison.Ordinal))
+{
+    var fixture = new ScheduleFixture(args[1]); fixture.Initialize();
+    provider.CreateIpcJoint<IPublicLessonsService>(new ScheduledLessons(fixture));
+    provider.CreateIpcJoint<IPublicProfileService>(new ScheduledProfile(fixture));
+}
+else provider.CreateIpcJoint<IPublicLessonsService>(new FakeLessons(args[1]));
 provider.PeerConnected += (_, e) => clients.Add(e.Peer.PeerName);
 provider.StartServer();
 routed.StartServer();

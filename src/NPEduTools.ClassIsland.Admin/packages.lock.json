@@ -6,7 +6,10 @@
         "type": "Project"
       },
       "npedutools.core": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.Contracts": "[1.0.0, )"
+        }
       }
     }
   }

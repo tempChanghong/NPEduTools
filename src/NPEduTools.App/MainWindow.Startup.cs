@@ -39,7 +39,7 @@ public partial class MainWindow
         _quick.SetShortcuts(_shortcuts);
         _quick.SetRecordingActions(ShowRecording,
             () => _ = _recording.SendAsync(_recording.State.Phase == "Paused" ? "resume" : "pause"),
-            () => _ = _recording.SendAsync("stop"));
+            () => _ = _recording.SendAsync("stop"), ShowRecordingPlan);
         RefreshRecording(_recording.State);
         RefreshShortcutControls();
         _quick.Show();

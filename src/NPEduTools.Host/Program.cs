@@ -25,9 +25,10 @@ if (args.SequenceEqual(["--powerpoint-worker"]))
 }
 
 bool workerMode = args.Length > 0 && args[0] == "--ipc-worker";
+bool scheduleMode = args.Length > 0 && args[0] == "--schedule-worker";
 bool monitorMode = args.Length > 0 && args[0] == "--monitor-worker";
 var options = new Dictionary<string, string>();
-for (int i = workerMode || monitorMode ? 1 : 0; i < args.Length; i += 2)
+for (int i = workerMode || monitorMode || scheduleMode ? 1 : 0; i < args.Length; i += 2)
 {
     if (i + 1 >= args.Length || args[i] is not ("--pipe" or "--classisland-pipe" or "--observe-ms" or "--data-dir") ||
         !options.TryAdd(args[i], args[i + 1]) || args[i + 1].Length is 0 or > 2048)
@@ -71,7 +72,7 @@ if (monitorMode)
     return 0;
 }
 
-if (workerMode)
+if (workerMode || scheduleMode)
 {
     if (!int.TryParse(options.GetValueOrDefault("--observe-ms", "0"), out int observeMs) || observeMs is < 0 or > 5000)
         return 2;
@@ -79,7 +80,7 @@ if (workerMode)
     _ = Task.Run(async () => { await Task.Delay(TimeSpan.FromSeconds(20)); Environment.Exit(124); });
     var output = Console.OpenStandardOutput();
     Console.SetOut(Console.Error); // Third-party diagnostic output must not corrupt the binary frame.
-    var result = await ClassIslandProbe.ReadAsync(classIslandPipe, observeMs);
+    var result = scheduleMode ? await ClassIslandScheduleProbe.ReadAsync(classIslandPipe) : await ClassIslandProbe.ReadAsync(classIslandPipe, observeMs);
     await Protocol.WriteAsync(output, result, CancellationToken.None);
     return 0;
 }
@@ -94,7 +95,7 @@ if (!createdNew)
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
-ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0)
+ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = false)
 {
     var start = new ProcessStartInfo(Environment.ProcessPath!)
     {
@@ -103,14 +104,14 @@ ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0)
     };
     if (string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet", StringComparison.OrdinalIgnoreCase))
         start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
-    start.ArgumentList.Add(monitor ? "--monitor-worker" : "--ipc-worker");
+    start.ArgumentList.Add(monitor ? "--monitor-worker" : schedule ? "--schedule-worker" : "--ipc-worker");
     start.ArgumentList.Add("--classisland-pipe");
     start.ArgumentList.Add(classIslandPipe);
     start.ArgumentList.Add("--observe-ms");
     start.ArgumentList.Add(observeMs.ToString(System.Globalization.CultureInfo.InvariantCulture));
     return start;
 }
-using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds));
+using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds, query.IncludeSchedule));
 await using var monitor = new StatusMonitor(() => WorkerStart(true), Console.Error.WriteLine);
 string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeEndpoint.DefaultName
     ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "config")
