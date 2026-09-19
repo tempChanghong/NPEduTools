@@ -65,7 +65,7 @@ public sealed partial class ScheduledStartup : IDisposable
         using var identity = WindowsIdentity.GetCurrent();
         if (identity.User?.Value != request.UserSid || System.Diagnostics.Process.GetCurrentProcess().SessionId != request.SessionId)
             return new("Rejected", "请使用当前登录用户授权，不能替其他账户配置或重启 ClassIsland。");
-        if (request.Action is not ("status" or "inspect" or "create" or "delete" or "elevate" or "launch" or "launch-elevated")) return new("Rejected", "不支持的管理员操作。");
+        if (request.Action is not ("status" or "inspect" or "create" or "delete" or "enable" or "disable" or "elevate" or "launch" or "launch-elevated")) return new("Rejected", "不支持的管理员操作。");
         string executable = ClassIslandExecutable.Validate(request.Executable);
         request = request with { Executable = executable };
         if (request.Action == "status") return new("Succeeded", "已读取状态。", Status(request));
@@ -88,6 +88,20 @@ public sealed partial class ScheduledStartup : IDisposable
             if (request.ExpectedFingerprint != TaskDefinitionPolicy.Fingerprint(before)) return new("Rejected", "计划任务已被其他程序更改，请刷新后再操作。", Status(request));
             if (before is not null && !TaskDefinitionPolicy.IsCompatible(before, executable, request.UserSid, ResolveSid))
                 return new("Rejected", "同名任务不属于当前用户和所选程序，已保留原任务。", Status(request));
+            if (request.Action is "enable" or "disable")
+            {
+                if (before is null) return new("Rejected", "请先创建管理员自启动任务。", Status(request));
+                object? task = null;
+                try
+                {
+                    task = _folder.GetTask(TaskDefinitionPolicy.TaskName);
+                    ((dynamic)task).Enabled = request.Action == "enable";
+                }
+                finally { if (task is not null) Marshal.FinalReleaseComObject(task); }
+                var after = Status(request);
+                bool matched = after.TaskState == (request.Action == "enable" ? "Enabled" : "Disabled");
+                return new(matched ? "Succeeded" : "Unknown", matched ? after.TaskMessage + "；已保留任务定义。" : "未能核实任务状态，请刷新。", after);
+            }
             if (request.Action == "create")
             {
                 object registered = _folder.RegisterTask(TaskDefinitionPolicy.TaskName, TaskDefinitionPolicy.Create(executable, request.UserSid),

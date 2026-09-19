@@ -256,6 +256,7 @@
       "npedutools.host": {
         "type": "Project",
         "dependencies": {
+          "NPEduTools.ClassIsland.Admin": "[1.0.0, )",
           "NPEduTools.Contracts": "[1.0.0, )",
           "NPEduTools.Core": "[1.0.0, )",
           "NPEduTools.Integrations.ClassIsland": "[1.0.0, )",

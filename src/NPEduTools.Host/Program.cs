@@ -140,11 +140,13 @@ await using var touch = new TouchAssistService(() =>
     return start;
 });
 Console.WriteLine($"Host ready: {pipeName}");
-await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot);
+var classroomStore = new ClassroomModeStore(dataDirectory);
+await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot, () => classroomStore.State.AutomaticPaused);
 await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget());
+await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording));
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

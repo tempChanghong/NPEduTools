@@ -12,7 +12,7 @@ namespace NPEduTools.Host;
 [SupportedOSPlatform("windows")]
 public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
-    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null)
+    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
@@ -52,6 +52,10 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
+                else if (request.Capability == "host.stop" && classroom is not null && !classroom.BeginShutdown())
+                    response = new(Protocol.Version, request.RequestId, "Rejected", "ClassroomBusy", "课堂模式正在切换，请等待完成或恢复提示后再停止后台。");
+                else if (request.Capability.StartsWith("classroom.", StringComparison.Ordinal))
+                    response = classroom?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "ClassroomUnavailable", "请更新并重启后台以使用课堂模式。");
                 else if (request.Capability == "host.stop")
                 {
                     if (stop is not null && recording is not null) await recording.StopAsync();
@@ -96,7 +100,7 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 }, Protocol.Json));
                 using var writeDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 writeDeadline.CancelAfter(TimeSpan.FromSeconds(2));
-                if (error is null && request.Capability == "host.stop" && stop is not null)
+                if (error is null && request.Capability == "host.stop" && stop is not null && response.Outcome == "Succeeded")
                 {
                     try { await Protocol.WriteAsync(pipe, response, writeDeadline.Token); }
                     finally

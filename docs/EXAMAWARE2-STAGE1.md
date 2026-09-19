@@ -1,5 +1,7 @@
 # ExamAware2 接入：第一阶段实现与验证
 
+> 历史阶段记录。当前桥接 0.3.0 的登录自启动设置见 [E4 报告](EXAMAWARE2-STAGE4.md)，正常退出与配对撤销见 [E3 报告](EXAMAWARE2-STAGE3.md)。下文保留第一阶段的原始验证范围。
+
 日期：2026-09-19。承接 `EXAMAWARE2-INTEGRATION-RESEARCH.md` 中建议的 E1 + E2 最小闭环。
 
 ## 1. 本次交付

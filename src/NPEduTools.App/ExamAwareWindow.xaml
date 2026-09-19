@@ -4,7 +4,7 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="28">
       <TextBlock Text="考试看板" FontSize="27" FontWeight="SemiBold" />
-      <TextBlock Text="打开 ExamAware2，查看连接与登录自启动登记状态。" Foreground="#718089" Margin="0,8,0,22" TextWrapping="Wrap" />
+      <TextBlock Text="打开或正常退出 ExamAware2，查看连接与登录自启动登记状态。" Foreground="#718089" Margin="0,8,0,22" TextWrapping="Wrap" />
       <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16">
         <StackPanel>
           <TextBlock Text="程序位置" FontSize="16" FontWeight="SemiBold" />
@@ -26,12 +26,26 @@
           <TextBlock x:Name="Connection" Text="正在读取…" TextWrapping="Wrap" Margin="0,12,0,8" AutomationProperties.AutomationId="ExamAwareConnection" />
           <TextBlock x:Name="VersionText" Text="版本：未知" Foreground="#718089" Margin="0,0,0,8" />
           <TextBlock x:Name="AutoStartText" Text="登录自启动登记：未知" AutomationProperties.AutomationId="ExamAwareAutoStart" />
-          <TextBlock Text="这里只读取软件登记的状态；Windows 任务管理器仍可能禁用该启动项。" Foreground="#718089" TextWrapping="Wrap" Margin="0,8,0,16" />
+          <TextBlock Text="这是当前用户登录 Windows 后的启动登记；任务管理器仍可能禁用该启动项。" Foreground="#718089" TextWrapping="Wrap" Margin="0,8,0,12" />
+          <WrapPanel x:Name="AutoStartActions">
+            <Button x:Name="EnableAutoStartButton" Content="开启登录自启动" IsEnabled="False" Click="EnableAutoStartClicked" AutomationProperties.AutomationId="ExamAwareAutoStartEnable" Margin="0,0,8,8" />
+            <Button x:Name="DisableAutoStartButton" Content="关闭登录自启动" IsEnabled="False" Click="DisableAutoStartClicked" AutomationProperties.AutomationId="ExamAwareAutoStartDisable" Margin="0,0,8,8" />
+          </WrapPanel>
+          <TextBlock x:Name="AutoStartMessage" TextWrapping="Wrap" Foreground="#536A60" Margin="0,0,0,16" AutomationProperties.AutomationId="ExamAwareAutoStartMessage" />
           <TextBlock Text="首次连接：安装桥接插件 → 导出配对文件 → 在 ExamAware 主页面点击“连接 NPEduTools”并导入。" TextWrapping="Wrap" Foreground="#536A60" Margin="0,0,0,12" />
           <WrapPanel x:Name="PairingActions">
             <Button Content="打开插件设置" Click="PluginsClicked" AutomationProperties.AutomationId="ExamAwarePlugins" Margin="0,0,8,8" />
             <Button Content="导出配对文件" Click="ExportClicked" AutomationProperties.AutomationId="ExamAwareExport" Margin="0,0,8,8" />
+            <Button Content="撤销当前配对" Click="ResetPairingClicked" AutomationProperties.AutomationId="ExamAwareResetPairing" Margin="0,0,8,8" />
           </WrapPanel>
+        </StackPanel>
+      </Border>
+      <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16">
+        <StackPanel>
+          <TextBlock Text="正常退出" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock Text="请先保存并关闭考试编辑器，再结束放映。ExamAware 1.5.2 的编辑器仍打开时可能无法完成退出。退出遵循学校管理策略，不会强制结束进程。" TextWrapping="Wrap" Foreground="#718089" Margin="0,8,0,12" />
+          <Button x:Name="QuitButton" Content="退出 ExamAware" Click="QuitClicked" IsEnabled="False" HorizontalAlignment="Left" AutomationProperties.AutomationId="ExamAwareQuit" />
+          <TextBlock x:Name="QuitStatus" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.AutomationId="ExamAwareQuitStatus" />
         </StackPanel>
       </Border>
       <TextBlock x:Name="Message" TextWrapping="Wrap" Foreground="#147D68" AutomationProperties.AutomationId="ExamAwareMessage" />

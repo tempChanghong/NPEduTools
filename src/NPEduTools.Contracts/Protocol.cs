@@ -15,7 +15,9 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? OperationId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? SchoolDate = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RecorderCommand? Recording = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingCommand? Automatic = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingCommand? Automatic = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AutoStartEnabled = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeCommand? ClassroomMode = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -43,7 +45,8 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RecordingState? Recording = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingState? Automatic = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwareStatus? ExamAware = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePairing? ExamAwarePairing = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePairing? ExamAwarePairing = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeState? ClassroomMode = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -84,8 +87,8 @@ public static class Protocol
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch" or
-            "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or
+        if (request.Capability is not ("host.ping" or "host.stop" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classisland.status" or "classisland.watch" or
+            "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or
             "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
@@ -95,7 +98,16 @@ public static class Protocol
             if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
                 request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
         }
+        else if (request.Capability is "examaware.autostart.set" or "classroom.set" or "classroom.restore")
+        {
+            if (request.ExecutablePath is not null || request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
+        }
         else if (request.ExecutablePath is not null || request.ExpectedRevision is not null) return "UnexpectedParameters";
+        if (request.Capability == "examaware.autostart.set" ? request.AutoStartEnabled is null : request.AutoStartEnabled is not null)
+            return "InvalidAutoStartParameters";
+        if (request.Capability == "classroom.set" ? request.ClassroomMode?.Target is not ("Daily" or "Exam") : request.ClassroomMode is not null)
+            return "InvalidClassroomMode";
+        if (request.Capability.StartsWith("classroom.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.OperationId is not null && (request.Capability != "classisland.execution.get" || request.OperationId == Guid.Empty))
             return "UnexpectedParameters";
         if (request.TimeoutMs is < 250 or > 15000) return "InvalidTimeout";

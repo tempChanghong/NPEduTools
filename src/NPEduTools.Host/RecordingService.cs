@@ -13,6 +13,7 @@ public sealed class RecordingService : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Func<SchoolClockFrame> _snapshot;
+    private readonly Func<bool> _modePaused;
     private readonly SchoolClockTracker _clock = new();
     private readonly RecordingExecutionLedger _ledger;
     private readonly string _bookPath, _executable;
@@ -31,9 +32,10 @@ public sealed class RecordingService : IAsyncDisposable
     private string _message = "自动录制未启用", _error = "";
     private RecordingState _last = new("Idle", "准备录制");
     private static TimeSpan Elapsed => Stopwatch.GetElapsedTime(0);
-    public RecordingService(string pipe, string directory, Func<SchoolClockFrame> snapshot)
+    public RecordingService(string pipe, string directory, Func<SchoolClockFrame> snapshot, Func<bool>? modePaused = null)
     {
         _snapshot = snapshot;
+        _modePaused = modePaused ?? (() => false);
         string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(pipe)))[..24];
         _bookPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "ui", hash + ".recording-plans.json");
         _executable = Path.Combine(AppContext.BaseDirectory, "Recorder", "NPEduTools.Recorder.exe");
@@ -47,8 +49,8 @@ public sealed class RecordingService : IAsyncDisposable
     {
         get
         {
-            var value = new AutomaticRecordingState(_enabled, _client, _message, _ledger.Document.SkipDate,
-                _ledger.Document.Entries.TakeLast(20).Reverse().ToArray(), string.IsNullOrEmpty(_error) ? null : _error);
+            var value = new AutomaticRecordingState(_enabled, _client, _modePaused() ? "课堂模式已暂停自动录制；原计划保留。" : _message, _ledger.Document.SkipDate,
+                _ledger.Document.Entries.TakeLast(20).Reverse().ToArray(), string.IsNullOrEmpty(_error) ? null : _error, _modePaused());
             // Long Unicode paths/reasons must not make the entire status endpoint exceed its frame limit.
             while (value.Recent.Length > 0 && JsonSerializer.SerializeToUtf8Bytes(value, Protocol.Json).Length > 32000)
                 value = value with { Recent = value.Recent[..^1] };
@@ -227,6 +229,7 @@ public sealed class RecordingService : IAsyncDisposable
                 else await _worker.CommandAsync("shorten", currentControl with { HardDeadline = deadline });
             }
         }
+        if (_modePaused()) { await StopAutomaticAsync("课堂模式暂停自动录制"); return; }
         if (!_enabled || !reading.CanStart || now is null) { if (_enabled) _message = reading.Message; return; }
         DateOnly date = DateOnly.FromDateTime(now.Value.Date);
         var source = _clock.Schedule; if (source?.Date != date) source = null;
@@ -270,6 +273,12 @@ public sealed class RecordingService : IAsyncDisposable
             try { _ledger.Update(c.SessionId, "Finalizing", reason, State); }
             finally { await _worker.CommandAsync("stop", c); }
         }
+    }
+    public async Task PauseForClassroomModeAsync()
+    {
+        await _gate.WaitAsync();
+        try { await StopAutomaticAsync("课堂模式暂停自动录制"); }
+        finally { _gate.Release(); }
     }
     public async Task StopAsync()
     {

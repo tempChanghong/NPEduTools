@@ -11,10 +11,10 @@ public static class ExamAwareCapture {
 }
 '@
 $root = Split-Path $PSScriptRoot -Parent
-$pipe = 'NPEduTools.Test.examaware-ui.' + [Guid]::NewGuid().ToString('N')
-$out = Join-Path $root ('.artifacts/examaware-ui/' + [Guid]::NewGuid().ToString('N'))
+$pipe = 'NPEduTools.Test.classroom-ui.' + [Guid]::NewGuid().ToString('N')
+$out = Join-Path $root ('.artifacts/classroom-ui/' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $out -Force | Out-Null
-$title = '考试看板 · ExamAware2'
+$title = '课堂模式 · NPEduTools'
 $checks = [Collections.Generic.List[string]]::new()
 function Window([string]$name = $title) {
     [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,
@@ -53,46 +53,35 @@ try {
     foreach ($arg in @('--pipe',$pipe,'--classisland-pipe',($pipe + '.absent'))) { $start.ArgumentList.Add($arg) }
     $app = [Diagnostics.Process]::Start($start)
     Click 'OobeLater' 'NPEduTools · 初始设置'
-    Click 'OpenExamAware' 'NPEduTools'
-    $null = Wait-Control 'ExamAwareConnection' '尚未连接'
-    $null = Wait-Control 'ExamAwareAutoStart' '未知'
-    $quit = Control 'ExamAwareQuit'
-    if (-not $quit -or $quit.Current.IsEnabled) { throw 'Quit must be disabled while disconnected.' }
-    $null = Wait-Control 'ExamAwareQuitStatus' '连接桥接'
-    $checks.Add('Normal quit is unavailable without a connected bridge and saved executable')
-    foreach ($id in @('ExamAwareAutoStartEnable','ExamAwareAutoStartDisable')) {
-        $item = Control $id
-        if (-not $item -or $item.Current.IsEnabled) { throw 'Auto-start controls must be disabled while disconnected.' }
-    }
-    $null = Wait-Control 'ExamAwareAutoStartMessage' '连接桥接'
-    $checks.Add('Explicit enable/disable controls stay disabled while disconnected; unknown is not off')
-    Click 'ExamAwareResetPairing'
-    $deadline = [DateTime]::UtcNow.AddSeconds(5)
-    do { $confirm = Window '撤销当前配对'; if (-not $confirm) { Start-Sleep -Milliseconds 100 } } while (-not $confirm -and [DateTime]::UtcNow -lt $deadline)
-    if (-not $confirm) { throw 'Pairing revocation must ask for confirmation.' }
-    $confirm.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
-    $null = Wait-Control 'ExamAwareResetPairing'
-    $checks.Add('Pairing revocation shows a cancellable confirmation')
-    Click 'ExamAwareStart'
-    $null = Wait-Control 'ExamAwareMessage' '先选择'
-    $checks.Add('Unconfigured start directs user to select a path; disconnected autostart is unknown')
-    (Wait-Control 'ExamAwarePath').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('C:\不存在的中文 目录\ExamAware.exe')
-    Click 'ExamAwareSave'
-    $null = Wait-Control 'ExamAwareMessage' '不存在'
-    $checks.Add('Invalid path is rejected without launching another application')
-    Snapshot 'management.png'
+    Click 'OpenClassroomMode' 'NPEduTools'
+    $null = Wait-Control 'ClassroomModeTitle' '尚未设置'
+    $null = Wait-Control 'ClassroomDaily'
+    $null = Wait-Control 'ClassroomExam'
+    if ((Control 'ClassroomRestore').Current.IsEnabled) { throw 'Recovery must be disabled without a journal.' }
+    $checks.Add('Mode management entry shows Daily and Exam actions, with recovery disabled initially')
+    Click 'ClassroomExam'
+    $end = [DateTime]::UtcNow.AddSeconds(5)
+    do { $dialog = Window '切换到考试模式'; if (-not $dialog) { Start-Sleep -Milliseconds 100 } } while (-not $dialog -and [DateTime]::UtcNow -lt $end)
+    if (-not $dialog) { throw 'Missing mode confirmation' }
+    $dialog.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+    $null = Wait-Control 'ClassroomModeTitle' '^尚未设置模式$'
+    $checks.Add('Cancellable mode confirmation leaves original mode unchanged')
+    Click 'ClassroomRefresh'
+    $null = Wait-Control 'ClassroomModeStatus' '检查未通过'
+    $null = Wait-Control 'ClassroomDaily'
+    $null = Wait-Control 'ClassroomActual' '尚未核实'
+    $checks.Add('Read-only refresh rejects missing configuration, does not label unknown startup as off')
+    Snapshot 'classroom-modes.png'
     (Window).GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
-    Click 'RailTools' 'NPEduTools 快捷工具'
-    Click 'QuickExamAware' 'NPEduTools 快捷工具'
-    $null = Wait-Control 'ExamAwareConnection' '尚未连接'
-    $checks.Add('Sidebar entry opens setup when no path is configured; management window can reopen')
+    Click 'OpenClassroomMode' 'NPEduTools'
+    $null = Wait-Control 'ClassroomDaily'
+    $checks.Add('Management window reopens after closing')
     (Window).GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
-    Click 'RailSettings' 'NPEduTools 快捷工具'
     Click 'StopHost' 'NPEduTools'
     if (-not $app.WaitForExit(20000)) { throw 'App did not exit.' }
     @{passed=$true;checks=$checks.ToArray();completedAt=[DateTimeOffset]::Now} | ConvertTo-Json -Depth 4 |
         Set-Content -LiteralPath (Join-Path $out 'summary.json') -Encoding utf8
-    Write-Output "PASS: ExamAware UI ($($checks.Count) scenarios). Artifacts: $out"
+    Write-Output "PASS: Classroom UI ($($checks.Count) scenarios). Artifacts: $out"
 } finally {
     if ($app) { if (-not $app.HasExited) { $app.Kill($true); $null = $app.WaitForExit(5000) }; $app.Dispose() }
     Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Host.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($pipe) } |

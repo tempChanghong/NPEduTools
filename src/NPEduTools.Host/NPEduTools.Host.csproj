@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../NPEduTools.ClassIsland.Admin/NPEduTools.ClassIsland.Admin.csproj" />
     <ProjectReference Include="../NPEduTools.Recorder/NPEduTools.Recorder.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
     <ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" />
     <ProjectReference Include="../NPEduTools.PowerPoint.Diagnostics/NPEduTools.PowerPoint.Diagnostics.csproj" />
@@ -10,5 +11,9 @@
   <Target Name="CopyRecorderBundle" AfterTargets="Build">
     <ItemGroup><RecorderBundle Include="../NPEduTools.Recorder/bin/$(Configuration)/net10.0-windows/**/*" /></ItemGroup>
     <Copy SourceFiles="@(RecorderBundle)" DestinationFiles="@(RecorderBundle->'$(OutDir)Recorder/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyAdminBundle" AfterTargets="Build">
+    <ItemGroup><AdminBundle Include="../NPEduTools.ClassIsland.Admin/bin/$(Configuration)/net10.0/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(AdminBundle)" DestinationFiles="@(AdminBundle->'$(OutDir)Admin/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

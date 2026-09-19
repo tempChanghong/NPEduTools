@@ -1,41 +1,55 @@
-# NPEduTools ExamAware 桥接 0.1.1
+# NPEduTools ExamAware 桥接 0.3.0
 
-适配 Windows ExamAware2 **1.5.2**，官方 Plugin API V2 / SDK 1.5.2。第一阶段仅报告应用版本、平台、发行状态及原生登录自启动的 `openAtLogin` 登记值，不读取考试正文，不提供退出或自启动修改命令。
+适配 Windows ExamAware2 **1.5.2**，官方 Plugin API V2 / SDK 1.5.2。提供版本、登录自启动登记状态查询、显式正常退出，以及确认后开启/关闭登录自启动。不读取考试正文。
 
-## 安装与连接
+## 安装、升级与连接
 
-1. 在 NPEduTools 左侧打开「考试看板」，选择安装目录中的 `ExamAware.exe`，点击「保存位置」。
-2. 点击「打开插件设置」，通过 ExamAware 自带的本地插件安装功能导入 `npedutools-examaware-bridge-0.1.1.ea2x`，检查并授权插件声明的权限，启用插件。
-3. 在 NPEduTools 点击「导出配对文件」。
-4. 回到 ExamAware **主页面**，点击插件新增的「连接 NPEduTools」，选择刚导出的 JSON。
-5. 回到 NPEduTools，确认「桥接已连接（只读）」。导出的文件含配对凭据，导入后可以删除。
+1. 在 NPEduTools「考试看板」选择正式安装目录中的 `ExamAware.exe`，保存位置。
+2. 通过 ExamAware 官方本地插件安装功能导入 `npedutools-examaware-bridge-0.3.0.ea2x`，审阅权限并启用。此版本在原有 `app.quit` 之外新增 `app.configure`，用于登录自启动设置。
+3. 在更新后的 NPEduTools 导出配对文件，在 ExamAware **主页面**点击「连接 NPEduTools」并导入。
+4. 返回 NPEduTools 确认「桥接已连接」。配对文件含凭据，导入后可以删除。
 
-插件通过官方 `ctx.api.network.connectTcp` 反向连接本机，不需要开启 ExamAware 内置 HTTP 服务。无需管理员权限。配对文件必须来自同一台计算机上正在使用的 NPEduTools 实例。主程序和 Host 重启后沿用原端口及配对信息，插件会自动重新连接。
+**需同时更新 NPEduTools 和插件。** 从 0.2.0 升级仍使用 v2 配对，现有 v2 文件可继续导入；从 0.1.x 升级需重新导出、导入配对文件。私有配对版本与官方 Plugin API V2 的版本含义不同。旧安装若未被安装器替换，请禁用或卸载旧桥接，保持一个启用实例。1.5.2 安装器的高权限列表未单列 `app.configure`；它实际已在本插件清单声明，并受 SDK 权限检查。
 
-「已发送打开请求」只表示操作受理，并不证明窗口已经显示或桥接就绪。侧栏的「打开考试看板」使用已保存的位置；尚未配置或打开失败时转到管理页面。
+使用官方 `ctx.api.network.connectTcp` 反向连接本机回环地址，不需要 HTTP 服务或管理员权限。正常重启沿用端口与配对；「撤销当前配对」更换密钥，使旧文件失效，需要重新导出和导入。ExamAware 内的「断开 NPEduTools」只清除插件侧配对。
 
-## 状态含义
+## 正常退出与已知限制
 
-- **尚未连接**：没有配对、插件未启用、应用未运行或连接已失效。自启动显示「未知」。
-- **桥接已连接（只读）**：取得带认证的近期状态，目标平台和版本符合本阶段适配范围。
-- **已登记 / 未登记**：读取 `getAutoStart()` 的结果。任务管理器是否禁用该启动项仍需在 Windows 中确认。
-- **连接服务不可用**：配置损坏、同目录已有后台或固定配对端口被占用。原文件保留；排除原因后重启后台。
-- **版本尚未验证**：连接存在，但不是 Windows 1.5.2；不将该版本的自启动值显示为有效状态。
+先**保存并关闭考试编辑器**，结束放映，再点击 NPEduTools 的「退出 ExamAware」并确认。连接就绪且已保存程序位置才可使用。后台核对进程路径和 Windows 会话后，插件调用官方 `ctx.api.app.quit()`。不会强制结束进程，也不会自动重试退出。
 
-在 ExamAware 主页面点击「断开 NPEduTools」可清除插件内的配对信息。关闭 NPEduTools 不会退出 ExamAware。插件被禁用或卸载时会释放连接和定时器。
+- 「请求已受理」或「插件已受理」不表示进程已退出。
+- 「已确认目标进程退出」来自保留的操作系统进程句柄。
+- 策略/权限禁止时显示拒绝；最多观察 10 秒，未确认则保留不确定结果。
+- **上游 1.5.2 限制**：编辑器仍打开时，官方退出会先释放 IPC 和插件，然后才要求编辑器关闭。未保存提示可能无法弹出，应用可能停留在编辑器中且桥接断开。应在发送退出前保存并关闭编辑器。不要把强制结束进程当作数据保存手段。插件目前没有可用于检查内置编辑器是否打开的官方主进程 API。
+
+「已发送打开请求」只表示受理启动/唤起。关闭 NPEduTools 不会自动退出 ExamAware。
+
+## 登录自启动设置
+
+在 NPEduTools 点击「开启登录自启动」或「关闭登录自启动」，确认后由正在连接的 ExamAware 调用官方 `setAutoStart(enabled)`，随后独立调用 `getAutoStart()` 读回。关闭成功读回 `false`，同样属于成功。基本设置页不需要打开。
+
+新插件、有效连接和已保存的程序位置均为前提。旧 0.2.0 插件在新 Host 中保留查询/退出能力，但不能设置自启动。未知状态不等于关闭，断线时按钮不可用。上次设置结果与当前心跳读数分别显示；读回不一致、权限拒绝、失败或断线不显示为成功，也不会自动重试。
+
+这项设置是**当前 Windows 用户登录后启动当前 ExamAware 程序**。没有另建 NPEduTools 启动项、计划任务或复制程序来实现自启动。Windows 任务管理器禁用、程序移动/升级后的旧登记和实际登录表现需要单独核验；登记成功不保证下次一定运行，也不保证静默驻留托盘。安装、配对和 OOBE 均不会自动开启它。
+
+## 状态说明
+
+- **尚未连接**：未配对、插件未启用、应用未运行或状态失效，自启动显示未知。
+- **桥接已连接**：取得带认证的近期状态，Windows 与版本在适配范围内。
+- **已登记 / 未登记**：官方 `getAutoStart()` 的登记值，Windows 任务管理器仍可能禁用该启动项。
+- **连接服务不可用**：配置损坏、同目录后台占用或配对端口冲突；保留原配置。
+- **版本尚未验证**：不开放该版本的正常退出，不把自启动读数作为已验证状态。
 
 ## 构建与验证
 
-仓库根目录执行 `./scripts/build-examaware-bridge.ps1`。脚本先固定依赖、检查 TypeScript、生成主进程 CJS/渲染进程 ESM，运行插件与真实 .NET Host 的跨进程测试，然后生成 `.artifacts/examaware-bridge/npedutools-examaware-bridge-0.1.1.ea2x`。需要 Node.js 24、npm 11、项目 .NET SDK 和已还原的 NuGet 依赖。
+仓库根目录执行 `./scripts/build-examaware-bridge.ps1`：固定依赖、TypeScript 检查、CJS/ESM 构建、19 项回归测试、生成 `.artifacts/examaware-bridge/npedutools-examaware-bridge-0.3.0.ea2x`。需要 Node.js 24、npm 11、项目 .NET SDK 与 NuGet 依赖。仅重打包已验证产物可使用 `-PackageOnly`。
 
-独立开发：在本目录执行 `npm ci --ignore-scripts`、`npm run build`。`npm test` 需要先构建仓库的 Release Host；使用独立的测试管道和临时目录，未安装或启动 ExamAware 本体。
+独立开发使用 `npm ci --ignore-scripts`、`npm run build`；`npm test` 需要先构建仓库 Release Host。测试使用独立管道与临时配置，不启动用户的 ExamAware。
 
-已经完成构建与验证、仅需重打包现有产物时，可使用 `./scripts/build-examaware-bridge.ps1 -PackageOnly`；该模式不会重新运行编译与测试。
+SDK npm 包包含 `workspace:*` 依赖，overrides 固定 core 1.1.1 / rpc 0.3.0。主进程与渲染端均打包所需官方 SDK 代码，不依赖安装目录之外的 SDK。没有修改官方 SDK。
 
-SDK 1.5.2 的 npm 包包含 `workspace:*` 依赖，根包使用 overrides 固定到相同源码标签中的 `@dsz-examaware/core` 1.1.1 / `@dsz-examaware/rpc` 0.3.0。主进程和渲染端均打包所需官方 SDK 代码，没有替换或修改 SDK 源文件。0.1.0 的主进程外置 SDK 方式在真实用户插件目录中无法解析依赖；0.1.1 修复此问题，不需要用户额外安装 SDK。
+0.2.0 新增双方随机挑战认证、双向帧序号、签名、短期限退出命令及配对撤销。真实设置 API 订阅会立即回调；初始化与订阅回调现在共用一次连接尝试，避免重启后的重复连接。
 
-**验证边界**：6 项插件回归测试通过；官方 1.5.2 源码构建的真实宿主完成 11 项隔离联调，覆盖安装权限提示、配对、只读状态、重载、禁用、双方重启、隐藏窗口唤起与设置深链接。测试适配了原生文件选择/结果提示框，实际安装器、权限确认界面、SDK 和网络链路均参与。尚未完成官方打包 EXE 的生产路径启动和登录自启验收，不将开发进程的自启动读数解释为正式版状态。
+验证覆盖 19 项插件回归及 27 项官方 1.5.2 源码宿主场景，其中包括上游编辑器退出缺陷的保守结果断言。E4 联调使用真实官方 SDK，Windows 登录启动接口处替换为隔离的文件登记适配器，因此**未验证真实注册表、任务管理器禁用和注销登录**。官方打包 EXE 的生产路径启动与退出也仍待验收；未放宽产品路径校验。
 
-可重复的真实宿主检查见仓库 `scripts/test-examaware-host.mjs`，执行方法与限制见 `docs/EXAMAWARE2-REAL-HOST-VALIDATION.md`。
-
-实现与协议说明见仓库 `docs/EXAMAWARE2-STAGE1.md`。
+当前结果、协议边界和复现方法见仓库 `docs/EXAMAWARE2-STAGE4.md`；退出限制见 `docs/EXAMAWARE2-STAGE3.md`；早期 E2 记录见 `docs/EXAMAWARE2-REAL-HOST-VALIDATION.md`。

@@ -7,10 +7,36 @@ public interface IExamAwareTarget
 {
     string Validate(string path);
     void Open(string path, string? link);
+    IExamAwareProcess Capture(int processId, string path);
 }
+
+public interface IExamAwareProcess : IDisposable { bool HasExited { get; } }
 
 public sealed class ExamAwareTarget : IExamAwareTarget
 {
+    private sealed class ObservedProcess(Process process) : IExamAwareProcess
+    {
+        public bool HasExited => process.HasExited;
+        public void Dispose() => process.Dispose();
+    }
+
+    public IExamAwareProcess Capture(int processId, string path)
+    {
+        if (processId <= 0) throw new LaunchTargetException("PeerIdentityMissing", "请更新桥接插件后重新连接。");
+        var process = Process.GetProcessById(processId);
+        try
+        {
+            // Retain an OS handle to the exact process; PID reuse cannot confirm a different process.
+            _ = process.Handle;
+            using var current = Process.GetCurrentProcess();
+            if (process.HasExited || process.SessionId != current.SessionId ||
+                !string.Equals(ClassIslandLaunchTarget.ProcessPath(process), path, StringComparison.OrdinalIgnoreCase))
+                throw new LaunchTargetException("PeerIdentityMismatch", "桥接进程与所选程序位置或当前会话不符，未发送退出请求。");
+            return new ObservedProcess(process);
+        }
+        catch { process.Dispose(); throw; }
+    }
+
     public string Validate(string path)
     {
         if (!Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal) ||

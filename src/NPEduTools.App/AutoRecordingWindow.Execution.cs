@@ -10,7 +10,7 @@ public partial class AutoRecordingWindow
     private void AutomaticChanged(AutomaticRecordingState state)
     {
         RealStatus.Text = _automaticError ?? state.Message + (state.Error is null ? "" : " · " + state.Error);
-        ToggleReal.Content = state.Enabled ? "停用自动录制" : "启用自动录制";
+        ToggleReal.Content = state.Enabled ? "停用自动录制" : state.SuspendedByMode ? "启用（仍由课堂模式暂停）" : "启用自动录制";
         ToggleReal.IsEnabled = !_automaticChanging;
         RealSkipDay.Content = state.SkipDate is not null && state.SkipDate == _today ? "恢复今日自动录制" : "今天不再录制";
         RealEvents.ItemsSource = state.Recent.Select(e => $"{e.Date:yyyy-MM-dd} {e.Start:HH:mm} · {e.Subject} · {PhaseLabel(e.Phase)}\n{e.Reason}" +

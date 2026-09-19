@@ -1,10 +1,12 @@
 # NPEduTools
 
+新增 [日常／考试课堂模式](docs/CLASSROOM-MODES.md)：主窗口“课堂模式”联动 ClassIsland 管理员登录任务、ExamAware2 登录自启动与自动录课。考试暂停自动录课并保留计划，日常恢复按原配置判断；切换失败保留恢复入口。需先配置管理员任务与 ExamAware 桥接。当前更新在开发构建中，真实 UAC 与重新登录联动仍待实机验收，既有 P4 ZIP 未更新。
+
 面向 Windows 教室大屏的本地软件集成与控制层。主程序提供常驻桌面侧边栏与“概览／快捷启动／偏好设置”管理窗口，已集成 PowerPoint 触摸翻页。侧边栏默认位于右侧偏下，可拖动顶部品牌图标调整高度；课堂工具、我的快捷和设置各有独立入口，展开后可开启、暂停或停止辅助。运行 `./scripts/start-app.ps1` 查看实际窗口，界面与生命周期见 [主界面设计](docs/MAIN-WINDOW-DESIGN.md)。
 
 已接入正式图标：程序、窗口与托盘使用多尺寸 ICO，主页面与侧边栏使用矢量标识。资源来源、更新方法和实际截图见 [图标接入说明](docs/BRANDING.md)。
 
-新增 [ExamAware2 第一阶段接入](docs/EXAMAWARE2-STAGE1.md)：主窗口「考试看板」管理程序位置和配对，侧栏可直接打开软件；API V2 桥接提供版本与登录自启动登记状态的只读查询。适配 Windows 1.5.2，插件构建入口为 `./scripts/build-examaware-bridge.ps1`。桥接 0.1.1 已完成 [真实源码宿主联调](docs/EXAMAWARE2-REAL-HOST-VALIDATION.md)，修复安装后 SDK 无法解析的问题；官方发行版 EXE 的启动验收仍待完成。退出和自启动写入属于后续阶段。当前内容在开发构建中，既有 P4 ZIP 未更新。
+新增 [ExamAware2 E4 登录自启动设置](docs/EXAMAWARE2-STAGE4.md)：主窗口「考试看板」管理程序位置、配对、状态、正常退出和确认后开启/关闭登录自启动，侧栏可直接打开软件。适配 Windows 1.5.2，桥接 0.3.0 使用官方 API V2，设置后独立读回登记状态。需同时更新 NPEduTools 和插件；现有 v2 配对文件可继续使用。构建入口为 `./scripts/build-examaware-bridge.ps1`。**退出前请先保存并关闭考试编辑器**，上游限制见 [E3](docs/EXAMAWARE2-STAGE3.md)。E4 通过隔离原生启动接口的源码宿主联调，真实 Windows 登记/登录与官方发行版 EXE 验收仍待完成。当前内容在开发构建中，既有 P4 ZIP 未更新。历史：[E1](docs/EXAMAWARE2-STAGE1.md)、[E2](docs/EXAMAWARE2-REAL-HOST-VALIDATION.md)。
 
 新增 [首次使用引导（OOBE）](docs/FIRST-RUN-EXPERIENCE.md)：按用途显示偏好、ClassIsland 学校时间和录制准备，可跳过、续做或从主窗口“初始设置”重开。已有用户保留配置，登录自启动仅在侧栏提示；完成引导不会自动开启录制。当前更新位于开发构建，先前生成的 P4 ZIP 尚未重新打包。
 

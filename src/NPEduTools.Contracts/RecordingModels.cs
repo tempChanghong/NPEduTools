@@ -18,7 +18,7 @@ public sealed record AutomaticRecordingCommand(string Action, Guid ClientId, Rec
 public sealed record RecordingExecution(string Key, Guid ProfileId, DateOnly Date, bool Fixed, DateTimeOffset Start,
     DateTimeOffset End, string Subject, Guid SessionId, string Phase, string Reason, string? OutputFile = null, string? RecoveryDirectory = null);
 public sealed record AutomaticRecordingState(bool Enabled, Guid ClientId, string Message, DateOnly? SkipDate,
-    RecordingExecution[] Recent, string? Error = null);
+    RecordingExecution[] Recent, string? Error = null, bool SuspendedByMode = false);
 public sealed record RecordingState(string Phase, string Message, double Seconds = 0, long Frames = 0,
     long Bytes = 0, long DroppedFrames = 0, long AudioOverruns = 0, string? OutputFile = null,
     string? RecoveryDirectory = null, string? Error = null, RecorderControl? Control = null)
