@@ -51,6 +51,7 @@
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="偏好设置" /></StackPanel>
           </Button>
           <Button Content="自动录课计划" Style="{StaticResource Navigation}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="OpenRecordingPlan" />
+          <Button Content="考试看板" Style="{StaticResource Navigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
           <Button Content="初始设置" Style="{StaticResource Navigation}" Click="OpenOnboardingClicked" AutomationProperties.AutomationId="OpenOnboarding" />
         </StackPanel>
         <StackPanel Grid.Row="2">

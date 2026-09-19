@@ -10,8 +10,10 @@ internal sealed class ScheduleFixture(string mode)
     internal static readonly Guid OtherSubject = Guid.Parse("1fbe215f-1ee5-46fc-b727-726e19c66d60");
     internal static readonly Guid LayoutId = Guid.Parse("cdf0587b-b100-4c73-9659-7cb2b32bde98");
     internal Profile Data { get; } = new() { Id = Guid.Parse("409c367a-9b2c-4c29-9eb8-81c08b30a8a2") };
-    internal TimeSpan Start => _created.AddMinutes(1).TimeOfDay;
-    internal TimeSpan End => _created.AddMinutes(41).TimeOfDay;
+    // Keep the daily profile valid at any wall-clock hour; the clock probe has its own live anchor.
+    internal TimeSpan Start => TimeSpan.FromHours(8);
+    internal TimeSpan End => Start.Add(TimeSpan.FromMinutes(40));
+    internal TimeSpan ClockStart => _created.TimeOfDay.Add(TimeSpan.FromMinutes(1));
     internal ClassPlan Plan
     {
         get
@@ -33,7 +35,7 @@ internal sealed class ScheduleFixture(string mode)
             Classes = [new() { SubjectId = SubjectId }, new() { SubjectId = OtherSubject, IsEnabled = false }] };
         if (mode == "schedule-undefined") Data.Subjects.Remove(SubjectId);
     }
-    internal TimeSpan Remaining => Start - DateTime.Now.TimeOfDay + (mode == "schedule-clock" ? TimeSpan.FromMinutes(1) : TimeSpan.Zero);
+    internal TimeSpan Remaining => ClockStart - DateTime.Now.TimeOfDay + (mode == "schedule-clock" ? TimeSpan.FromMinutes(1) : TimeSpan.Zero);
 }
 
 internal sealed class ScheduledLessons(ScheduleFixture fixture) : IPublicLessonsService
@@ -43,7 +45,7 @@ internal sealed class ScheduledLessons(ScheduleFixture fixture) : IPublicLessons
     public int CurrentSelectedIndex { get; set; } = -1;
     public Subject NextClassSubject { get; set; } = new() { Name = "预演数学" };
     public TimeLayoutItem NextBreakingTimeLayoutItem { get; set; } = new();
-    public TimeLayoutItem NextClassTimeLayoutItem { get => new() { StartTime = fixture.Start, EndTime = fixture.End }; set => throw new NotSupportedException(); }
+    public TimeLayoutItem NextClassTimeLayoutItem { get => new() { StartTime = fixture.ClockStart, EndTime = fixture.ClockStart.Add(TimeSpan.FromMinutes(40)) }; set => throw new NotSupportedException(); }
     public TimeSpan OnClassLeftTime { get => fixture.Remaining; set => throw new NotSupportedException(); }
     public TimeSpan OnBreakingTimeLeftTime { get; set; }
     public TimeState CurrentState { get; set; } = TimeState.None;

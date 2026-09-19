@@ -16,6 +16,9 @@ namespace NPEduTools.App;
 
 public partial class QuickAccessWindow : Window
 {
+    private Action? _examAware;
+    public void SetExamAwareAction(Action action) => _examAware = action;
+    private void ExamAwareClicked(object sender, RoutedEventArgs e) => _examAware?.Invoke();
     private const double RailWidth = 80, RailHeight = 284, PanelWidth = 440, PanelHeight = 620;
     private sealed record Placement(bool LeftSide = false, double RelativeY = 0.78, string? Display = null);
     private readonly string _settingsPath;

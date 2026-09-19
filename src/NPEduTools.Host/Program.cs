@@ -141,9 +141,10 @@ await using var touch = new TouchAssistService(() =>
 });
 Console.WriteLine($"Host ready: {pipeName}");
 await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot);
+await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget());
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

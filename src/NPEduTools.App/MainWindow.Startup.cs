@@ -37,6 +37,7 @@ public partial class MainWindow
             () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings,
             entry => _ = OpenShortcutAsync(entry), ShowShortcutManager, RepairShortcut);
         _quick.SetShortcuts(_shortcuts);
+        _quick.SetExamAwareAction(OpenExamAwareQuick);
         _quick.SetRecordingActions(ShowRecording,
             () => _ = _recording.SendAsync(_recording.State.Phase == "Paused" ? "resume" : "pause"),
             () => _ = _recording.SendAsync("stop"), ShowRecordingPlan, SkipAutomaticToday);

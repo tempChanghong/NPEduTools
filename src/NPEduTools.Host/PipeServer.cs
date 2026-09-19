@@ -12,7 +12,7 @@ namespace NPEduTools.Host;
 [SupportedOSPlatform("windows")]
 public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
-    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null)
+    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
@@ -65,6 +65,9 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 else if (request.Capability == "classisland.school-clock")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "学校时间状态",
                         SchoolClock: schoolClock?.Snapshot() ?? SchoolClockFrame.Unavailable("此后台不支持学校时间，请更新后台。"));
+                else if (request.Capability.StartsWith("examaware.", StringComparison.Ordinal))
+                    response = examAware is not null ? await examAware.HandleAsync(request, token)
+                        : new(Protocol.Version, request.RequestId, "Rejected", "ExamAwareUnavailable", "此后台不支持 ExamAware，请更新后台。");
                 else if (request.Capability.StartsWith("recording.", StringComparison.Ordinal))
                     response = recording is not null ? await recording.HandleAsync(request)
                         : new(Protocol.Version, request.RequestId, "Rejected", "RecordingUnavailable", "此后台不支持录制管理。");

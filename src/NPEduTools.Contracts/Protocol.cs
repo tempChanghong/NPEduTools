@@ -41,7 +41,9 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SchoolClockFrame? SchoolClock = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DayForecast? Forecast = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RecordingState? Recording = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingState? Automatic = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingState? Automatic = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwareStatus? ExamAware = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePairing? ExamAwarePairing = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -83,11 +85,12 @@ public static class Protocol
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch" or
+            "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or
             "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
-        if (request.Capability is "classisland.config.set" or "classisland.verify")
+        if (request.Capability is "classisland.config.set" or "classisland.verify" or "examaware.config.set")
         {
             if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
                 request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
@@ -118,6 +121,7 @@ public static class Protocol
         }
         else if (request.Automatic is not null) return "UnexpectedParameters";
         if (request.Capability.StartsWith("recording.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
+        if (request.Capability.StartsWith("examaware.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         return null;
     }
 }

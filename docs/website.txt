@@ -8,9 +8,28 @@ https://github.com/tempChanghong/ClassSidebar
 
 https://github.com/ClassIsland/ClassIsland
 
+https://github.com/ExamAware/ExamAware2
+
 https://github.com/SECTL/Luminalium
 
 https://github.com/RinLit-233-shiroko/PowerPoint-Touch-Assist
 
 https://github.com/SECTL/SecAgent
 
+https://github.com/SECTL/ClassIsland-SecAgent-Plugin
+
+https://github.com/SECTL/ClassIsland-SecAgent-Connector
+
+https://github.com/SECTL/ICC-CE-SecAgent-Connector
+
+https://github.com/SECTL/secagent-plugin-marketplace
+
+https://github.com/SECTL/SecRandom-SecAgent-Plugin
+
+https://github.com/SECTL/ClassWidgets-SecAgent-Plugin
+
+https://github.com/SECTL/CW-SecAgent-Connector
+
+https://github.com/SECTL/ICC-CE-SecAgent-Plugin
+
+https://github.com/SECTL/SecRandom-SecAgent-Connector

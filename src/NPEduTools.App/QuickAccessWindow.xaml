@@ -34,6 +34,7 @@
         </Grid></Border>
         <ScrollViewer x:Name="ToolsPage" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
           <Button x:Name="OnboardingEntry" Content="初始设置待完成 · 继续设置  →" Visibility="Collapsed" Click="OnboardingClicked" Background="#E5F0E5" Foreground="#276B51" Margin="0,0,0,12" AutomationProperties.AutomationId="QuickOnboarding" />
+          <Button Content="打开考试看板 · ExamAware2" Click="ExamAwareClicked" Margin="0,0,0,12" AutomationProperties.AutomationId="QuickExamAware" />
           <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="14" Padding="16"><StackPanel>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
               <Border Background="#FFF0E8" CornerRadius="12" Width="42" Height="42" Margin="0,0,12,0"><TextBlock Text="P" Foreground="#BC633E" FontFamily="Segoe UI" FontSize="25" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>

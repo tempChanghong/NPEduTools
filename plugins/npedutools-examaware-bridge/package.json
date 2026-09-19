@@ -1,0 +1,27 @@
+{
+  "name": "npedutools-examaware-bridge",
+  "version": "0.1.0",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "description": "NPEduTools 本机只读桥接：版本与登录自启动登记状态",
+  "main": "./dist/main/index.cjs",
+  "module": "./dist/renderer/index.mjs",
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "examaware": {
+    "apiVersion": 2,
+    "displayName": "NPEduTools 桥接（只读）",
+    "engines": { "desktop": "1.5.2", "sdk": "1.5.2" },
+    "targets": { "main": "./dist/main/index.cjs", "renderer": "./dist/renderer/index.mjs" },
+    "permissions": ["network.tcp", "network.local", "ui.contribute", "ui.notify", "files.dialog", "files.read"],
+    "activation": { "rendererWindows": ["main"] },
+    "services": { "provide": [], "inject": [] },
+    "settings": { "namespace": "npedutools-examaware-bridge" }
+  },
+  "dependencies": { "@dsz-examaware/plugin-sdk": "1.5.2" },
+  "overrides": { "@dsz-examaware/core": "1.1.1", "@dsz-examaware/rpc": "0.3.0" },
+  "devDependencies": { "@types/node": "24.10.1", "esbuild": "0.25.12", "typescript": "5.9.3" }
+}

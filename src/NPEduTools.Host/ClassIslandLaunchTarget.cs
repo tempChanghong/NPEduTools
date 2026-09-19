@@ -65,7 +65,7 @@ public sealed class ClassIslandLaunchTarget : IClassIslandLaunchTarget
         }
     }
 
-    private static string ProcessPath(Process process)
+    internal static string ProcessPath(Process process)
     {
         if (!OperatingSystem.IsWindows()) return process.MainModule?.FileName ?? "";
         using var handle = OpenProcess(0x1000, false, process.Id);
