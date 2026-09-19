@@ -18,6 +18,7 @@
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
   <ItemGroup>
     <Compile Include="../../src/NPEduTools.App/StartupPreferences.cs" Link="App/StartupPreferences.cs" />
+    <Compile Include="../../src/NPEduTools.App/OnboardingState.cs" Link="App/OnboardingState.cs" />
     <Compile Include="../../src/NPEduTools.App/LoginStartup.cs" Link="App/LoginStartup.cs" />
     <Compile Include="../../src/NPEduTools.App/AppLaunchOptions.cs" Link="App/AppLaunchOptions.cs" />
     <Compile Include="../../src/NPEduTools.App/ShortcutCatalog.cs" Link="App/ShortcutCatalog.cs" />

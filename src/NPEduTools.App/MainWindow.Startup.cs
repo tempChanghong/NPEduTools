@@ -51,6 +51,7 @@ public partial class MainWindow
         _watch = WatchAsync(_lifetime.Token);
         _management = ManagementLoopAsync(_lifetime.Token);
         _touchPoll = TouchPollAsync(_lifetime.Token);
+        StartOnboarding(atLogin);
     }
 
     private void ShowStartupPreferences()
@@ -151,6 +152,6 @@ public partial class MainWindow
             HomeMessage.Text = "触摸辅助未能自动开启，请查看辅助状态并手动重试。";
     }
 
-    private static bool IsStartupError(Exception error) => error is IOException or UnauthorizedAccessException or
+    private static bool IsStartupError(Exception error) => error is IOException or InvalidDataException or UnauthorizedAccessException or
         JsonException or SecurityException or InvalidOperationException or ArgumentException;
 }

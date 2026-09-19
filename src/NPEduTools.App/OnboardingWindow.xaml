@@ -1,0 +1,72 @@
+<Window x:Class="NPEduTools.App.OnboardingWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NPEduTools · 初始设置" Icon="/Assets/npedutools.ico" Width="860" Height="700" MinWidth="720" MinHeight="580" WindowStartupLocation="CenterScreen"
+        Background="#F6F8F5" Foreground="#203D32" FontFamily="Microsoft YaHei UI" FontSize="14" UseLayoutRounding="True" AutomationProperties.AutomationId="OnboardingWindow">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Resources/RecordingControls.xaml" /></ResourceDictionary.MergedDictionaries>
+      <Style TargetType="CheckBox" BasedOn="{StaticResource RecordingCheck}"><Setter Property="Margin" Value="0,8" /></Style>
+      <Style x:Key="Hint" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Foreground" Value="#657C70" /><Setter Property="LineHeight" Value="24" /><Setter Property="Margin" Value="0,8,0,16" /></Style>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Grid Margin="28">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,24">
+      <Image Source="{StaticResource BrandLogoSmall}" Width="42" Height="42" Margin="0,0,14,0" />
+      <StackPanel><TextBlock Text="NPEduTools" FontSize="20" FontWeight="SemiBold" /><TextBlock x:Name="ProgressText" Foreground="#718477" Margin="0,4,0,0" AutomationProperties.AutomationId="OobeProgress" /></StackPanel>
+    </DockPanel>
+    <Border Grid.Row="1" CornerRadius="18" Background="White" BorderBrush="#E0E8DF" BorderThickness="1" Padding="24">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+        <StackPanel>
+          <TextBlock x:Name="StepTitle" FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="OobeTitle" Margin="0,0,0,12" />
+          <StackPanel x:Name="WelcomePage">
+            <TextBlock Style="{StaticResource Hint}" Text="把课堂常用操作放在屏幕边缘，用主窗口管理设置。选出你需要的用途，我们一起完成相关准备。" />
+            <CheckBox x:Name="UseShortcuts" Content="快捷启动 · 应用、课件与教学网站" AutomationProperties.AutomationId="OobeUseShortcuts" />
+            <CheckBox x:Name="UseTouch" Content="PPT 触摸翻页 · 轻点屏幕推进演示" AutomationProperties.AutomationId="OobeUseTouch" />
+            <CheckBox x:Name="UseRecording" Content="手动录制微课 · 自己控制开始与结束" AutomationProperties.AutomationId="OobeUseRecording" />
+            <CheckBox x:Name="UseAutomatic" Content="自动录课 · 按 ClassIsland 学校时间执行计划" AutomationProperties.AutomationId="OobeUseAutomatic" />
+            <TextBlock Style="{StaticResource Hint}" Text="这些选择只决定引导内容。功能由你在日常界面中主动开启；也可以稍后继续设置。" />
+          </StackPanel>
+          <StackPanel x:Name="PreferencesPage" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource Hint}" Text="在已有偏好页选择侧边栏位置、登录后仅显示侧栏，以及是否随 Windows 登录启动。设置后切回此窗口继续；保留默认设置也可以。" />
+            <Button Content="打开使用偏好" Click="PreferencesClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="OobePreferences" />
+            <TextBlock x:Name="PreferencesText" Style="{StaticResource Hint}" AutomationProperties.AutomationId="OobePreferencesStatus" />
+            <StackPanel x:Name="ShortcutHelp"><TextBlock Style="{StaticResource Hint}" Text="把常用应用、课件和网站添加到快捷启动，保存后会同步到侧边栏。" /><Button Content="整理我的快捷启动" Click="ShortcutsClicked" HorizontalAlignment="Left" /></StackPanel>
+            <TextBlock x:Name="TouchHelp" Style="{StaticResource Hint}" Text="触摸翻页：在概览或侧边栏点击“开启辅助”，然后进入 PowerPoint 放映进行检查。只有你确认需要时，再在偏好中勾选启动时开启辅助。" />
+          </StackPanel>
+          <StackPanel x:Name="ClassIslandPage" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource Hint}" Text="自动录课需要 ClassIsland 的学校日期、时间与课表。请把下方学校时间与铃声核对；本程序不会用系统时间替代。" />
+            <Button Content="配置路径 / 打开 ClassIsland 管理" Click="ClassIslandClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="OobeClassIslandSettings" />
+            <TextBlock x:Name="PathText" Style="{StaticResource Hint}" Text="程序路径：等待检查" AutomationProperties.AutomationId="OobeClassIslandPath" />
+            <TextBlock x:Name="ConnectionText" Style="{StaticResource Hint}" Text="本体：等待检查" AutomationProperties.AutomationId="OobeConnection" />
+            <TextBlock x:Name="BridgeText" TextWrapping="Wrap" Text="桥接：等待检查" AutomationProperties.AutomationId="OobeBridge" />
+            <TextBlock x:Name="ClockText" Style="{StaticResource Hint}" Text="学校时间：等待检查" AutomationProperties.AutomationId="OobeClock" />
+            <CheckBox x:Name="ConfirmClock" Content="已核对学校日期，时间与铃声一致" IsEnabled="False" AutomationProperties.AutomationId="OobeConfirmClock" />
+            <TextBlock Style="{StaticResource Hint}" Text="安装桥接：在 ClassIsland 的“设置 → 插件 → 更多设置 → 从本地安装”中选择发行包 ClassIsland-plugin 文件夹内的 NPEduTools.ClassIsland.Bridge.cipx，启用“NPEduTools 时间与课表桥接”并重启 ClassIsland。尚未准备好时可跳过。" />
+          </StackPanel>
+          <StackPanel x:Name="RecordingPage" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource Hint}" Text="打开录制设置，选择屏幕、画质、声音和保存目录，并点击“保存设置”。回到这里检查实际保存的配置。" />
+            <WrapPanel><Button Content="打开录制设置 / 试录" Click="RecordingClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="OobeRecordingSettings" /><Button x:Name="CheckRecordingButton" Content="检查已保存的设置" Click="CheckRecordingClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="OobeCheckRecording" /></WrapPanel>
+            <TextBlock x:Name="RecordingText" Style="{StaticResource Hint}" Text="尚未检查。设备探测不会开始录制。" AutomationProperties.AutomationId="OobeRecordingStatus" />
+            <TextBlock Style="{StaticResource Hint}" Text="建议做一次短试录：在录制窗口手动点击开始，再停止并保存，使用“打开视频”检查画面和声音。试录可稍后做；引导中的设备检查不能代替实际回放。" />
+          </StackPanel>
+          <StackPanel x:Name="ReviewPage" Visibility="Collapsed">
+            <TextBlock Style="{StaticResource Hint}" Text="引导进度与设备状态分开保存。下次录课时仍会检查学校时间和设备；你可以随时从“初始设置”重新检查。" />
+            <TextBlock x:Name="ReviewText" TextWrapping="Wrap" LineHeight="30" AutomationProperties.AutomationId="OobeReview" />
+            <TextBlock x:Name="FinishHint" Style="{StaticResource Hint}" />
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+    <StackPanel Grid.Row="2">
+      <TextBlock x:Name="ErrorText" Foreground="#A34E32" TextWrapping="Wrap" Margin="0,12,0,4" AutomationProperties.AutomationId="OobeError" />
+      <Button x:Name="LeaveWithoutSave" Content="不保存并关闭引导" Visibility="Collapsed" Click="LeaveWithoutSaveClicked" HorizontalAlignment="Left" Style="{StaticResource Quiet}" MinHeight="36" Padding="0,4" AutomationProperties.AutomationId="OobeLeaveWithoutSave" />
+    </StackPanel>
+    <Grid Grid.Row="3" Margin="0,12,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <Button Content="稍后设置" Click="LaterClicked" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="OobeLater" />
+      <Button x:Name="BackButton" Grid.Column="1" Content="上一步" HorizontalAlignment="Left" Click="BackClicked" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="OobeBack" />
+      <Button x:Name="SkipButton" Grid.Column="2" Content="跳过此项" Click="SkipClicked" Style="{StaticResource Quiet}" Margin="0,0,8,0" AutomationProperties.AutomationId="OobeSkip" />
+      <Button x:Name="NextButton" Grid.Column="3" Content="下一步" Click="NextClicked" Style="{StaticResource Primary}" AutomationProperties.AutomationId="OobeNext" />
+    </Grid>
+  </Grid>
+</Window>

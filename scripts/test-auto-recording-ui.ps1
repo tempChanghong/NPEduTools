@@ -79,6 +79,7 @@ try {
     $peerErrors = $peer.StandardError.ReadToEndAsync()
     if ($peer.StandardOutput.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(5)).GetAwaiter().GetResult() -ne 'READY') { throw 'Peer did not start.' }
     $app = Start-App
+    Click 'OobeLater' 'NPEduTools · 初始设置'
     Click 'OpenRecordingPlan' 'NPEduTools'
     $null = Wait-Control 'AutoSourceStatus' '2031-04-07.*测试生效课表.*2 节'
     (Control 'AutoLessonNumbers').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('2')

@@ -142,6 +142,15 @@ public partial class QuickAccessWindow : Window
 
     public bool LeftSide => _placement.LeftSide;
 
+    private Action? _onboarding;
+    public void SetOnboardingAction(Action action, bool pending)
+    {
+        _onboarding = action;
+        OnboardingEntry.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
+        EdgeHandle.ToolTip = pending ? "初始设置待完成 · 点击展开，或拖动调整位置" : "点击展开或收起；拖动调整位置";
+    }
+    private void OnboardingClicked(object sender, RoutedEventArgs e) { Collapse(false); _onboarding?.Invoke(); }
+
     public void SetSide(bool leftSide)
     { _placement = _placement with { LeftSide = leftSide }; Collapse(); Position(); Save(); }
 
