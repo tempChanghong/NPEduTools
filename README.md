@@ -4,7 +4,7 @@
 
 已接入正式图标：程序、窗口与托盘使用多尺寸 ICO，主页面与侧边栏使用矢量标识。资源来源、更新方法和实际截图见 [图标接入说明](docs/BRANDING.md)。
 
-新增 [ExamAware2 第一阶段接入](docs/EXAMAWARE2-STAGE1.md)：主窗口「考试看板」管理程序位置和配对，侧栏可直接打开软件；API V2 桥接提供版本与登录自启动登记状态的只读查询。适配 Windows 1.5.2，插件构建入口为 `./scripts/build-examaware-bridge.ps1`。已通过后台、跨进程和界面检查，官方本体实机验收仍待完成；退出和自启动写入属于后续阶段。当前内容在开发构建中，既有 P4 ZIP 未更新。
+新增 [ExamAware2 第一阶段接入](docs/EXAMAWARE2-STAGE1.md)：主窗口「考试看板」管理程序位置和配对，侧栏可直接打开软件；API V2 桥接提供版本与登录自启动登记状态的只读查询。适配 Windows 1.5.2，插件构建入口为 `./scripts/build-examaware-bridge.ps1`。桥接 0.1.1 已完成 [真实源码宿主联调](docs/EXAMAWARE2-REAL-HOST-VALIDATION.md)，修复安装后 SDK 无法解析的问题；官方发行版 EXE 的启动验收仍待完成。退出和自启动写入属于后续阶段。当前内容在开发构建中，既有 P4 ZIP 未更新。
 
 新增 [首次使用引导（OOBE）](docs/FIRST-RUN-EXPERIENCE.md)：按用途显示偏好、ClassIsland 学校时间和录制准备，可跳过、续做或从主窗口“初始设置”重开。已有用户保留配置，登录自启动仅在侧栏提示；完成引导不会自动开启录制。当前更新位于开发构建，先前生成的 P4 ZIP 尚未重新打包。
 
