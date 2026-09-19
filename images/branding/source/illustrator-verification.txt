@@ -1,0 +1,7 @@
+Reopened saved native AI: 4 artboards, 11 paths, 0 raster, 0 placed.
+Total editable anchors: 90
+npedutools-logo.svg: 4 paths, 0 raster, 0 placed.
+npedutools-logo-small.svg: 3 paths, 0 raster, 0 placed.
+npedutools-logo-mono.svg: 2 paths, 0 raster, 0 placed.
+npedutools-logo-mono-light.svg: 2 paths, 0 raster, 0 placed.
+Reference PNG opened separately in Illustrator: 1254 x 1254 pt. Never placed in vector master.

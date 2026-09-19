@@ -1,5 +1,9 @@
 <Application x:Class="NPEduTools.App.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" ShutdownMode="OnMainWindowClose">
   <Application.Resources>
+    <ResourceDictionary>
+    <ResourceDictionary.MergedDictionaries>
+      <ResourceDictionary Source="Resources/Branding.xaml" />
+    </ResourceDictionary.MergedDictionaries>
     <DataTemplate x:Key="ShortcutTileContent">
       <StackPanel>
         <Border Background="{Binding Tint}" Width="42" Height="42" CornerRadius="13" HorizontalAlignment="Center">
@@ -123,5 +127,6 @@
         </Setter.Value>
       </Setter>
     </Style>
+    </ResourceDictionary>
   </Application.Resources>
 </Application>

@@ -5,10 +5,12 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>../NPEduTools.PowerPoint.Assist/app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../images/branding/npedutools.ico</ApplicationIcon>
     <!-- WPF owns DPI initialization; WinForms is used only for NotifyIcon. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="../../images/branding/npedutools.ico" Link="Assets/npedutools.ico" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />

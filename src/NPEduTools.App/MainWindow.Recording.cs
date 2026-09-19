@@ -12,17 +12,16 @@ public partial class MainWindow
     private void ShowRecordingPlan()
     {
         _quick?.Collapse(false);
-        _autoRecordingWindow ??= new AutoRecordingWindow(_pipe);
+        _autoRecordingWindow ??= new AutoRecordingWindow(_pipe, _recording);
         _autoRecordingWindow.Show();
         if (_autoRecordingWindow.WindowState == WindowState.Minimized) _autoRecordingWindow.WindowState = WindowState.Normal;
         _autoRecordingWindow.Activate();
     }
     private void InitializeRecording()
     {
-        // An explicitly private test endpoint may record an owned fixture instead of the desktop.
-        _recording = new(Dispatcher, _pipe.StartsWith("NPEduTools.Test.", StringComparison.Ordinal)
-            ? Environment.GetEnvironmentVariable("NPEEDUTOOLS_RECORDING_FIXTURE") : null);
+        _recording = new(Dispatcher, _pipe);
         _recording.Changed += RefreshRecording;
+        _recording.AutomaticChanged += state => _quick?.UpdateAutomaticRecording(state);
         RefreshRecording(_recording.State);
     }
     private void OpenRecordingClicked(object sender, RoutedEventArgs e) => ShowRecording();
@@ -40,5 +39,10 @@ public partial class MainWindow
         RecordingHomeStatus.Text = state.Active ? $"{state.Message} · {clock}" : state.Message;
         RecordingHomeButton.Content = state.Active ? "录制控制" : "配置与录制";
         _quick?.UpdateRecording(state);
+    }
+    private async void SkipAutomaticToday()
+    {
+        try { await _recording.SetAutomaticAsync("skip-day"); }
+        catch (Exception error) when (error is not OutOfMemoryException) { HomeMessage.Text = error.Message; ShowRecordingPlan(); }
     }
 }

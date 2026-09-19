@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private TouchAssistState? _touchState;
     private bool _touchBusy, _updatingTouch, _exitBusy, _exiting, _entryHint;
     private Forms.NotifyIcon? _tray;
+    private System.Drawing.Icon? _trayIcon;
     private Forms.ToolStripMenuItem? _trayPause;
     private QuickAccessWindow? _quick;
 
@@ -48,7 +49,7 @@ public partial class MainWindow : Window
             if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _quick?.Shutdown(); _tray?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _recording.Detach(); };
+        Closed += (_, _) => { _lifetime.Cancel(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _recording.Detach(); };
         _model.PropertyChanged += (_, _) =>
         {
             // After success, the next live snapshot owns the quick panel status again.
@@ -140,12 +141,15 @@ public partial class MainWindow : Window
             menu.Items.Add(_trayPause);
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add("停止后台并退出", null, (_, _) => Dispatcher.Invoke(() => StopClicked(this, new RoutedEventArgs())));
-            _tray = new Forms.NotifyIcon { Text = "NPEduTools", Icon = System.Drawing.SystemIcons.Application, ContextMenuStrip = menu, Visible = true };
+            using var resource = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/npedutools.ico")).Stream;
+            using var source = new System.Drawing.Icon(resource, Forms.SystemInformation.SmallIconSize);
+            _trayIcon = (System.Drawing.Icon)source.Clone();
+            _tray = new Forms.NotifyIcon { Text = "NPEduTools", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
             _tray.MouseClick += (_, e) => { if (e.Button == Forms.MouseButtons.Left) Dispatcher.Invoke(RestoreWindow); };
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            _tray?.Dispose(); _tray = null;
+            _tray?.Dispose(); _tray = null; _trayIcon?.Dispose(); _trayIcon = null;
             HomeMessage.Text = "托盘不可用，仍可通过屏幕侧边入口操作。";
         }
     }
@@ -400,6 +404,7 @@ public partial class MainWindow : Window
         // Stop reconnecting before requesting shutdown, so this App cannot restart the Host it just stopped.
         try
         {
+            if (_recording.Automatic.Enabled) await _recording.SetAutomaticAsync("disable");
             if (_recording.State.Active)
             {
                 HomeMessage.Text = "正在保存微课，完成后退出…";

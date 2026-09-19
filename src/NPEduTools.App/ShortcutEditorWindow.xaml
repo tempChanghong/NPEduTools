@@ -1,4 +1,4 @@
-<Window x:Class="NPEduTools.App.ShortcutEditorWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="编辑快捷启动" Width="550" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner" Background="#F5F7F9" Foreground="#202E35" FontFamily="Microsoft YaHei UI" ShowInTaskbar="False">
+<Window x:Class="NPEduTools.App.ShortcutEditorWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Icon="/Assets/npedutools.ico" Title="编辑快捷启动" Width="550" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner" Background="#F5F7F9" Foreground="#202E35" FontFamily="Microsoft YaHei UI" ShowInTaskbar="False">
   <StackPanel Margin="28">
     <TextBlock x:Name="Heading" Text="添加快捷启动" FontSize="24" FontWeight="SemiBold" />
     <TextBlock Text="把常用内容放到屏幕侧边。" FontSize="13" Foreground="#718089" Margin="0,8,0,22" />

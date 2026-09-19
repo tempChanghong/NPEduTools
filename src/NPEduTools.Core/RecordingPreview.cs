@@ -4,7 +4,7 @@ using NPEduTools.Contracts;
 namespace NPEduTools.Core;
 
 public sealed record PreviewEvent(DateTimeOffset? At, string Action, string Subject, string Message);
-public sealed record PreviewMark(Guid ProfileId, DateTimeOffset Start, DateTimeOffset End, string Reason);
+public sealed record PreviewMark(Guid ProfileId, DateTimeOffset Start, DateTimeOffset End, string Reason, string? Key = null);
 public sealed record PreviewSession(Guid ProfileId, PlannedRecording Plan, DateTimeOffset StartedAt);
 public sealed record PreviewState(int Version, RecordingRules Rules, PreviewEvent[] Events, PreviewMark[] Marks,
     DateOnly? SkipDate = null, PreviewSession? Active = null);
@@ -14,7 +14,7 @@ public sealed class RecordingPreview
 {
     public PreviewState State { get; private set; }
     public bool Enabled { get; private set; }
-    public string Status { get; private set; } = "预演未启动；不会采集屏幕或声音";
+    public string Status { get; private set; } = "预演未启动；实际录制由下方自动录制开关控制";
     private TimeSpan? _hardEnd;
 
     public RecordingPreview(PreviewState? state = null)
@@ -31,10 +31,18 @@ public sealed class RecordingPreview
     {
         Enabled = enabled;
         if (!enabled) Finish(now, "用户停止预演");
-        Status = enabled ? "预演已启动，等待新鲜日程" : "预演已停止；不会采集屏幕或声音";
+        Status = enabled ? "预演已启动，等待新鲜日程" : "预演已停止；实际录制由下方自动录制开关控制";
     }
     public bool IsMarked(Guid profile, LessonSlot lesson) => State.Marks.Any(m => m.ProfileId == profile &&
-        m.Start < lesson.End && lesson.Start < m.End);
+        m.Key is null && m.Start < lesson.End && lesson.Start < m.End);
+    public bool IsMarked(Guid profile, PlannedRecording plan) => plan.Fixed ? State.Marks.Any(m => m.Key == plan.Key) : IsMarked(profile, plan.Lesson);
+    public void SkipPlan(Guid profile, PlannedRecording plan, DateTimeOffset? now)
+    {
+        if (!plan.Fixed) { Skip(profile, plan.Lesson, now); return; }
+        if (State.Active?.Plan.Key == plan.Key) Finish(now, "用户结束本时段预演");
+        else if (!IsMarked(Guid.Empty, plan))
+        { Mark(new(Guid.Empty, plan.Lesson.Start, plan.Lesson.End, "本时段已跳过", plan.Key)); Add(new(now, "跳过", plan.Lesson.Subject, "本时段不再模拟开始")); }
+    }
     public void Skip(Guid profile, LessonSlot lesson, DateTimeOffset? now)
     {
         if (State.Active is { } active && active.ProfileId == profile && active.Plan.Lesson.Start < lesson.End && lesson.Start < active.Plan.Lesson.End)
@@ -67,11 +75,11 @@ public sealed class RecordingPreview
                 Tighten(elapsed + Remaining(active.Plan.End, now.Value, clock.AgeMs));
             if (_hardEnd is null || elapsed >= _hardEnd || (clock.Fresh && now >= active.Plan.End))
                 Finish(eventTime, "到达计划结束期限（含课后余量）；异常时仍按原剩余时长结束");
-            else if (fresh && (!source!.Enabled || source.ProfileId != active.ProfileId)) Finish(eventTime, "生效课表已禁用或档案已切换");
-            else if (fresh)
+            else if (!active.Plan.Fixed && fresh && (!source!.Enabled || source.ProfileId != active.ProfileId)) Finish(eventTime, "生效课表已禁用或档案已切换");
+            else if (clock.CanStart && (active.Plan.Fixed || fresh))
             {
-                var replacement = plans.FirstOrDefault(p => p.Selected && !p.Conflict &&
-                    p.Lesson.Start < active.Plan.Lesson.End && active.Plan.Lesson.Start < p.Lesson.End);
+                var replacement = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Fixed == active.Plan.Fixed &&
+                    (p.Fixed ? p.Key == active.Plan.Key : p.Lesson.Start < active.Plan.Lesson.End && active.Plan.Lesson.Start < p.Lesson.End));
                 if (replacement is null) Finish(eventTime, "课表或规则变化，本节已不在计划中");
                 else if (replacement.End < active.Plan.End)
                 {
@@ -91,23 +99,25 @@ public sealed class RecordingPreview
         if (clock.DateNeedsReview) { Enabled = false; Status = clock.Message; return; }
         if (clock.Fresh && now is not null && State.SkipDate == DateOnly.FromDateTime(now.Value.Date)) { Status = "今天已暂停预演"; return; }
         if (!clock.CanStart) { Status = clock.Message + "；暂不模拟新的开始"; return; }
-        if (!fresh) { Status = "等待新鲜日程，暂不模拟新的开始"; return; }
-        if (!source!.Enabled) { Status = "课表未启用，暂不预演"; return; }
-        if (!source.ClockVerified) { Status = source.ClockMessage; return; }
-        var due = plans.FirstOrDefault(p => p.Selected && !p.Conflict && now >= p.Start &&
-            Remaining(p.Lesson.End, now!.Value, clock.AgeMs) > TimeSpan.Zero && !IsMarked(source.ProfileId, p.Lesson));
+        bool hasFixed = plans.Any(p => p.Fixed && p.Selected);
+        if (!fresh && !hasFixed) { Status = "等待新鲜日程，暂不模拟新的开始"; return; }
+        if (fresh && !source!.Enabled && !hasFixed) { Status = "课表未启用，暂不预演"; return; }
+        if (fresh && !source!.ClockVerified && !hasFixed) { Status = source.ClockMessage; return; }
+        var due = plans.FirstOrDefault(p => p.Selected && !p.Conflict && (p.Fixed || fresh && source!.Enabled && source.ClockVerified) && now >= p.Start &&
+            Remaining(p.Lesson.End, now!.Value, clock.AgeMs) > TimeSpan.Zero && !IsMarked(source?.ProfileId ?? Guid.Empty, p));
         if (due is not null)
         {
             // Mark on admission, before emitting the start: restarting must not duplicate this occurrence.
-            Mark(new(source.ProfileId, due.Lesson.Start, due.Lesson.End, "已模拟开始"));
-            State = State with { Active = new(source.ProfileId, due, now!.Value) };
+            Guid profile = due.Fixed ? Guid.Empty : source!.ProfileId;
+            Mark(new(profile, due.Lesson.Start, due.Lesson.End, "已模拟开始", due.Fixed ? due.Key : null));
+            State = State with { Active = new(profile, due, now!.Value) };
             _hardEnd = elapsed + Remaining(due.End, now.Value, clock.AgeMs);
             Add(new(now, "应开始", due.Lesson.Subject, now > due.Lesson.Start ? "课中补录预演；缺失的开头不补造" : "到达课前录制窗口"));
             Status = $"模拟录制中：{due.Lesson.Subject} · {due.End:HH:mm:ss} 结束";
         }
         else
         {
-            var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !IsMarked(source.ProfileId, p.Lesson));
+            var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !IsMarked(source?.ProfileId ?? Guid.Empty, p));
             Status = next is null ? "本日没有待开始的预演任务" : $"下次预演：{next.Lesson.Subject} · {next.Start:HH:mm:ss}";
         }
     }

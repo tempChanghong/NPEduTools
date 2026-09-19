@@ -21,7 +21,12 @@ if (args[1].StartsWith("schedule", StringComparison.Ordinal))
     provider.CreateIpcJoint<IPublicProfileService>(new ScheduledProfile(fixture));
 }
 else provider.CreateIpcJoint<IPublicLessonsService>(new FakeLessons(args[1]));
-if (args[1] == "bridge") provider.CreateIpcJoint<IRecordingBridgeP0>(new FakeBridge());
+if (args[1] == "bridge")
+{
+    var bridge = new FakeBridge(Environment.GetEnvironmentVariable("NPEEDUTOOLS_TEST_BRIDGE_CONTROL"));
+    provider.CreateIpcJoint<IRecordingBridgeP0>(bridge);
+    provider.CreateIpcJoint<IRecordingBridgeCalendar>(bridge);
+}
 provider.PeerConnected += (_, e) => clients.Add(e.Peer.PeerName);
 provider.StartServer();
 routed.StartServer();

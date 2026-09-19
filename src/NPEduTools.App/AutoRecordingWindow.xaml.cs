@@ -16,6 +16,7 @@ public partial class AutoRecordingWindow : Window
     private readonly string _pipe;
     private readonly RecordingPreviewStore _store;
     private readonly RecordingPreview _preview;
+    private readonly RecordingClient _realRecording;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly CancellationTokenSource _lifetime = new();
     private DaySchedule? _source;
@@ -25,11 +26,15 @@ public partial class AutoRecordingWindow : Window
     private DateTimeOffset? EventTime => _clock.Read(Elapsed) is { Fresh: true } reading ? reading.Now : null;
     private bool _querying, _shutdown, _writable = true;
     private PreviewState? _saved;
-    internal AutoRecordingWindow(string pipe)
+    internal AutoRecordingWindow(string pipe, RecordingClient realRecording)
     {
         _pipe = pipe;
+        _realRecording = realRecording;
         _store = new(StartupPreferencesStore.PathFor(pipe).Replace(".startup.json", ".recording-preview.json", StringComparison.Ordinal));
+        bool hadLegacy = File.Exists(StartupPreferencesStore.PathFor(pipe).Replace(".startup.json", ".recording-preview.json", StringComparison.Ordinal));
         InitializeComponent();
+        _realRecording.AutomaticChanged += AutomaticChanged;
+        AutomaticChanged(_realRecording.Automatic);
         try { _preview = new(_store.Read()); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         { _preview = new(); _writable = false; ErrorText.Text = "配置或预演记录无法读取，原文件已保留；仍可查看今日课表。"; }
@@ -41,6 +46,8 @@ public partial class AutoRecordingWindow : Window
         Numbers.Text = string.Join(",", rules.LessonNumbers ?? []);
         AllSubjects.IsChecked = rules.AllSubjects;
         Subjects.IsEnabled = !rules.AllSubjects;
+        ApplyRules.IsEnabled = TogglePreview.IsEnabled = SkipDay.IsEnabled = _writable;
+        InitializePlanBook(hadLegacy);
         ApplyRules.IsEnabled = TogglePreview.IsEnabled = SkipDay.IsEnabled = _writable;
         PopulateSubjects(); Save(); Render();
         _timer.Tick += async (_, _) =>
@@ -58,6 +65,7 @@ public partial class AutoRecordingWindow : Window
     public void Shutdown()
     {
         _shutdown = true; _timer.Stop(); _lifetime.Cancel();
+        _realRecording.AutomaticChanged -= AutomaticChanged;
         Microsoft.Win32.SystemEvents.PowerModeChanged -= PowerModeChanged;
         _preview.SetEnabled(false, EventTime); Save(); Close();
     }
@@ -89,7 +97,7 @@ public partial class AutoRecordingWindow : Window
             bool changed = source?.Revision != _source?.Revision || source?.Enabled != _source?.Enabled ||
                 source?.Date != _source?.Date || source?.ProfileId != _source?.ProfileId;
             _source = source;
-            if (changed) _plans = _source is null ? [] : RecordingPlanner.Build(_source, _preview.State.Rules);
+            ObserveCalendar(response.SchoolClock);
             SourceStatus.Text = _source is null ? "日程暂不可用，等待桥接插件提供学校课表" :
                 $"学校日期 {_source.Date:yyyy-MM-dd} · {_source.Name} · {_source.Lessons.Length} 节 · {_source.ClockMessage}";
             if (changed) PopulateSubjects();
@@ -109,8 +117,8 @@ public partial class AutoRecordingWindow : Window
     }
     private void PopulateSubjects()
     {
-        var selected = Subjects.Items.Count == 0 ? _preview.State.Rules.SubjectIds ?? [] : Subjects.SelectedItems.Cast<SubjectOption>().Select(s => s.Id).ToArray();
-        var options = (_source?.Lessons.Select(l => new SubjectOption(l.SubjectId, l.Subject)) ?? [])
+        var selected = Subjects.Items.Count == 0 ? SelectedRule?.Filter.SubjectIds ?? [] : Subjects.SelectedItems.Cast<SubjectOption>().Select(s => s.Id).ToArray();
+        var options = (ViewSource?.Lessons.Select(l => new SubjectOption(l.SubjectId, l.Subject)) ?? [])
             .Where(s => s.Id != Guid.Empty).DistinctBy(s => s.Id).ToList();
         foreach (var id in selected.Where(id => options.All(s => s.Id != id))) options.Add(new(id, "当前课表未包含：" + id.ToString("N")[..8]));
         Subjects.ItemsSource = options;
@@ -118,9 +126,12 @@ public partial class AutoRecordingWindow : Window
     }
     private void Save()
     {
-        if (!_writable || ReferenceEquals(_saved, _preview.State)) return;
-        try { _store.Save(_preview.State); _saved = _preview.State; }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        if (!_writable) return;
+        try {
+            if (_ready && !ReferenceEquals(_savedBook, _book)) { _bookStore.Save(_book); _savedBook = _book; }
+            if (!ReferenceEquals(_saved, _preview.State)) { _store.Save(_preview.State); _saved = _preview.State; }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             _writable = false; _preview.SetEnabled(false, EventTime);
             ApplyRules.IsEnabled = TogglePreview.IsEnabled = SkipDay.IsEnabled = false;
@@ -136,30 +147,21 @@ public partial class AutoRecordingWindow : Window
         TogglePreview.Content = _preview.Enabled ? "停止预演" : "启动预演";
         SkipDay.IsEnabled = _writable && clock.CanStart;
         SkipDay.Content = clock.Now is { } date && _preview.State.SkipDate == DateOnly.FromDateTime(date.Date) ? "恢复今日预演" : "今天不再预演";
+        TodayButton.IsEnabled = TomorrowButton.IsEnabled = AfterTomorrowButton.IsEnabled = clock.CanStart;
+        SkipLesson.IsEnabled = _writable && _viewDate == _today;
+        OnlyExplicit.IsEnabled = _writable && ViewSource is { ProfileId: var profile } && profile != Guid.Empty;
+        OnlyExplicit.IsChecked = _book.Days.Any(d => d.Date == _viewDate && d.ProfileId == ViewSource?.ProfileId && d.OnlyExplicit);
         if (!rows) return;
+        DateStatus.Text = _viewDate is { } selectedDate ? $"{selectedDate:yyyy-MM-dd} · {(_viewDate == _today ? "当天生效安排（按实时学校时钟预演）" : _forecast is null ? "预计课表未加载；可编辑固定时段" : "预计课表，到当天重新核对")}" : "等待学校日期；也可选明确日期编辑草稿";
         string? selected = (Plans.SelectedItem as PlanRow)?.Key;
-        var items = _plans.Select(p => new PlanRow(p.Key, p.Lesson.Number, p.Lesson.Subject,
+        var items = ViewPlans.Select(p => new PlanRow(p.Key, p.Lesson.Number, p.Lesson.Subject,
             $"{p.Lesson.Start:HH:mm}–{p.Lesson.End:HH:mm}", $"{p.Start:HH:mm}–{p.End:HH:mm}",
-            _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _source is not null && _preview.IsMarked(_source.ProfileId, p.Lesson) ? "已预演 / 已跳过" : p.Reason)).ToArray();
+            _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _preview.IsMarked(ViewSource?.ProfileId ?? Guid.Empty, p) ? "已预演 / 已跳过" : (string.IsNullOrEmpty(p.Sources) ? "" : p.Sources + " · ") + p.Reason)).ToArray();
         Plans.ItemsSource = items;
         if (selected is not null) Plans.SelectedItem = items.FirstOrDefault(i => i.Key == selected);
         Events.ItemsSource = _preview.State.Events.Reverse().Select(e => $"{(e.At is { } at ? at.ToString("MM-dd HH:mm:ss") + " 学校时间" : "学校时间未知")}  {e.Action} · {e.Subject}｜{e.Message}").ToArray();
     }
-    private void ApplyClicked(object sender, RoutedEventArgs e)
-    {
-        if (!_writable) return;
-        try
-        {
-            int[] numbers = Numbers.Text.Split([',', '，', ' ', ';', '；'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(int.Parse).Distinct().ToArray();
-            int weekdays = Weekdays.Children.Cast<CheckBox>().Where(c => c.IsChecked == true).Sum(c => 1 << int.Parse((string)c.Tag));
-            _preview.Configure(new((int)LeadMinutes.SelectedItem, (int)TailMinutes.SelectedItem, weekdays, AllSubjects.IsChecked == true,
-                Subjects.SelectedItems.Cast<SubjectOption>().Select(s => s.Id).ToArray(), numbers));
-            _plans = _source is null ? [] : RecordingPlanner.Build(_source, _preview.State.Rules);
-            _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed); ErrorText.Text = "规则已应用并保存。"; Save(); Render();
-        }
-        catch (Exception error) when (error is FormatException or OverflowException or InvalidDataException)
-        { ErrorText.Text = "无法应用规则：" + error.Message; }
-    }
+    private void ApplyClicked(object sender, RoutedEventArgs e) => SaveRecurringRule();
     private void ToggleClicked(object sender, RoutedEventArgs e)
     {
         if (!_writable) return;
@@ -169,9 +171,9 @@ public partial class AutoRecordingWindow : Window
     }
     private void SkipClicked(object sender, RoutedEventArgs e)
     {
-        if (!_writable || _source is null || Plans.SelectedItem is not PlanRow row) return;
+        if (!_writable || _viewDate != _today || Plans.SelectedItem is not PlanRow row) return;
         var plan = _plans.First(p => p.Key == row.Key);
-        _preview.Skip(_source.ProfileId, plan.Lesson, EventTime);
+        _preview.SkipPlan(_source?.ProfileId ?? Guid.Empty, plan, EventTime);
         _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed); Save(); Render();
     }
     private void SkipDayClicked(object sender, RoutedEventArgs e)
@@ -182,6 +184,6 @@ public partial class AutoRecordingWindow : Window
         _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed); Save(); Render();
     }
     private void SubjectsChanged(object sender, RoutedEventArgs e) { if (Subjects is not null) Subjects.IsEnabled = AllSubjects.IsChecked != true; }
-    private async void RefreshClicked(object sender, RoutedEventArgs e) => await ReadAsync();
+    private async void RefreshClicked(object sender, RoutedEventArgs e) { await ReadAsync(); await ReadCalendarAsync(true); }
     private void HideClicked(object sender, RoutedEventArgs e) => Hide();
 }

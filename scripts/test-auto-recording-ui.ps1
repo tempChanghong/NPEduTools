@@ -52,6 +52,15 @@ function Wait-Control([string]$id, [string]$pattern = '', [string]$title = $wind
 function Click([string]$id, [string]$title = $windowTitle) {
     (Wait-Control $id '' $title).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
 }
+function Set-Text([string]$id, [string]$value) { (Wait-Control $id).GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($value) }
+function Plan-Rows {
+    return (Control 'AutoPlans').FindAll([Windows.Automation.TreeScope]::Children,
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::DataItem))
+}
+function Select-Plan([int]$index) { (Plan-Rows)[$index].GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select() }
+function Plan-Text {
+    return ((Control 'AutoPlans').FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition) | ForEach-Object { $_.Current.Name }) -join '|'
+}
 function Save-Window([string]$filename) {
     Start-Sleep -Milliseconds 250
     $handle = [IntPtr](Window $windowTitle).Current.NativeWindowHandle
@@ -110,8 +119,56 @@ try {
     Start-Sleep -Seconds 1
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     if (@($state.Events | Where-Object Action -eq '应开始').Count -ne 1) { throw 'Restart duplicated a stopped lesson.' }
-    if (Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Recorder.exe'" | Where-Object ParentProcessId -eq $app.Id) { throw 'Rehearsal must never start the recorder.' }
+    $testHost = Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Host.exe'" | Where-Object { $_.ParentProcessId -eq $app.Id -and $_.CommandLine.Contains($pipe) } | Select-Object -First 1
+    if (Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Recorder.exe'" | Where-Object { $_.ParentProcessId -eq $app.Id -or $_.ParentProcessId -eq $testHost.ProcessId }) { throw 'Rehearsal must never start the recorder.' }
     Save-Window 'preview-restored.png'
+    $bookPath = $statePath.Replace('.recording-preview.json','.recording-plans.json')
+    Click 'AutoTomorrow'
+    $null = Wait-Control 'AutoDateStatus' '2031-04-08.*预计课表，到当天'
+    if ((Plan-Text) -notmatch '科目已排除') { throw 'Default exclusion did not normalize Chinese parentheses.' }
+    Select-Plan 0; Click 'AutoInclude'
+    if ((Plan-Text) -notmatch '单日明确录制') { throw 'Date include failed to override default exclusion.' }
+    $book = Get-Content -LiteralPath $bookPath -Raw | ConvertFrom-Json
+    if ($book.Overrides[0].Date -ne '2031-04-08' -or $book.Overrides[0].Mode -ne 'Include') { throw 'Date override was not saved for school tomorrow.' }
+    Save-Window 'plans-tomorrow-include.png'
+    Select-Plan 0; Click 'AutoInherit'
+    if ((Plan-Text) -notmatch '科目已排除') { throw 'Restoring inheritance did not restore default exclusion.' }
+    Set-Text 'AutoDatedName' '明天单次验证'; Set-Text 'AutoDatedStart' '12:00'; Set-Text 'AutoDatedEnd' '12:30'; Click 'AutoSaveDated'
+    $null = Wait-Control 'AutoError' '指定日期的固定时段已保存'
+    $book = Get-Content -LiteralPath $bookPath -Raw | ConvertFrom-Json
+    if ($book.Dated.Count -ne 1 -or $book.Dated[0].Date -ne '2031-04-08' -or $book.Dated[0].Start -ne '12:00:00') { throw 'Single date fixed window was not saved.' }
+    if ((Plan-Rows).Count -ne 3) { throw 'Fixed window did not appear in forecast.' }
+    # Make the fixed window overlap an explicitly included lesson and verify both show a conflict.
+    Select-Plan 0; Click 'AutoInclude'; Select-Plan 2
+    Set-Text 'AutoDatedStart' '10:10'; Set-Text 'AutoDatedEnd' '10:20'; Click 'AutoSaveDated'
+    Start-Sleep -Milliseconds 200
+    if ((Plan-Text) -notmatch '固定时段与其他任务重叠') { throw 'Overlapping future tasks were not flagged.' }
+    Save-Window 'plans-conflict.png'
+    Select-Plan 1; Click 'AutoDeleteDated'; Select-Plan 0; Click 'AutoInherit'
+    # Add a disabled weekly fixed rule, then explicitly enable it in the editor.
+    Click 'AutoNewRule'; Set-Text 'AutoRuleName' '周期固定验证'
+    (Control 'AutoRuleEnabled').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    $kind = Control 'AutoRuleKind'; $kind.GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+    $fixedKind = $kind.FindFirst([Windows.Automation.TreeScope]::Descendants,
+        [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,'固定时间段'))
+    $fixedKind.GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Set-Text 'AutoRuleStart' '13:00'; Set-Text 'AutoRuleEnd' '13:30'; Click 'AutoApplyRules'
+    $null = Wait-Control 'AutoError' '规则已应用并保存'
+    $book = Get-Content -LiteralPath $bookPath -Raw | ConvertFrom-Json
+    $fixedRule = $book.Recurring | Where-Object Name -eq '周期固定验证'
+    if (-not $fixedRule.Enabled -or $fixedRule.FixedStart -ne '13:00:00') { throw 'Weekly fixed rule was not saved.' }
+    if ((Plan-Text) -notmatch '周期固定验证') { throw 'Weekly fixed rule missing from selected school date.' }
+    Save-Window 'plans-weekly-fixed.png'
+    # Invalid editing must preserve both the saved configuration and the user's text for correction.
+    Set-Text 'AutoRuleEnd' '12:30'; Click 'AutoApplyRules'
+    $null = Wait-Control 'AutoError' '未应用修改'
+    if ((Control 'AutoRuleEnd').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).Current.Value -ne '12:30') { throw 'Validation discarded editor input.' }
+    Set-Text 'AutoRuleEnd' '13:30'; Click 'AutoApplyRules'
+    Click 'AutoAfterTomorrow'; $null = Wait-Control 'AutoDateStatus' '2031-04-09.*预计课表，到当天'
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    if (@($state.Events | Where-Object Action -eq '应开始').Count -ne 1) { throw 'Viewing future dates triggered a rehearsal.' }
+    Copy-Item -LiteralPath $bookPath -Destination (Join-Path $runRoot 'recording-plans.json')
+    Click 'AutoToday'; $null = Wait-Control 'AutoDateStatus' '2031-04-07.*当天生效'
     $peer.Kill($true); $null = $peer.WaitForExit(5000)
     Click 'AutoRefresh'
     $null = Wait-Control 'AutoSourceStatus' '日程暂不可用|读取日程超时'
@@ -129,7 +186,22 @@ try {
     Save-Window 'preview-invalid-config.png'
     Click 'AutoHide'; Click 'StopHost' 'NPEduTools'
     if (-not $app.WaitForExit(20000)) { throw 'Invalid-config shutdown timed out.' }
-    @{passed=$true;checks=@('Real WPF uses ClassIsland 2031-04-07 rather than Windows date','School skip-today and ordinal filters','Rehearsal emits start and stop without capture','Manual skip survives refresh and full App restart','Sidebar entry and settings persistence','Unavailable upstream keeps App responsive','Invalid configuration is preserved without crashing');completedAt=[DateTimeOffset]::Now} |
+    # Plan-book corruption is independently rejected; then verify legacy migration and its immutable backup.
+    Copy-Item -LiteralPath (Join-Path $runRoot 'preview-state.json') -Destination $statePath -Force
+    Set-Content -LiteralPath $bookPath -Value '{"Version":999}' -Encoding utf8
+    $app = Start-App; Click 'OpenRecordingPlan' 'NPEduTools'; $null = Wait-Control 'AutoError' '录课计划无法读取'
+    if ((Control 'AutoTogglePreview').Current.IsEnabled) { throw 'Invalid plan book must disable rehearsal.' }
+    if ((Get-Content -LiteralPath $bookPath -Raw | ConvertFrom-Json).Version -ne 999) { throw 'Invalid plan book was overwritten.' }
+    Click 'AutoHide'; Click 'StopHost' 'NPEduTools'; if (-not $app.WaitForExit(20000)) { throw 'Book-validation shutdown timed out.' }
+    Move-Item -LiteralPath $bookPath -Destination (Join-Path $runRoot 'invalid-book.json')
+    $legacyHash = (Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash
+    $app = Start-App; Click 'OpenRecordingPlan' 'NPEduTools'; $null = Wait-Control 'AutoError' '已备份并作为停用草稿'
+    $migrated = Get-Content -LiteralPath $bookPath -Raw | ConvertFrom-Json
+    if ($migrated.Recurring.Count -ne 1 -or $migrated.Recurring[0].Enabled -or $migrated.Recurring[0].UseDefaultExclusions) { throw 'Migration changed legacy filtering or enabled the draft.' }
+    if ((Get-FileHash -LiteralPath ($statePath + '.pre-plan-book.bak') -Algorithm SHA256).Hash -ne $legacyHash) { throw 'Migration backup differs from original preview.' }
+    Save-Window 'plans-legacy-migrated.png'
+    Click 'AutoHide'; Click 'StopHost' 'NPEduTools'; if (-not $app.WaitForExit(20000)) { throw 'Migration shutdown timed out.' }
+    @{passed=$true;checks=@('Real WPF uses ClassIsland 2031-04-07 rather than Windows date','School skip-today and ordinal filters','Rehearsal emits start and stop without capture','Manual skip survives refresh and full App restart','Sidebar entry and settings persistence','Future date queries and default exclusions','Date include and inheritance','Single date fixed window and conflict','Weekly fixed editor and invalid input preservation','Future viewing never triggers current rehearsal','Unavailable upstream keeps App responsive','Invalid configuration is preserved without crashing','Invalid plan book is preserved and rehearsal disabled','Legacy rules migrate disabled with identical original backup');completedAt=[DateTimeOffset]::Now} |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runRoot 'summary.json') -Encoding utf8
     Write-Output "PASS: auto recording preview UI. Artifacts: $runRoot"
 }

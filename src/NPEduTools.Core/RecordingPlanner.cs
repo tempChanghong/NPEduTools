@@ -5,7 +5,7 @@ namespace NPEduTools.Core;
 public sealed record RecordingRules(int BeforeMinutes = 2, int AfterMinutes = 5, int Weekdays = 127,
     bool AllSubjects = true, Guid[]? SubjectIds = null, int[]? LessonNumbers = null);
 public sealed record PlannedRecording(string Key, LessonSlot Lesson, DateTimeOffset Start, DateTimeOffset End,
-    bool Selected, bool Conflict, string Reason);
+    bool Selected, bool Conflict, string Reason, bool Fixed = false, string Sources = "");
 
 public static class RecordingPlanner
 {

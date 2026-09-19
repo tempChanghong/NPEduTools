@@ -6,7 +6,8 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.Recorder;
 
-internal sealed class RecordingSession(Action<RecordingState> publish, string? fixtureWindow = null) : IAsyncDisposable
+internal sealed class RecordingSession(Action<RecordingState> publish, string? fixtureWindow = null, Func<double?>? captureBudget = null,
+    Func<RecorderControl?>? sessionControl = null) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
@@ -25,6 +26,12 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
     private double _seconds, _completedSeconds;
     private string _lastError = "";
     public RecordingState State => Volatile.Read(ref _state);
+    // Independent watchdog path: must remain usable while the command gate or a driver is blocked.
+    public void KillCapture()
+    {
+        try { var encoder = _encoder; if (encoder is not null && !encoder.HasExited) encoder.Kill(true); }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+    }
     public void StartMonitor() => _monitor = MonitorAsync();
 
     public async Task CommandAsync(RecorderCommand command)
@@ -74,7 +81,8 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
         (_width, _height) = RecordingContract.OutputSize(_display.Width, _display.Height, options.MaximumHeight);
         Directory.CreateDirectory(options.OutputDirectory);
         if (MediaTools.FreeSpace(options.OutputDirectory) < 512L * 1024 * 1024) throw new IOException("可用空间不足 512 MB，请选择其他保存位置。");
-        string name = "微课-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+        string name = sessionControl?.Invoke() is { Owner: "Automatic" } automatic ? "自动微课-" + automatic.SessionId.ToString("N") :
+            "微课-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
         _output = Path.Combine(Path.GetFullPath(options.OutputDirectory), name + ".mp4");
         _directory = Path.Combine(Path.GetFullPath(options.OutputDirectory), ".npeedutools-sessions", name);
         Directory.CreateDirectory(_directory);
@@ -95,6 +103,8 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
             _audio = new(options);
             await _audio.PrepareAsync();
         }
+        double? remaining = captureBudget?.Invoke();
+        if (remaining <= 0) throw new InvalidOperationException("会话已到截止时间，不能继续采集。");
         List<string> arguments = ["-hide_banner", "-loglevel", "warning", "-n", "-stats_period", "0.5", "-progress", "pipe:1", "-filter_threads", "1",
             "-thread_queue_size", "2", "-f", "gdigrab", "-framerate", options.FramesPerSecond.ToString(CultureInfo.InvariantCulture), "-draw_mouse", "1"];
         if (fixtureWindow is null)
@@ -107,7 +117,9 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
         arguments.AddRange(["-vf", $"scale={_width}:{_height}:flags=fast_bilinear,setsar=1", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
             "-crf", "23", "-pix_fmt", "yuv420p", "-threads", "2", "-g", (options.FramesPerSecond * 5).ToString(CultureInfo.InvariantCulture),
             "-r", options.FramesPerSecond.ToString(CultureInfo.InvariantCulture), "-fps_mode", "cfr", "-max_muxing_queue_size", "64",
-            "-flush_packets", "1", "-cluster_time_limit", "1000", "-f", "matroska", Path.Combine(_directory!, part)]);
+            "-flush_packets", "1", "-cluster_time_limit", "1000"]);
+        if (remaining is { } limit) arguments.AddRange(["-t", limit.ToString("F3", CultureInfo.InvariantCulture)]);
+        arguments.AddRange(["-f", "matroska", Path.Combine(_directory!, part)]);
         _encoder = Process.Start(MediaTools.StartInfo("ffmpeg", arguments, _directory)) ?? throw new IOException("无法启动录制进程。");
         _job.Add(_encoder);
         _parts.Add(part);
@@ -248,7 +260,7 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
         catch (IOException) { }
         var state = new RecordingState(phase, message, _completedSeconds + Volatile.Read(ref _seconds), _completedFrames + Interlocked.Read(ref _frames),
             bytes, _completedDropped + Interlocked.Read(ref _dropped), _overruns + (_audio?.Overruns ?? 0), phase == "Saved" ? _output : null, _directory,
-            error is null ? null : error[..Math.Min(error.Length, 1000)]);
+            error is null ? null : error[..Math.Min(error.Length, 1000)], sessionControl?.Invoke());
         Volatile.Write(ref _state, state);
         Persist(); publish(state);
     }

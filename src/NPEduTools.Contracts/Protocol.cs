@@ -12,7 +12,10 @@ public sealed record HostRequest(
     int ObserveMs = 0,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExecutablePath = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ExpectedRevision = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? OperationId = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? OperationId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateOnly? SchoolDate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RecorderCommand? Recording = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingCommand? Automatic = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -35,7 +38,10 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LaunchData? Launch = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TouchAssistState? TouchAssist = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DaySchedule? Schedule = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SchoolClockFrame? SchoolClock = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SchoolClockFrame? SchoolClock = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DayForecast? Forecast = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RecordingState? Recording = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingState? Automatic = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -77,7 +83,8 @@ public static class Protocol
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch" or
-            "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
+            "recording.status" or "recording.command" or "recording.automatic" or
+            "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
         if (request.Capability is "classisland.config.set" or "classisland.verify")
@@ -94,6 +101,23 @@ public static class Protocol
         if (request.Capability == "classisland.watch" && request.ObserveMs != 0) return "InvalidObservationWindow";
         if (request.Capability == "classisland.schedule" && request.ObserveMs != 0) return "InvalidObservationWindow";
         if (request.Capability == "classisland.school-clock" && request.ObserveMs != 0) return "InvalidObservationWindow";
+        if (request.Capability == "classisland.day-plan" ? request.SchoolDate is null || request.ObserveMs != 0 : request.SchoolDate is not null)
+            return "InvalidSchoolDate";
+        if (request.Capability == "recording.command")
+        {
+            if (request.Recording is not { } cmd || cmd.ClientId is null || cmd.ClientId == Guid.Empty || cmd.Action is not ("start" or "pause" or "resume" or "stop") ||
+                (cmd.Action == "start" ? cmd.Options is null || RecordingContract.Validate(cmd.Options) is not null || cmd.Control is not null :
+                    cmd.Options is not null || cmd.Control is not { SessionId: var id, Owner: "Manual" or "Automatic" } || id == Guid.Empty)) return "InvalidRecordingCommand";
+        }
+        else if (request.Recording is not null) return "UnexpectedParameters";
+        if (request.Capability == "recording.automatic")
+        {
+            if (request.Automatic is not { } cmd || cmd.ClientId == Guid.Empty ||
+                cmd.Action is not ("enable" or "disable" or "lease" or "skip-day" or "resume-day" or "skip-next") ||
+                (cmd.Action == "enable" ? cmd.Options is null || RecordingContract.Validate(cmd.Options) is not null : cmd.Options is not null)) return "InvalidAutomaticCommand";
+        }
+        else if (request.Automatic is not null) return "UnexpectedParameters";
+        if (request.Capability.StartsWith("recording.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         return null;
     }
 }

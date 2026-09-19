@@ -1,0 +1,117 @@
+{
+  "ico_frames": {
+    "16": {
+      "rgba_exact_match": true,
+      "alpha_range": [
+        0,
+        255
+      ],
+      "bbox": [
+        1,
+        1,
+        15,
+        16
+      ],
+      "variant": "small",
+      "encoding": "32-bit DIB + AND mask"
+    },
+    "24": {
+      "rgba_exact_match": true,
+      "alpha_range": [
+        0,
+        255
+      ],
+      "bbox": [
+        2,
+        1,
+        22,
+        23
+      ],
+      "variant": "small",
+      "encoding": "32-bit DIB + AND mask"
+    },
+    "32": {
+      "rgba_exact_match": true,
+      "alpha_range": [
+        0,
+        255
+      ],
+      "bbox": [
+        3,
+        2,
+        29,
+        31
+      ],
+      "variant": "small",
+      "encoding": "32-bit DIB + AND mask"
+    },
+    "48": {
+      "rgba_exact_match": true,
+      "alpha_range": [
+        0,
+        255
+      ],
+      "bbox": [
+        5,
+        3,
+        43,
+        45
+      ],
+      "variant": "small",
+      "encoding": "32-bit DIB + AND mask"
+    },
+    "64": {
+      "rgba_exact_match": true,
+      "alpha_range": [
+        0,
+        255
+      ],
+      "bbox": [
+        6,
+        4,
+        57,
+        60
+      ],
+      "variant": "small",
+      "encoding": "32-bit DIB + AND mask"
+    },
+    "256": {
+      "rgba_exact_match": true,
+      "alpha_range": [
+        0,
+        255
+      ],
+      "bbox": [
+        28,
+        16,
+        228,
+        240
+      ],
+      "variant": "standard",
+      "encoding": "PNG"
+    }
+  },
+  "svg": {
+    "npedutools-logo-mono-light.svg": {
+      "paths": 2,
+      "embedded_images": 0,
+      "background_shapes": 0
+    },
+    "npedutools-logo-mono.svg": {
+      "paths": 2,
+      "embedded_images": 0,
+      "background_shapes": 0
+    },
+    "npedutools-logo-small.svg": {
+      "paths": 3,
+      "embedded_images": 0,
+      "background_shapes": 0
+    },
+    "npedutools-logo.svg": {
+      "paths": 4,
+      "embedded_images": 0,
+      "background_shapes": 0
+    }
+  },
+  "original_sha256": "3f4a93b729be19db5726c632557d92c7a12c029792a7bb7b435d74afe3d792c0"
+}

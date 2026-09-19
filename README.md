@@ -1,14 +1,18 @@
 # NPEduTools
 
-面向 Windows 教室大屏的本地软件集成与控制层。主程序提供常驻桌面侧边栏与“概览／快捷启动／偏好设置”管理窗口，已集成 PowerPoint 触摸翻页。侧边栏默认位于右侧偏下，可拖动顶部 `n` 标记调整高度；课堂工具、我的快捷和设置各有独立入口，展开后可开启、暂停或停止辅助。运行 `./scripts/start-app.ps1` 查看实际窗口，界面与生命周期见 [主界面设计](docs/MAIN-WINDOW-DESIGN.md)。
+面向 Windows 教室大屏的本地软件集成与控制层。主程序提供常驻桌面侧边栏与“概览／快捷启动／偏好设置”管理窗口，已集成 PowerPoint 触摸翻页。侧边栏默认位于右侧偏下，可拖动顶部品牌图标调整高度；课堂工具、我的快捷和设置各有独立入口，展开后可开启、暂停或停止辅助。运行 `./scripts/start-app.ps1` 查看实际窗口，界面与生命周期见 [主界面设计](docs/MAIN-WINDOW-DESIGN.md)。
+
+已接入正式图标：程序、窗口与托盘使用多尺寸 ICO，主页面与侧边栏使用矢量标识。资源来源、更新方法和实际截图见 [图标接入说明](docs/BRANDING.md)。
 
 新增 [自定义快捷启动](docs/CUSTOM-SHORTCUTS.md)：在主窗口“快捷启动”添加应用、文件和网址，支持编辑、排序、移除与撤销。主页及贴边面板“我的快捷”同步显示入口；路径失效时可直接进入编辑器重新选择。
 
 新增 [独立微课录制](docs/MICROLESSON-RECORDING.md)：主窗口配置屏幕与音源，侧边栏暂停、继续和停止；支持系统声音与麦克风混录，8/15 fps、720p/1080p 上限，保存本地 MP4。借鉴 C30 的低帧率和进程隔离设计，使用独立采集实现。开发机录制与片段恢复已验证，目标大屏整课稳定性仍待现场测试。
 
-新增 [自动录课：今日计划与预演](docs/AUTO-LESSON-RECORDING-PREVIEW.md)：读取 ClassIsland 当前生效课表，按星期、科目、节次配置计划，默认课前 2 分钟至课后 5 分钟。主窗口“自动录课计划”或侧边栏“今日计划与预演”进入；当前阶段只模拟开始与结束，不采集屏幕或声音，尚未连接自动录制器。
+新增 [自动录课：周期与指定日期计划](docs/AUTO-RECORDING-PLANS.md)：支持每周跟随课表或固定时段、指定日期的课程覆盖及单次时段，默认排除约定的 17 项科目。今天、明天、后天与所有窗口采用 ClassIsland 学校时间；可查询今天起 31 天的预计课表，课表型任务默认课前 2 分钟至课后 5 分钟。主窗口或侧边栏“自动录课计划”进入；预演只模拟，点击“启用自动录制”后才按计划采集。
 
-后续 [ClassIsland 时间桥接与自动录课规划](docs/CLASSISLAND-RECORDING-BRIDGE-PLAN.md) 已按本地 ClassIsland Docs 和源码核对。现已完成 [P0 最小桥接与真实本体验证](docs/CLASSISLAND-RECORDING-BRIDGE-P0.md)，并将[现有预演全面切换到学校时间](docs/CLASSISLAND-SCHOOL-CLOCK-PREVIEW.md)：学校日期、触发和余量统一，断线不使用系统时间回退，活动预演期限不因回拨而延长。仍未接入自动采集。
+按本地 ClassIsland Docs 和源码核对的 [分阶段规划](docs/CLASSISLAND-RECORDING-BRIDGE-PLAN.md)，已完成 [P0 桥接验证](docs/CLASSISLAND-RECORDING-BRIDGE-P0.md)、[学校时钟预演](docs/CLASSISLAND-SCHOOL-CLOCK-PREVIEW.md)、未来日期与多类计划，以及 [P3 真实录制](docs/AUTO-RECORDING-EXECUTION.md)。Host 统一协调手动/自动录制，执行记录独立保存，暂停和时间回拨不延长截止，失联后录制器自行结束。先在微课窗口“保存设置”，再启用自动录制；重启后开关默认关闭。
+
+已生成 [P4 配套试用包及验证报告](docs/PORTABLE-RELEASE-VALIDATION.md)：包含 Windows x64 自包含主程序、后台、录制器与 0.2.0.0 桥接 `.cipx`。完整解压后双击 `Start-NPEduTools.cmd`；[安装与回退说明](docs/PORTABLE-CLASSROOM-GUIDE.md)随包提供。新解压包与真实 ClassIsland 已完成自动短录及 29 项联调检查；目标大屏整课、音频与休眠结果仍按 [现场验收表](docs/CLASSROOM-ACCEPTANCE.md) 待填。开发者可运行 `./scripts/package-npedutools.ps1` 重新打包。
 
 新增可运行的 [PowerPoint 触摸翻页工具](docs/POWERPOINT-TOUCH-ASSIST.md)：按参考项目 PowerPoint-Touch-Assist 的效果，轻点放映画面后补发空格，推进动画或下一页，提供暂停和退出。运行 `./scripts/start-powerpoint-assist.ps1`；便携包完整解压即可运行，无需安装 .NET。默认只响应触摸标记，鼠标保持原行为。开发机真实 PowerPoint 的模拟触摸链路已通过，目标 Office 2024 大屏的物理触摸仍需现场试用。
 

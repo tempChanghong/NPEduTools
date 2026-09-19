@@ -1,4 +1,5 @@
-param([string]$ClassIslandBinary = 'D:/WebstormProjects/ClassIsland/ClassIsland.Desktop/bin/Debug/net8.0-windows10.0.19041.0/ClassIsland.Desktop.exe', [switch]$VerifyHost)
+param([string]$ClassIslandBinary = 'D:/WebstormProjects/ClassIsland/ClassIsland.Desktop/bin/Debug/net8.0-windows10.0.19041.0/ClassIsland.Desktop.exe', [switch]$VerifyHost,
+    [string]$BridgePackage, [string]$PortableAppDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 & (Join-Path $PSScriptRoot 'dotnet.ps1') --version
@@ -22,6 +23,18 @@ Copy-Item -Path (Join-Path (Split-Path $ClassIslandBinary) '*') -Destination $ap
 Copy-Item -Path (Join-Path $fixtureOutput '*') -Destination $fixtureDirectory -Recurse
 Set-Content -LiteralPath (Join-Path $packageRoot 'PackageType') -Value 'folder' -NoNewline
 Set-Content -LiteralPath (Join-Path $runRoot 'fixture-marker') -Value 'Private disposable ClassIsland bridge test'
+$installedPlugin = Join-Path $dataDirectory 'Plugins/npedutools.recordingbridge'
+$disabledPlugin = Join-Path $runRoot 'disabled-bridge'
+if ($BridgePackage) {
+    $zip = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($BridgePackage))
+    try {
+        foreach ($entry in $zip.Entries) {
+            $target = [IO.Path]::GetFullPath((Join-Path $installedPlugin $entry.FullName))
+            if (-not $target.StartsWith([IO.Path]::GetFullPath($installedPlugin) + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid plugin archive path.' }
+        }
+    } finally { $zip.Dispose() }
+    [IO.Compression.ZipFile]::ExtractToDirectory([IO.Path]::GetFullPath($BridgePackage),$installedPlugin)
+}
 $owned = [Collections.Generic.List[Diagnostics.Process]]::new()
 $logs = [Collections.Generic.List[object]]::new()
 $samples = [Collections.Generic.List[object]]::new()
@@ -74,7 +87,13 @@ function Start-Island([bool]$WithBridge = $true) {
     $start.CreateNoWindow=$true; $start.WindowStyle='Hidden'; $start.WorkingDirectory=$runRoot
     $start.RedirectStandardOutput=$true; $start.RedirectStandardError=$true
     foreach ($arg in @('--quiet','-dm')) { $start.ArgumentList.Add($arg) }
-    if ($WithBridge) { $start.ArgumentList.Add('-epp'); $start.ArgumentList.Add($pluginOutput) }
+    if ($BridgePackage) {
+        foreach ($target in @($installedPlugin,$disabledPlugin)) {
+            if (-not [IO.Path]::GetFullPath($target).StartsWith([IO.Path]::GetFullPath($runRoot) + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe isolated plugin path.' }
+        }
+        if (-not $WithBridge -and (Test-Path -LiteralPath $installedPlugin)) { Move-Item -LiteralPath $installedPlugin -Destination $disabledPlugin }
+        if ($WithBridge -and (Test-Path -LiteralPath $disabledPlugin)) { Move-Item -LiteralPath $disabledPlugin -Destination $installedPlugin }
+    } elseif ($WithBridge) { $start.ArgumentList.Add('-epp'); $start.ArgumentList.Add($pluginOutput) }
     $start.Environment['ClassIsland_PackageRoot']=$packageRoot; $start.Environment['ClassIsland_WaitDebuggers']='0'
     $start.Environment['NPEEDUTOOLS_BRIDGE_FIXTURE']=$runRoot
     $process=[Diagnostics.Process]::Start($start); $owned.Add($process)
@@ -82,10 +101,11 @@ function Start-Island([bool]$WithBridge = $true) {
     $logs.Add(@{name="classisland-$($process.Id)";out=$process.StandardOutput.ReadToEndAsync();err=$process.StandardError.ReadToEndAsync()})
     return $process
 }
-function Query([string]$Mode = '') {
+function Query([string]$Mode = '', [string]$Date = '') {
     $start=[Diagnostics.ProcessStartInfo]::new($env:NPEEDUTOOLS_DOTNET_HOST); $start.UseShellExecute=$false; $start.CreateNoWindow=$true
     $start.RedirectStandardOutput=$true; $start.RedirectStandardError=$true
     $start.ArgumentList.Add($probeDll); if ($Mode) { $start.ArgumentList.Add($Mode) }
+    if ($Date) { $start.ArgumentList.Add($Date) }
     $client=[Diagnostics.Process]::Start($start); $out=$client.StandardOutput.ReadToEndAsync(); $err=$client.StandardError.ReadToEndAsync()
     try {
         if (-not $client.WaitForExit(10000)) { $client.Kill($true); throw 'Probe exceeded process deadline.' }
@@ -95,12 +115,12 @@ function Query([string]$Mode = '') {
         return $result
     } finally { $client.Dispose() }
 }
-function Wait-Snapshot([string]$DayStatus = 'Ready') {
+function Wait-Snapshot([string]$DayStatus = 'Ready', [long]$MinSequence = -1) {
     $deadline=[DateTime]::UtcNow.AddSeconds(25)
     do {
         if ($app.HasExited) { throw "ClassIsland exited: $($app.ExitCode)" }
         $result=Query
-        if ($result.clockState -eq 'Advancing' -and $result.day.status -eq $DayStatus -and $result.lifecycle -eq 'Ready') { return $result }
+        if ($result.clockState -eq 'Advancing' -and $result.day.status -eq $DayStatus -and $result.lifecycle -eq 'Ready' -and $result.sequence -gt $MinSequence) { return $result }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "No healthy snapshot: $($result | ConvertTo-Json -Depth 8 -Compress)"
@@ -132,8 +152,38 @@ Write-Output "Bridge live artifacts: $runRoot"
 try {
     Write-Fixture; $app=Start-Island
     $first=Wait-Snapshot; $hello=Query 'hello'
+    if ($PortableAppDirectory) {
+        $uiOutput = @(& (Join-Path $PSScriptRoot 'test-automatic-recording-ui.ps1') -AppDirectory $PortableAppDirectory -ClassIslandPipe 'ClassIsland.IPC.v2.Server')
+        $uiOutput | Write-Output
+        if (-not ($uiOutput | Where-Object { $_ -is [string] -and $_.StartsWith('PASS: automatic recording UI.') })) { throw 'Portable real-bridge recording UI did not pass.' }
+        Passed 'Extracted self-contained App/Host/Recorder load local runtimes and record through installed cipx in real isolated ClassIsland'
+    }
     if ($hello.contract -ne 'npedutools.recordingbridge.p0' -or $first.day.lessons.Count -ne 2) { throw 'Handshake/day mapping mismatch.' }
     Passed 'Real plugin load, shared IPC, .NET 8 to .NET 10, and two mapped lessons'
+    if ('calendar-31-days' -notin $hello.capabilities) { throw 'Calendar capability missing.' }
+    $beforeCalendar = Command 'inspect'
+    $schoolDate = ([datetime]$beforeCalendar.effectiveTime).Date
+    foreach ($offset in @(0,1,30,-1,31)) {
+        $date = $schoolDate.AddDays($offset).ToString('yyyy-MM-dd')
+        $forecast = Query 'day' $date
+        if ($offset -lt 0 -or $offset -gt 30) {
+            if ($forecast.status -ne 'OutOfRange' -or $forecast.day) { throw 'Calendar range boundary failed.' }
+        } else {
+            if ($forecast.status -ne 'Succeeded' -or -not $forecast.forecast -or $forecast.day.date -ne $date -or
+                $forecast.day.name -ne "Bridge day $([int]$schoolDate.AddDays($offset).DayOfWeek)" -or $forecast.day.lessons.Count -ne 2) { throw 'Calendar forecast mapping mismatch.' }
+        }
+    }
+    $afterCalendar = Command 'inspect'
+    if (($beforeCalendar.state | ConvertTo-Json -Compress) -ne ($afterCalendar.state | ConvertTo-Json -Compress)) { throw 'Calendar queries mutated current class plan or profile/settings.' }
+    Passed 'Calendar today, tomorrow and day 30 map correctly; past and day 31 are rejected'
+    Passed 'Calendar queries preserve current plan identity, temporary arrangements, groups, ordered schedules and clock settings'
+    $orderedBefore = Command 'future-order'
+    $orderedFuture = Query 'day' $schoolDate.AddDays(1).ToString('yyyy-MM-dd')
+    $orderedAfter = Command 'inspect'
+    if ($orderedFuture.status -ne 'Succeeded' -or $orderedFuture.day.planId -ne $first.day.planId -or
+        ($orderedBefore.state | ConvertTo-Json -Compress) -ne ($orderedAfter.state | ConvertTo-Json -Compress)) { throw 'Future ordered plan selection mutated live state or ignored the ordered plan.' }
+    $null = Command 'clear-orders'
+    Passed 'Future ordered temporary plan overrides weekday forecast without switching the live plan or consuming its reservation'
     if ($VerifyHost) {
         $start = [Diagnostics.ProcessStartInfo]::new($hostExe); $start.UseShellExecute = $false
         $start.CreateNoWindow = $true; $start.WindowStyle = 'Hidden'; $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
@@ -149,6 +199,12 @@ try {
         $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($bridgeHost.Id)" | Where-Object CommandLine -match '--bridge-worker')
         if ($children.Count -ne 1) { throw 'Expected exactly one persistent bridge worker.' }
         Passed 'Host keeps one leased bridge worker and one healthy IPC connection across repeated reads'
+        $tomorrowQuery = & $cliExe day-plan --date $schoolDate.AddDays(1).ToString('yyyy-MM-dd') --timeout-ms 8000 --pipe $hostPipe | ConvertFrom-Json -DateKind String
+        if ($LASTEXITCODE -ne 0 -or -not $tomorrowQuery.forecast.forecast -or $tomorrowQuery.forecast.schedule.clockVerified -or
+            $tomorrowQuery.forecast.schoolDate -ne $schoolDate.ToString('yyyy-MM-dd')) { throw 'Host forecast should preserve school date and remain non-executable.' }
+        $clockAfterQuery = Wait-HostClock
+        if ($clockAfterQuery.connectionId -ne $hostFirst.connectionId -or $clockAfterQuery.schedule.date -ne $schoolDate.ToString('yyyy-MM-dd')) { throw 'Future query replaced today or its healthy connection.' }
+        Passed 'Real future query through Host and CLI preserves the current school clock connection'
     }
     foreach ($offset in @(120,-120)) {
         $null=Command 'offset' @{seconds=$offset}; Start-Sleep -Milliseconds 400
@@ -191,6 +247,14 @@ try {
         if ($hostRecovered.connectionId -ne $hostFirst.connectionId) { throw 'UI stall unnecessarily replaced healthy IPC.' }
         Passed 'Host recovers on the existing IPC connection after UI unblocks'
     }
+    $null=Command 'block'
+    $beforeBlock = Query
+    $calendarBlocked = Query 'day' $schoolDate.AddDays(1).ToString('yyyy-MM-dd')
+    if ($calendarBlocked.status -ne 'TimedOut' -or $calendarBlocked.day) { throw 'Blocked UI calendar request did not time out without stale data.' }
+    $null=Wait-Snapshot -MinSequence $beforeBlock.sequence
+    $calendarRecovered = Query 'day' $schoolDate.AddDays(1).ToString('yyyy-MM-dd')
+    if ($calendarRecovered.status -ne 'Succeeded') { throw 'Calendar query did not recover after UI blocking.' }
+    Passed 'Calendar query times out while UI is blocked and recovers after expired work is discarded'
     $tomorrow=[DateTime]::Today.AddDays(1)
     $null=Command 'offset' @{seconds=($tomorrow.AddSeconds(-5)-[DateTime]::Now).TotalSeconds}
     Start-Sleep -Milliseconds 400; $preMidnight=Wait-Snapshot

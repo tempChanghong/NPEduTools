@@ -12,7 +12,7 @@ namespace NPEduTools.Host;
 [SupportedOSPlatform("windows")]
 public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
-    SchoolClockMonitor? schoolClock = null)
+    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
@@ -54,6 +54,7 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
                 else if (request.Capability == "host.stop")
                 {
+                    if (stop is not null && recording is not null) await recording.StopAsync();
                     if (stop is not null && touch is not null) await touch.StopAsync();
                     if (stop is not null && launch is not null) await launch.StopAsync();
                     if (stop is not null && monitor is not null) await monitor.StopAsync();
@@ -64,6 +65,9 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 else if (request.Capability == "classisland.school-clock")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "学校时间状态",
                         SchoolClock: schoolClock?.Snapshot() ?? SchoolClockFrame.Unavailable("此后台不支持学校时间，请更新后台。"));
+                else if (request.Capability.StartsWith("recording.", StringComparison.Ordinal))
+                    response = recording is not null ? await recording.HandleAsync(request)
+                        : new(Protocol.Version, request.RequestId, "Rejected", "RecordingUnavailable", "此后台不支持录制管理。");
                 else if (request.Capability.StartsWith("presentation.touch.", StringComparison.Ordinal))
                     response = touch is not null ? await touch.HandleAsync(request, token)
                         : new(Protocol.Version, request.RequestId, "Rejected", "TouchUnavailable", "此后台未启用触摸辅助。");
@@ -74,12 +78,12 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 {
                     // Client disconnection does not cancel an accepted read-only operation.
                     var result = await reader.ReadAsync(new(TimeSpan.FromMilliseconds(request.TimeoutMs),
-                        TimeSpan.FromMilliseconds(request.ObserveMs), request.Capability == "classisland.schedule"), token);
+                        TimeSpan.FromMilliseconds(request.ObserveMs), request.Capability == "classisland.schedule", request.SchoolDate), token);
                     var status = result.Status;
                     response = new(Protocol.Version, request.RequestId, result.Outcome, result.ErrorCode, result.Message,
                         status is null ? null : new(status.SampleStartedAt, status.SampleCompletedAt, status.State,
                             status.Subject, status.IsTimerRunning, status.IsClassPlanLoaded, status.IsClassPlanEnabled,
-                            status.CurrentSelectedIndex, status.ObservedEvents), Schedule: result.Schedule);
+                            status.CurrentSelectedIndex, status.ObservedEvents), Schedule: result.Schedule, Forecast: result.Forecast);
                 }
                 // Structured diagnostics contain identifiers and outcomes, never lesson contents.
                 log(JsonSerializer.Serialize(new

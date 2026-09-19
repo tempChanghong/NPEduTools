@@ -28,10 +28,11 @@ bool workerMode = args.Length > 0 && args[0] == "--ipc-worker";
 bool scheduleMode = args.Length > 0 && args[0] == "--schedule-worker";
 bool monitorMode = args.Length > 0 && args[0] == "--monitor-worker";
 bool bridgeMode = args.Length > 0 && args[0] == "--bridge-worker";
+bool calendarMode = args.Length > 0 && args[0] == "--calendar-worker";
 var options = new Dictionary<string, string>();
-for (int i = workerMode || monitorMode || scheduleMode || bridgeMode ? 1 : 0; i < args.Length; i += 2)
+for (int i = workerMode || monitorMode || scheduleMode || bridgeMode || calendarMode ? 1 : 0; i < args.Length; i += 2)
 {
-    if (i + 1 >= args.Length || args[i] is not ("--pipe" or "--classisland-pipe" or "--observe-ms" or "--data-dir") ||
+    if (i + 1 >= args.Length || args[i] is not ("--pipe" or "--classisland-pipe" or "--observe-ms" or "--data-dir" or "--school-date") ||
         !options.TryAdd(args[i], args[i + 1]) || args[i + 1].Length is 0 or > 2048)
     {
         Console.Error.WriteLine("Invalid arguments. Use --help.");
@@ -77,7 +78,7 @@ if (monitorMode || bridgeMode)
     return 0;
 }
 
-if (workerMode || scheduleMode)
+if (workerMode || scheduleMode || calendarMode)
 {
     if (!int.TryParse(options.GetValueOrDefault("--observe-ms", "0"), out int observeMs) || observeMs is < 0 or > 5000)
         return 2;
@@ -85,12 +86,12 @@ if (workerMode || scheduleMode)
     _ = Task.Run(async () => { await Task.Delay(TimeSpan.FromSeconds(20)); Environment.Exit(124); });
     var output = Console.OpenStandardOutput();
     Console.SetOut(Console.Error); // Third-party diagnostic output must not corrupt the binary frame.
-    var result = scheduleMode ? await ClassIslandScheduleProbe.ReadAsync(classIslandPipe) : await ClassIslandProbe.ReadAsync(classIslandPipe, observeMs);
+    var result = calendarMode ? await ClassIslandCalendarProbe.ReadAsync(classIslandPipe, options.GetValueOrDefault("--school-date", "")) : scheduleMode ? await ClassIslandScheduleProbe.ReadAsync(classIslandPipe) : await ClassIslandProbe.ReadAsync(classIslandPipe, observeMs);
     await Protocol.WriteAsync(output, result, CancellationToken.None);
     return 0;
 }
 
-if (options.ContainsKey("--observe-ms")) return 2;
+if (options.ContainsKey("--observe-ms") || options.ContainsKey("--school-date")) return 2;
 using var instance = new Mutex(false, $@"Local\{pipeName}.Host", out bool createdNew);
 if (!createdNew)
 {
@@ -100,7 +101,7 @@ if (!createdNew)
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
-ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = false, bool bridge = false)
+ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = false, bool bridge = false, DateOnly? schoolDate = null)
 {
     var start = new ProcessStartInfo(Environment.ProcessPath!)
     {
@@ -109,14 +110,19 @@ ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = fa
     };
     if (string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet", StringComparison.OrdinalIgnoreCase))
         start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
-    start.ArgumentList.Add(bridge ? "--bridge-worker" : monitor ? "--monitor-worker" : schedule ? "--schedule-worker" : "--ipc-worker");
+    start.ArgumentList.Add(schoolDate is not null ? "--calendar-worker" : bridge ? "--bridge-worker" : monitor ? "--monitor-worker" : schedule ? "--schedule-worker" : "--ipc-worker");
     start.ArgumentList.Add("--classisland-pipe");
     start.ArgumentList.Add(classIslandPipe);
     start.ArgumentList.Add("--observe-ms");
     start.ArgumentList.Add(observeMs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    if (schoolDate is { } date)
+    {
+        start.ArgumentList.Add("--school-date");
+        start.ArgumentList.Add(date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+    }
     return start;
 }
-using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds, query.IncludeSchedule));
+using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds, query.IncludeSchedule, schoolDate: query.SchoolDate));
 await using var monitor = new StatusMonitor(() => WorkerStart(true), Console.Error.WriteLine);
 await using var schoolClock = new SchoolClockMonitor(() => WorkerStart(true, bridge: true), Console.Error.WriteLine);
 string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeEndpoint.DefaultName
@@ -134,9 +140,10 @@ await using var touch = new TouchAssistService(() =>
     return start;
 });
 Console.WriteLine($"Host ready: {pipeName}");
+await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot);
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

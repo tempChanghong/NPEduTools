@@ -1,4 +1,4 @@
-<Window x:Class="NPEduTools.App.QuickAccessWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="NPEduTools 快捷工具" Width="80" Height="284" WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True" Background="Transparent" ShowInTaskbar="False" ShowActivated="False" Topmost="True" FontFamily="Microsoft YaHei UI" Foreground="#202E35" UseLayoutRounding="True" AutomationProperties.AutomationId="QuickAccessWindow">
+<Window x:Class="NPEduTools.App.QuickAccessWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Icon="/Assets/npedutools.ico" Title="NPEduTools 快捷工具" Width="80" Height="284" WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True" Background="Transparent" ShowInTaskbar="False" ShowActivated="False" Topmost="True" FontFamily="Microsoft YaHei UI" Foreground="#202E35" UseLayoutRounding="True" AutomationProperties.AutomationId="QuickAccessWindow">
   <Window.Resources>
     <Style x:Key="RailButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="Width" Value="52" /><Setter Property="Height" Value="52" /><Setter Property="Padding" Value="0" />
@@ -10,8 +10,8 @@
     <Grid.ColumnDefinitions><ColumnDefinition x:Name="LeftColumn" Width="0" /><ColumnDefinition x:Name="RightColumn" Width="68" /></Grid.ColumnDefinitions>
     <Border x:Name="Rail" Grid.Column="1" Background="#FAFCFA" BorderBrush="#DCE5DF" BorderThickness="1" CornerRadius="20" Padding="7,10" VerticalAlignment="Bottom">
       <StackPanel>
-        <Button x:Name="EdgeHandle" Style="{StaticResource RailButton}" Background="#246C52" Foreground="White" Click="HandleClicked" ToolTip="点击展开或收起；拖动调整位置" AutomationProperties.AutomationId="EdgeHandle" AutomationProperties.Name="展开快捷工具，可上下拖动">
-          <StackPanel><TextBlock Text="n" FontFamily="Segoe UI" FontSize="31" FontWeight="Bold" Foreground="#EDFFF2" HorizontalAlignment="Center" Margin="0,-7,0,0" /><Border Width="13" Height="2" CornerRadius="1" Background="#91BFA3" Margin="0,2,0,0" /></StackPanel>
+        <Button x:Name="EdgeHandle" Style="{StaticResource RailButton}" Background="#147D68" Foreground="White" Click="HandleClicked" ToolTip="点击展开或收起；拖动调整位置" AutomationProperties.AutomationId="EdgeHandle" AutomationProperties.Name="展开快捷工具，可上下拖动">
+          <StackPanel><Image Source="{StaticResource BrandLogoLight}" Width="34" Height="34" /><Border Width="13" Height="2" CornerRadius="1" Background="#91BFA3" Margin="0,3,0,0" /></StackPanel>
         </Button>
         <Button x:Name="RailTools" Style="{StaticResource RailButton}" Click="RailToolsClicked" ToolTip="课堂工具" AutomationProperties.AutomationId="RailTools" AutomationProperties.Name="打开课堂工具">
           <Grid><TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="22" /><Ellipse x:Name="RailStatusDot" Fill="#A5B3AB" Width="6" Height="6" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-5,0" /></Grid>
@@ -48,7 +48,9 @@
             <DockPanel><Button x:Name="RecordingButton" DockPanel.Dock="Right" Content="录制" Padding="12,8" Click="RecordingClicked" AutomationProperties.AutomationId="QuickOpenRecording" /><TextBlock Text="录制微课" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel>
             <TextBlock x:Name="RecordingStatus" Text="准备录制" FontSize="12" Foreground="#718089" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="QuickRecordingStatus" />
             <WrapPanel x:Name="RecordingControls" Visibility="Collapsed" Margin="0,12,0,0"><Button x:Name="RecordingPause" Content="暂停" Padding="12,8" Click="RecordingPauseClicked" AutomationProperties.AutomationId="QuickRecordingPause" Margin="0,0,6,0" /><Button x:Name="RecordingStop" Content="停止并保存" Padding="12,8" Click="RecordingStopClicked" AutomationProperties.AutomationId="QuickRecordingStop" /></WrapPanel>
-            <Button Content="今日计划与预演  →" Click="RecordingPlanClicked" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Padding="0,8" Margin="0,8,0,0" AutomationProperties.AutomationId="QuickRecordingPlan" />
+            <TextBlock x:Name="AutomaticStatus" Text="自动录制未启用" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="QuickAutomaticStatus" />
+            <Button x:Name="AutomaticSkipDay" Content="今天不再自动录制" Click="AutomaticSkipDayClicked" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickAutoSkipDay" />
+            <Button Content="自动录课计划  →" Click="RecordingPlanClicked" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Padding="0,8" Margin="0,8,0,0" AutomationProperties.AutomationId="QuickRecordingPlan" />
           </StackPanel></Border>
           <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="14" Padding="16" Margin="0,12,0,0"><StackPanel>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>

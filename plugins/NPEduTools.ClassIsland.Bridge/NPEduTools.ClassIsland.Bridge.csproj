@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework><EnableDynamicLoading>true</EnableDynamicLoading>
-    <Version>0.1.0</Version><CreateCipx>false</CreateCipx>
+    <Version>0.2.0</Version><CreateCipx>false</CreateCipx>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ClassIsland.PluginSdk" Version="2.1.0.1" ExcludeAssets="runtime;native" />

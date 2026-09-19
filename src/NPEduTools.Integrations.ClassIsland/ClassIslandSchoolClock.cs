@@ -70,11 +70,15 @@ public static class ClassIslandSchoolClock
         string state = age >= SchoolClockFrame.MaxAgeMs ? "Stale" : s.ClockState;
         if (state is not ("Advancing" or "WarmingUp" or "Discontinuous" or "FrozenSuspected" or "Stale" or "Unavailable"))
             throw new InvalidDataException("Unknown clock state");
-        DaySchedule? day = null;
-        if (s.Day is { } d)
-        {
+        var day = s.Day is { } d ? ConvertDay(d, DateOnly.FromDateTime(now.Date), now, state == "Advancing", s.LessonTimerRunning) : null;
+        return new(Guid.Empty, s.BridgeInstanceId, s.Sequence, s.ClockEpoch, now, age, state,
+            state == "Advancing" ? "正在使用 ClassIsland 学校时间" : "学校时间校验中：" + state, day);
+    }
+
+    public static DaySchedule ConvertDay(BridgeDay d, DateOnly expectedDate, DateTimeOffset now, bool verified, bool timerRunning)
+    {
             if (!DateOnly.TryParseExact(d.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ||
-                date != DateOnly.FromDateTime(now.Date) || d.Lessons is null or { Length: > 64 } ||
+                date != expectedDate || d.Lessons is null or { Length: > 64 } ||
                 d.Name is null or { Length: > 256 } || d.Revision is null or { Length: > 128 })
                 throw new InvalidDataException("Inconsistent day");
             var slots = d.Lessons.Select(l =>
@@ -84,19 +88,18 @@ public static class ClassIslandSchoolClock
                 if (DateOnly.FromDateTime(end.Date) != date) throw new InvalidDataException("Invalid end date");
                 return new LessonSlot(l.Number, l.SubjectId, l.Subject, start, end, l.Enabled);
             }).ToArray();
-            bool ready = d.Status == "Ready" && s.LessonTimerRunning;
+            bool ready = d.Status == "Ready" && timerRunning;
             if (ready && (d.ProfileId == Guid.Empty || d.PlanId is null || d.LayoutId is null || d.PlanId == Guid.Empty || d.LayoutId == Guid.Empty))
                 throw new InvalidDataException("Missing plan identity");
-            day = new(d.ProfileId, d.PlanId ?? Guid.Empty, d.LayoutId ?? Guid.Empty, d.Name, date, d.Revision,
-                now, ready, state == "Advancing", d.Status switch
+            var day = new DaySchedule(d.ProfileId, d.PlanId ?? Guid.Empty, d.LayoutId ?? Guid.Empty, d.Name, date, d.Revision,
+                now, ready, verified, d.Status switch
                 {
                     "Ready" => "生效课表", "NoPlan" => "本日无课表", "Disabled" => "课表已停用",
                     "TimerStopped" => "课程计时已暂停", "Changing" => "课表更新中", _ => "课表暂不可用"
                 }, slots);
             _ = RecordingPlanner.Build(day, new());
-        }
-        return new(Guid.Empty, s.BridgeInstanceId, s.Sequence, s.ClockEpoch, now, age, state,
-            state == "Advancing" ? "正在使用 ClassIsland 学校时间" : "学校时间校验中：" + state, day);
+
+        return day;
     }
 
     public static DateTimeOffset ParseSchoolTime(string text)

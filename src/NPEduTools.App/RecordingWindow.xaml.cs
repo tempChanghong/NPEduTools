@@ -10,6 +10,15 @@ namespace NPEduTools.App;
 public partial class RecordingWindow : Window
 {
     private sealed record Preferences(int Version, RecordingOptions Options);
+    internal static RecordingOptions? ReadSavedOptions(string endpoint)
+    {
+        string path = StartupPreferencesStore.PathFor(endpoint).Replace(".startup.json", ".recording.json", StringComparison.Ordinal);
+        if (!File.Exists(path)) return null;
+        if (new FileInfo(path).Length > 16384) throw new InvalidDataException("录制设置过大。");
+        var settings = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(path));
+        if (settings is not { Version: 1, Options: not null } || RecordingContract.Validate(settings.Options) is not null) throw new InvalidDataException("录制设置无效。");
+        return settings.Options;
+    }
     private readonly RecordingClient _client;
     private readonly string _preferencesPath;
     private bool _shutdown, _readable = true, _probing;
@@ -85,12 +94,22 @@ public partial class RecordingWindow : Window
     }
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
-        if (_client.State.Active || _probing || _environment?.Ready != true) return;
+        var options = OptionsFromForm(); if (options is null) return;
+        SavePreferences(options);
+        await _client.SendAsync("start", options);
+    }
+    private RecordingOptions? OptionsFromForm()
+    {
+        if (_client.State.Active || _probing || _environment?.Ready != true) return null;
         var options = new RecordingOptions(DisplayChoice.SelectedValue as string ?? "", OutputDirectory.Text.Trim(), Fps, MaximumHeight,
             SystemSound.IsChecked == true, MicrophoneSound.IsChecked == true, SpeakerChoice.SelectedValue as string ?? "default", MicrophoneChoice.SelectedValue as string ?? "default");
-        if (RecordingContract.Validate(options) is { } error) { RecordingError.Text = error; return; }
+        if (RecordingContract.Validate(options) is { } error) { RecordingError.Text = error; return null; }
         if ((options.Microphone && _environment.Microphones.Length == 0) || (options.SystemAudio && _environment.Speakers.Length == 0))
-        { RecordingError.Text = "所选音源没有可用设备。请连接设备并重新检测，或取消该音源。"; return; }
+        { RecordingError.Text = "所选音源没有可用设备。请连接设备并重新检测，或取消该音源。"; return null; }
+        return options;
+    }
+    private void SavePreferences(RecordingOptions options)
+    {
         if (_readable)
         {
             try
@@ -98,11 +117,13 @@ public partial class RecordingWindow : Window
                 Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
                 File.WriteAllText(_preferencesPath + ".tmp", JsonSerializer.Serialize(new Preferences(1, options)));
                 File.Move(_preferencesPath + ".tmp", _preferencesPath, true); _saved = options;
+                RecordingError.Text = "录制设置已保存，可在自动录课计划中启用。";
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RecordingError.Text = "录制设置未能保存；本次使用当前选项。"; }
         }
-        await _client.SendAsync("start", options);
     }
+    private void SaveSettingsClicked(object sender, RoutedEventArgs e)
+    { if (OptionsFromForm() is { } options) SavePreferences(options); }
     private async void PauseClicked(object sender, RoutedEventArgs e) => await _client.SendAsync(_client.State.Phase == "Paused" ? "resume" : "pause");
     private async void StopClicked(object sender, RoutedEventArgs e) => await _client.SendAsync("stop");
     private void Apply(RecordingState state)
@@ -116,6 +137,7 @@ public partial class RecordingWindow : Window
         RecordingSettings.IsEnabled = !state.Active && !_probing;
         RecordStart.Visibility = state.Active ? Visibility.Collapsed : Visibility.Visible;
         RecordStart.IsEnabled = !state.Active && !_probing && _environment?.Ready == true;
+        SaveSettings.IsEnabled = RecordStart.IsEnabled;
         RecordPause.Visibility = RecordStop.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
         RecordPause.IsEnabled = RecordStop.IsEnabled = !state.Busy;
         RecordPause.Content = state.Phase == "Paused" ? "继续录制" : "暂停";

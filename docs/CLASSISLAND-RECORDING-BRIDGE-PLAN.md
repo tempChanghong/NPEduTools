@@ -2,9 +2,11 @@
 
 设计日期：2026-09-19。本文记录设计阶段的方案与验收要求；设计时尚未实现桥接插件。当前进度见下方执行更新。
 
-后续执行更新（2026-09-19）：P0 最小桥接已实现并通过真实本体验证，详见 [P0 报告](CLASSISLAND-RECORDING-BRIDGE-P0.md)。随后完成了[第二步：现有预演采用学校时间](CLASSISLAND-SCHOOL-CLOCK-PREVIEW.md)。下文保留规划时点的完整阶段定义；第二步覆盖学校时钟、连接与现有预演，尚不包括 P1 的未来日期查询、P2 的多类规则和 P3/P4 的正式采集与大屏验收。
+后续执行更新（2026-09-19）：P0 最小桥接已实现并通过真实本体验证，详见 [P0 报告](CLASSISLAND-RECORDING-BRIDGE-P0.md)。随后完成了[现有预演采用学校时间](CLASSISLAND-SCHOOL-CLOCK-PREVIEW.md)、[P1 有限日期查询与 P2 周期/指定日期计划](AUTO-RECORDING-PLANS.md)，以及 [P3 真实录制与截止保护](AUTO-RECORDING-EXECUTION.md)。P3 已通过开发机私有短课表与实际录制测试；P4 目标大屏及配套发布验收尚未完成。下文保留规划时点的阶段定义；JSON 事务账本、Windows 同机 QPC 截止及保守 Interrupted 恢复等实现取舍见 P3 报告。复杂群组/多周/临时层组合的完整兼容矩阵仍待补齐。
 
 本规划承接已实现的 [今日计划与预演](AUTO-LESSON-RECORDING-PREVIEW.md)，整合用户新增的周期计划、指定日期计划、默认排除科目，以及必须使用 ClassIsland 时间的要求。若与 [早期构思](AUTO-LESSON-RECORDING-DESIGN.md) 冲突，以本文为准。
+
+P4 准备更新：已完成 [配套试用包与开发机安装验证](PORTABLE-RELEASE-VALIDATION.md)，从新 ZIP 解压的自包含 App 经真实 ClassIsland 的标准插件目录加载 `.cipx` 后完成自动短录。安装管理器交互、教室大屏整课/声音/物理休眠仍待现场验收，不标记 P4 全部完成。
 
 ## 1. 决策摘要与范围
 

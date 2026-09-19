@@ -1,0 +1,5 @@
+Illustrator 30.7.0 | RGB | 4 artboards | 11 paths | 0 raster items | 0 placed items
+standard: 4 paths
+small: 3 paths
+mono: 2 paths
+mono-light: 2 paths

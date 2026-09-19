@@ -9,10 +9,19 @@ public sealed record RecordingEnvironment(bool Ready, string? Error, RecordingDi
 public sealed record RecordingOptions(string Display, string OutputDirectory, int FramesPerSecond = 8,
     int MaximumHeight = 1080, bool SystemAudio = true, bool Microphone = true,
     string SpeakerId = "default", string MicrophoneId = "default");
-public sealed record RecorderCommand(string Action, RecordingOptions? Options = null);
+public sealed record RecorderControl(string Owner, Guid SessionId, string OccurrenceId, long HardDeadline, long LeaseDeadline)
+{
+    public bool Matches(RecorderControl? other) => other is not null && Owner == other.Owner && SessionId == other.SessionId && OccurrenceId == other.OccurrenceId;
+}
+public sealed record RecorderCommand(string Action, RecordingOptions? Options = null, RecorderControl? Control = null, Guid? ClientId = null);
+public sealed record AutomaticRecordingCommand(string Action, Guid ClientId, RecordingOptions? Options = null);
+public sealed record RecordingExecution(string Key, Guid ProfileId, DateOnly Date, bool Fixed, DateTimeOffset Start,
+    DateTimeOffset End, string Subject, Guid SessionId, string Phase, string Reason, string? OutputFile = null, string? RecoveryDirectory = null);
+public sealed record AutomaticRecordingState(bool Enabled, Guid ClientId, string Message, DateOnly? SkipDate,
+    RecordingExecution[] Recent, string? Error = null);
 public sealed record RecordingState(string Phase, string Message, double Seconds = 0, long Frames = 0,
     long Bytes = 0, long DroppedFrames = 0, long AudioOverruns = 0, string? OutputFile = null,
-    string? RecoveryDirectory = null, string? Error = null)
+    string? RecoveryDirectory = null, string? Error = null, RecorderControl? Control = null)
 {
     public bool Active => Phase is "Starting" or "Recording" or "Pausing" or "Paused" or "Saving";
     public bool Busy => Phase is "Starting" or "Pausing" or "Saving";

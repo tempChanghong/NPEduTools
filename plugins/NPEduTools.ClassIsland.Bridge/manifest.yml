@@ -1,9 +1,9 @@
 id: npedutools.recordingbridge
-name: NPEduTools 时间桥接（P0 验证）
-description: 只读提供 ClassIsland 有效时间与当天课表；不进行录制。
+name: NPEduTools 时间与课表桥接
+description: 只读提供学校时间、当天生效课表与未来 30 天预计课表；不进行录制。
 entranceAssembly: NPEduTools.ClassIsland.Bridge.dll
 apiVersion: 2.1.0.1
-version: 0.1.0.0
+version: 0.2.0.0
 author: NPEduTools
 supportedOSPlatforms:
   - Windows

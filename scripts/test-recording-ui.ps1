@@ -1,4 +1,4 @@
-param([ValidateSet('Debug','Release')][string]$Configuration = 'Release')
+param([ValidateSet('Debug','Release')][string]$Configuration = 'Release', [string]$AppDirectory)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing.Common
 Add-Type @'
@@ -14,6 +14,7 @@ $projectRoot = Split-Path $PSScriptRoot -Parent
 $runRoot = Join-Path $projectRoot ('.artifacts/recording-ui/' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
 $appExe = Join-Path $projectRoot "src/NPEduTools.App/bin/$Configuration/net10.0-windows/NPEduTools.App.exe"
+if ($AppDirectory) { $appExe = Join-Path ([IO.Path]::GetFullPath($AppDirectory)) 'NPEduTools.App.exe' }
 $fixtureExe = Join-Path $projectRoot "tests/NPEduTools.Recording.TestFixture/bin/$Configuration/net10.0-windows/NPEduTools.Recording.TestFixture.exe"
 $ffmpeg = Join-Path (Split-Path $appExe -Parent) 'Recorder/Tools/ffmpeg.exe'
 $ffprobe = Join-Path (Split-Path $appExe -Parent) 'Recorder/Tools/ffprobe.exe'
@@ -81,7 +82,8 @@ try {
     Save-Window $recordTitle 'settings.png'
     Click $recordTitle 'RecordingStart'
     $null = Wait-Control $recordTitle 'RecordingStatus' '^正在录制$'
-    $worker = Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Recorder.exe'" | Where-Object { $_.ParentProcessId -eq $app.Id } | Select-Object -First 1
+    $hostProcess = Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Host.exe'" | Where-Object { $_.ParentProcessId -eq $app.Id -and $_.CommandLine.Contains($pipe) } | Select-Object -First 1
+    $worker = Get-CimInstance Win32_Process -Filter "Name='NPEduTools.Recorder.exe'" | Where-Object { $_.ParentProcessId -eq $hostProcess.ProcessId } | Select-Object -First 1
     if (-not $worker -or -not $worker.CommandLine.Contains($title)) { throw 'Expected fixture-only recorder child.' }
     Start-Sleep -Seconds 3
     Save-Window $recordTitle 'recording.png'

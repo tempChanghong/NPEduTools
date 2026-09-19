@@ -6,151 +6,114 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.App;
 
-internal sealed class RecordingClient(Dispatcher dispatcher, string? fixtureWindow = null) : IAsyncDisposable
+/// <summary>UI client only. Host owns the recorder; no capture process is owned by the WPF dispatcher.</summary>
+internal sealed class RecordingClient : IAsyncDisposable
 {
-    private Process? _worker;
-    private Task? _reader, _errors;
-    private bool _closing;
+    private readonly Dispatcher _dispatcher;
+    private readonly string _pipe;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly Task _poll;
+    private readonly Guid _client = Guid.NewGuid();
     private string? _pending;
-    private TaskCompletionSource? _hello;
+    private bool _closing, _sending;
     public RecordingState State { get; private set; } = new("Idle", "准备录制");
+    public AutomaticRecordingState Automatic { get; private set; } = new(false, Guid.Empty, "自动录制未启用", null, []);
     public event Action<RecordingState>? Changed;
-    private static string Executable => Path.Combine(AppContext.BaseDirectory, "Recorder", "NPEduTools.Recorder.exe");
-    private static ProcessStartInfo StartInfo(params string[] arguments)
-    {
-        if (!File.Exists(Executable)) throw new FileNotFoundException("录制组件缺失，请补齐完整程序目录。");
-        var info = new ProcessStartInfo(Executable) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (string argument in arguments) info.ArgumentList.Add(argument);
-        return info;
-    }
+    public event Action<AutomaticRecordingState>? AutomaticChanged;
+    public RecordingClient(Dispatcher dispatcher, string pipe)
+    { _dispatcher = dispatcher; _pipe = pipe; _poll = PollAsync(); }
     public static async Task<RecordingEnvironment> ProbeAsync()
     {
-        using var process = Process.Start(StartInfo("--probe")) ?? throw new IOException("无法检测录制环境。");
-        var output = process.StandardOutput.ReadToEndAsync();
-        var errors = process.StandardError.ReadToEndAsync();
+        string executable = Path.Combine(AppContext.BaseDirectory, "Recorder", "NPEduTools.Recorder.exe");
+        using var process = Process.Start(new ProcessStartInfo(executable, "--probe") { UseShellExecute = false, CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden, RedirectStandardOutput = true, RedirectStandardError = true }) ?? throw new IOException("无法检测录制组件。");
+        var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
         try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(12)); }
         catch { if (!process.HasExited) process.Kill(true); throw; }
         await errors;
-        if (process.ExitCode != 0) throw new IOException("无法检测录制设备，请稍后重试。");
-        return JsonSerializer.Deserialize<RecordingEnvironment>(await output, RecordingContract.Json) ?? throw new InvalidDataException("录制环境返回无效。");
+        if (process.ExitCode != 0) throw new IOException("无法检测录制设备。");
+        return JsonSerializer.Deserialize<RecordingEnvironment>(await output, RecordingContract.Json) ?? throw new InvalidDataException();
     }
-    public async Task SendAsync(string action, RecordingOptions? options = null)
+    private async Task<HostResponse> RequestAsync(string capability, RecorderCommand? command = null, AutomaticRecordingCommand? automatic = null)
     {
-        if (_closing || _pending is not null || (State.Busy && action != "stop")) return;
-        _pending = action;
-        Apply(State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" },
-            Message = action == "stop" ? "正在保存录制…" : "正在应用录制操作…", Error = null, OutputFile = action == "start" ? null : State.OutputFile });
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); timeout.CancelAfter(TimeSpan.FromSeconds(18));
+        return await HostClient.RequestAsync(_pipe, new HostRequest(Protocol.Version, Guid.NewGuid(), capability, 15000, Recording: command, Automatic: automatic), timeout.Token);
+    }
+    private async Task PollAsync()
+    {
+        long leased = 0;
         try
         {
-            if (_worker is null || _worker.HasExited)
-            {
-                if (action != "start") throw new IOException("录制进程已退出，片段保留在原目录。");
-                if (_reader is not null) await _reader;
-                _worker?.Dispose();
-                _hello = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                var process = Process.Start(StartInfo(fixtureWindow is null ? [] : ["--fixture-window", fixtureWindow])) ?? throw new IOException("无法启动录制进程。");
-                _worker = process;
-                _reader = ReadAsync(process);
-                _errors = DrainErrorsAsync(process);
-                await _hello.Task.WaitAsync(TimeSpan.FromSeconds(8));
-                if (process.HasExited) throw new IOException("录制进程未能启动。");
-            }
-            await _worker.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new RecorderCommand(action, options), RecordingContract.Json));
-            await _worker.StandardInput.FlushAsync();
-        }
-        catch (Exception error) when (error is not OutOfMemoryException)
-        { _pending = null; Apply(State with { Phase = "Failed", Message = "无法完成录制操作", Error = error.Message }); }
-    }
-    private async Task DrainErrorsAsync(Process process)
-    {
-        // Drain continuously so a diagnostic pipe cannot stall the worker.
-        try { while (await process.StandardError.ReadLineAsync() is not null) { } }
-        catch (IOException) { }
-    }
-    private async Task ReadAsync(Process process)
-    {
-        try
-        {
-            while (await process.StandardOutput.ReadLineAsync() is { } line)
-            {
-                var state = JsonSerializer.Deserialize<RecordingState>(line, RecordingContract.Json);
-                if (state is null) continue;
-                _hello?.TrySetResult();
-                await dispatcher.InvokeAsync(() =>
-                {
-                    if (_closing) return;
-                    // A heartbeat queued before the command must not re-enable a button mid-transition.
-                    bool expected = state.Phase == "Failed" || _pending switch
-                    {
-                        "start" or "resume" => state.Phase == "Starting",
-                        "pause" => state.Phase == "Pausing",
-                        "stop" => state.Phase is "Saving" or "Saved",
-                        _ => true
-                    };
-                    if (!expected) return;
-                    _pending = null; Apply(state);
-                });
-            }
-            await process.WaitForExitAsync();
-        }
-        catch (Exception error) when (error is IOException or JsonException or InvalidOperationException) { }
-        finally
-        {
-            _hello?.TrySetResult();
-            await dispatcher.InvokeAsync(() =>
-            {
-                _pending = null;
-                if (!_closing && State.Active) Apply(State with { Phase = "Failed", Message = "录制进程已退出", Error = "未完成片段已保留，请打开片段目录检查。" });
-            });
-        }
-    }
-    private void Apply(RecordingState state) { State = state; Changed?.Invoke(state); }
-    public void Detach()
-    {
-        _closing = true;
-        try { _worker?.StandardInput.Close(); }
-        catch (Exception error) when (error is IOException or InvalidOperationException or ObjectDisposedException) { }
-    }
-    public async Task<bool> StopAndSaveAsync()
-    {
-        if (!State.Active) return true;
-        // Let an already accepted start/pause finish before sending stop.
-        var deadline = Stopwatch.StartNew();
-        while (_pending is not null || State.Phase is "Starting" or "Pausing")
-        {
-            if (deadline.Elapsed > TimeSpan.FromSeconds(30)) return false;
-            await Task.Delay(100);
-        }
-        if (!State.Active) return State.Phase == "Saved";
-        if (State.Phase != "Saving") await SendAsync("stop");
-        while (State.Active)
-        {
-            if (deadline.Elapsed > TimeSpan.FromMinutes(3)) return false;
-            await Task.Delay(100);
-        }
-        return State.Phase == "Saved";
-    }
-    public async ValueTask DisposeAsync()
-    {
-        if (State.Active) await StopAndSaveAsync();
-        _closing = true;
-        if (_worker is not null)
-        {
-            if (!_worker.HasExited)
+            while (!_lifetime.IsCancellationRequested)
             {
                 try
                 {
-                    await _worker.StandardInput.WriteLineAsync("{\"action\":\"exit\"}");
-                    _worker.StandardInput.Close();
-                    await _worker.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                    var response = await RequestAsync("recording.status");
+                    await _dispatcher.InvokeAsync(() => { if (!_closing && !_sending) Apply(response); });
+                    // UI synchronization context: a frozen/dead App cannot renew control indefinitely.
+                    if (Stopwatch.GetElapsedTime(leased) >= TimeSpan.FromSeconds(2))
+                    {
+                        await RequestAsync("recording.automatic", automatic: new("lease", _client)); leased = Stopwatch.GetTimestamp();
+                    }
                 }
-                catch (Exception error) when (error is IOException or TimeoutException or InvalidOperationException)
-                { if (!_worker.HasExited) _worker.Kill(true); }
+                catch (Exception error) when (error is IOException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
+                {
+                    if (!_closing) await _dispatcher.InvokeAsync(() =>
+                        AutomaticChanged?.Invoke(Automatic with { Message = "录制后台连接中断；等待重新连接", Error = "失联期间录制器仍受截止及租约保护。" }));
+                }
+                await Task.Delay(500, _lifetime.Token);
             }
-            if (_reader is not null) await _reader;
-            if (_errors is not null) await _errors;
-            _worker.Dispose();
         }
+        catch (OperationCanceledException) { }
     }
+    private void Apply(HostResponse response)
+    {
+        if (response.Automatic is { } auto) { Automatic = auto; AutomaticChanged?.Invoke(auto); }
+        if (response.Recording is not { } state) return;
+        bool expected = state.Phase is "Failed" or "Saved" || _pending switch
+        {
+            "start" or "resume" => state.Phase is "Starting" or "Recording",
+            "pause" => state.Phase is "Pausing" or "Paused",
+            "stop" => state.Phase is "Saving" or "Saved",
+            _ => true
+        };
+        if (!expected) return;
+        _pending = null; State = state; Changed?.Invoke(state);
+    }
+    public async Task SendAsync(string action, RecordingOptions? options = null)
+    {
+        if (_closing || _sending || _pending is not null || State.Busy && action != "stop") return;
+        var expected = State.Control;
+        _sending = true; _pending = action;
+        State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
+        Changed?.Invoke(State);
+        try
+        {
+            var response = await RequestAsync("recording.command", new(action, options, action == "start" ? null : expected, _client));
+            if (response.Outcome != "Succeeded") { _pending = null; Apply(response); throw new InvalidOperationException(response.Message); }
+            Apply(response);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        { _pending = null; State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }
+        finally { _sending = false; }
+    }
+    public async Task SetAutomaticAsync(string action, RecordingOptions? options = null)
+    {
+        var response = await RequestAsync("recording.automatic", automatic: new(action, _client, options));
+        Apply(response);
+        if (response.Outcome != "Succeeded") throw new InvalidOperationException(response.Message);
+    }
+    public async Task<bool> StopAndSaveAsync()
+    {
+        await SetAutomaticAsync("disable");
+        var deadline = Stopwatch.StartNew();
+        while (_pending is not null || State.Phase is "Starting" or "Pausing")
+        { if (deadline.Elapsed > TimeSpan.FromSeconds(30)) return false; await Task.Delay(100); }
+        if (!State.Active) return State.Phase != "Failed";
+        if (State.Phase != "Saving") await SendAsync("stop");
+        while (State.Active) { if (deadline.Elapsed > TimeSpan.FromMinutes(3)) return false; await Task.Delay(100); }
+        return State.Phase == "Saved";
+    }
+    public void Detach() { if (_closing) return; _closing = true; _lifetime.Cancel(); }
+    public async ValueTask DisposeAsync() { Detach(); await _poll; _lifetime.Dispose(); }
 }

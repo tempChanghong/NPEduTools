@@ -13,6 +13,15 @@ public interface IRecordingBridgeP0
     Task<string> GetSnapshotAsync();
 }
 
+// Optional additive capability; old clock clients keep their original generated joint identity.
+[IpcPublic(IgnoresIpcException = false, Timeout = 2000)]
+public interface IRecordingBridgeCalendar
+{
+    Task<string> GetDayAsync(string date);
+}
+public sealed record BridgeCalendarReply(int ProtocolVersion, Guid BridgeInstanceId, string? SchoolNow,
+    string RequestedDate, string Status, bool Forecast, BridgeDay? Day);
+
 public static class BridgeProtocol
 {
     public const int Version = 1;
