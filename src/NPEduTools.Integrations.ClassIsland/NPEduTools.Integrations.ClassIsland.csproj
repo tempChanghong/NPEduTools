@@ -4,6 +4,7 @@
   <PropertyGroup><Nullable>annotations</Nullable></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" />
+    <ProjectReference Include="../NPEduTools.ClassIsland.Bridge.Contracts/NPEduTools.ClassIsland.Bridge.Contracts.csproj" />
     <PackageReference Include="ClassIsland.Shared.IPC" Version="2.1.0.1" />
     <PackageReference Include="dotnetCampus.Ipc" Version="2.0.0-alpha410" />
   </ItemGroup>

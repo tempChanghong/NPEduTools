@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework><EnableDynamicLoading>true</EnableDynamicLoading><CreateCipx>false</CreateCipx>
+    <ClassIslandBinaryDirectory Condition="'$(ClassIslandBinaryDirectory)' == ''">D:/WebstormProjects/ClassIsland/ClassIsland.Desktop/bin/Debug/net8.0-windows10.0.19041.0</ClassIslandBinaryDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ClassIsland.PluginSdk" Version="2.1.0.1" ExcludeAssets="runtime;native" />
+    <Reference Include="ClassIsland"><HintPath>$(ClassIslandBinaryDirectory)/ClassIsland.dll</HintPath><Private>false</Private><ExternallyResolved>true</ExternallyResolved></Reference>
+    <None Update="manifest.yml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

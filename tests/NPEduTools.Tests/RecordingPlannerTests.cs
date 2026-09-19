@@ -11,7 +11,7 @@ public sealed class RecordingPlannerTests
     private static DaySchedule Day(params LessonSlot[] slots) => new(Profile, Guid.NewGuid(), Guid.NewGuid(), "测试课表",
         DateOnly.FromDateTime(Start.Date), "r1", Start, true, true, "已校时", slots.Length == 0 ? [new(1, Math, "数学", Start, Start.AddMinutes(40), true)] : slots);
     private static void Tick(RecordingPreview engine, DaySchedule day, DateTimeOffset now) =>
-        engine.Tick(day with { SampledAt = now }, RecordingPlanner.Build(day, engine.State.Rules), now);
+        engine.Tick(day with { SampledAt = now }, RecordingPlanner.Build(day, engine.State.Rules), new(now, 0, true, day.ClockVerified, "学校时间"), now - Start);
 
     [Fact]
     public void DefaultWindowStartsTwoMinutesBeforeAndEndsFiveMinutesAfter()
@@ -64,8 +64,8 @@ public sealed class RecordingPlannerTests
         Tick(engine, day, Start.AddMinutes(-3)); Assert.Null(engine.State.Active);
         Tick(engine, day, Start.AddMinutes(-2)); Assert.NotNull(engine.State.Active);
         Tick(engine, day, Start.AddMinutes(40)); Assert.NotNull(engine.State.Active);
-        engine.Tick(null, [], Start.AddMinutes(44)); Assert.NotNull(engine.State.Active);
-        engine.Tick(null, [], Start.AddMinutes(45)); Assert.Null(engine.State.Active);
+        engine.Tick(null, [], new(null, 3000, false, false, "断线"), TimeSpan.FromMinutes(44)); Assert.NotNull(engine.State.Active);
+        engine.Tick(null, [], new(null, 3000, false, false, "断线"), TimeSpan.FromMinutes(45)); Assert.Null(engine.State.Active);
         Assert.Equal(new[] { "应开始", "应停止" }, engine.State.Events.Select(e => e.Action));
     }
     [Fact]
@@ -84,7 +84,7 @@ public sealed class RecordingPlannerTests
     public void StaleOrUnverifiedClockDoesNotStartAndTailOnlyDoesNotCatchUp()
     {
         var day = Day(); var engine = new RecordingPreview(); engine.SetEnabled(true, Start);
-        engine.Tick(day with { SampledAt = Start.AddSeconds(-16) }, RecordingPlanner.Build(day, new()), Start);
+        engine.Tick(day with { SampledAt = Start.AddSeconds(-16) }, RecordingPlanner.Build(day, new()), new(Start, 16000, false, false, "陈旧"), TimeSpan.Zero);
         Assert.Null(engine.State.Active);
         Tick(engine, day with { ClockVerified = false }, Start); Assert.Null(engine.State.Active);
         Tick(engine, day, Start.AddMinutes(41)); Assert.Null(engine.State.Active);
@@ -107,10 +107,12 @@ public sealed class RecordingPlannerTests
         Assert.Null(engine.State.Active);
     }
     [Fact]
-    public void ClockRollbackDisarmsPreview()
+    public void ClockRollbackCannotExtendOriginalDeadline()
     {
         var day = Day(); var engine = new RecordingPreview(); engine.SetEnabled(true, Start); Tick(engine, day, Start);
-        Tick(engine, day, Start.AddMinutes(-1)); Assert.False(engine.Enabled); Assert.Null(engine.State.Active);
+        engine.Tick(day, RecordingPlanner.Build(day, new()), new(Start.AddMinutes(-1), 0, true, false, "回拨"), TimeSpan.FromMinutes(1));
+        Assert.NotNull(engine.State.Active);
+        engine.Tick(null, [], new(null, 3000, false, false, "断线"), TimeSpan.FromMinutes(45)); Assert.Null(engine.State.Active);
     }
     [Fact]
     public void SkipTodayIsBoundedToDateAndRecordsArePersisted()

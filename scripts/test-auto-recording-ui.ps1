@@ -65,20 +65,28 @@ try {
     $start = [Diagnostics.ProcessStartInfo]::new($env:NPEEDUTOOLS_DOTNET_HOST)
     $start.UseShellExecute = $false; $start.CreateNoWindow = $true; $start.WindowStyle = 'Hidden'
     $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
-    foreach ($argument in @($peerDll,$upstream,'schedule')) { $start.ArgumentList.Add($argument) }
+    foreach ($argument in @($peerDll,$upstream,'bridge')) { $start.ArgumentList.Add($argument) }
     $peer = [Diagnostics.Process]::Start($start); $owned.Add($peer)
     $peerErrors = $peer.StandardError.ReadToEndAsync()
     if ($peer.StandardOutput.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(5)).GetAwaiter().GetResult() -ne 'READY') { throw 'Peer did not start.' }
     $app = Start-App
     Click 'OpenRecordingPlan' 'NPEduTools'
-    $null = Wait-Control 'AutoSourceStatus' '测试生效课表.*2 节.*已用'
+    $null = Wait-Control 'AutoSourceStatus' '2031-04-07.*测试生效课表.*2 节'
     (Control 'AutoLessonNumbers').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('2')
     Click 'AutoApplyRules'; Click 'AutoTogglePreview'
     $null = Wait-Control 'AutoPreviewStatus' '本日没有待开始'
     (Control 'AutoLessonNumbers').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('1')
     Click 'AutoApplyRules'
     $null = Wait-Control 'AutoPreviewStatus' '模拟录制中：预演数学'
-    Save-Window 'preview-running.png'
+    $null = Wait-Control 'AutoClockStatus' '2031-04-07.*使用 ClassIsland 学校时间'
+    Click 'AutoSkipDay'
+    $null = Wait-Control 'AutoPreviewStatus' '今天已暂停预演'
+    $schoolState = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    if ($schoolState.SkipDate -ne '2031-04-07') { throw 'Skip-today used the Windows date.' }
+    Click 'AutoSkipDay'
+    # The stop above is deliberate: this occurrence must remain deduplicated after resuming today.
+    $null = Wait-Control 'AutoPreviewStatus' '本日没有待开始'
+    Save-Window 'preview-school-date.png'
     $rows = (Control 'AutoPlans').FindAll([Windows.Automation.TreeScope]::Children,
         [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::DataItem))
     if ($rows.Count -ne 2) { throw 'Expected two timetable rows.' }
@@ -107,7 +115,7 @@ try {
     $peer.Kill($true); $null = $peer.WaitForExit(5000)
     Click 'AutoRefresh'
     $null = Wait-Control 'AutoSourceStatus' '日程暂不可用|读取日程超时'
-    $null = Wait-Control 'AutoPreviewStatus' '等待新鲜日程'
+    $null = Wait-Control 'AutoPreviewStatus' '等待新鲜样本'
     Save-Window 'preview-disconnected.png'
     Click 'AutoHide'; Click 'StopHost' 'NPEduTools'
     if (-not $app.WaitForExit(20000)) { throw 'Final shutdown timed out.' }
@@ -121,7 +129,7 @@ try {
     Save-Window 'preview-invalid-config.png'
     Click 'AutoHide'; Click 'StopHost' 'NPEduTools'
     if (-not $app.WaitForExit(20000)) { throw 'Invalid-config shutdown timed out.' }
-    @{passed=$true;checks=@('Real WPF daily plan and ordinal filters','Rehearsal emits start and stop without capture','Manual skip survives refresh and full App restart','Sidebar entry and settings persistence','Unavailable upstream keeps App responsive','Invalid configuration is preserved without crashing');completedAt=[DateTimeOffset]::Now} |
+    @{passed=$true;checks=@('Real WPF uses ClassIsland 2031-04-07 rather than Windows date','School skip-today and ordinal filters','Rehearsal emits start and stop without capture','Manual skip survives refresh and full App restart','Sidebar entry and settings persistence','Unavailable upstream keeps App responsive','Invalid configuration is preserved without crashing');completedAt=[DateTimeOffset]::Now} |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runRoot 'summary.json') -Encoding utf8
     Write-Output "PASS: auto recording preview UI. Artifacts: $runRoot"
 }

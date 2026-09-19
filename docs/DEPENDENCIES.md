@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | .NET SDK | 10.0.400 | 编译、运行和测试 |
 | ClassIsland.Shared.IPC | 2.1.0.1 | 官方远程课程服务契约及客户端 |
+| ClassIsland.PluginSdk | 2.1.0.1 | P0 桥接插件编译与打包，目标 net8.0；LGPL-3.0-only |
 | dotnetCampus.Ipc | 2.0.0-alpha410 | 与 ClassIsland 保持一致的通信库及代理生成器 |
 | Microsoft.NET.Test.Sdk | 17.14.1 | 测试运行器 |
 | xunit | 2.9.3 | 测试框架 |
@@ -16,6 +17,8 @@
 ClassIsland.Shared.IPC 的 NuGet 包元数据声明 `LGPL-3.0-only`，并依赖同版本 `ClassIsland.Shared`。dotnetCampus.Ipc 使用带 alpha 后缀的固定版本，这是目标 ClassIsland 发布使用的依赖；并非声称所有依赖均为无预览后缀版本。
 
 本阶段通过 NuGet 引用程序集，没有复制或修改上游实现源码。所有生产分发准备工作，包括完整依赖许可清单、必要声明及对应源码获取方式，应在打包阶段核对。参考文档的许可独立于项目根目录许可证。
+
+桥接插件复用 ClassIsland 宿主的 Core、Avalonia、dotnetCampus.Ipc 和 Newtonsoft.Json 运行时，避免插件加载上下文产生另一套服务类型。插件 SDK 与契约依赖均固定并提交锁文件。单独的 `NPEduTools.Bridge.TestFixture` 只在隔离联调时引用本地 ClassIsland.dll，不加入常规解决方案，也不进入插件包。
 
 源码与包来源：
 

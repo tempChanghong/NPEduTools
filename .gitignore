@@ -1,9 +1,9 @@
 **/bin/
 **/obj/
+**/cipx/
 .tools/
 .artifacts/
 .vs/
 .idea/
 TestResults/
 *.user
-

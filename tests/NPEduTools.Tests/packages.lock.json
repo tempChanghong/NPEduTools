@@ -238,6 +238,12 @@
           "NPEduTools.Core": "[1.0.0, )"
         }
       },
+      "npedutools.classisland.bridge.contracts": {
+        "type": "Project",
+        "dependencies": {
+          "dotnetCampus.Ipc": "[2.0.0-alpha410, )"
+        }
+      },
       "npedutools.contracts": {
         "type": "Project"
       },
@@ -260,6 +266,7 @@
         "type": "Project",
         "dependencies": {
           "ClassIsland.Shared.IPC": "[2.1.0.1, )",
+          "NPEduTools.ClassIsland.Bridge.Contracts": "[1.0.0, )",
           "NPEduTools.Core": "[1.0.0, )",
           "dotnetCampus.Ipc": "[2.0.0-alpha410, )"
         }

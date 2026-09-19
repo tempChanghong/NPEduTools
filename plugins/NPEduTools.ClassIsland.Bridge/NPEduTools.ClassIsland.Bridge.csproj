@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework><EnableDynamicLoading>true</EnableDynamicLoading>
+    <Version>0.1.0</Version><CreateCipx>false</CreateCipx>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ClassIsland.PluginSdk" Version="2.1.0.1" ExcludeAssets="runtime;native" />
+    <!-- These are owned by the host; a second IPC runtime breaks service type identity across ALCs. -->
+    <PackageReference Include="dotnetCampus.Ipc" Version="2.0.0-alpha410" ExcludeAssets="runtime" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" ExcludeAssets="runtime" />
+    <ProjectReference Include="../../src/NPEduTools.ClassIsland.Bridge.Contracts/NPEduTools.ClassIsland.Bridge.Contracts.csproj" />
+    <None Update="manifest.yml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

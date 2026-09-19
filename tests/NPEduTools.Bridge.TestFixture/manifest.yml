@@ -1,0 +1,6 @@
+id: npedutools.test.bridgefixture
+name: NPEduTools Bridge Test Fixture (DO NOT DISTRIBUTE)
+description: Isolated live-test controls; never include in the bridge package.
+entranceAssembly: NPEduTools.Bridge.TestFixture.dll
+apiVersion: 2.1.0.1
+version: 0.1.0.0

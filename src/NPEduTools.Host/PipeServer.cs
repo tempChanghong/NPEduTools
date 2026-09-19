@@ -11,7 +11,8 @@ namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
 public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
-    StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null)
+    StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
+    SchoolClockMonitor? schoolClock = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
@@ -56,9 +57,13 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                     if (stop is not null && touch is not null) await touch.StopAsync();
                     if (stop is not null && launch is not null) await launch.StopAsync();
                     if (stop is not null && monitor is not null) await monitor.StopAsync();
+                    if (stop is not null && schoolClock is not null) await schoolClock.StopAsync();
                     response = new(Protocol.Version, request.RequestId, stop is null ? "Rejected" : "Succeeded",
                         stop is null ? "StopUnavailable" : null, "停止后台请求已受理。");
                 }
+                else if (request.Capability == "classisland.school-clock")
+                    response = new(Protocol.Version, request.RequestId, "Succeeded", null, "学校时间状态",
+                        SchoolClock: schoolClock?.Snapshot() ?? SchoolClockFrame.Unavailable("此后台不支持学校时间，请更新后台。"));
                 else if (request.Capability.StartsWith("presentation.touch.", StringComparison.Ordinal))
                     response = touch is not null ? await touch.HandleAsync(request, token)
                         : new(Protocol.Version, request.RequestId, "Rejected", "TouchUnavailable", "此后台未启用触摸辅助。");

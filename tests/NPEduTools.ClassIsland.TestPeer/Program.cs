@@ -6,10 +6,11 @@ using ClassIsland.Shared.Models.Profile;
 using dotnetCampus.Ipc.CompilerServices.GeneratedProxies;
 using dotnetCampus.Ipc.IpcRouteds.DirectRouteds;
 using dotnetCampus.Ipc.Pipes;
+using NPEduTools.ClassIsland.Bridge.Contracts;
 
 // Test-only server. Never occupy the real ClassIsland endpoint.
 if (args.Length != 2 || !args[0].StartsWith("NPEduTools.Test.", StringComparison.Ordinal) ||
-    args[1] is not ("healthy" or "hang" or "drop" or "error" or "empty" or "schedule" or "schedule-clock" or "schedule-switch" or "schedule-undefined")) return 2;
+    args[1] is not ("bridge" or "healthy" or "hang" or "drop" or "error" or "empty" or "schedule" or "schedule-clock" or "schedule-switch" or "schedule-undefined")) return 2;
 using var provider = new IpcProvider(args[0]);
 var routed = new JsonIpcDirectRoutedProvider(provider);
 var clients = new ConcurrentBag<string>();
@@ -20,12 +21,13 @@ if (args[1].StartsWith("schedule", StringComparison.Ordinal))
     provider.CreateIpcJoint<IPublicProfileService>(new ScheduledProfile(fixture));
 }
 else provider.CreateIpcJoint<IPublicLessonsService>(new FakeLessons(args[1]));
+if (args[1] == "bridge") provider.CreateIpcJoint<IRecordingBridgeP0>(new FakeBridge());
 provider.PeerConnected += (_, e) => clients.Add(e.Peer.PeerName);
 provider.StartServer();
 routed.StartServer();
 Console.WriteLine("READY");
 // Safety net for interrupted test runners; parents normally dispose this process immediately.
-using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(args[1] == "bridge" ? 180 : 60));
 try
 {
     while (!lifetime.IsCancellationRequested)

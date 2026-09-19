@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/NPEduTools.ClassIsland.Bridge.Contracts/NPEduTools.ClassIsland.Bridge.Contracts.csproj" />
+    <PackageReference Include="ClassIsland.Shared.IPC" Version="2.1.0.1" />
+  </ItemGroup>
+</Project>

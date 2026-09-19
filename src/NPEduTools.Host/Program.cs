@@ -27,8 +27,9 @@ if (args.SequenceEqual(["--powerpoint-worker"]))
 bool workerMode = args.Length > 0 && args[0] == "--ipc-worker";
 bool scheduleMode = args.Length > 0 && args[0] == "--schedule-worker";
 bool monitorMode = args.Length > 0 && args[0] == "--monitor-worker";
+bool bridgeMode = args.Length > 0 && args[0] == "--bridge-worker";
 var options = new Dictionary<string, string>();
-for (int i = workerMode || monitorMode || scheduleMode ? 1 : 0; i < args.Length; i += 2)
+for (int i = workerMode || monitorMode || scheduleMode || bridgeMode ? 1 : 0; i < args.Length; i += 2)
 {
     if (i + 1 >= args.Length || args[i] is not ("--pipe" or "--classisland-pipe" or "--observe-ms" or "--data-dir") ||
         !options.TryAdd(args[i], args[i + 1]) || args[i + 1].Length is 0 or > 2048)
@@ -45,7 +46,7 @@ if (pipeName.Length > 200 || classIslandPipe.Length > 200 || pipeName.IndexOfAny
     return 2;
 }
 
-if (monitorMode)
+if (monitorMode || bridgeMode)
 {
     // A renewable stdin lease bounds orphan lifetime without periodically dropping a healthy IPC connection.
     long lastLease = Stopwatch.GetTimestamp();
@@ -67,8 +68,12 @@ if (monitorMode)
     leaseReader.Start();
     var output = Console.OpenStandardOutput();
     Console.SetOut(Console.Error);
-    await ClassIslandProbe.MonitorAsync(classIslandPipe,
-        result => Protocol.WriteAsync(output, result, CancellationToken.None), CancellationToken.None);
+    if (bridgeMode)
+        await ClassIslandSchoolClock.MonitorAsync(classIslandPipe,
+            result => Protocol.WriteAsync(output, result, CancellationToken.None), CancellationToken.None);
+    else
+        await ClassIslandProbe.MonitorAsync(classIslandPipe,
+            result => Protocol.WriteAsync(output, result, CancellationToken.None), CancellationToken.None);
     return 0;
 }
 
@@ -95,7 +100,7 @@ if (!createdNew)
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
-ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = false)
+ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = false, bool bridge = false)
 {
     var start = new ProcessStartInfo(Environment.ProcessPath!)
     {
@@ -104,7 +109,7 @@ ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = fa
     };
     if (string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "dotnet", StringComparison.OrdinalIgnoreCase))
         start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
-    start.ArgumentList.Add(monitor ? "--monitor-worker" : schedule ? "--schedule-worker" : "--ipc-worker");
+    start.ArgumentList.Add(bridge ? "--bridge-worker" : monitor ? "--monitor-worker" : schedule ? "--schedule-worker" : "--ipc-worker");
     start.ArgumentList.Add("--classisland-pipe");
     start.ArgumentList.Add(classIslandPipe);
     start.ArgumentList.Add("--observe-ms");
@@ -113,6 +118,7 @@ ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = fa
 }
 using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds, query.IncludeSchedule));
 await using var monitor = new StatusMonitor(() => WorkerStart(true), Console.Error.WriteLine);
+await using var schoolClock = new SchoolClockMonitor(() => WorkerStart(true, bridge: true), Console.Error.WriteLine);
 string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeEndpoint.DefaultName
     ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "config")
     : Path.Combine(Path.GetTempPath(), "NPEduTools", "instances",
@@ -130,7 +136,7 @@ await using var touch = new TouchAssistService(() =>
 Console.WriteLine($"Host ready: {pipeName}");
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

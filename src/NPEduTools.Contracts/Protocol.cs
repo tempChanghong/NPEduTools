@@ -34,7 +34,8 @@ public sealed record HostResponse(
     LessonStatusDto? Status = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LaunchData? Launch = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TouchAssistState? TouchAssist = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DaySchedule? Schedule = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DaySchedule? Schedule = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SchoolClockFrame? SchoolClock = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -76,7 +77,7 @@ public static class Protocol
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("host.ping" or "host.stop" or "classisland.status" or "classisland.watch" or
-            "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
+            "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
         if (request.Capability is "classisland.config.set" or "classisland.verify")
@@ -92,6 +93,7 @@ public static class Protocol
             return "InvalidObservationWindow";
         if (request.Capability == "classisland.watch" && request.ObserveMs != 0) return "InvalidObservationWindow";
         if (request.Capability == "classisland.schedule" && request.ObserveMs != 0) return "InvalidObservationWindow";
+        if (request.Capability == "classisland.school-clock" && request.ObserveMs != 0) return "InvalidObservationWindow";
         return null;
     }
 }
