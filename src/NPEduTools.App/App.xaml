@@ -3,6 +3,7 @@
     <ResourceDictionary>
     <ResourceDictionary.MergedDictionaries>
       <ResourceDictionary Source="Resources/Branding.xaml" />
+      <ResourceDictionary Source="Resources/CommonControls.xaml" />
     </ResourceDictionary.MergedDictionaries>
     <DataTemplate x:Key="ShortcutTileContent">
       <StackPanel>
@@ -92,6 +93,20 @@
       <Setter Property="Foreground" Value="#202E35" />
       <Setter Property="BorderBrush" Value="#DCE3E6" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="SelectionBrush" Value="#B8DECF" />
+      <Setter Property="SelectionOpacity" Value="0.6" />
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
+        <Border x:Name="InputSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+          <ScrollViewer x:Name="PART_ContentHost" />
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#9ABDAF" /></Trigger>
+          <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#147D68" /></Trigger>
+          <Trigger Property="Validation.HasError" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#B95853" /></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="InputSurface" Property="Opacity" Value="0.45" /></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="Switch" TargetType="CheckBox">
       <Setter Property="FontSize" Value="14" />

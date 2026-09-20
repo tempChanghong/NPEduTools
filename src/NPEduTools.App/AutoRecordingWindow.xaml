@@ -5,6 +5,7 @@
     <Style TargetType="ComboBox" BasedOn="{StaticResource RecordingChoice}" />
     <Style TargetType="CheckBox" BasedOn="{StaticResource RecordingCheck}" />
     <Style TargetType="DataGrid" BasedOn="{StaticResource RecordingTable}" />
+    <Style TargetType="TabControl" BasedOn="{StaticResource SoftTabs}" />
     </ResourceDictionary>
   </Window.Resources>
   <Grid Margin="24">
