@@ -35,6 +35,8 @@ HTTPS 使用短期测试证书，仅在验收程序的专用 handler 中以 Cust
 
 首次真实调用曾在创建配对时得到 `TEMPORARILY_UNAVAILABLE`。KV 负责人定位到 PostgreSQL advisory lock 的 void 返回值与 Prisma 反序列化不兼容，修复查询后重新验收通过。其并发限流修复与服务端数据库测试属于 KV 分支记录，应与本报告一起审核。
 
+KV 负责人已在[服务端实现与验收记录](../../../NPClassworksKV/docs/NPEP-N1-IMPLEMENTATION.md)报告：完整 PostgreSQL 回归 111/111，NPEP 专项最终运行 14/14（含父测试）；包含跨学校权限拒绝、并发确认、撤销/心跳串行化、绑定失效、两个进程共享限流，以及真实 pg_dump/pg_restore 后的外部 epoch 门禁。这些数字来自服务端任务的执行记录，本任务没有重复执行整套后端测试。生产反代、恢复运维接入和实际教室仍待验证。
+
 ## 当前限制与后续验收
 
 1. **不是最终 N1 试点交付。** 目前需显式运行 CLI；WPF 现场配对/停用、OOBE、Host 常驻运行协调及学校管理网页尚未在本任务完成。
@@ -50,5 +52,6 @@ HTTPS 使用短期测试证书，仅在验收程序的专用 handler 中以 Cust
 - [设备端指南](NPEP-N1-DEVICE-GUIDE.md)
 - [服务端研究记录](../../../NPClassworksKV/docs/NPEP-SERVER-DISCOVERY.md)
 - [服务端契约审阅](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md)
+- [服务端实现与验收](../../../NPClassworksKV/docs/NPEP-N1-IMPLEMENTATION.md)
 
 源码同步不包含 bin/obj、临时数据库、管理员 fixture、DPAPI 文件或本机运行日志。未自动合并主分支或发版。
