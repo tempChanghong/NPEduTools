@@ -8,23 +8,24 @@
 - GitHub：[Release 草稿](https://github.com/tempChanghong/NPEduTools/releases/tag/untagged-dad690a10f18c380f305)，设置为 `draft=true`、`prerelease=true`，未公开发布，不设为 Latest。
 - 发布准备分支：`codex/release-indev-20260920`；本轮未合并主分支，未推送版本标签。
 - 二进制基线：`b275c7a0208a4812b10406c276d0ee73717da07d`。在 C 盘新克隆的干净工作区打包，`workingTreeDirty=false`。本审核记录在打包后补充，不属于二进制源码基线。
+- 文档修订：`2d5f137e3f95711d868efbcdb381a7bb8f5288c8`。补充下载附件说明和 InDev 试用提示；Windows ZIP 仅更新 `RELEASE-NOTES.md` 及其清单，程序、插件和构建时源码快照均未改变。包清单另记 `documentationCommit`，区分文档修订与二进制基线。
 - SDK：10.0.400；Windows x64 自包含、不裁剪、非单文件。主程序 ProductVersion 为 `InDev 20260920+b275c7a0208a4812b10406c276d0ee73717da07d`；构建用 SemVer 为 `0.1.0-indev.20260920`。
 
 ## 附件
 
 | 文件 | 字节数 | 用途 |
 | --- | ---: | --- |
-| `NPEduTools-InDev-20260920-win-x64.zip` | 412950176 | 主程序、后台、管理员辅助、录制器、运行时、两个桥接、说明和源码 |
+| `NPEduTools-InDev-20260920-win-x64.zip` | 412951260 | 主程序、后台、管理员辅助、录制器、运行时、两个桥接、说明和源码 |
 | `NPEduTools-InDev-20260920-source.zip` | 2065286 | 包内同一份项目源码快照，方便单独下载 |
 | `NPEduTools.ClassIsland.Bridge.cipx` | 62716 | ClassIsland 时间与课表桥接 0.2.0.0 |
 | `npedutools-examaware-bridge-0.3.0.ea2x` | 49228 | ExamAware2 桥接 0.3.0 |
-| `InDev-20260920.md` | 4393 | 面向使用者的发版说明 |
+| `InDev-20260920.md` | 6713 | 面向使用者的发版说明 |
 | `SHA256SUMS.txt` | 502 | 以上五个附件的 SHA-256 |
 
 Windows ZIP 约 393.8 MiB，SHA-256：
 
 ```text
-0ba6b48d9d4df89d6fe43781891a6f532622d31a06f8d563a3515f6da6e3dc24
+f1254901d78eaa412272a88338eb169055393bdf3933b13827e903dbbea60437
 ```
 
 完整附件已同步到仓库本地 `.artifacts/releases/InDev-20260920/`，逐文件与 C 盘构建副本核对哈希。没有打入用户配置、配对凭据、课堂视频或本机验收日志。
