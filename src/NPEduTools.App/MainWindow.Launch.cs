@@ -18,7 +18,7 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(_savedPath) || !string.Equals(ExecutablePathBox.Text.Trim(), _savedPath, StringComparison.OrdinalIgnoreCase))
         {
             ConfigurationMessage.Text = "请先保存当前程序路径，再启动 ClassIsland。";
-            SelectPage(true); RestoreWindow(); return;
+            ShowClassIslandPathSettings(); return;
         }
         string path = _savedPath;
         bool restartRequested = _restartOfferedFor == path;

@@ -95,6 +95,9 @@ function Select-Page([Diagnostics.Process]$process, [string]$id) {
     (Find-Control $process $id).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
     Start-Sleep -Milliseconds 150
     if ($id -eq 'SettingsTab') {
+        Click-Control $process 'GeneralSettingsTab'
+    }
+    if ($id -eq 'ConnectionsSettingsTab') {
         (Find-Control $process 'ClassIslandDetails').GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
     }
 }
@@ -225,7 +228,7 @@ try {
     Click-Quick $app 'RailTools'
     if (-not (Find-Quick $app 'QuickTouchPower')) { throw 'Rail navigation did not switch back to classroom tools.' }
     Click-Quick $app 'QuickOpenSettings'
-    if (-not (Find-Control $app 'TouchCompatibility')) { throw 'Quick settings did not open the main window.' }
+    if (-not (Find-Control $app 'GeneralSettingsTab')) { throw 'Quick settings did not open the main window.' }
     (Find-Control $app 'DockLeft').GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
     Click-Control $app 'OpenQuick'
     Start-Sleep -Milliseconds 300
@@ -270,6 +273,7 @@ try {
     Click-Control $app 'TouchPower'
     Wait-Text $app 'TouchStatus' '已关闭'
     Select-Page $app 'SettingsTab'
+    Select-Page $app 'ConnectionsSettingsTab'
     Wait-Text $app 'Subject' '数学'
     Save-Window $app 'settings.png'
 
@@ -311,6 +315,7 @@ try {
     if ([Math]::Abs($restoredEdgeTop-$savedEdgeTop) -gt 2) { throw 'Edge position was not restored after a full restart.' }
     Select-Page $app 'SettingsTab'
     if ((Find-Control $app 'LoginStartup').Current.IsEnabled) { throw 'Private instance can modify real login startup.' }
+    Select-Page $app 'TeachingSettingsTab'
     (Find-Control $app 'AutoTouchAtLaunch').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
     Wait-Text $app 'StartupPreferencesMessage' '已保存，下次启动时生效。'
     Select-Page $app 'HomeTab'
@@ -359,9 +364,11 @@ try {
     Wait-Text $app 'TouchStatus' '已关闭'
     $checks.Add('Duplicate login preserves pause; Host recovery does not replay startup enable after manual stop')
     Select-Page $app 'SettingsTab'
+    Select-Page $app 'TeachingSettingsTab'
     if ((Find-Control $app 'AutoTouchAtLaunch').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -ne [Windows.Automation.ToggleState]::On) { throw 'Auto touch preference was not persisted.' }
     Save-Window $app 'startup-settings.png'
     (Find-Control $app 'AutoTouchAtLaunch').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    Select-Page $app 'GeneralSettingsTab'
     (Find-Control $app 'EdgeOnlyAtLogin').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
     Click-Control $app 'StopHost'
     if (-not $app.WaitForExit(15000)) { throw 'Quiet-start instance did not exit.' }

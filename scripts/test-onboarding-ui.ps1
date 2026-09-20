@@ -52,7 +52,13 @@ function Wait-Control([string]$id, [string]$pattern = '', [string]$name = $title
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "Expected $id / $pattern; actual '$($item.Current.Name)'."
 }
-function Click([string]$id, [string]$name = $title) { (Wait-Control $id '' $name).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke() }
+function Click([string]$id, [string]$name = $title) {
+    if ($id -eq 'OpenOnboarding' -and $name -eq 'NPEduTools') {
+        Click 'SettingsTab' $name
+        Click 'GeneralSettingsTab' $name
+    }
+    (Wait-Control $id '' $name).GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+}
 function Toggle([string]$id, [string]$name = $title) { (Wait-Control $id '' $name).GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle() }
 function Stop-App {
     Click 'RailSettings' 'NPEduTools 快捷工具'
@@ -87,7 +93,7 @@ try {
     $checks.Add('Fresh manual launch shows welcome and preserves deferred purpose/progress')
 
     $app = Start-App
-    $null = Wait-Control 'OpenOnboarding' '' 'NPEduTools'
+    $null = Wait-Control 'SettingsTab' '' 'NPEduTools'
     if (Window) { throw 'Deferred wizard should not interrupt launch.' }
     Click 'OpenOnboarding' 'NPEduTools'
     $null = Wait-Control 'OobeTitle' '使用偏好'
@@ -136,7 +142,7 @@ try {
     Click 'AutoHide' '自动录课 · 计划与预演'; Stop-App
 
     $app = Start-App
-    $null = Wait-Control 'OpenOnboarding' '' 'NPEduTools'
+    $null = Wait-Control 'SettingsTab' '' 'NPEduTools'
     if (Window) { throw 'Completed wizard reopened automatically.' }
     Click 'OpenOnboarding' 'NPEduTools'
     $null = Wait-Control 'OobeTitle' '选择用途'
@@ -151,7 +157,7 @@ try {
     Move-Item -LiteralPath $statePath -Destination (Join-Path $runRoot 'completed-state.json')
     $recordingHash = (Get-FileHash -LiteralPath ($prefix + '.recording.json')).Hash
     $app = Start-App
-    $null = Wait-Control 'OpenOnboarding' '' 'NPEduTools'
+    $null = Wait-Control 'SettingsTab' '' 'NPEduTools'
     if (Window) { throw 'Existing user was forced through OOBE.' }
     if ((Get-FileHash -LiteralPath ($prefix + '.recording.json')).Hash -ne $recordingHash) { throw 'Existing recording settings changed.' }
     $checks.Add('Existing user not interrupted and prior recording configuration retained')
@@ -184,7 +190,7 @@ try {
     Set-Content -LiteralPath $statePath -Value '{"Version":999}' -Encoding utf8
     $original = Get-Content -LiteralPath $statePath -Raw
     $app = Start-App
-    $null = Wait-Control 'OpenOnboarding' '' 'NPEduTools'
+    $null = Wait-Control 'SettingsTab' '' 'NPEduTools'
     if (Window) { throw 'Corrupt progress should not force a wizard.' }
     Click 'OpenOnboarding' 'NPEduTools'; Click 'OobeNext'
     $null = Wait-Control 'OobeError' '进度未保存'

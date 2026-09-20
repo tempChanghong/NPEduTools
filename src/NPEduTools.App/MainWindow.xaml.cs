@@ -72,6 +72,7 @@ public partial class MainWindow : Window
                     {
                         _model.Disconnected(snapshot.Message);
                         _lifetime.Cancel();
+                        ShowClassroomModeState(null);
                         _touchState = null;
                         TouchStatusText.Text = "后台已停止，请退出后重新打开。";
                         RefreshTouchControls();
@@ -89,6 +90,7 @@ public partial class MainWindow : Window
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or TimeoutException or
                 OperationCanceledException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
             {
+                ShowClassroomModeState(null);
                 _model.Disconnected(ex switch
                 {
                     FileNotFoundException => "后台程序缺失，请重新构建或补齐应用目录。",
@@ -168,14 +170,14 @@ public partial class MainWindow : Window
     private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
     private void SelectPage(bool settings)
     {
-        PageBreadcrumb.Text = settings ? "偏好设置" : "概览";
+        PageBreadcrumb.Text = settings ? "设置" : "概览";
         ShortcutPage.Visibility = Visibility.Collapsed;
         ShortcutNav.Tag = null;
         HomePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
         SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
         HomeNav.Tag = settings ? null : "active";
         SettingsNav.Tag = settings ? "active" : null;
-        if (settings) _ = RefreshAdminAsync();
+        if (settings && ConnectionsSettingsPanel.Visibility == Visibility.Visible) _ = RefreshAdminAsync();
     }
     private void RefreshToday() => TodayText.Text = DateTime.Now.ToString("M月d日 dddd", System.Globalization.CultureInfo.GetCultureInfo("zh-CN"));
     private void OpenQuickClicked(object sender, RoutedEventArgs e) { Hide(); _quick?.OpenPanel(); }
@@ -454,6 +456,7 @@ public partial class MainWindow : Window
             OperationCanceledException or UnauthorizedAccessException or InvalidOperationException)
         {
             if (shutdownDispatched) _lifetime.Cancel(); // An uncertain accepted stop must not silently launch a replacement Host.
+            ShowClassroomModeState(null);
             _model.Disconnected("未能确认后台已停止。可重试停止，或关闭窗口后重新打开。 ");
             HomeMessage.Text = "未能确认后台已停止，请重试“停止后台并退出”。";
             RestoreWindow();

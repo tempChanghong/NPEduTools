@@ -12,9 +12,9 @@ public partial class MainWindow
 
     private void AdminPanelClicked(object sender, RoutedEventArgs e)
     {
-        ShowSettings();
+        ShowConnectionSettings();
+        AdminSettingsExpander.IsExpanded = true;
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => AdminSection.BringIntoView());
-        _ = RefreshAdminAsync();
     }
 
     private void AdminRefreshClicked(object sender, RoutedEventArgs e) => _ = RunAdminAsync("status");

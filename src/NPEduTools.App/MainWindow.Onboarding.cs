@@ -43,7 +43,7 @@ public partial class MainWindow
         if (_onboardingWindow is null)
         {
             _onboardingWindow = new OnboardingWindow(_pipe, _onboarding, SaveOnboarding,
-                ShowSettings, () => { ShowSettings(); ExecutablePathBox.BringIntoView(); }, ShowRecording, ShowShortcutManager,
+                ShowSettings, ShowClassIslandPathSettings, ShowRecording, ShowShortcutManager,
                 automatic => { HideToEdge(); if (automatic) ShowRecordingPlan(); else _quick?.OpenPanel(); },
                 _onboardingError);
             _onboardingWindow.Closed += (_, _) => _onboardingWindow = null;

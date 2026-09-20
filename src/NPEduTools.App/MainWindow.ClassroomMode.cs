@@ -15,7 +15,7 @@ public partial class MainWindow
         if (_classroomModeWindow is null)
         {
             _classroomModeWindow = new ClassroomModeWindow(_pipe,
-                () => { ShowSettings(); Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => ExecutablePathBox.BringIntoView()); },
+                ShowClassIslandPathSettings,
                 () => AdminPanelClicked(this, new RoutedEventArgs()), ShowExamAware);
             Closed += (_, _) => _classroomModeWindow.Shutdown();
         }
@@ -35,11 +35,21 @@ public partial class MainWindow
                 state = (await HostClient.RequestAsync(_pipe, "classroom.status", deadline.Token)).ClassroomMode;
             }
             catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException) { }
-            var view = ClassroomModePresentation.From(state);
-            ClassroomModeTitle.Text = view.Title;
-            ClassroomModeDetail.Text = view.Detail;
-            _quick?.UpdateClassroomMode(view);
+            // A late reply must never restore a stale mode after the Host stopped.
+            ShowClassroomModeState(_lifetime.IsCancellationRequested ? null : state);
             try { await Task.Delay(1500, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
+    }
+
+    private void ShowClassroomModeState(ClassroomModeState? state)
+    {
+        var view = ClassroomModePresentation.From(state);
+        ClassroomModeTitle.Text = view.Title;
+        ClassroomModeDetail.Text = view.Detail;
+        ClassroomModeCard.Background = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(view.Attention ? "#FFF5E6" : "#EAF6F2"));
+        ClassroomModeCard.BorderBrush = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(view.Attention ? "#E8D3AD" : "#C8E4D9"));
+        _quick?.UpdateClassroomMode(view);
     }
 }
