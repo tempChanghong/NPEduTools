@@ -1,8 +1,20 @@
-param([string]$PackageRoot = $PSScriptRoot)
+param([string]$PackageRoot = $PSScriptRoot, [switch]$AllowInstalledRecordingTools)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PackageRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
 $manifest = Get-Content -LiteralPath (Join-Path $root 'package-manifest.json') -Raw | ConvertFrom-Json
 $seen = @{}
+$installed = @{}
+if ($manifest.recordingToolsBundled -eq $false -and $AllowInstalledRecordingTools) {
+    $spec = Get-Content -LiteralPath (Join-Path $root 'recording-tools.json') -Raw | ConvertFrom-Json
+    foreach ($directory in @('app/Recorder/Tools','app/Host/Recorder/Tools')) {
+        foreach ($name in @('ffmpeg.exe','ffprobe.exe','LICENSE','README.txt')) {
+            $path = Join-Path $root "$directory/$name"
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Installed recording file missing: $path" }
+            if ($spec.files.$name -and (Get-FileHash -LiteralPath $path).Hash -ne $spec.files.$name) { throw "Installed recording tool hash mismatch: $path" }
+            $installed[[IO.Path]::GetFullPath($path)] = $true
+        }
+    }
+}
 foreach ($file in $manifest.files) {
     $target = [IO.Path]::GetFullPath((Join-Path $root $file.path))
     if (-not $target.StartsWith($root + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or $seen.ContainsKey($target)) { throw 'Invalid manifest path.' }
@@ -11,7 +23,8 @@ foreach ($file in $manifest.files) {
         (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $file.sha256) { throw "Package file mismatch: $($file.path)" }
 }
 foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse) {
-    if ($file.FullName -ne (Join-Path $root 'package-manifest.json') -and -not $seen.ContainsKey($file.FullName)) { throw "Unlisted file: $($file.FullName)" }
+    if ($manifest.recordingToolsBundled -eq $false -and $file.Name -match '^ff(mpeg|probe)\.exe$' -and -not $installed.ContainsKey($file.FullName)) { throw "FFmpeg must not be bundled: $($file.FullName)" }
+    if ($file.FullName -ne (Join-Path $root 'package-manifest.json') -and -not $seen.ContainsKey($file.FullName) -and -not $installed.ContainsKey($file.FullName)) { throw "Unlisted file: $($file.FullName)" }
 }
 foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host'),@('app/Admin','NPEduTools.ClassIsland.Admin'),@('app/Recorder','NPEduTools.Recorder'),@('app/Host/Recorder','NPEduTools.Recorder'))) {
     $directory = Join-Path $root $component[0]
@@ -21,12 +34,13 @@ foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host
     $runtime = Get-Content -LiteralPath (Join-Path $directory ($component[1]+'.runtimeconfig.json')) -Raw | ConvertFrom-Json
     if ($runtime.runtimeOptions.framework -or $runtime.runtimeOptions.frameworks -or -not $runtime.runtimeOptions.includedFrameworks) { throw "Framework-dependent component: $directory" }
 }
-foreach ($directory in @('app/Recorder/Tools','app/Host/Recorder/Tools')) {
+if ($manifest.recordingToolsBundled -ne $false) { foreach ($directory in @('app/Recorder/Tools','app/Host/Recorder/Tools')) {
     $toolsRoot = Join-Path $root $directory
     $toolsManifest = Get-Content -LiteralPath (Join-Path $toolsRoot 'manifest.json') -Raw | ConvertFrom-Json
     foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
         if ((Get-FileHash -LiteralPath (Join-Path $toolsRoot $name)).Hash -ne $toolsManifest.files.$name) { throw 'Recording tool hash mismatch.' }
     }
+}
 }
 $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root 'ClassIsland-plugin/NPEduTools.ClassIsland.Bridge.cipx'))
 try {

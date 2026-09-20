@@ -13,7 +13,7 @@
     <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
-  <Target Name="CopyRecordingRuntime" AfterTargets="Build">
+  <Target Name="CopyRecordingRuntime" AfterTargets="Build" Condition="'$(ExcludeRecordingTools)' != 'true'">
     <ItemGroup><RecordingRuntime Include="../../.tools/recording/ffmpeg.exe;../../.tools/recording/ffprobe.exe;../../.tools/recording/LICENSE;../../.tools/recording/README.txt;../../.tools/recording/manifest.json" Condition="Exists('../../.tools/recording/manifest.json')" /></ItemGroup>
     <Copy SourceFiles="@(RecordingRuntime)" DestinationFolder="$(OutDir)Tools" SkipUnchangedFiles="true" />
   </Target>

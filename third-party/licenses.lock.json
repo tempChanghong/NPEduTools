@@ -1,0 +1,57 @@
+[
+  {
+    "file": "licenses/ClassIsland.Shared-2.1.0.1.txt",
+    "url": "https://raw.githubusercontent.com/ClassIsland/ClassIsland/15273f82c9d2d55929df83b5fb806e68ee4547c0/ClassIsland.Shared/LICENSE.txt",
+    "sha256": "A5681BF9B05DB14D86776930017C647AD9E6E56FF6BBCFDF21E5848288DFAF1B"
+  },
+  {
+    "file": "licenses/ClassIsland.Shared.IPC-2.1.0.1.txt",
+    "url": "https://raw.githubusercontent.com/ClassIsland/ClassIsland/15273f82c9d2d55929df83b5fb806e68ee4547c0/ClassIsland.Shared.IPC/LICENSE.txt",
+    "sha256": "A5681BF9B05DB14D86776930017C647AD9E6E56FF6BBCFDF21E5848288DFAF1B"
+  },
+  {
+    "file": "licenses/CsesSharp-1.0.0.txt",
+    "url": "https://raw.githubusercontent.com/CSES-org/CsesSharp/01405aa9e22227045d65a7e8d790316880883de8/LICENSE",
+    "sha256": "5B9479CF2A6A107A3FB063FC0A37411A717D743EFF651631B16875ACB0CF0F4E"
+  },
+  {
+    "file": "licenses/dotnetCampus.Ipc-2.0.0-alpha410.txt",
+    "url": "https://raw.githubusercontent.com/dotnet-campus/dotnetCampus.Ipc/99288944a929dc4ebe53a2d5418f2af2265459d9/LICENSE",
+    "sha256": "0E5AFC1BE17C84E9CAE365F5E8FE7128BBEC90CAB558DAE0FD5659486CE011C2"
+  },
+  {
+    "file": "licenses/Google.Protobuf-3.27.0-rc1.txt",
+    "url": "https://raw.githubusercontent.com/protocolbuffers/protobuf/d63f37da964b723f61b7759e33c09391fb74d14f/LICENSE",
+    "sha256": "6E5E117324AFD944DCF67F36CF329843BC1A92229A8CD9BB573D7A83130FEA7D"
+  },
+  {
+    "file": "licenses/Grpc-2.71.0.txt",
+    "url": "https://raw.githubusercontent.com/grpc/grpc-dotnet/c2555f2951c56a23d6c57bae6970cdfd30c552a7/LICENSE",
+    "sha256": "CFC7749B96F63BD31C3C42B5C471BF756814053E847C10F3EB003417BC523D30"
+  },
+  {
+    "file": "licenses/NAudio-2.2.1.txt",
+    "url": "https://raw.githubusercontent.com/naudio/NAudio/b5d5ff83fd378f046398891fe5cd99426ce44732/license.txt",
+    "sha256": "303E01786B271EB464B3F43D18A375F2F17D37BC708A37C2FDF45B289FB5BFAA"
+  },
+  {
+    "file": "licenses/YamlDotNet-16.3.0.txt",
+    "url": "https://raw.githubusercontent.com/aaubry/YamlDotNet/ae480660f4fb26f3eb0b41c1d1fcf21c0e9d9e73/LICENSE.txt",
+    "sha256": "DAEA8B7F1B2BAB48EA12AD50B0CE91634669D99D7DD0CB64AED8DFFEEEF69ED3"
+  },
+  {
+    "file": "licenses/YamlDotNet-libyaml.txt",
+    "url": "https://raw.githubusercontent.com/aaubry/YamlDotNet/ae480660f4fb26f3eb0b41c1d1fcf21c0e9d9e73/LICENSE-libyaml",
+    "sha256": "CB65F46DF0D9125BA60862117200EC6631FEF3A8169CD0B4513FFCAD4EF5CB9B"
+  },
+  {
+    "file": "licenses/ExamAware-plugin-sdk-1.5.2.txt",
+    "url": "https://raw.githubusercontent.com/ExamAware/ExamAware2/7979213fed918eaece7a5bf424e15f534778d7f2/LICENSE",
+    "sha256": "3972DC9744F6499F0F9B2DBF76696F2AE7AD8AF9B23DDE66D6AF86C9DFB36986"
+  },
+  {
+    "file": "licenses/WindowsDesktop-10.0.11-NOTICES.txt",
+    "url": "https://raw.githubusercontent.com/dotnet/dotnet/e2f47b0110ed922f21a1522da67279133ce28f32/src/wpf/THIRD-PARTY-NOTICES.TXT",
+    "sha256": "D23DBA2FEE20C6B59D8F7088EE9ED372459C952A319B7CA90F3EEC370CC76EB9"
+  }
+]

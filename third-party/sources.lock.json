@@ -1,0 +1,30 @@
+[
+  {
+    "length": 34016745,
+    "sha256": "EB6D658CE09922AFD034044600562E8F29EE56DE0E0A4DFB38E60A4F602BAFEE",
+    "name": "ClassIsland-15273f82c9d2d55929df83b5fb806e68ee4547c0.zip",
+    "commit": "15273f82c9d2d55929df83b5fb806e68ee4547c0",
+    "url": "https://codeload.github.com/ClassIsland/ClassIsland/zip/15273f82c9d2d55929df83b5fb806e68ee4547c0"
+  },
+  {
+    "length": 6982224,
+    "sha256": "321CD1AA21027D6613F539CE7657496DD0BA83675EA59CECEE7CD5E3DF84E874",
+    "name": "ExamAware-plugin-sdk-7979213fed918eaece7a5bf424e15f534778d7f2.zip",
+    "commit": "7979213fed918eaece7a5bf424e15f534778d7f2",
+    "url": "https://codeload.github.com/ExamAware/ExamAware2/zip/7979213fed918eaece7a5bf424e15f534778d7f2"
+  },
+  {
+    "length": 6256144,
+    "sha256": "8A2CA2BAA39484F17F1CB065FBCF048D58F8F5A371C156C7D2404AF9E609AD1D",
+    "name": "ExamAware-core-d27cfebf7f5becbd4b08ba30b4241441328dc91a.zip",
+    "commit": "d27cfebf7f5becbd4b08ba30b4241441328dc91a",
+    "url": "https://codeload.github.com/ExamAware/ExamAware2/zip/d27cfebf7f5becbd4b08ba30b4241441328dc91a"
+  },
+  {
+    "length": 6230354,
+    "sha256": "5B4FF3406D2E987C168A107CDFB1CE02268307D9352DEDE006EB1F8C1D4B7787",
+    "name": "ExamAware-rpc-ee1dee1b9e4912099d506a16547f35604e736d23.zip",
+    "commit": "ee1dee1b9e4912099d506a16547f35604e736d23",
+    "url": "https://codeload.github.com/ExamAware/ExamAware2/zip/ee1dee1b9e4912099d506a16547f35604e736d23"
+  }
+]

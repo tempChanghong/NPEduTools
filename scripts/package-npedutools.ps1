@@ -17,8 +17,6 @@ Push-Location $projectRoot
 try {
     & $runner restore NPEduTools.sln --locked-mode --configfile NuGet.Config
     if ($LASTEXITCODE) { throw 'Locked restore failed.' }
-    & (Join-Path $PSScriptRoot 'bootstrap-recorder.ps1')
-    if ($LASTEXITCODE) { throw 'Recording runtime verification failed.' }
     & (Join-Path $PSScriptRoot 'build-examaware-bridge.ps1')
     if ($LASTEXITCODE) { throw 'ExamAware bridge build or verification failed.' }
     # Independent self-contained publications: Build-only copy targets are not a publish manifest.
@@ -29,15 +27,10 @@ try {
         @{Project='NPEduTools.Recorder';Directory=(Join-Path $work 'recorder')})
     foreach ($component in $components) {
         & $runner @('publish',("src/" + $component.Project),'--configuration','Release','--runtime','win-x64','--self-contained','true','--output',$component.Directory,
-            '-m:1','-p:PublishTrimmed=false','-p:PublishSingleFile=false',"-p:PackageLockDirectory=$locks")
+            '-m:1','-p:PublishTrimmed=false','-p:PublishSingleFile=false','-p:ExcludeRecordingTools=true',"-p:PackageLockDirectory=$locks")
         if ($LASTEXITCODE) { throw "Publish failed: $($component.Project)" }
     }
     $recorder = Join-Path $work 'recorder'
-    $toolsDirectory = Join-Path $recorder 'Tools'
-    New-Item -ItemType Directory -Path $toolsDirectory -Force | Out-Null
-    foreach ($name in @('ffmpeg.exe','ffprobe.exe','LICENSE','README.txt','manifest.json')) {
-        Copy-Item -LiteralPath (Join-Path $projectRoot ".tools/recording/$name") -Destination $toolsDirectory
-    }
     foreach ($destination in @((Join-Path $app 'Recorder'),(Join-Path $app 'Host/Recorder'))) {
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -Path (Join-Path $recorder '*') -Destination $destination -Recurse -Force
@@ -62,6 +55,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/DEPENDENCIES.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot "docs/releases/$ReleaseVersion.md") -Destination (Join-Path $package 'RELEASE-NOTES.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-portable-package.ps1') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install-recording-tools.ps1') -Destination (Join-Path $package 'Install-Recording-Tools.ps1')
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'recording-tools.json') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/RECORDING-TOOLS-INSTALL.md') -Destination $package
     @'
 @echo off
 start "" "%~dp0app\NPEduTools.App.exe"
@@ -69,6 +65,20 @@ start "" "%~dp0app\NPEduTools.App.exe"
     # Preserve actual runtime package metadata and available notices. No test libraries are published.
     $notices = Join-Path $package 'third-party'
     New-Item -ItemType Directory -Path $notices -Force | Out-Null
+    foreach ($item in (Get-Content (Join-Path $projectRoot 'third-party/licenses.lock.json') -Raw | ConvertFrom-Json)) {
+        if ((Get-FileHash (Join-Path $projectRoot ('third-party/' + $item.file))).Hash -ne $item.sha256) { throw "License hash mismatch: $($item.file)" }
+    }
+    Copy-Item -Path (Join-Path $projectRoot 'third-party/*') -Destination $notices -Recurse -Force
+    & (Join-Path $PSScriptRoot 'collect-third-party-sources.ps1') -OutputDirectory (Join-Path $notices 'sources')
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/THIRD-PARTY-MATERIALS.md') -Destination $package
+    foreach ($runtimeId in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64')) {
+        $runtimeCache = Join-Path $env:NUGET_PACKAGES "$runtimeId/10.0.11"
+        $runtimeNotices = Join-Path $notices "$runtimeId-10.0.11"
+        New-Item -ItemType Directory -Path $runtimeNotices -Force | Out-Null
+        $runtimeFiles = @(Get-ChildItem -LiteralPath $runtimeCache -File | Where-Object { $_.Name -match '^(LICENSE|THIRD.PARTY.NOTICES)(\.|$)|\.nuspec$' })
+        if (-not @($runtimeFiles | Where-Object Name -match '^LICENSE').Count) { throw "Runtime license missing: $runtimeId" }
+        $runtimeFiles | Copy-Item -Destination $runtimeNotices
+    }
     $dependencies = @{}
     foreach ($deps in Get-ChildItem -LiteralPath $app -Filter '*.deps.json' -Recurse) {
         $json = Get-Content -LiteralPath $deps.FullName -Raw | ConvertFrom-Json -AsHashtable
@@ -95,7 +105,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
     $sourceZip = Join-Path $package 'NPEduTools-source.zip'
     $archive = [IO.Compression.ZipFile]::Open($sourceZip,[IO.Compression.ZipArchiveMode]::Create)
     try {
-        $files = @(git -c core.quotepath=false ls-files --cached --others --exclude-standard -- src plugins scripts tests tools images '*.sln' '*.props' global.json NuGet.Config LICENSE .gitignore .editorconfig README.md 'docs/*.md') | Sort-Object -Unique
+        $files = @(git -c core.quotepath=false ls-files --cached --others --exclude-standard -- src plugins scripts tests tools images third-party '*.sln' '*.props' global.json NuGet.Config LICENSE .gitignore .gitattributes .editorconfig README.md 'docs/*.md') | Sort-Object -Unique
         foreach ($file in $files) {
             if ((Test-Path -LiteralPath $file -PathType Leaf) -and $file -notmatch '(^|/)(bin|obj|cipx)/') {
                 $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,(Join-Path $projectRoot $file),$file,[IO.Compression.CompressionLevel]::Optimal)
@@ -103,7 +113,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
         }
     } finally { $archive.Dispose() }
     Copy-Item -LiteralPath $locks -Destination (Join-Path $package 'build-locks') -Recurse
-    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel='indev';rid='win-x64';selfContained=$true;createdAt=[DateTimeOffset]::Now;
+    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel='indev';rid='win-x64';selfContained=$true;recordingToolsBundled=$false;createdAt=[DateTimeOffset]::Now;
         sourceCommit=(git rev-parse HEAD);workingTreeDirty=([bool](git status --porcelain));sourceArchiveSha256=(Get-FileHash $sourceZip).Hash;
         sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';examAwareValidated='1.5.2 local build';examAwareBridgeVersion=$examManifest.version;files=@()}
     $manifest.files = @(Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName | ForEach-Object {

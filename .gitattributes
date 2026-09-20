@@ -1,0 +1,2 @@
+# Preserve upstream license bytes: licenses.lock.json hashes the original files.
+third-party/licenses/* -text

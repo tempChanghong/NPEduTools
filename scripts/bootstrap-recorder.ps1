@@ -16,8 +16,7 @@ if (Test-Path -LiteralPath $manifestPath) {
 New-Item -ItemType Directory -Force -Path $toolRoot | Out-Null
 $archive = Join-Path $toolRoot "ffmpeg-$version.zip"
 if (-not (Test-Path -LiteralPath $archive) -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $archiveHash) {
-    # This alias is accepted only with the pinned hash; a future alias change fails closed.
-    Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $archive
+    Invoke-WebRequest -Uri 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip' -OutFile $archive
 }
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $archiveHash) {
     throw 'FFmpeg archive does not match the pinned release. Review the upstream version and checksum before updating this script.'
