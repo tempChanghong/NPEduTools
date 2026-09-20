@@ -27,6 +27,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $plugin $entry) -Destination $stage -Recurse
     }
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
+    Copy-Item -LiteralPath (Join-Path $root 'third-party/licenses/ExamAware-plugin-sdk-1.5.2.txt') -Destination (Join-Path $stage 'UPSTREAM-LICENSE.txt')
     $package = Join-Path $out ("npedutools-examaware-bridge-$($manifest.version).ea2x")
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $temporary = Join-Path $out ([Guid]::NewGuid().ToString('N') + '.zip')

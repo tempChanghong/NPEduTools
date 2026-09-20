@@ -1,0 +1,10 @@
+{
+  "version": "9.0.1",
+  "downloadUrl": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip",
+  "releaseUrl": "https://github.com/GyanD/codexffmpeg/releases/tag/9.0.1",
+  "archiveSha256": "FEC81AE03971D9DD4BE3EBE02E263BD2EC1D789483F931BDBA5F5715E65DA2E9",
+  "files": {
+    "ffmpeg.exe": "72A489ECCD008C2EC2C0A5856C5C75BC3D8BBFA90166C4566865C246445E6AA3",
+    "ffprobe.exe": "19202B23C0043F15AD1B7BCE2344F406FD52BD6EFD8F995CE02E7392A1CEC52F"
+  }
+}
