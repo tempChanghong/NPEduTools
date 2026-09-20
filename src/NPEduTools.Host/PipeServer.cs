@@ -52,6 +52,10 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
+                else if (request.Capability == "host.cached-status")
+                    response = new(Protocol.Version, request.RequestId, "Succeeded", null, "已有本地缓存",
+                        SchoolClock: schoolClock?.PeekSnapshot(), Recording: recording?.State,
+                        Automatic: recording?.Automatic, ExamAware: examAware?.Snapshot(), ClassroomMode: classroom?.Snapshot);
                 else if (request.Capability == "host.stop" && classroom is not null && !classroom.BeginShutdown())
                     response = new(Protocol.Version, request.RequestId, "Rejected", "ClassroomBusy", "课堂模式正在切换，请等待完成或恢复提示后再停止后台。");
                 else if (request.Capability.StartsWith("classroom.", StringComparison.Ordinal))

@@ -19,6 +19,15 @@ public sealed class SchoolClockMonitor(Func<ProcessStartInfo> startInfo, Action<
         lock (_sync)
         {
             _run ??= Task.Run(() => RunAsync(_lifetime.Token));
+            return PeekSnapshot();
+        }
+    }
+
+    /// <summary>Returns the existing cache without creating a probe or connection.</summary>
+    public SchoolClockFrame PeekSnapshot()
+    {
+        lock (_sync)
+        {
             double age = _current.AgeMs + Stopwatch.GetElapsedTime(_publishedAt).TotalMilliseconds;
             return _current with { AgeMs = age,
                 State = _current.SchoolNow is not null && age >= SchoolClockFrame.MaxAgeMs ? "Stale" : _current.State };

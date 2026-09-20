@@ -87,7 +87,7 @@ public static class Protocol
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("host.ping" or "host.stop" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
+        if (request.Capability is not ("host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or
             "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
@@ -119,6 +119,7 @@ public static class Protocol
         if (request.OperationId is not null && (request.Capability != "classisland.execution.get" || request.OperationId == Guid.Empty))
             return "UnexpectedParameters";
         if (request.TimeoutMs is < 250 or > 15000) return "InvalidTimeout";
+        if (request.Capability == "host.cached-status" && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.ObserveMs < 0 || request.ObserveMs > 5000 || request.ObserveMs >= request.TimeoutMs)
             return "InvalidObservationWindow";
         if (request.Capability == "classisland.watch" && request.ObserveMs != 0) return "InvalidObservationWindow";

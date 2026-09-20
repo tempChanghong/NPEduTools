@@ -10,6 +10,8 @@
 | [n1-wire.schema.json](n1-wire.schema.json) | JSON Schema Draft-07 定义库；按 `#/definitions/<名称>` 选择请求体或响应定义，根本身不是单一路由校验器 |
 | [n1-examples.json](n1-examples.json) | 21 个有效结构与 20 个无效结构，全部为假数据 |
 | [Test-N1Examples.ps1](Test-N1Examples.ps1) | 对全部示例检查预期通过/拒绝，不启动服务、不访问数据库 |
+| [NPEP-N1-DEVICE-GUIDE.md](NPEP-N1-DEVICE-GUIDE.md) | 设备适配器、独立 CLI、凭据与故障恢复、隔离联调方法 |
+| [NPEP-N1-IMPLEMENTATION-REPORT.md](NPEP-N1-IMPLEMENTATION-REPORT.md) | 实现范围、实际测试结果和下一阶段限制 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式
@@ -31,4 +33,4 @@
 3. 两端联调：使用测试学校、两个学校的账号、测试 screen binding 和独立本地配置；先验证“配对成功—报告状态—撤销失效”，再执行主文档第8节竞态/恢复用例。
 4. 现场配对界面与学校管理页完成后，才交付一个可用的 N1 试点。不把当前结构检查结果标为服务端或大屏安全验收通过。
 
-N1 需要新增迁移和恢复时的部署 epoch 门禁；这两项尚未实施。不得沿用旧版本“无迁移”结论，也不得直接改线上服务试验。遇到契约变更，先更新主文档、Schema、正反例和双端审查，再一起实现；不得由任一端悄悄扩大能力。
+2026-09-20 已进入隔离实现阶段：设备端原型和首个真实 HTTPS/PostgreSQL 闭环已完成；KV 的迁移、生命周期与部署 epoch 门禁由服务端分支实现并单独验收。不得沿用旧版本“无迁移”结论，也不得直接改线上服务试验。遇到契约变更，先更新主文档、Schema、正反例和双端审查，再一起实现；不得由任一端悄悄扩大能力。

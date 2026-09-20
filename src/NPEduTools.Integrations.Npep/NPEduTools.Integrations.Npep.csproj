@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
+    <EmbeddedResource Include="../../docs/npep/n1-wire.schema.json" LogicalName="npep.schema.json" />
+    <InternalsVisibleTo Include="NPEduTools.Npep.Tests" />
+    <InternalsVisibleTo Include="NPEduTools.Npep.Acceptance" />
+  </ItemGroup>
+</Project>

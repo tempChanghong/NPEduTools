@@ -2,7 +2,7 @@
 
 日期：2026-09-20。名称：NOVARK POWER EDUCATION PLUS（NPEP）。状态：架构提案，未冻结协议，未实现功能，未部署。目标是让学校管理通过 NPClassworks 安全联动教室内的 NPEduTools，并逐步接入 ClassIsland 等本地软件。
 
-后续进展：N1 已整理为[共同契约与示例](npep/README.md)。本文保留阶段背景；具体 N1 路径、字段和边界以 [NPEP-N1-CONTRACT.md](npep/NPEP-N1-CONTRACT.md) 为准。N2/N3 仍是待后续设计的能力。
+后续进展：N1 已完成共同契约审阅并进入隔离实现，见[设备端实现与联调记录](npep/NPEP-N1-IMPLEMENTATION-REPORT.md)及[共同契约与示例](npep/README.md)。本文保留最初阶段背景；具体 N1 路径、字段和边界以 [NPEP-N1-CONTRACT.md](npep/NPEP-N1-CONTRACT.md) 为准。N2/N3 仍是待后续设计的能力。
 
 ## 1. 本轮观察与协作分工
 
