@@ -30,6 +30,7 @@ public sealed class NpepDevice : IDisposable
         ["pairing"] = _saved?["pairing"]?.DeepClone(),
         ["approval"] = _saved?["approval"]?.DeepClone(),
         ["registration"] = _saved?["registration"]?.DeepClone(),
+        ["reportingPaused"] = _saved?["reportingPaused"]?.DeepClone() ?? JsonValue.Create(false),
         ["suspended"] = _suspended
     };
     private void Save(JsonObject next) { _vault.Save(next); _saved = next; }
@@ -177,12 +178,22 @@ public sealed class NpepDevice : IDisposable
         ((JsonObject)next["create"]!).Remove("pairingSecret");
         Save(next);
     }
+    public async Task SetReportingPausedAsync(bool paused, CancellationToken token = default)
+    {
+        await _gate.WaitAsync(token);
+        try
+        {
+            if (Required().Text("stage") != "ACTIVE") throw new NpepException("DEVICE_SUSPENDED");
+            var next = Required().Copy(); next["reportingPaused"] = paused; Save(next);
+        }
+        finally { _gate.Release(); }
+    }
     public async Task<JsonObject> OpenSessionAsync(CancellationToken token = default)
     {
         await _gate.WaitAsync(token);
         try
         {
-            if (_suspended || Required().Text("stage") != "ACTIVE") throw new NpepException("DEVICE_SUSPENDED");
+            if (_suspended || Required().Text("stage") != "ACTIVE" || Required()["reportingPaused"]?.GetValue<bool>() == true) throw new NpepException("DEVICE_SUSPENDED");
             if (_session is not null) return _session.Copy();
             using var api = Api();
             if (_sessionRequest is null)
@@ -209,7 +220,7 @@ public sealed class NpepDevice : IDisposable
         await _gate.WaitAsync(token);
         try
         {
-            if (_suspended || _session is null || Required().Text("stage") != "ACTIVE") throw new NpepException("DEVICE_SUSPENDED");
+            if (_suspended || _session is null || Required().Text("stage") != "ACTIVE" || Required()["reportingPaused"]?.GetValue<bool>() == true) throw new NpepException("DEVICE_SUSPENDED");
             if (_sequence == NpepProtocol.MaxInteger) throw new NpepException("SEQUENCE_EXHAUSTED");
             var body = IdentityBody(); body["sessionId"] = _session["sessionId"]!.DeepClone(); body["statusEpoch"] = _session["statusEpoch"]!.DeepClone();
             int age = sampleAgeMs();

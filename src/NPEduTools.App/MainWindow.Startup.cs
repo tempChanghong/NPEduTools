@@ -53,6 +53,7 @@ public partial class MainWindow
         if (!atLogin || !_startupPreferences.EdgeOnlyAtLogin) Show();
         _watch = WatchAsync(_lifetime.Token);
         _management = ManagementLoopAsync(_lifetime.Token);
+        _ = NpepPollAsync();
         _touchPoll = TouchPollAsync(_lifetime.Token);
         StartOnboarding(atLogin);
     }

@@ -6,7 +6,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Version Condition="'$(MSBuildProjectName)' == 'NPEduTools.App'">0.1.0-indev.20260920</Version>
-    <InformationalVersion Condition="'$(MSBuildProjectName)' == 'NPEduTools.App'">InDev 20260920</InformationalVersion>
+    <InformationalVersion Condition="'$(MSBuildProjectName)' == 'NPEduTools.App' Or '$(MSBuildProjectName)' == 'NPEduTools.Host'">InDev 20260920</InformationalVersion>
     <NuGetLockFilePath Condition="'$(PackageLockDirectory)' != ''">$(PackageLockDirectory)/$(MSBuildProjectName).lock.json</NuGetLockFilePath>
   </PropertyGroup>
 </Project>

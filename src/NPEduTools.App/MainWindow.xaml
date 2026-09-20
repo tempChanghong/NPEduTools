@@ -238,9 +238,56 @@
             <Button x:Name="GeneralSettingsTab" Content="常规" Tag="active" Style="{StaticResource Navigation}" Click="GeneralSettingsClicked" AutomationProperties.AutomationId="GeneralSettingsTab" Margin="0,0,8,0" />
             <Button x:Name="TeachingSettingsTab" Content="课堂工具" Style="{StaticResource Navigation}" Click="TeachingSettingsClicked" AutomationProperties.AutomationId="TeachingSettingsTab" Margin="0,0,8,0" />
             <Button x:Name="ConnectionsSettingsTab" Content="软件连接" Style="{StaticResource Navigation}" Click="ConnectionsSettingsClicked" AutomationProperties.AutomationId="ConnectionsSettingsTab" />
+            <Button x:Name="NpepSettingsTab" Content="学校互联" Style="{StaticResource Navigation}" Click="NpepSettingsClicked" AutomationProperties.AutomationId="NpepSettingsTab" Margin="8,0,0,0" />
           </StackPanel>
           <ScrollViewer x:Name="SettingsScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
           <StackPanel>
+            <StackPanel x:Name="NpepSettingsPanel" Visibility="Collapsed">
+              <Border Style="{StaticResource Surface}" Background="#EAF6F2"><StackPanel>
+                <TextBlock Text="NPEP · 学校互联" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="连接 NPClassworks，让学校管理员了解这台大屏的课堂模式与软件连接状态。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,0" />
+                <TextBlock Text="当前仅共享设备状态，不上传屏幕、声音、录课文件或完整课表；不接受远程通知、模式切换或录制指令。" TextWrapping="Wrap" Foreground="#526A60" FontSize="12" Margin="0,8,0,0" />
+              </StackPanel></Border>
+              <Border Style="{StaticResource Surface}"><StackPanel>
+                <DockPanel><Button Content="刷新" Click="NpepRefreshClicked" DockPanel.Dock="Right" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="NpepRefresh" /><TextBlock x:Name="NpepStatusTitle" Text="正在读取互联状态…" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" AutomationProperties.AutomationId="NpepStatusTitle" /></DockPanel>
+                <TextBlock x:Name="NpepMessage" Text="等待后台连接" TextWrapping="Wrap" Foreground="#64776D" Margin="0,10,0,0" AutomationProperties.AutomationId="NpepMessage" />
+                <TextBlock x:Name="NpepReceipt" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,6,0,0" />
+                <TextBlock x:Name="NpepError" TextWrapping="Wrap" Foreground="#A14334" FontSize="12" Margin="0,6,0,0" AutomationProperties.AutomationId="NpepError" />
+                <StackPanel x:Name="NpepCreatePanel" Margin="0,18,0,0">
+                  <TextBlock Text="学校服务地址" FontWeight="SemiBold" /><TextBlock Text="请向学校管理员获取 HTTPS 地址。" FontSize="12" Foreground="#64776D" Margin="0,4,0,8" />
+                  <TextBox x:Name="NpepOriginBox" AutomationProperties.AutomationId="NpepOrigin" AutomationProperties.Name="学校服务地址" TextChanged="NpepInputChanged" MaxLength="2048" />
+                  <Button x:Name="NpepInspectButton" Content="检查服务" Click="NpepInspectClicked" HorizontalAlignment="Left" Margin="0,10,0,0" AutomationProperties.AutomationId="NpepInspect" />
+                  <StackPanel x:Name="NpepServerPanel" Visibility="Collapsed" Margin="0,14,0,0">
+                    <TextBlock x:Name="NpepServerIdentity" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" AutomationProperties.AutomationId="NpepServerIdentity" />
+                    <CheckBox x:Name="NpepServerConfirmed" Content="我已与管理员核对这是学校的服务" Style="{StaticResource Switch}" Checked="NpepConsentChanged" Unchecked="NpepConsentChanged" Margin="0,12,0,12" AutomationProperties.AutomationId="NpepServerConfirmed" />
+                    <TextBlock Text="设备名称（便于管理员辨认）" Margin="0,0,0,8" />
+                    <TextBox x:Name="NpepNameBox" Text="教室大屏" MaxLength="64" TextChanged="NpepInputChanged" AutomationProperties.AutomationId="NpepDeviceName" />
+                    <Button x:Name="NpepPairButton" Content="创建配对码" Style="{StaticResource Primary}" HorizontalAlignment="Left" Click="NpepPairClicked" Margin="0,12,0,0" AutomationProperties.AutomationId="NpepPair" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel x:Name="NpepCodePanel" Visibility="Collapsed" Margin="0,18,0,0">
+                  <TextBlock Text="请管理员在学校管理 → 大屏设备 → NPEP 设备互联中输入" TextWrapping="Wrap" Foreground="#64776D" />
+                  <TextBlock x:Name="NpepCode" FontSize="32" FontWeight="SemiBold" Foreground="#147D68" Margin="0,8,0,4" AutomationProperties.AutomationId="NpepPairingCode" />
+                  <TextBlock x:Name="NpepExpiry" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" />
+                  <TextBlock Text="仅向本校管理员提供此码。批准后还需要在这台大屏上确认。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,6,0,0" />
+                </StackPanel>
+                <StackPanel x:Name="NpepBindingPanel" Visibility="Collapsed" Margin="0,18,0,0">
+                  <TextBlock Text="连接归属" FontWeight="SemiBold" />
+                  <TextBlock x:Name="NpepBinding" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="NpepBinding" />
+                  <TextBlock x:Name="NpepBoundOrigin" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,6,0,0" />
+                  <Expander Header="归属核对编号" FontSize="12" Margin="0,8,0,0"><TextBlock x:Name="NpepBindingIdentity" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,0" /></Expander>
+                  <StackPanel x:Name="NpepConfirmPanel" Visibility="Collapsed">
+                    <CheckBox x:Name="NpepBindingConfirmed" Content="学校、班级和大屏正确，同意共享设备状态" Style="{StaticResource Switch}" Margin="0,14,0,10" Checked="NpepConsentChanged" Unchecked="NpepConsentChanged" AutomationProperties.AutomationId="NpepBindingConfirmed" />
+                    <Button x:Name="NpepConfirmButton" Content="确认连接" Click="NpepConfirmClicked" HorizontalAlignment="Left" Style="{StaticResource Primary}" AutomationProperties.AutomationId="NpepConfirm" />
+                  </StackPanel>
+                </StackPanel>
+                <WrapPanel Margin="0,18,0,0">
+                  <Button x:Name="NpepRecoverButton" Content="恢复未完成操作" Click="NpepRecoverClicked" Visibility="Collapsed" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepRecover" />
+                  <Button x:Name="NpepPauseButton" Content="暂停上报" Click="NpepPauseClicked" Visibility="Collapsed" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepPause" />
+                  <Button x:Name="NpepUnpairButton" Content="解除绑定" Click="NpepUnpairClicked" Visibility="Collapsed" Style="{StaticResource Quiet}" Margin="0,0,0,8" AutomationProperties.AutomationId="NpepUnpair" />
+                </WrapPanel>
+              </StackPanel></Border>
+            </StackPanel>
             <StackPanel x:Name="GeneralSettingsPanel">
             <Border Style="{StaticResource Surface}">
               <StackPanel>

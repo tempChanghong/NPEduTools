@@ -6,13 +6,14 @@ using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using NPEduTools.Contracts;
 using NPEduTools.Core;
+using NPEduTools.Integrations.Npep;
 
 namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
 public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
-    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null)
+    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
@@ -52,6 +53,8 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
+                else if (request.Capability.StartsWith("npep.", StringComparison.Ordinal))
+                    response = npep?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NpepUnavailable", "请更新并重启后台以使用学校互联。");
                 else if (request.Capability == "host.cached-status")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "已有本地缓存",
                         SchoolClock: schoolClock?.PeekSnapshot(), Recording: recording?.State,

@@ -2,6 +2,8 @@
 
 本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
 
+2026-09-21：已完成设置页与 Host 后台连接管理，见 [UI 与生命周期验收记录](NPEP-N1-UI-REPORT.md)。仍需真实大屏与生产运维验收，未部署生产。
+
 2026-09-20 双端交叉审阅完成：已提出的契约阻塞均闭环，可以作为隔离环境实现基线。服务端审阅记录的正文快照 SHA-256 为 `1afd58c435e6616a6dcd5091c0432f700b2e3325fdad2b997e089dc361490d07`；随后仅将主文档首段状态由“正在审阅”更新为“审阅通过”，未变更协议内容。
 
 | 文件 | 用途 |
@@ -12,6 +14,7 @@
 | [Test-N1Examples.ps1](Test-N1Examples.ps1) | 对全部示例检查预期通过/拒绝，不启动服务、不访问数据库 |
 | [NPEP-N1-DEVICE-GUIDE.md](NPEP-N1-DEVICE-GUIDE.md) | 设备适配器、独立 CLI、凭据与故障恢复、隔离联调方法 |
 | [NPEP-N1-IMPLEMENTATION-REPORT.md](NPEP-N1-IMPLEMENTATION-REPORT.md) | 实现范围、实际测试结果和下一阶段限制 |
+| [NPEP-N1-UI-REPORT.md](NPEP-N1-UI-REPORT.md) | 设置页、Host 常驻连接与双端 UI 阶段的验收及限制 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式

@@ -102,6 +102,7 @@ try
         await restarted.UnpairAsync();
         Check(!File.Exists(Path.Combine(args[3], "npep.credentials.dpapi")), "Local credential cleanup completes");
     }
+    await RuntimeAcceptance.RunAsync(args[3] + "-runtime", origin, fixture, Api, Admin, Check);
     Console.WriteLine($"N1 real HTTPS/PostgreSQL acceptance: {checks.Count} checks passed.");
     return 0;
 }

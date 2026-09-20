@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../NPEduTools.Integrations.Npep/NPEduTools.Integrations.Npep.csproj" />
     <ProjectReference Include="../NPEduTools.ClassIsland.Admin/NPEduTools.ClassIsland.Admin.csproj" />
     <ProjectReference Include="../NPEduTools.Recorder/NPEduTools.Recorder.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
     <ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" />

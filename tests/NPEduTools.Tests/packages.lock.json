@@ -260,6 +260,7 @@
           "NPEduTools.Contracts": "[1.0.0, )",
           "NPEduTools.Core": "[1.0.0, )",
           "NPEduTools.Integrations.ClassIsland": "[1.0.0, )",
+          "NPEduTools.Integrations.Npep": "[1.0.0, )",
           "NPEduTools.PowerPoint.Diagnostics": "[1.0.0, )"
         }
       },
@@ -270,6 +271,12 @@
           "NPEduTools.ClassIsland.Bridge.Contracts": "[1.0.0, )",
           "NPEduTools.Core": "[1.0.0, )",
           "dotnetCampus.Ipc": "[2.0.0-alpha410, )"
+        }
+      },
+      "npedutools.integrations.npep": {
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.Contracts": "[1.0.0, )"
         }
       },
       "npedutools.powerpoint.diagnostics": {

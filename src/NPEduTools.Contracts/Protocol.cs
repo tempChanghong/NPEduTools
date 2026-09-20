@@ -17,7 +17,8 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RecorderCommand? Recording = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingCommand? Automatic = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AutoStartEnabled = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeCommand? ClassroomMode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeCommand? ClassroomMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepCommand? Npep = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -46,7 +47,8 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingState? Automatic = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwareStatus? ExamAware = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePairing? ExamAwarePairing = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeState? ClassroomMode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeState? ClassroomMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepState? Npep = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -87,7 +89,7 @@ public static class Protocol
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
+        if (request.Capability is not ("npep.status" or "npep.command" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or
             "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
@@ -119,6 +121,8 @@ public static class Protocol
         if (request.OperationId is not null && (request.Capability != "classisland.execution.get" || request.OperationId == Guid.Empty))
             return "UnexpectedParameters";
         if (request.TimeoutMs is < 250 or > 15000) return "InvalidTimeout";
+        if (request.Capability == "npep.command" ? request.Npep is null || !NpepContract.Valid(request.Npep) : request.Npep is not null) return "InvalidNpepCommand";
+        if (request.Capability.StartsWith("npep.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.Capability == "host.cached-status" && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.ObserveMs < 0 || request.ObserveMs > 5000 || request.ObserveMs >= request.TimeoutMs)
             return "InvalidObservationWindow";

@@ -3,6 +3,7 @@ using System.Reflection;
 using NPEduTools.Contracts;
 using NPEduTools.Host;
 using NPEduTools.Integrations.ClassIsland;
+using NPEduTools.Integrations.Npep;
 
 if (!OperatingSystem.IsWindows())
 {
@@ -144,9 +145,13 @@ var classroomStore = new ClassroomModeStore(dataDirectory);
 await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot, () => classroomStore.State.AutomaticPaused);
 await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget());
 await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader));
+string npepVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "unknown";
+await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npepVersion,
+    () => new(Protocol.Version, Guid.Empty, "Succeeded", null, "已有本地缓存", SchoolClock: schoolClock.PeekSnapshot(),
+        Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot));
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

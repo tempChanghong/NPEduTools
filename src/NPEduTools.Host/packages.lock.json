@@ -176,6 +176,12 @@
           "dotnetCampus.Ipc": "[2.0.0-alpha410, )"
         }
       },
+      "npedutools.integrations.npep": {
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.Contracts": "[1.0.0, )"
+        }
+      },
       "npedutools.powerpoint.diagnostics": {
         "type": "Project"
       }
