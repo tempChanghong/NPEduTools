@@ -1,9 +1,13 @@
-param([string]$OutputRoot = '.artifacts/releases')
+param(
+    [string]$OutputRoot = '.artifacts/releases',
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion = 'InDev-20260920'
+)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $output = [IO.Path]::GetFullPath((Join-Path $projectRoot $OutputRoot))
-$id = 'NPEduTools-P4-preview-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
-$work = Join-Path $output $id
+$id = 'NPEduTools-' + $ReleaseVersion
+$buildId = $id + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
+$work = Join-Path $output $buildId
 $package = Join-Path $work $id
 $app = Join-Path $package 'app'
 $locks = Join-Path $work 'publish-locks'
@@ -15,6 +19,8 @@ try {
     if ($LASTEXITCODE) { throw 'Locked restore failed.' }
     & (Join-Path $PSScriptRoot 'bootstrap-recorder.ps1')
     if ($LASTEXITCODE) { throw 'Recording runtime verification failed.' }
+    & (Join-Path $PSScriptRoot 'build-examaware-bridge.ps1')
+    if ($LASTEXITCODE) { throw 'ExamAware bridge build or verification failed.' }
     # Independent self-contained publications: Build-only copy targets are not a publish manifest.
     $components = @(
         @{Project='NPEduTools.App';Directory=$app},
@@ -45,10 +51,16 @@ try {
     New-Item -ItemType Directory -Path $pluginDirectory -Force | Out-Null
     Copy-Item -LiteralPath $bridgePath -Destination $pluginDirectory
     Copy-Item -LiteralPath (Join-Path (Split-Path $bridgePath) 'checksums.md') -Destination $pluginDirectory
+    $examManifest = Get-Content -LiteralPath (Join-Path $projectRoot 'plugins/npedutools-examaware-bridge/package.json') -Raw | ConvertFrom-Json
+    $examPluginDirectory = Join-Path $package 'ExamAware2-plugin'
+    New-Item -ItemType Directory -Path $examPluginDirectory -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $projectRoot ".artifacts/examaware-bridge/npedutools-examaware-bridge-$($examManifest.version).ea2x") -Destination $examPluginDirectory
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'plugins/npedutools-examaware-bridge/README.md') -Destination $examPluginDirectory
     Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PORTABLE-CLASSROOM-GUIDE.md') -Destination (Join-Path $package 'README.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/CLASSROOM-ACCEPTANCE.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/DEPENDENCIES.md') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $projectRoot "docs/releases/$ReleaseVersion.md") -Destination (Join-Path $package 'RELEASE-NOTES.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-portable-package.ps1') -Destination $package
     @'
 @echo off
@@ -91,15 +103,16 @@ start "" "%~dp0app\NPEduTools.App.exe"
         }
     } finally { $archive.Dispose() }
     Copy-Item -LiteralPath $locks -Destination (Join-Path $package 'build-locks') -Recurse
-    $manifest = @{packageId=$id;channel='classroom-preview';rid='win-x64';selfContained=$true;createdAt=[DateTimeOffset]::Now;
+    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel='indev';rid='win-x64';selfContained=$true;createdAt=[DateTimeOffset]::Now;
         sourceCommit=(git rev-parse HEAD);workingTreeDirty=([bool](git status --porcelain));sourceArchiveSha256=(Get-FileHash $sourceZip).Hash;
-        sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';files=@()}
+        sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';examAwareValidated='1.5.2 local build';examAwareBridgeVersion=$examManifest.version;files=@()}
     $manifest.files = @(Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName | ForEach-Object {
         @{path=[IO.Path]::GetRelativePath($package,$_.FullName).Replace('\','/');length=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
     })
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $package 'package-manifest.json') -Encoding utf8
     & (Join-Path $PSScriptRoot 'verify-portable-package.ps1') -PackageRoot $package
     $zip = Join-Path $output ($id + '-win-x64.zip')
+    if (Test-Path -LiteralPath $zip) { throw "Release archive already exists; use a new OutputRoot: $zip" }
     [IO.Compression.ZipFile]::CreateFromDirectory($package,$zip,[IO.Compression.CompressionLevel]::Optimal,$true)
     $sha = (Get-FileHash -LiteralPath $zip).Hash
     "$sha  $([IO.Path]::GetFileName($zip))" | Set-Content -LiteralPath ($zip + '.sha256') -Encoding ascii

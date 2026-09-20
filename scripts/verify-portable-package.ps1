@@ -33,4 +33,16 @@ try {
     if (@($zip.Entries | Where-Object { $_.FullName -match 'TestFixture|^ClassIsland\.|^Avalonia\.|^dotnetCampus\.|^Newtonsoft\.' }).Count) { throw 'Bridge includes forbidden test or host assemblies.' }
     if (-not $zip.GetEntry('manifest.yml')) { throw 'Plugin manifest missing.' }
 } finally { $zip.Dispose() }
+if ($manifest.examAwareBridgeVersion) {
+    $examZip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root "ExamAware2-plugin/npedutools-examaware-bridge-$($manifest.examAwareBridgeVersion).ea2x"))
+    try {
+        foreach ($entry in @('package.json','dist/main/index.cjs','dist/renderer/index.mjs','LICENSE','THIRD-PARTY-NOTICES.md')) {
+            if (-not @($examZip.Entries | Where-Object { $_.FullName.Replace('\','/') -eq $entry }).Count) { throw "ExamAware plugin entry missing: $entry" }
+        }
+        $examEntry = $examZip.Entries | Where-Object { $_.FullName.Replace('\','/') -eq 'package.json' }
+        $reader = [IO.StreamReader]::new($examEntry.Open())
+        try { $examManifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+        if ($examManifest.version -ne $manifest.examAwareBridgeVersion -or $examManifest.examaware.apiVersion -ne 2) { throw 'ExamAware plugin version mismatch.' }
+    } finally { $examZip.Dispose() }
+}
 Write-Output "PASS: $($manifest.packageId); $($manifest.files.Count) files; runtime, recording tools and plugin verified."

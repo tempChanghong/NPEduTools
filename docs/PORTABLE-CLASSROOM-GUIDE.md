@@ -1,10 +1,10 @@
 # NPEduTools 教室试用包：安装、更新与回退
 
-适用：Windows x64，ClassIsland 2.1.0.1 本地构建；桥接插件 0.2.0.0。本包是 P4 现场验收用预览包，开发机检查不等于目标大屏整课验收。内含 NPEduTools 的 .NET 运行时，不需要为 NPEduTools 另外安装 SDK。ClassIsland 本体及它需要的运行环境单独维护，不包含在本包内。
+适用：InDev 20260920，Windows x64，ClassIsland 2.1.0.1 本地构建／桥接 0.2.0.0，ExamAware2 1.5.2 本地打包程序／桥接 0.3.0。开发机检查不等于目标大屏整课验收。内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在本包内。
 
 ## 第一次使用
 
-1. 完整解压 ZIP 到固定目录，例如 `D:\NPEduTools\P4-preview`。不要只取出 EXE，不要直接在压缩软件中运行。移动目录后应重新设置相关快捷方式。
+1. 完整解压 ZIP 到固定目录，例如 `D:\NPEduTools\InDev-20260920`。不要只取出 EXE，不要直接在压缩软件中运行。移动目录后应重新设置相关快捷方式。
 2. 双击 `Start-NPEduTools.cmd`，或 `app/NPEduTools.App.exe`。在偏好设置中确认 ClassIsland 程序路径；日常使用普通用户权限即可，不需要以管理员启动本工具。
 3. 在 ClassIsland 的“应用设置 → 插件”中安装 `ClassIsland-plugin/NPEduTools.ClassIsland.Bridge.cipx`，确认名称为“NPEduTools 时间与课表桥接”，启用并重启 ClassIsland。无需自行解压插件到用户正在使用的安装目录。
 4. 打开 NPEduTools 的“自动录课计划”，核对学校日期、时间与 ClassIsland 显示一致。插件缺失、时间停止前进或连接异常时，等待修复；软件不会改用 Windows 时间代录。
@@ -16,10 +16,15 @@
 
 ## 文件位置
 
+需要日常／考试模式时，先在“考试看板”保存 ExamAware.exe 位置，通过 ExamAware 官方插件安装功能导入 `ExamAware2-plugin/npedutools-examaware-bridge-0.3.0.ea2x`，按该目录 README 完成配对；在 NPEduTools 的“设置 → 软件连接”配置 ClassIsland 管理员登录任务，再做首次检查。Windows UAC 由操作者核实授权。考试模式暂停自动录课并保留计划；即时软件切换为可选项，默认关闭。
+
+**切回日常或退出 ExamAware2 前，先保存并关闭编辑器、结束放映。** 1.5.2 编辑器仍打开时退出可能提前卸载接口，导致无法保存；这是本版暂未解决的已知问题。关闭 NPEduTools 不会替你关闭这两款软件。
+
 | 内容 | 位置 |
 | --- | --- |
 | 主程序及运行时 | 本包 `app/`，子目录必须一起保留 |
 | ClassIsland 插件 | 本包 `ClassIsland-plugin/`；实际安装位置由 ClassIsland 管理 |
+| ExamAware2 插件 | 本包 `ExamAware2-plugin/`；通过官方安装功能导入并配对 |
 | 计划、界面与录制设置 | `%LocalAppData%\NPEduTools\ui` |
 | 后台配置及真实执行账本 | `%LocalAppData%\NPEduTools\config` |
 | 视频 | 所选保存目录；默认是用户“视频”目录下 `NPEduTools` |
@@ -55,4 +60,4 @@ ZIP 旁的 `.sha256` 校验完整压缩包；包内 `package-manifest.json` 列�
 
 按同包 `CLASSROOM-ACCEPTANCE.md` 填写目标大屏结果。至少完成整课、连续多课、双音源回放、暂停恢复、ClassIsland 断连及物理休眠验证，再决定常态使用。不存在“开发机短录已通过，所以大屏一定不会假死”的结论。
 
-本包附本项目当前源码快照、实际发布依赖清单及可从 NuGet 包取得的许可文件，FFmpeg 保留上游 README、LICENSE 与源码提交说明。该快照记录包含未提交的工作区代码；以本包源码哈希定位构建内容。第三方全部构建依赖的对应源码材料、正式发布兼容矩阵和签名发行流程尚未在本次教室试用阶段完成，当前只作本地试用交付，未上架市场。
+本包附项目源码快照、实际发布依赖清单及可从 NuGet 包取得的许可文件，FFmpeg 保留上游 README、LICENSE 与源码提交说明。以 `package-manifest.json` 中的提交号、工作区状态及源码哈希定位构建内容。当前处于发布草稿审核阶段；全部第三方构建依赖的对应源码材料需在公开分发前完成核对，不能用开发预览标记代替这项要求。
