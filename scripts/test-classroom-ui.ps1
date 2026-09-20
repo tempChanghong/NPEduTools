@@ -20,7 +20,7 @@ function Window([string]$name = $title) {
     [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,
         [Windows.Automation.AndCondition]::new(
             [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,$app.Id),
-            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,$name)))
+            [Windows.Automation.AndCondition]::new([Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,$name), [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Window))))
 }
 function Control([string]$id, [string]$name = $title) {
     $window = Window $name
@@ -60,12 +60,16 @@ try {
     if ((Control 'ClassroomRestore').Current.IsEnabled) { throw 'Recovery must be disabled without a journal.' }
     $checks.Add('Mode management entry shows Daily and Exam actions, with recovery disabled initially')
     Click 'ClassroomExam'
-    $end = [DateTime]::UtcNow.AddSeconds(5)
-    do { $dialog = Window '切换到考试模式'; if (-not $dialog) { Start-Sleep -Milliseconds 100 } } while (-not $dialog -and [DateTime]::UtcNow -lt $end)
-    if (-not $dialog) { throw 'Missing mode confirmation' }
-    $dialog.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+    $null = Wait-Control 'ClassroomSetupSummary' '还有配置需要处理'
+    $null = Wait-Control 'ClassroomExam'
+    if (Window '切换到考试模式') { throw 'Missing setup should stop before confirmation' }
+    $items = Control 'ClassroomSetupItems'
+    $setupText = ($items.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition) | ForEach-Object { $_.Current.Name }) -join ' '
+    foreach ($label in @('ClassIsland 程序','管理员自启动任务','ExamAware2 程序','考试看板桥接')) {
+        if ($setupText -notmatch [regex]::Escape($label)) { throw "Missing setup item: $label" }
+    }
     $null = Wait-Control 'ClassroomModeTitle' '^尚未设置模式$'
-    $checks.Add('Cancellable mode confirmation leaves original mode unchanged')
+    $checks.Add('All four setup items are shown; missing setup stops Exam switch before confirmation and preserves mode')
     Click 'ClassroomRefresh'
     $null = Wait-Control 'ClassroomModeStatus' '检查未通过'
     $null = Wait-Control 'ClassroomDaily'
@@ -76,6 +80,22 @@ try {
     Click 'OpenClassroomMode' 'NPEduTools'
     $null = Wait-Control 'ClassroomDaily'
     $checks.Add('Management window reopens after closing')
+    Click 'ClassroomSetupClassIsland'
+    $null = Wait-Control 'PageBreadcrumb' '偏好设置' 'NPEduTools'
+    Click 'OpenClassroomMode' 'NPEduTools'
+    $null = Wait-Control 'ClassroomSetupSummary' '还有配置需要处理'
+    Click 'ClassroomSetupAdmin'
+    $null = Wait-Control 'PageBreadcrumb' '偏好设置' 'NPEduTools'
+    Click 'OpenClassroomMode' 'NPEduTools'
+    $null = Wait-Control 'ClassroomSetupSummary' '还有配置需要处理'
+    Click 'ClassroomSetupExamAware'
+    $end = [DateTime]::UtcNow.AddSeconds(10)
+    do { $examWindow = Window '考试看板 · ExamAware2'; if (-not $examWindow) { Start-Sleep -Milliseconds 100 } } while (-not $examWindow -and [DateTime]::UtcNow -lt $end)
+    if (-not $examWindow) { throw 'ExamAware setup entry did not open settings' }
+    $examWindow.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+    Click 'OpenClassroomMode' 'NPEduTools'
+    $null = Wait-Control 'ClassroomSetupSummary' '还有配置需要处理'
+    $checks.Add('All three setup links open existing settings and returning rechecks prerequisites')
     (Window).GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
     Click 'StopHost' 'NPEduTools'
     if (-not $app.WaitForExit(20000)) { throw 'App did not exit.' }

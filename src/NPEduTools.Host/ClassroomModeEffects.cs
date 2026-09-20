@@ -2,11 +2,12 @@ using System.Diagnostics;
 using System.Runtime.Versioning;
 using NPEduTools.ClassIsland.Admin;
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 
 namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
-public sealed class ClassroomModeEffects(LaunchService launch, ExamAwareService examAware, RecordingService recording) : IClassroomModeEffects
+public sealed partial class ClassroomModeEffects(LaunchService launch, ExamAwareService examAware, RecordingService recording, ILessonStatusReader? reader = null) : IClassroomModeEffects
 {
     private readonly string _helper = Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe");
     private async Task<LaunchSettings> ClassIslandSettingsAsync()
@@ -82,4 +83,3 @@ public sealed class ClassroomModeEffects(LaunchService launch, ExamAwareService 
     }
     public Task PauseRecordingAsync() => recording.PauseForClassroomModeAsync();
 }
-

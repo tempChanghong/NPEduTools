@@ -65,7 +65,7 @@ public sealed partial class ScheduledStartup : IDisposable
         using var identity = WindowsIdentity.GetCurrent();
         if (identity.User?.Value != request.UserSid || System.Diagnostics.Process.GetCurrentProcess().SessionId != request.SessionId)
             return new("Rejected", "请使用当前登录用户授权，不能替其他账户配置或重启 ClassIsland。");
-        if (request.Action is not ("status" or "inspect" or "create" or "delete" or "enable" or "disable" or "elevate" or "launch" or "launch-elevated")) return new("Rejected", "不支持的管理员操作。");
+        if (request.Action is not ("status" or "inspect" or "create" or "delete" or "enable" or "disable" or "close" or "launch-mode" or "elevate" or "launch" or "launch-elevated")) return new("Rejected", "不支持的管理员操作。");
         string executable = ClassIslandExecutable.Validate(request.Executable);
         request = request with { Executable = executable };
         if (request.Action == "status") return new("Succeeded", "已读取状态。", Status(request));
@@ -88,6 +88,20 @@ public sealed partial class ScheduledStartup : IDisposable
             if (request.ExpectedFingerprint != TaskDefinitionPolicy.Fingerprint(before)) return new("Rejected", "计划任务已被其他程序更改，请刷新后再操作。", Status(request));
             if (before is not null && !TaskDefinitionPolicy.IsCompatible(before, executable, request.UserSid, ResolveSid))
                 return new("Rejected", "同名任务不属于当前用户和所选程序，已保留原任务。", Status(request));
+            if (request.Action is "close" or "launch-mode")
+            {
+                if (before is null) return new("Rejected", "管理员任务不存在，请先核实自启动设置。", Status(request));
+                var status = Status(request);
+                if (request.Action == "launch-mode")
+                {
+                    if (status.TaskState != "Enabled") return new("Rejected", "管理员任务未启用，未执行即时启动。", status);
+                    if (status.ProcessState == "Administrator") return new("Succeeded", "ClassIsland 已以管理员身份运行。", status);
+                }
+                ClassIslandProcess.EnsureStoppedAsync(executable, request.UserSid, request.SessionId).GetAwaiter().GetResult();
+                if (request.Action == "close") return new("Succeeded", "已确认 ClassIsland 正常退出。", Status(request));
+                // Preserve the same task fingerprint across normal exit; never fall back to direct EXE launch.
+                return RunTask(request, status);
+            }
             if (request.Action is "enable" or "disable")
             {
                 if (before is null) return new("Rejected", "请先创建管理员自启动任务。", Status(request));

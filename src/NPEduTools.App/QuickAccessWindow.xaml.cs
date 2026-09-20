@@ -17,6 +17,17 @@ namespace NPEduTools.App;
 public partial class QuickAccessWindow : Window
 {
     private Action? _examAware;
+    private Action? _classroomMode;
+    public void SetClassroomModeAction(Action action) => _classroomMode = action;
+    private void ClassroomModeClicked(object sender, RoutedEventArgs e) => _classroomMode?.Invoke();
+    public void UpdateClassroomMode(ClassroomModePresentation view)
+    {
+        ClassroomModeTitle.Text = view.Title;
+        ClassroomModeDetail.Text = view.Detail;
+        RailModeText.Text = view.RailLabel;
+        EdgeHandle.ToolTip = view.Title + "\n" + view.Detail + "\n点击展开或收起；拖动调整位置";
+        ClassroomModeTitle.Foreground = new SolidColorBrush(view.Attention ? Color.FromRgb(156, 87, 33) : Color.FromRgb(32, 46, 53));
+    }
     public void SetExamAwareAction(Action action) => _examAware = action;
     private void ExamAwareClicked(object sender, RoutedEventArgs e) => _examAware?.Invoke();
     private const double RailWidth = 80, RailHeight = 284, PanelWidth = 440, PanelHeight = 620;

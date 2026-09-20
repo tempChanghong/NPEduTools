@@ -14,6 +14,29 @@ public interface IExamAwareProcess : IDisposable { bool HasExited { get; } }
 
 public sealed class ExamAwareTarget : IExamAwareTarget
 {
+    public static bool IsRunning(string path)
+    {
+        using var current = Process.GetCurrentProcess();
+        var processes = Process.GetProcessesByName("ExamAware");
+        bool found = false;
+        try
+        {
+            foreach (var process in processes)
+            {
+                try
+                {
+                    if (process.HasExited) continue;
+                    if (process.SessionId != current.SessionId ||
+                        !string.Equals(ClassIslandLaunchTarget.ProcessPath(process), path, StringComparison.OrdinalIgnoreCase))
+                        throw new IOException("检测到其他位置或会话的 ExamAware2，无法核实目标退出，请先检查。");
+                    found = true;
+                }
+                catch (InvalidOperationException) when (process.HasExited) { }
+            }
+            return found;
+        }
+        finally { foreach (var process in processes) process.Dispose(); }
+    }
     private sealed class ObservedProcess(Process process) : IExamAwareProcess
     {
         public bool HasExited => process.HasExited;

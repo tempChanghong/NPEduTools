@@ -87,7 +87,7 @@ public static class Protocol
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("host.ping" or "host.stop" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classisland.status" or "classisland.watch" or
+        if (request.Capability is not ("host.ping" or "host.stop" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or
             "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
@@ -98,15 +98,23 @@ public static class Protocol
             if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
                 request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
         }
-        else if (request.Capability is "examaware.autostart.set" or "classroom.set" or "classroom.restore")
+        else if (request.Capability is "examaware.autostart.set" or "classroom.set" or "classroom.restore" or "classroom.retry")
         {
             if (request.ExecutablePath is not null || request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
+        }
+        else if (request.Capability == "examaware.quit")
+        {
+            if (request.ExecutablePath is not null || request.ExpectedRevision is < 0) return "InvalidConfiguration";
         }
         else if (request.ExecutablePath is not null || request.ExpectedRevision is not null) return "UnexpectedParameters";
         if (request.Capability == "examaware.autostart.set" ? request.AutoStartEnabled is null : request.AutoStartEnabled is not null)
             return "InvalidAutoStartParameters";
-        if (request.Capability == "classroom.set" ? request.ClassroomMode?.Target is not ("Daily" or "Exam") : request.ClassroomMode is not null)
+        if (request.Capability is "classroom.set" or "classroom.retry" ? request.ClassroomMode?.Target is not ("Daily" or "Exam") : request.ClassroomMode is not null)
             return "InvalidClassroomMode";
+        if (request.ClassroomMode is { } mode &&
+            ((mode.SwitchRunning && mode.Target == "Daily" && !mode.ExamWorkSaved) ||
+             (mode.ExamWorkSaved && (!mode.SwitchRunning || mode.Target != "Daily")) ||
+             (request.Capability == "classroom.retry" && !mode.SwitchRunning))) return "InvalidRuntimeConfirmation";
         if (request.Capability.StartsWith("classroom.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.OperationId is not null && (request.Capability != "classisland.execution.get" || request.OperationId == Guid.Empty))
             return "UnexpectedParameters";

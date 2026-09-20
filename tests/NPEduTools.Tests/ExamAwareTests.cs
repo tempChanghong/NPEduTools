@@ -303,6 +303,37 @@ public sealed class ExamAwareTests : IDisposable
             ExamAwareService.Sign(pairing.Key, ExamAwareService.FrameText("peer", hello.Nonce, hello.Proof, 2, "reply", payload))), default);
     }
     [Fact]
+    public async Task ModeReadinessRequiresMatchingRevisionConnectedPeerAndLiveProcess()
+    {
+        var target = new Target();
+        await using var service = new ExamAwareService(_directory, target);
+        await Configure(service);
+        string path = @"C:\中文 目录\ExamAware.exe";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.VerifyConnectedProcessAsync(path, 1));
+        var pairing = await Pairing(service);
+        var (client, hello) = await Connect(pairing);
+        using (client)
+        {
+            await Send(client, hello, pairing); await Wait(() => service.Snapshot().BridgeState == "Connected");
+            await service.VerifyConnectedProcessAsync(path, 1);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.VerifyConnectedProcessAsync(path, 0));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.VerifyConnectedProcessAsync(@"C:\other\ExamAware.exe", 1));
+            target.Process.HasExited = true;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.VerifyConnectedProcessAsync(path, 1));
+        }
+    }
+    [Fact]
+    public async Task ModeQuitRejectsChangedConfigurationBeforeDispatch()
+    {
+        await using var service = new ExamAwareService(_directory, new Target());
+        await Configure(service);
+        var request = Request("examaware.quit") with { ExpectedRevision = 0 };
+        Assert.Null(Protocol.Validate(request));
+        Assert.Equal("RevisionConflict", (await service.HandleAsync(request)).ErrorCode);
+        Assert.Null(service.Snapshot().Quit);
+        Assert.NotNull(Protocol.Validate(request with { ExpectedRevision = -1 }));
+    }
+    [Fact]
     public async Task QuitRequiresConfiguredAndConnectedPeer()
     {
         await using var service = new ExamAwareService(_directory, new Target());

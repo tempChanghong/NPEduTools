@@ -143,7 +143,7 @@ Console.WriteLine($"Host ready: {pipeName}");
 var classroomStore = new ClassroomModeStore(dataDirectory);
 await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot, () => classroomStore.State.AutomaticPaused);
 await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget());
-await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording));
+await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader));
 try
 {
     await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom).RunAsync(shutdown.Token);

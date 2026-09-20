@@ -100,6 +100,15 @@
                 </Border>
               </Grid>
             </Border>
+            <Border Style="{StaticResource Surface}" Padding="18" Margin="0,0,0,18">
+              <DockPanel>
+                <Button Content="管理模式  →" DockPanel.Dock="Right" Click="OpenClassroomModeClicked" Margin="16,0,0,0" VerticalAlignment="Center" AutomationProperties.AutomationId="HomeClassroomMode" />
+                <StackPanel>
+                  <TextBlock x:Name="ClassroomModeTitle" Text="课堂模式 · 正在连接…" FontSize="17" FontWeight="SemiBold" AutomationProperties.AutomationId="HomeClassroomModeTitle" />
+                  <TextBlock x:Name="ClassroomModeDetail" TextWrapping="Wrap" Foreground="#718089" Margin="0,8,0,0" AutomationProperties.AutomationId="HomeClassroomModeDetail" />
+                </StackPanel>
+              </DockPanel>
+            </Border>
             <TextBlock Text="课堂工具" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12" />
             <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="16" /><ColumnDefinition /></Grid.ColumnDefinitions>

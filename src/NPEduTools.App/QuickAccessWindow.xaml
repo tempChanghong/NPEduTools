@@ -11,7 +11,7 @@
     <Border x:Name="Rail" Grid.Column="1" Background="#FAFCFA" BorderBrush="#DCE5DF" BorderThickness="1" CornerRadius="20" Padding="7,10" VerticalAlignment="Bottom">
       <StackPanel>
         <Button x:Name="EdgeHandle" Style="{StaticResource RailButton}" Background="#147D68" Foreground="White" Click="HandleClicked" ToolTip="点击展开或收起；拖动调整位置" AutomationProperties.AutomationId="EdgeHandle" AutomationProperties.Name="展开快捷工具，可上下拖动">
-          <StackPanel><Image Source="{StaticResource BrandLogoLight}" Width="34" Height="34" /><Border Width="13" Height="2" CornerRadius="1" Background="#91BFA3" Margin="0,3,0,0" /></StackPanel>
+          <StackPanel><Image Source="{StaticResource BrandLogoLight}" Width="30" Height="30" /><TextBlock x:Name="RailModeText" Text="未知" FontSize="10" Foreground="White" HorizontalAlignment="Center" Margin="0,2,0,0" AutomationProperties.AutomationId="RailClassroomMode" /></StackPanel>
         </Button>
         <Button x:Name="RailTools" Style="{StaticResource RailButton}" Click="RailToolsClicked" ToolTip="课堂工具" AutomationProperties.AutomationId="RailTools" AutomationProperties.Name="打开课堂工具">
           <Grid><TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="22" /><Ellipse x:Name="RailStatusDot" Fill="#A5B3AB" Width="6" Height="6" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-5,0" /></Grid>
@@ -34,6 +34,10 @@
         </Grid></Border>
         <ScrollViewer x:Name="ToolsPage" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
           <Button x:Name="OnboardingEntry" Content="初始设置待完成 · 继续设置  →" Visibility="Collapsed" Click="OnboardingClicked" Background="#E5F0E5" Foreground="#276B51" Margin="0,0,0,12" AutomationProperties.AutomationId="QuickOnboarding" />
+          <Button Click="ClassroomModeClicked" Margin="0,0,0,12" HorizontalContentAlignment="Stretch" AutomationProperties.AutomationId="QuickClassroomMode">
+            <StackPanel><TextBlock x:Name="ClassroomModeTitle" Text="课堂模式 · 正在连接…" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="QuickClassroomModeTitle" />
+              <TextBlock x:Name="ClassroomModeDetail" TextWrapping="Wrap" FontSize="12" Foreground="#718089" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickClassroomModeDetail" /></StackPanel>
+          </Button>
           <Button Content="打开考试看板 · ExamAware2" Click="ExamAwareClicked" Margin="0,0,0,12" AutomationProperties.AutomationId="QuickExamAware" />
           <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="14" Padding="16"><StackPanel>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>

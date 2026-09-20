@@ -143,6 +143,8 @@ public sealed class ExamAwareService : IAsyncDisposable
                     return Reply("Succeeded", null, "旧配对已撤销。请重新导出配对文件并在 ExamAware 中导入。");
                 }
                 if (_saved.Path is null) return Reply("Rejected", "PathMissing", "请先保存程序位置，以便核对要退出的进程。");
+                if (request.ExpectedRevision is { } expected && expected != _saved.Revision)
+                    return Reply("Rejected", "RevisionConflict", "程序位置或配对已变化，请重新确认退出对象。");
                 string quitPath = _target.Validate(_saved.Path);
                 Session session;
                 int pid;
@@ -186,6 +188,26 @@ public sealed class ExamAwareService : IAsyncDisposable
         { return new(Protocol.Version, request.RequestId, "Rejected", ex.Code, ex.Message, ExamAware: Snapshot()); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or ArgumentException or InvalidOperationException)
         { return new(Protocol.Version, request.RequestId, "Rejected", "ExamAwareOperationFailed", "未能完成操作，请检查文件、权限或已有实例。", ExamAware: Snapshot()); }
+        finally { _commands.Release(); }
+    }
+
+    public async Task VerifyConnectedProcessAsync(string path, long revision)
+    {
+        await _commands.WaitAsync();
+        try
+        {
+            if (_saved.Revision != revision || !string.Equals(_saved.Path, path, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("ExamAware2 程序位置或配对已变化，请重新核实。");
+            int pid;
+            lock (_sync)
+            {
+                if (Snapshot().BridgeState != "Connected" || _sample is null)
+                    throw new InvalidOperationException("ExamAware2 桥接尚未就绪，请检查连接后重试。");
+                pid = _sample.ProcessId;
+            }
+            using var process = _target.Capture(pid, _target.Validate(path));
+            if (process.HasExited) throw new InvalidOperationException("ExamAware2 已退出，请重试准备软件。");
+        }
         finally { _commands.Release(); }
     }
 

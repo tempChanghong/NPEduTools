@@ -8,6 +8,8 @@ public interface IClassroomModeEffects
     Task SetClassIslandAsync(ClassroomStartupSnapshot expected, bool enabled);
     Task SetExamAwareAsync(ClassroomStartupSnapshot expected, bool enabled);
     Task PauseRecordingAsync();
+    Task RunRuntimeAsync(ClassroomRuntimeIntent intent, Action<string, string> progress) =>
+        throw new InvalidOperationException("此后台未配置即时切换，请更新后台。");
 }
 
 /// <summary>Accepted requests survive client disconnect; each external write is preceded by a durable recovery point.</summary>
@@ -29,7 +31,7 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
             if (request.Capability == "classroom.status") return Reply("Succeeded");
             if (_stopping || !_operation.IsCompleted) return Reply("Rejected", "ClassroomBusy");
             if (store.State.Phase == "Unavailable") return Reply("Rejected", "ClassroomStorageUnavailable");
-            if (request.Capability is not ("classroom.refresh" or "classroom.set" or "classroom.restore"))
+            if (request.Capability is not ("classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry"))
                 return Reply("Rejected", "UnknownCapability");
             bool refresh = request.Capability == "classroom.refresh";
             if (!refresh && store.State.RecentRequests?.Contains(request.RequestId) == true)
@@ -37,6 +39,8 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
             if (!refresh && request.ExpectedRevision != store.State.Revision) return Reply("Rejected", "RevisionConflict");
             if (request.Capability == "classroom.restore" && store.State.Recovery is null)
                 return Reply("Rejected", "NoRecovery");
+            if (request.Capability == "classroom.retry" && (store.State.Runtime is not { } intent || request.ClassroomMode!.Target != intent.Target))
+                return Reply("Rejected", "NoRuntimeRetry");
             // Never overwrite an unresolved recovery baseline with a new mode request.
             if (request.Capability == "classroom.set" && store.State.Recovery is not null)
                 return Reply("Rejected", "RestoreRequired");
@@ -58,6 +62,12 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
         bool touched = false;
         try
         {
+            if (request.Capability == "classroom.retry")
+            {
+                touched = true;
+                await CompleteRuntimeAsync(prior.Runtime!);
+                return;
+            }
             bool refresh = request.Capability == "classroom.refresh";
             var before = await effects.ObserveAsync(!refresh);
             if (refresh)
@@ -86,6 +96,11 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
             RequireSamePrograms(before, after);
             if (after.ClassIslandEnabled != ci || after.ExamAwareEnabled != ea)
                 throw new InvalidOperationException("读回结果与目标不一致，可能有其他窗口修改了设置。");
+            if (!restore && request.ClassroomMode!.SwitchRunning)
+            {
+                await CompleteRuntimeAsync(new(target, after, DateTimeOffset.UtcNow));
+                return;
+            }
             SaveObservation(after, store.State with { Mode = target }, "Idle",
                 restore ? recovery.PreviousPause : target == "Exam", null,
                 restore ? "已恢复切换前的自启动设置和录课模式。" :
@@ -100,17 +115,33 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
             {
                 store.Save(store.State with { Phase = touched || prior.Recovery is not null ? "Incomplete" : prior.Phase,
                     AutomaticPaused = touched || prior.AutomaticPaused, Actual = null, CheckedAt = null, MatchesMode = null,
-                    Message = (touched ? "切换未完成，自动录课保持暂停。可恢复切换前设置。 " : "检查未通过，未修改自启动设置。 ") + ex.Message });
+                    Message = (touched ? store.State.Runtime is not null ? "即时切换未完成，自动录课保持暂停。处理提示后可重试，或恢复自启动设置。 " :
+                        "切换未完成，自动录课保持暂停。可恢复切换前设置。 " : "检查未通过，未修改自启动设置。 ") + ex.Message });
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         }
+    }
+
+    private async Task CompleteRuntimeAsync(ClassroomRuntimeIntent intent)
+    {
+        store.Save(store.State with { Phase = "Running", AutomaticPaused = true, Runtime = intent,
+            Actual = intent.Startup, CheckedAt = intent.StartupCheckedAt, MatchesMode = null,
+            Message = "自启动设置已核实，正在切换当前软件…" });
+        await effects.PauseRecordingAsync();
+        await effects.RunRuntimeAsync(intent, (step, message) =>
+            store.Save(store.State with { Runtime = intent with { Step = step }, Message = message }));
+        store.Save(store.State with { Mode = intent.Target, Phase = "Idle", Runtime = null, Recovery = null,
+            AutomaticPaused = intent.Target == "Exam", Actual = intent.Startup, CheckedAt = intent.StartupCheckedAt,
+            MatchesMode = true, Message = intent.Target == "Exam" ?
+                "考试模式已生效：ExamAware2 已就绪，ClassIsland 已退出；自动录课暂停，原计划保留。" :
+                "日常模式已生效：ExamAware2 已退出，ClassIsland 管理员实例已就绪；录课按原配置判断。" });
     }
 
     private void SaveObservation(ClassroomStartupSnapshot actual, ClassroomModeState basis, string phase, bool pause,
         ClassroomModeRecovery? recovery, string message) =>
         store.Save(basis with { Phase = phase, AutomaticPaused = pause, Recovery = recovery, Actual = actual,
             CheckedAt = DateTimeOffset.UtcNow, MatchesMode = Matches(actual, basis.Mode), Message = message,
-            RecentRequests = store.State.RecentRequests });
+            RecentRequests = store.State.RecentRequests, Runtime = recovery is null ? null : basis.Runtime });
     private static bool? Matches(ClassroomStartupSnapshot actual, string mode) => mode switch
     {
         "Daily" => actual.ClassIslandEnabled && !actual.ExamAwareEnabled,
@@ -135,4 +166,3 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
         await pending;
     }
 }
-

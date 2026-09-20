@@ -18,11 +18,16 @@ public sealed class ClassroomModeStore
             var state = JsonSerializer.Deserialize<ClassroomModeState>(File.ReadAllText(_path), Protocol.Json)
                 ?? throw new InvalidDataException("模式记录为空。");
             if (state.Revision < 0 || state.Mode is not ("Unconfigured" or "Daily" or "Exam") ||
-                state.Phase is not ("Idle" or "Checking" or "Switching" or "Incomplete") ||
+                state.Phase is not ("Idle" or "Checking" or "Switching" or "Running" or "Incomplete") ||
                 state.RecentRequests is null || state.RecentRequests.Length > 64 ||
                 (state.Mode == "Exam" && !state.AutomaticPaused) ||
                 (state.Phase == "Incomplete" && !state.AutomaticPaused) ||
                 (state.Phase == "Switching" && state.Recovery is null) ||
+                (state.Phase == "Running" && (state.Runtime is null || !state.AutomaticPaused)) ||
+                (state.Runtime is { } runtime && (state.Recovery is null || runtime.Target is not ("Daily" or "Exam") ||
+                    runtime.Startup is null || runtime.StartupCheckedAt == default ||
+                    runtime.Startup.ClassIslandEnabled != (runtime.Target == "Daily") ||
+                    runtime.Startup.ExamAwareEnabled != (runtime.Target == "Exam") || !state.AutomaticPaused)) ||
                 (state.Recovery is { } recovery && (recovery.PreviousMode is not ("Unconfigured" or "Daily" or "Exam") ||
                     (recovery.PreviousMode == "Exam" && !recovery.PreviousPause) || recovery.Startup is null ||
                     string.IsNullOrWhiteSpace(recovery.Startup.ClassIslandPath) || string.IsNullOrWhiteSpace(recovery.Startup.ExamAwarePath) ||

@@ -104,6 +104,7 @@ public partial class MainWindow : Window
 
     private void EnsureHostStarted()
     {
+        if (_exitBusy) return;
         // Mutex existence prevents duplicate starts when a Host is healthy, starting, or incompatible.
         if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var instance))
         {
@@ -402,9 +403,21 @@ public partial class MainWindow : Window
         ExitButton.IsEnabled = false;
         HomeMessage.Text = "正在停止辅助与后台…";
         RefreshTouchControls();
-        // Stop reconnecting before requesting shutdown, so this App cannot restart the Host it just stopped.
+        // _exitBusy prevents a new Host launch while shutdown is being negotiated.
+        bool shutdownDispatched = false;
         try
         {
+            if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var modeHost))
+            {
+                modeHost.Dispose();
+                var classroom = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classroom.status"));
+                if (classroom.ClassroomMode?.Busy == true)
+                {
+                    HomeMessage.Text = "课堂模式正在切换，请等待完成或处理提示后再退出。";
+                    ShowClassroomMode();
+                    return;
+                }
+            }
             if (_recording.Automatic.Enabled) await _recording.SetAutomaticAsync("disable");
             if (_recording.State.Active)
             {
@@ -412,15 +425,22 @@ public partial class MainWindow : Window
                 if (!await _recording.StopAndSaveAsync())
                 { HomeMessage.Text = "微课未能完成保存，请先查看录制状态和保留片段。"; ShowRecording(); return; }
             }
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            if (!Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var existing)) { await _recording.DisposeAsync(); _exiting = true; Close(); return; }
+            existing.Dispose();
+            shutdownDispatched = true;
+            var response = await HostClient.RequestAsync(_pipe, "host.stop", deadline.Token);
+            if (response.Outcome != "Succeeded")
+            {
+                shutdownDispatched = false;
+                HomeMessage.Text = response.Message;
+                if (response.ErrorCode == "ClassroomBusy") ShowClassroomMode();
+                return;
+            }
             _lifetime.Cancel();
             if (_watch is not null) await _watch;
             if (_management is not null) await _management;
             if (_touchPoll is not null) await _touchPoll;
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-            if (!Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var existing)) { await _recording.DisposeAsync(); _exiting = true; Close(); return; }
-            existing.Dispose();
-            var response = await HostClient.RequestAsync(_pipe, "host.stop", deadline.Token);
-            if (response.Outcome != "Succeeded") throw new InvalidOperationException(response.Message);
             // The response acknowledges acceptance; wait for the instance to release its ownership handle.
             while (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var instance))
             {
@@ -433,6 +453,7 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or TimeoutException or
             OperationCanceledException or UnauthorizedAccessException or InvalidOperationException)
         {
+            if (shutdownDispatched) _lifetime.Cancel(); // An uncertain accepted stop must not silently launch a replacement Host.
             _model.Disconnected("未能确认后台已停止。可重试停止，或关闭窗口后重新打开。 ");
             HomeMessage.Text = "未能确认后台已停止，请重试“停止后台并退出”。";
             RestoreWindow();

@@ -85,6 +85,25 @@ public static class ClassIslandProcess
     }
 
     internal static void RequestNormalExit(Instance instance)
+        => RequestNormalExitCore(instance);
+
+    public static async Task EnsureStoppedAsync(string executable, string sid, int session)
+    {
+        var existing = Find(executable, sid, session);
+        if (existing is null) return;
+        RequestNormalExitCore(existing);
+        for (int i = 0; i < 50; i++)
+        {
+            await Task.Delay(200);
+            var current = Find(executable, sid, session);
+            if (current is null) return;
+            if (current.Id != existing.Id || current.Started != existing.Started)
+                throw new InvalidOperationException("ClassIsland 在退出期间重新启动，请检查后重试；未向新实例发送退出请求。");
+        }
+        throw new InvalidOperationException("ClassIsland 尚未退出，请关闭弹窗或处理未保存内容后重试；不会强制结束进程。");
+    }
+
+    private static void RequestNormalExitCore(Instance instance)
     {
         using var process = OpenProcess(0x1000, false, instance.Id);
         if (process.IsInvalid || !GetProcessTimes(process, out long started, out _, out _, out _) || started != instance.Started)

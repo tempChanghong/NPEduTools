@@ -4,7 +4,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class ClassroomModeTests
+public sealed partial class ClassroomModeTests
 {
     private sealed class Fixture : IAsyncDisposable
     {
@@ -17,10 +17,10 @@ public sealed class ClassroomModeTests
             Store = new(DirectoryPath); Effects = new(Store);
             Service = new(Store, Effects);
         }
-        public HostResponse Send(string capability = "classroom.set", string? target = "Exam", Guid? id = null) =>
+        public HostResponse Send(string capability = "classroom.set", string? target = "Exam", Guid? id = null, bool running = false) =>
             Service.Handle(new(1, id ?? Guid.NewGuid(), capability,
-                ExpectedRevision: capability is "classroom.set" or "classroom.restore" ? Store.State.Revision : null,
-                ClassroomMode: capability == "classroom.set" ? new(target!) : null));
+                ExpectedRevision: capability is "classroom.set" or "classroom.restore" or "classroom.retry" ? Store.State.Revision : null,
+                ClassroomMode: capability is "classroom.set" or "classroom.retry" ? new(target!, running, running && target == "Daily") : null));
         public async Task Finish()
         {
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -39,6 +39,14 @@ public sealed class ClassroomModeTests
         public string? Fail;
         public bool Lie, ChangeIdentity;
         public TaskCompletionSource? PauseBlock;
+        public RuntimeActions RuntimeActions = new();
+        public Task RunRuntimeAsync(ClassroomRuntimeIntent intent, Action<string, string> progress) =>
+            new ClassroomRuntimeCoordinator(RuntimeActions).RunAsync(intent, (step, message) =>
+            {
+                progress(step, message);
+                Assert.True(store.State.AutomaticPaused);
+                Assert.NotNull(store.State.Recovery);
+            });
         public Task<ClassroomStartupSnapshot> ObserveAsync(bool connect)
         {
             Calls.Add(connect ? "connect" : "observe");
