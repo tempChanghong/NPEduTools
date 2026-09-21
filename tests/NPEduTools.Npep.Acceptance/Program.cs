@@ -7,6 +7,9 @@ using NPEduTools.Integrations.Npep;
 
 // Explicit opt-in, loopback-only acceptance harness. Never installed with the application.
 // A dedicated test CA is trusted ONLY by these handlers; machine/user trust stores are untouched.
+if (args.Length == 5 && args[0] == "--runtime-worker")
+    return await ResilienceAcceptance.WorkerAsync(args[1], args[2], args[3], args[4]);
+
 if (args.Length is not (4 or 6) || args[0] != "--fixture" || args[2] != "--data-dir" || args.Length == 6 && args[4] != "--pipe")
 {
     Console.Error.WriteLine("--fixture <ignored local fixture.json> --data-dir <new isolated directory> [--pipe <isolated Host pipe>]");
@@ -19,7 +22,7 @@ try
     string origin = NpepApi.ValidateOrigin(fixture.Text("origin"));
     if (!new Uri(origin).IsLoopback || fixture["enabled"]?.GetValue<bool>() != true) throw new NpepException("ISOLATED_FIXTURE_REQUIRED");
     if (args.Length == 6 && !args[5].StartsWith("NPEduTools.Test.", StringComparison.Ordinal)) throw new NpepException("ISOLATED_HOST_REQUIRED");
-    if (Directory.Exists(args[3])) throw new NpepException("FRESH_TEST_DIRECTORY_REQUIRED");
+    if (Directory.Exists(args[3]) || Directory.Exists(args[3] + "-runtime")) throw new NpepException("FRESH_TEST_DIRECTORY_REQUIRED");
     using var root = X509CertificateLoader.LoadCertificateFromFile(fixture.Text("certificateFile"));
     SocketsHttpHandler Handler() => new()
     {
@@ -102,7 +105,7 @@ try
         await restarted.UnpairAsync();
         Check(!File.Exists(Path.Combine(args[3], "npep.credentials.dpapi")), "Local credential cleanup completes");
     }
-    await RuntimeAcceptance.RunAsync(args[3] + "-runtime", origin, fixture, Api, Admin, Check);
+    await RuntimeAcceptance.RunAsync(args[3] + "-runtime", origin, fixture, Api, Handler, args[1], Admin, Check);
     Console.WriteLine($"N1 real HTTPS/PostgreSQL acceptance: {checks.Count} checks passed.");
     return 0;
 }

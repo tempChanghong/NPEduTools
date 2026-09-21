@@ -5,6 +5,7 @@ using NPEduTools.Integrations.Npep;
 internal static class RuntimeAcceptance
 {
     public static async Task RunAsync(string directory, string origin, JsonObject fixture, Func<string, NpepApi> api,
+        Func<HttpMessageHandler> handler, string fixturePath,
         Func<string, string, JsonObject?, Task<JsonObject>> admin, Action<bool, string> check)
     {
         int connections = 0;
@@ -60,6 +61,11 @@ internal static class RuntimeAcceptance
             check(runtime.Snapshot().ReportingPaused && connections == beforeRestart, "Paused runtime restart makes no network requests");
             await Command(runtime, "resume"); await Wait(runtime, s => s.Connection == "ONLINE");
             check(runtime.Snapshot().LastReceivedAt is not null, "Resume creates a valid new Host session");
+        }
+        await ResilienceAcceptance.RunAsync(directory, origin, fixture, handler, fixturePath, admin, check);
+        await using (var runtime = new NpepRuntime(Device, "NPEP N1 runtime acceptance", Sample))
+        {
+            await Wait(runtime, s => s.Connection == "ONLINE");
             await Command(runtime, "pause");
             var list = await admin(school + "/devices", "deviceListResponse", null);
             var device = ((JsonArray)list["items"]!).OfType<JsonObject>().Single(x => x.Text("state") == "ACTIVE" && x.Text("screenBindingId") == fixture.Text("screenBindingId"));
