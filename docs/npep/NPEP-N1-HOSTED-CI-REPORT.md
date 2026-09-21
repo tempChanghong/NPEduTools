@@ -6,7 +6,7 @@
 
 | 仓库 | 功能分支 | 受测完整提交 | 托管运行 |
 | --- | --- | --- | --- |
-| NPEduTools | `codex/npep-n1-ci` | `96c2dad424d74c6becf7a0d49e3721df20e93d15` | [Windows N1 检查](https://github.com/tempChanghong/NPEduTools/actions/runs/35561890557) |
+| NPEduTools | `codex/npep-n1-ci` | `0d9719cda0cf7d0c4fd7249bc0530b50ece451ab` | [最终 Windows N1 检查](https://github.com/tempChanghong/NPEduTools/actions/runs/35562762663) |
 | NPClassworks | `codex/npep-n1-admin-ui` | `e354bbd172190a8a201120d1da8356abfc9e7a33` | [固定前后端组合检查](https://github.com/tempChanghong/NPClassworks/actions/runs/35561798752) |
 | NPClassworksKV | `codex/npep-n1-server` | `88134b175e7f95055aacdb525b8b10dee1e6bc35` | [Quality 与 PostgreSQL 集成](https://github.com/tempChanghong/NPClassworksKV/actions/runs/35561797164) |
 
@@ -36,7 +36,7 @@ Windows 产物仅含两份 TRX 与 `run.json`：提交与上表一致，`dirty=f
 
 | 托管产物 | 下载 ZIP 的 SHA-256 |
 | --- | --- |
-| [Windows 结果](https://github.com/tempChanghong/NPEduTools/actions/runs/35561890557/artifacts/10623025575) | `729711c7c514e7f4e3176a9e877f100c14a26bb6171d0f9eba7efb48d09b857f` |
+| [最终 Windows 结果](https://github.com/tempChanghong/NPEduTools/actions/runs/35562762663/artifacts/10622588263) | `822989ab9b96080c9ba374aaeee48540a1cdca1e8d31b6a3d783acc5b01a1b50` |
 | [网页全链路结果](https://github.com/tempChanghong/NPClassworks/actions/runs/35561798752/artifacts/10622841010) | `986a1d6854b090cf5835ed14a7a6477bc0150aa6086f93dbc8d8b150cc8fa858` |
 
 ## 托管环境发现并修复的问题
@@ -49,7 +49,7 @@ Windows 产物仅含两份 TRX 与 `run.json`：提交与上表一致，`dirty=f
 
 ### 文档推送后发现的并行构建竞争
 
-文档提交 `e1c6cbf` 自动触发的 [Windows 复跑](https://github.com/tempChanghong/NPEduTools/actions/runs/35562268584) 暴露了另一处间歇性问题：Recorder 的 `obj/Release/net10.0-windows/NPEduTools.Recorder.dll` 在编译写入时被占用（CS2012），同一时刻另一路 Recorder 构建成功。此前成功结果仍对应上表提交，不据此掩盖后续失败。
+文档提交 `e1c6cbf` 自动触发的 [Windows 复跑](https://github.com/tempChanghong/NPEduTools/actions/runs/35562268584) 暴露了另一处间歇性问题：Recorder 的 `obj/Release/net10.0-windows/NPEduTools.Recorder.dll` 在编译写入时被占用（CS2012），同一时刻另一路 Recorder 构建成功。此前 `96c2dad` 的 [首次成功结果](https://github.com/tempChanghong/NPEduTools/actions/runs/35561890557) 不用于掩盖后续失败；上表现已更新为全部修复后的成功提交。
 
 App 同时直接引用 Recorder、又通过 Host 引用 Recorder；Host 路径显式设置 Windows TargetFramework，两个构建上下文写入同一输出目录。已移除 App 冗余的直接构建引用，保留 `App → Host → Recorder` 顺序及原有两处打包复制。没有通过忽略错误、重试编译或关闭测试处理。
 
@@ -59,7 +59,7 @@ App 同时直接引用 Recorder、又通过 Host 引用 Recorder；Host 路径�
 
 提交 `b7471ac` 的 [后续运行](https://github.com/tempChanghong/NPEduTools/actions/runs/35562437783) 三个构建入口与 86 项 NPEP 测试通过；352 项原有回归中 349 通过、3 项 Host 管道用例发生 `EndOfStreamException`。这些用例同时启动多组 Host/子进程，生产管道读写有 2 秒时限；受限 runner 上的并行资源争抢是排查方向，日志本身不足以断言每次关闭的具体原因。
 
-七组启动真实进程的测试改为同一非并行 xUnit collection，以免独立测试进程树互相抢占短时限。每项用例内部的多客户端并发、资源槽、超时、恢复与重启验证保留，生产超时和断言未放宽，测试没有禁用或自动重试。该调整仍须通过完整 Windows workflow 验证，其最新结果见上述分支检查历史。
+七组启动真实进程的测试改为同一非并行 xUnit collection，以免独立测试进程树互相抢占短时限。每项用例内部的多客户端并发、资源槽、超时、恢复与重启验证保留，生产超时和断言未放宽，测试没有禁用或自动重试。本地 352/352 通过、零跳过；最终提交 `0d9719c` 的完整 Windows workflow 也通过，构建、86 项专项与 352 项回归均成功，详见上表运行和产物。
 
 ## 发布边界与下一步
 
