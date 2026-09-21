@@ -20,7 +20,7 @@
 | [NPEP-N1-DEPLOYMENT-CI-REPORT.md](NPEP-N1-DEPLOYMENT-CI-REPORT.md) | Windows 检查、Docker/恢复接入、跨端 CI 门槛及未发布边界 |
 | [NPEP-N1-HOSTED-CI-REPORT.md](NPEP-N1-HOSTED-CI-REPORT.md) | 三端 GitHub 实际结果、固定提交组合、checkout 修复与测试产物 |
 | [NPEP-N1-RELEASE-PLAN.md](NPEP-N1-RELEASE-PLAN.md) | 首次配套发布顺序、当前准入缺口、服务器操作者职责与用户回来后的待办 |
-| [NPEP-N1-OPERATOR-HANDOFF.md](NPEP-N1-OPERATOR-HANDOFF.md) | 已确认根目录部署路径，给服务器操作者的只读核查命令与维护信息回传模板 |
+| [NPEP-N1-OPERATOR-HANDOFF.md](NPEP-N1-OPERATOR-HANDOFF.md) | 河豚豚的服务器侦察手册：查看命令、直白说明和维护信息回传模板 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式
