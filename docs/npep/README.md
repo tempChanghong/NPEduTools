@@ -2,7 +2,7 @@
 
 本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
 
-2026-09-21：已完成设置页与 Host 后台连接管理，并补充 [断线与独立进程恢复验收](NPEP-N1-RESILIENCE-REPORT.md) 和 [现场验收表](NPEP-N1-FIELD-ACCEPTANCE.md)。正式域名已确认，但功能分支尚未合入会自动部署的 main；真实大屏与生产运维仍待验收。
+2026-09-21：在设置页、后台连接与断线恢复基础上，继续补齐 [Docker 与 N1 CI 接入](NPEP-N1-DEPLOYMENT-CI-REPORT.md)。正式域名已确认，但功能分支尚未合入会自动部署的 main；托管 CI、生产运维和 [真实大屏现场验收](NPEP-N1-FIELD-ACCEPTANCE.md) 仍需分别记录，不能用本地检查代替。
 
 2026-09-20 双端交叉审阅完成：已提出的契约阻塞均闭环，可以作为隔离环境实现基线。服务端审阅记录的正文快照 SHA-256 为 `1afd58c435e6616a6dcd5091c0432f700b2e3325fdad2b997e089dc361490d07`；随后仅将主文档首段状态由“正在审阅”更新为“审阅通过”，未变更协议内容。
 
@@ -17,6 +17,7 @@
 | [NPEP-N1-UI-REPORT.md](NPEP-N1-UI-REPORT.md) | 设置页、Host 常驻连接与双端 UI 阶段的验收及限制 |
 | [NPEP-N1-RESILIENCE-REPORT.md](NPEP-N1-RESILIENCE-REPORT.md) | 真实服务断线、丢回执、独立进程正常退出及突然终止恢复 |
 | [NPEP-N1-FIELD-ACCEPTANCE.md](NPEP-N1-FIELD-ACCEPTANCE.md) | 已知域名、main 自动发布边界、上线前置条件及现场待填表 |
+| [NPEP-N1-DEPLOYMENT-CI-REPORT.md](NPEP-N1-DEPLOYMENT-CI-REPORT.md) | Windows 检查、Docker/恢复接入、跨端 CI 门槛及未发布边界 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式
