@@ -2,6 +2,22 @@
 
 日期：2026-09-21。承接 [Docker 与 CI 接入记录](NPEP-N1-DEPLOYMENT-CI-REPORT.md)，本轮推送三个功能分支，并运行不含部署步骤的 GitHub Actions。没有合并 main、修改线上配置或进行学校配对。
 
+## 2026-09-21 晚：含图标的最终候选复核
+
+最终前端为 `37a3f1b01585fd8cfc751c921668a84d5c41264f`，后端为 `e660876c8a22004e14a053a70985d5b350e42d0d`，均已推送各自 N1 功能分支。以下运行均为纯测试，结论 success，已读取 job 日志，固定组合还下载产物核对实际提交：
+
+| 运行 | 结果 |
+| --- | --- |
+| [前端 tests 35608546438](https://github.com/tempChanghong/NPClassworks/actions/runs/35608546438) | 前端最终 SHA 的 513 单元、全量 lint、150 浏览器均通过，零失败；该次联调使用修复前后端 `3db912d...`，故联调证据以下一行的新组合为准 |
+| [最终固定组合 contracts 35609940329](https://github.com/tempChanghong/NPClassworks/actions/runs/35609940329) | 3 契约通过；通用全链路 37 pass / 1 预期 skip；随后强制 N1 1/1；两次会话前置检查各 1/1 |
+| [最终 KV quality 35609934460](https://github.com/tempChanghong/NPClassworksKV/actions/runs/35609934460) | 默认单元 187 pass / 17 数据库预期 skip；独立 PostgreSQL 113/113 零跳过；生产 Docker 门槛通过 |
+
+最终固定组合产物的 `fullstack-metadata/versions.json` 和 `npep-metadata/versions.json` 均为上述前后端完整 SHA，均 dirty=false；N1 JSON 为 expected=1、skipped=0、unexpected=0、flaky=0。单元命令中的跳过不计为数据库验收，独立运行已实际覆盖。前端未改动，故未重复其独立单元和浏览器运行。
+
+保留失败记录：[初轮 KV quality 35608552240](https://github.com/tempChanghong/NPClassworksKV/actions/runs/35608552240) 的 shared 恢复测试因同秒同 label 备份重名失败，不能以重跑覆盖事实。`b9f12c0` 将备份改为 mktemp 原子唯一名、同目录硬链接原子发布且禁止覆盖，并用固定时钟测试两模式同秒连续备份及真实恢复；原子保存需要备份文件系统支持硬链接。随后本地发现 Docker 时钟比宿主慢至少约 1.4 秒，使维护测试基于宿主构造的“一秒前”在数据库看来尚未过期，`e660876c` 仅将该夹具改为数据库自身时间并断言，生产清理逻辑未改。最终本地 C 盘隔离 PG 113/113 和上方 GitHub 复核均通过，未跳过断言或添加等待规避。
+
+两个 main 再查仍是前端 `19756f654f94006084d1d954b8be4171db7c9a18`、后端 `f731f3227a7c59585aff940f78354585d3b016b7`；没有触发生产或镜像发布工作流，也未操作 PM2 或开启 NPEP。后续受控发布和现场备份结果见 [发布方案](NPEP-N1-RELEASE-PLAN.md)。下方保留初轮三端检查记录。
+
 ## 受测提交与运行
 
 | 仓库 | 功能分支 | 受测完整提交 | 托管运行 |

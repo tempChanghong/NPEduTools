@@ -2,7 +2,7 @@
 
 本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
 
-2026-09-21：已完成 [Docker 与 N1 CI 接入](NPEP-N1-DEPLOYMENT-CI-REPORT.md)、三个功能分支的 [GitHub 托管检查](NPEP-N1-HOSTED-CI-REPORT.md) 和 [首次发布方案审查](NPEP-N1-RELEASE-PLAN.md)。尚未合入会自动部署的 main；发布窗口、现场部署核验与用户确认仍待完成，再进入 [真实大屏现场验收](NPEP-N1-FIELD-ACCEPTANCE.md)。
+2026-09-21：已完成 [Docker 与 N1 CI 接入](NPEP-N1-DEPLOYMENT-CI-REPORT.md)、三端及含图标最终组合的 [GitHub 托管检查](NPEP-N1-HOSTED-CI-REPORT.md) 和 [首次发布方案审查](NPEP-N1-RELEASE-PLAN.md)。河豚豚已完成生产存档、数据库隔离恢复（31 张用户表）和异地备份，并确认 PM2 部署代理名称。最终前端 `37a3f1b...` / 后端 `e660876...` 的所需检查已通过；最新状态以发布方案为准。尚未合入会自动部署的 main，NPEP 未启用；受控上线后再进入 [真实大屏现场验收](NPEP-N1-FIELD-ACCEPTANCE.md)。
 
 2026-09-20 双端交叉审阅完成：已提出的契约阻塞均闭环，可以作为隔离环境实现基线。服务端审阅记录的正文快照 SHA-256 为 `1afd58c435e6616a6dcd5091c0432f700b2e3325fdad2b997e089dc361490d07`；随后仅将主文档首段状态由“正在审阅”更新为“审阅通过”，未变更协议内容。
 
@@ -21,6 +21,8 @@
 | [NPEP-N1-HOSTED-CI-REPORT.md](NPEP-N1-HOSTED-CI-REPORT.md) | 三端 GitHub 实际结果、固定提交组合、checkout 修复与测试产物 |
 | [NPEP-N1-RELEASE-PLAN.md](NPEP-N1-RELEASE-PLAN.md) | 首次配套发布顺序、当前准入缺口、服务器操作者职责与用户回来后的待办 |
 | [NPEP-N1-OPERATOR-HANDOFF.md](NPEP-N1-OPERATOR-HANDOFF.md) | 河豚豚的服务器侦察手册：查看命令、直白说明和维护信息回传模板 |
+| [NPEP-N1-FIRST-BACKUP.md](NPEP-N1-FIRST-BACKUP.md) | 首次生产数据库、配置及现用镜像存档步骤与已完成结果 |
+| [NPEP-N1-RESTORE-DRILL.md](NPEP-N1-RESTORE-DRILL.md) | 隔离 PostgreSQL 恢复验证步骤、31 张用户表结果与未覆盖范围 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式
