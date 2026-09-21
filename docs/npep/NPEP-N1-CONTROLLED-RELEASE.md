@@ -1,6 +1,6 @@
 # NPEP N1 受控发布操作记录
 
-> 最新状态：首次执行后新后端未就绪，已自动回退旧应用；公网 readiness 与首页复核 HTTP 200。下方升级命令不要重跑，先按 [事件记录](NPEP-N1-FIRST-DEPLOY-INCIDENT.md) 只读诊断。PM2 与 GitHub 发布入口继续暂停。
+> 最新状态：首次执行已回退健康旧版，根因确认为下方历史升级命令的全局 umask 077 使源码权限为 root:root 600，node 启动 EACCES。下方命令已作废，保留用于事件溯源；不能只改为 umask 022 后重跑（已有受限权限不自动修复）。修复、回归和替代升级流程完成后另发新命令，见 [事件记录](NPEP-N1-FIRST-DEPLOY-INCIDENT.md)。PM2 与 GitHub 发布入口继续暂停。
 
 ## 当前阶段：PM2 已停止、main 已快进，等待服务器执行升级
 
