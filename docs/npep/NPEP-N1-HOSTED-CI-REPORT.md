@@ -47,6 +47,14 @@ Windows 产物仅含两份 TRX 与 `run.json`：提交与上表一致，`dirty=f
 
 同时补上结果上传的 `include-hidden-files: true`，使 `.artifacts` 下明确列出的 TRX 与 `run.json` 可以保留。上传范围仍仅为这两类测试结果，不包含凭据目录或整个 `.artifacts`。
 
+### 文档推送后发现的并行构建竞争
+
+文档提交 `e1c6cbf` 自动触发的 [Windows 复跑](https://github.com/tempChanghong/NPEduTools/actions/runs/35562268584) 暴露了另一处间歇性问题：Recorder 的 `obj/Release/net10.0-windows/NPEduTools.Recorder.dll` 在编译写入时被占用（CS2012），同一时刻另一路 Recorder 构建成功。此前成功结果仍对应上表提交，不据此掩盖后续失败。
+
+App 同时直接引用 Recorder、又通过 Host 引用 Recorder；Host 路径显式设置 Windows TargetFramework，两个构建上下文写入同一输出目录。已移除 App 冗余的直接构建引用，保留 `App → Host → Recorder` 顺序及原有两处打包复制。没有通过忽略错误、重试编译或关闭测试处理。
+
+本机显式四节点 Release Rebuild 通过（0 警告、0 错误）；App/Recorder 与 App/Host/Recorder 两份 DLL 的哈希均与刚构建的 Recorder 一致。修复随后推送同一功能分支，由 Windows workflow 再执行完整锁定还原、构建与回归；其运行入口见 [分支 Windows 检查历史](https://github.com/tempChanghong/NPEduTools/actions/workflows/npep-n1.yml?query=branch%3Acodex%2Fnpep-n1-ci)。该修复之后的托管状态应查看相应提交的运行，不能沿用上表旧提交的绿灯。
+
 ## 发布边界与下一步
 
 托管检查结束后，通过 `git ls-remote` 复核 main 与本轮操作前一致：
