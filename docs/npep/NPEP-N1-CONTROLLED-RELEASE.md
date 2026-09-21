@@ -1,6 +1,13 @@
 # NPEP N1 受控发布操作记录
 
-## 当前阶段：GitHub 入口已暂停，等待河豚豚停止部署代理
+## 当前阶段：PM2 已停止、main 已快进，等待服务器执行升级
+
+河豚豚已回报 `np-deploy-agent`（ID 4）为 stopped，停止前代理空闲。Codex 于北京时间 22:48–22:49 再次核对三条发布工作流均禁用、三个测试运行均 success、两条功能分支无漂移及 main 祖先关系，然后依次将后端、前端 main 非强制快进到受测提交：
+
+- 后端 `e660876c8a22004e14a053a70985d5b350e42d0d`
+- 前端 `37a3f1b01585fd8cfc751c921668a84d5c41264f`
+
+API `force=false`，未生成新的合并提交、未重写历史。见 [main 前置核查](NPEP-N1-MAIN-PREFLIGHT.json)、[main 实际结果](NPEP-N1-MAIN-RESULTS.json) 和 [快进后发布入口复查](NPEP-N1-POST-MAIN-GATES.json)。三个发布入口仍为 disabled_manually，查询其最近运行未发现未完成任务；网站尚未由 Codex 发起升级。此时交付下方固定版本升级命令，等待河豚豚执行结果。
 
 用户已明确授权开始处理发布控制。北京时间 2026-09-21 22:34–22:35，Codex 保存原状态后，逐一暂停并读回确认：
 
@@ -18,9 +25,9 @@
 - [逐项操作结果](NPEP-N1-RELEASE-CONTROL-CHANGES.json)
 - [暂停后队列快照](NPEP-N1-RELEASE-CONTROL-QUEUE.json)
 
-两仓 main 尚未改变，网站未升级。GitHub 禁用工作流不代替暂停 PM2，也不是禁止其他管理员主动推送或重新启用入口的权限锁；本次维护期间需保持两仓 main 和发布设置不被其他人改变。
+两仓 main 现已快进，服务器仍待手动升级。GitHub 禁用工作流不是禁止其他管理员主动推送或重新启用入口的权限锁；本次维护期间需保持两仓 main 和发布设置不被其他人改变。
 
-## 河豚豚现在执行的唯一操作
+## 已完成：河豚豚暂停部署代理（无需重跑）
 
 在原先执行 `pm2 list` 的同一用户会话（当前为 root）中运行：
 
@@ -39,7 +46,7 @@
 
 不执行 `pm2 stop all`、`pm2 delete`、`pm2 save`、`git pull` 或 Docker 清理。GitHub 侧原状态已经保存，之后由 Codex 按原状态恢复；不要求河豚豚另外寻找 GitHub 开关。
 
-## 后续顺序（尚未执行）
+## 发布顺序（第 1–3 项已完成，第 4 项待现场执行）
 
 1. 收到 PM2 stopped 后，Codex 再读三条 workflow 状态和 main，确认未漂移。
 2. 两仓 main 与候选现已核实为祖先关系，可以在控制入口下将 main 按后端、前端顺序快进到已测试的完整提交，不重写历史、不生成不同内容的合并版本。发生分支漂移则停止重核，不 force push。
@@ -50,15 +57,19 @@
 
 ## 回退边界与已有材料
 
-### 固定版本升级命令草案（不是当前执行步骤）
+### 固定版本升级命令（当前交付步骤）
 
-此段必须等 Codex 确认两仓 main 已按上文快进、PM2 已停止、回退条件具备后再执行。不要提前 checkout 目标；旧版 `upgrade.sh`、`lib.sh`、`rollback.sh`、`release-plan.js` 与目标提交逐文件对比无差异。首次 pre-upgrade 备份仍调用旧版 backup.sh，本次单次执行不应声称已使用新版唯一文件名修复。
+两仓 main 已确认快进、PM2 已停止，已有存档与数据库恢复验证。现在从服务器当前旧工作树执行下段，不要提前 checkout 或 git pull；旧版 `upgrade.sh`、`lib.sh`、`rollback.sh`、`release-plan.js` 与目标提交逐文件对比无差异。首次 pre-upgrade 备份仍调用旧版 backup.sh，本次单次执行不应声称已使用新版唯一文件名修复。应用切换时可能有短暂不可用；数据库回退不在自动授权范围内，失败按下方分级路径处理。
 
 ```bash
 (
   set -Eeuo pipefail
+  umask 077
+  stage=预检查
+  trap 'rc=$?; printf "%s失败，先停止并回报输出，不要重复升级。\n" "$stage" >&2; exit "$rc"' ERR
   cd /NPClassworksKV
   export ENV_FILE=/NPClassworksKV/deploy/.env.production
+  export GIT_TERMINAL_PROMPT=0
   source deploy/lib.sh
   load_production_env
   test "$DEPLOY_MODE" = shared
@@ -73,10 +84,23 @@
   for service in backend frontend; do
     test "$(docker inspect --format '{{.Image}}' "npclassworks-$service-1")" = "$(docker image inspect --format '{{.Id}}' "npclassworks-$service:current")"
   done
+  test "$(docker inspect --format '{{.Image}}' npclassworks-postgres-1)" = "$(docker image inspect --format '{{.Id}}' postgres:17-alpine)"
+  log_dir=$(mktemp -d /root/npclassworks-release-XXXXXXXX)
+  printf '升级记录目录：%s\n' "$log_dir"
+  stage=升级
   bash deploy/upgrade.sh \
     --backend-ref e660876c8a22004e14a053a70985d5b350e42d0d \
     --frontend-ref 37a3f1b01585fd8cfc751c921668a84d5c41264f \
-    --rollback-on-failure
+    --rollback-on-failure 2>&1 | tee "$log_dir/upgrade.log"
+  stage=升级后检查
+  test "$(git rev-parse HEAD)" = e660876c8a22004e14a053a70985d5b350e42d0d
+  test "$(git -C /NPClassworks rev-parse HEAD)" = 37a3f1b01585fd8cfc751c921668a84d5c41264f
+  compose exec -T backend node -e 'if(process.env.NPEP_ENABLED!=="false")process.exit(1);fetch("http://127.0.0.1:3000/ready").then(r=>{if(!r.ok)process.exit(1);console.log("后端就绪；NPEP 保持关闭")}).catch(()=>process.exit(1))'
+  cp "$RUNTIME_DIR/rollback-state.env" "$log_dir/rollback-state.env"
+  cp "$RUNTIME_DIR/deployed-release.json" "$log_dir/deployed-release.json"
+  cat "$RUNTIME_DIR/deployed-release.json"
+  compose ps
+  printf '\n升级命令完成。记录：%s\n先保留代理 stopped，等待业务验收。\n' "$log_dir"
 )
 ```
 
