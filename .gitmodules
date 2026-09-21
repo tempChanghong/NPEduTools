@@ -1,0 +1,9 @@
+[submodule "docs/ExamAware-docs"]
+	path = docs/ExamAware-docs
+	url = https://github.com/ExamAware/ExamAware-docs.git
+[submodule "docs/PowerPoint-Touch-Assist"]
+	path = docs/PowerPoint-Touch-Assist
+	url = https://github.com/RinLit-233-shiroko/PowerPoint-Touch-Assist.git
+[submodule "docs/classisland-docs-next"]
+	path = docs/classisland-docs-next
+	url = https://github.com/ClassIsland/classisland-docs-next.git

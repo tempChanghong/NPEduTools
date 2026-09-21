@@ -39,4 +39,5 @@ jobs:
             .artifacts/npep-ci/**/*.trx
             .artifacts/npep-ci/**/run.json
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 14
