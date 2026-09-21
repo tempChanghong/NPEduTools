@@ -23,6 +23,7 @@
 | [NPEP-N1-OPERATOR-HANDOFF.md](NPEP-N1-OPERATOR-HANDOFF.md) | 河豚豚的服务器侦察手册：查看命令、直白说明和维护信息回传模板 |
 | [NPEP-N1-FIRST-BACKUP.md](NPEP-N1-FIRST-BACKUP.md) | 首次生产数据库、配置及现用镜像存档步骤与已完成结果 |
 | [NPEP-N1-RESTORE-DRILL.md](NPEP-N1-RESTORE-DRILL.md) | 隔离 PostgreSQL 恢复验证步骤、31 张用户表结果与未覆盖范围 |
+| [NPEP-N1-CONTROLLED-RELEASE.md](NPEP-N1-CONTROLLED-RELEASE.md) | 三条 GitHub 发布入口暂停结果、PM2 交接、固定版本升级与失败处理草案 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式
