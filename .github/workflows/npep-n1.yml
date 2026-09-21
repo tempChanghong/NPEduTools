@@ -1,0 +1,42 @@
+name: NPEP N1 Windows checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'codex/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npep-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  device:
+    name: N1 device and Host regression
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Run the same locked build and tests as local acceptance
+        run: ./scripts/test-npep-ci.ps1
+      - name: Preserve test results only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npep-n1-windows-results
+          path: |
+            .artifacts/npep-ci/**/*.trx
+            .artifacts/npep-ci/**/run.json
+          if-no-files-found: warn
+          retention-days: 14
