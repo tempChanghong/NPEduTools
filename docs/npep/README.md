@@ -1,6 +1,6 @@
 # NPEP N1 协议交付
 
-最新现场状态：首次升级已回退健康旧版；保留失败镜像证实 root:root 600 的源码使 node 启动报 EACCES，根因是 Codex 升级命令的全局 umask 077。正在修复并验证，不需按现有证据恢复数据库。GitHub main 保持此前新版本，三个发布入口和 PM2 继续暂停。不要重跑下文历史升级命令，见 [首次部署事件](NPEP-N1-FIRST-DEPLOY-INCIDENT.md)。
+最新现场状态：首次升级已回退健康旧版；权限修复 401182f 已通过本地和托管验证，并于 23:39 快进后端 main。三个发布入口和 PM2 继续暂停，现场尚未重试。应使用新 [重试脚本](NPEP-N1-PERMISSION-RETRY.sh)，不要重跑历史命令；见 [恢复交接](NPEP-N1-PERMISSION-RECOVERY.md) 与 [事件记录](NPEP-N1-FIRST-DEPLOY-INCIDENT.md)。
 
 本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
 
