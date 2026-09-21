@@ -2,7 +2,7 @@
 
 本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
 
-2026-09-21：已完成 [Docker 与 N1 CI 接入](NPEP-N1-DEPLOYMENT-CI-REPORT.md)，并取得三个功能分支的 [GitHub 托管检查通过记录](NPEP-N1-HOSTED-CI-REPORT.md)。功能分支尚未合入会自动部署的 main；生产发布审核与 [真实大屏现场验收](NPEP-N1-FIELD-ACCEPTANCE.md) 仍待分别完成。
+2026-09-21：已完成 [Docker 与 N1 CI 接入](NPEP-N1-DEPLOYMENT-CI-REPORT.md)、三个功能分支的 [GitHub 托管检查](NPEP-N1-HOSTED-CI-REPORT.md) 和 [首次发布方案审查](NPEP-N1-RELEASE-PLAN.md)。尚未合入会自动部署的 main；发布窗口、现场部署核验与用户确认仍待完成，再进入 [真实大屏现场验收](NPEP-N1-FIELD-ACCEPTANCE.md)。
 
 2026-09-20 双端交叉审阅完成：已提出的契约阻塞均闭环，可以作为隔离环境实现基线。服务端审阅记录的正文快照 SHA-256 为 `1afd58c435e6616a6dcd5091c0432f700b2e3325fdad2b997e089dc361490d07`；随后仅将主文档首段状态由“正在审阅”更新为“审阅通过”，未变更协议内容。
 
@@ -19,6 +19,7 @@
 | [NPEP-N1-FIELD-ACCEPTANCE.md](NPEP-N1-FIELD-ACCEPTANCE.md) | 已知域名、main 自动发布边界、上线前置条件及现场待填表 |
 | [NPEP-N1-DEPLOYMENT-CI-REPORT.md](NPEP-N1-DEPLOYMENT-CI-REPORT.md) | Windows 检查、Docker/恢复接入、跨端 CI 门槛及未发布边界 |
 | [NPEP-N1-HOSTED-CI-REPORT.md](NPEP-N1-HOSTED-CI-REPORT.md) | 三端 GitHub 实际结果、固定提交组合、checkout 修复与测试产物 |
+| [NPEP-N1-RELEASE-PLAN.md](NPEP-N1-RELEASE-PLAN.md) | 首次配套发布顺序、当前准入缺口、服务器操作者职责与用户回来后的待办 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式
