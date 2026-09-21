@@ -1,5 +1,7 @@
 # NPEP N1 协议交付
 
+最新现场状态：首次服务器升级构建成功但新后端未就绪，已自动回退旧应用；23:00 公网 readiness/首页均 HTTP 200。GitHub main 保持受测新版本，三个发布入口和 PM2 保持暂停，正在只读诊断。不要重跑下文已有升级命令，见 [首次部署事件](NPEP-N1-FIRST-DEPLOY-INCIDENT.md)。
+
 本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
 
 2026-09-21：已完成 [Docker 与 N1 CI 接入](NPEP-N1-DEPLOYMENT-CI-REPORT.md)、三端及含图标最终组合的 [GitHub 托管检查](NPEP-N1-HOSTED-CI-REPORT.md) 和 [首次发布方案审查](NPEP-N1-RELEASE-PLAN.md)。河豚豚已完成生产存档、数据库隔离恢复（31 张用户表）和异地备份，并暂停 PM2 部署代理。三个 GitHub 发布入口已暂停，两仓 main 已受控快进至受测前端 `37a3f1b...` / 后端 `e660876...`，等待河豚豚按 [操作记录](NPEP-N1-CONTROLLED-RELEASE.md) 执行升级。NPEP 未启用；关闭状态业务验收后再进入 [真实大屏现场验收](NPEP-N1-FIELD-ACCEPTANCE.md)。
@@ -24,6 +26,7 @@
 | [NPEP-N1-FIRST-BACKUP.md](NPEP-N1-FIRST-BACKUP.md) | 首次生产数据库、配置及现用镜像存档步骤与已完成结果 |
 | [NPEP-N1-RESTORE-DRILL.md](NPEP-N1-RESTORE-DRILL.md) | 隔离 PostgreSQL 恢复验证步骤、31 张用户表结果与未覆盖范围 |
 | [NPEP-N1-CONTROLLED-RELEASE.md](NPEP-N1-CONTROLLED-RELEASE.md) | 三条 GitHub 发布入口暂停结果、PM2 交接、固定版本升级与失败处理草案 |
+| [NPEP-N1-FIRST-DEPLOY-INCIDENT.md](NPEP-N1-FIRST-DEPLOY-INCIDENT.md) | 首次新后端未就绪、自动回退证据和只读现场诊断 |
 | [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
 
 ## 验证方式

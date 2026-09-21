@@ -1,5 +1,7 @@
 # NPEP N1 受控发布操作记录
 
+> 最新状态：首次执行后新后端未就绪，已自动回退旧应用；公网 readiness 与首页复核 HTTP 200。下方升级命令不要重跑，先按 [事件记录](NPEP-N1-FIRST-DEPLOY-INCIDENT.md) 只读诊断。PM2 与 GitHub 发布入口继续暂停。
+
 ## 当前阶段：PM2 已停止、main 已快进，等待服务器执行升级
 
 河豚豚已回报 `np-deploy-agent`（ID 4）为 stopped，停止前代理空闲。Codex 于北京时间 22:48–22:49 再次核对三条发布工作流均禁用、三个测试运行均 success、两条功能分支无漂移及 main 祖先关系，然后依次将后端、前端 main 非强制快进到受测提交：
