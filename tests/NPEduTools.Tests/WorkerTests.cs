@@ -3,6 +3,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
+[Collection(ProcessIntegrationCollection.Name)]
 public sealed class WorkerTests
 {
     [Fact]

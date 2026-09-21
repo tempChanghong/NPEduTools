@@ -4,6 +4,7 @@ using NPEduTools.Contracts;
 namespace NPEduTools.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection(ProcessIntegrationCollection.Name)]
 public sealed class TouchHostTests
 {
     private static async Task<HostResponse> Request(string pipe, string action)

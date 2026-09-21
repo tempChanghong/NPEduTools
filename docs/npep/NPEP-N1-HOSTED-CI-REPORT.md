@@ -55,6 +55,12 @@ App 同时直接引用 Recorder、又通过 Host 引用 Recorder；Host 路径�
 
 本机显式四节点 Release Rebuild 通过（0 警告、0 错误）；App/Recorder 与 App/Host/Recorder 两份 DLL 的哈希均与刚构建的 Recorder 一致。修复随后推送同一功能分支，由 Windows workflow 再执行完整锁定还原、构建与回归；其运行入口见 [分支 Windows 检查历史](https://github.com/tempChanghong/NPEduTools/actions/workflows/npep-n1.yml?query=branch%3Acodex%2Fnpep-n1-ci)。该修复之后的托管状态应查看相应提交的运行，不能沿用上表旧提交的绿灯。
 
+### 真实进程测试的并发安排
+
+提交 `b7471ac` 的 [后续运行](https://github.com/tempChanghong/NPEduTools/actions/runs/35562437783) 三个构建入口与 86 项 NPEP 测试通过；352 项原有回归中 349 通过、3 项 Host 管道用例发生 `EndOfStreamException`。这些用例同时启动多组 Host/子进程，生产管道读写有 2 秒时限；受限 runner 上的并行资源争抢是排查方向，日志本身不足以断言每次关闭的具体原因。
+
+七组启动真实进程的测试改为同一非并行 xUnit collection，以免独立测试进程树互相抢占短时限。每项用例内部的多客户端并发、资源槽、超时、恢复与重启验证保留，生产超时和断言未放宽，测试没有禁用或自动重试。该调整仍须通过完整 Windows workflow 验证，其最新结果见上述分支检查历史。
+
 ## 发布边界与下一步
 
 托管检查结束后，通过 `git ls-remote` 复核 main 与本轮操作前一致：

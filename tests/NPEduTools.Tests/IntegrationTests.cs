@@ -7,6 +7,7 @@ using NPEduTools.Contracts;
 namespace NPEduTools.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection(ProcessIntegrationCollection.Name)]
 public sealed class IntegrationTests
 {
     private static string UniquePipe() => "NPEduTools.Test." + Guid.NewGuid().ToString("N");

@@ -2,6 +2,7 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.Tests;
 
+[Collection(ProcessIntegrationCollection.Name)]
 public sealed class ScheduleIntegrationTests
 {
     private static string Pipe() => "NPEduTools.Test.schedule." + Guid.NewGuid().ToString("N");
