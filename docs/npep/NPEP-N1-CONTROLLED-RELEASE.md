@@ -1,5 +1,7 @@
 # NPEP N1 受控发布操作记录
 
+> 当前结果：河豚豚已成功执行修复版重试，后端 401182f / 前端 37a3f1b，三个容器 healthy，公网关闭状态验证通过。记录 `/root/npclassworks-permission-fix-s5Wv58lU`；等待登录、作业、通知、学校管理业务验收，暂不恢复部署入口。以下“尚未执行”及原升级命令为历史，均不得重跑。详见 [现场结果](NPEP-N1-PERMISSION-RECOVERY.md)。
+
 > 最新状态：首次执行已回退健康旧版，根因确认为下方历史升级命令的全局 umask 077 使源码权限为 root:root 600，node 启动 EACCES。下方命令已作废，保留用于事件溯源。修复 401182f 已通过本地与托管验证，并于 23:39 快进后端 main；新的 [重试脚本](NPEP-N1-PERMISSION-RETRY.sh) 和 [恢复说明](NPEP-N1-PERMISSION-RECOVERY.md) 已就绪，尚未在服务器执行。PM2 与 GitHub 发布入口继续暂停。
 
 ## 当前阶段：PM2 已停止、main 已快进，等待服务器执行升级

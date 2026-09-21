@@ -1,6 +1,6 @@
 # NPEP N1 协议交付
 
-最新现场状态：首次升级已回退健康旧版；权限修复 401182f 已通过本地和托管验证，并于 23:39 快进后端 main。三个发布入口和 PM2 继续暂停，现场尚未重试。应使用新 [重试脚本](NPEP-N1-PERMISSION-RETRY.sh)，不要重跑历史命令；见 [恢复交接](NPEP-N1-PERMISSION-RECOVERY.md) 与 [事件记录](NPEP-N1-FIRST-DEPLOY-INCIDENT.md)。
+最新现场状态：河豚豚已成功部署权限修复，后端 401182f / 前端 37a3f1b，三个容器 healthy、NPEP=false；23:51 公网首页/readiness 200，NPEP info 为预期关闭 JSON 503。正在等待原有业务验收，三个发布入口和 PM2 继续暂停。不要重跑任何历史升级命令；见 [实际结果](NPEP-N1-PERMISSION-RECOVERY.md) 与 [事件记录](NPEP-N1-FIRST-DEPLOY-INCIDENT.md)。
 
 本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
 

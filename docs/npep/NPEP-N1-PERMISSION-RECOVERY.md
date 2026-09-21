@@ -2,6 +2,20 @@
 
 本文件是修复准入与交接记录，不是立即重跑许可。现场旧版已经恢复健康；NPEP 保持关闭，PM2 部署代理及三个 GitHub 发布入口保持暂停。
 
+## 最新现场结果：升级成功，等待业务验收
+
+河豚豚已执行新版重试命令并回报成功；无需再次执行。`deployed-release.json` 的 backend 为 `401182fa97866820828df37a9a1b52884056964b`、frontend 为 `37a3f1b01585fd8cfc751c921668a84d5c41264f`，resolvedAt 为 `2026-09-21T15:43:50.600Z`。宿主 HEAD 及容器中 NPEP=false/readiness 的包装脚本检查已通过，三个容器均 healthy。
+
+- 本轮记录：`/root/npclassworks-permission-fix-s5Wv58lU`。
+- 本轮升级前备份：`/NPClassworksKV/deploy/backups/npclassworks_NPClassworksKV_20260921T154350Z_pre-upgrade.dump`，比此前失败轮备份更新，应一并保留。
+- backend 端口实际为 `127.0.0.1:17000 → 3000`，frontend 为 `127.0.0.1:17080 → 80`；不要将模板默认 13000/13080 当作此服务器实际端口。
+- 操作者输出中 PostgreSQL 已运行 48 分钟，本轮没有显示再次重建；不据此推广为所有升级都不会重建数据库容器。
+- Codex 于北京时间 23:51 再查公网：首页 HEAD 200、API `/ready` 200；带 `X-NPEP-Version: 0.1` 的 `/api/v2/npep/info` 返回 JSON 503、`TEMPORARILY_UNAVAILABLE`，符合当前关闭状态。证据见 [公网检查](NPEP-N1-PERMISSION-PUBLIC-CHECK.json)。
+
+技术部署已通过，不能把公网检查代替登录、原有作业/通知和学校管理的业务验收。当前等待操作者确认这些功能；PM2 与三个 GitHub 发布入口继续保持暂停。业务确认后再恢复代理、核对 HTTPS 空闲状态、恢复发布工作流；尚未初始化/启用 NPEP 或配对大屏。
+
+下方为故障修复过程与已执行脚本的历史记录。
+
 ## 已确认的问题
 
 Codex 首次升级命令的全局 `umask 077` 使 root 检出的源码成为 600，Docker 复制后 node 用户无法读取 `scripts/npep-config.js`，现场退出码为 1、错误 EACCES。配置卷本身正常；没有 N1 迁移记录或 NpepDeployment 表。详见 [事件证据](NPEP-N1-FIRST-DEPLOY-INCIDENT.md)。
