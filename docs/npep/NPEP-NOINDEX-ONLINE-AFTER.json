@@ -1,0 +1,72 @@
+{
+  "at": "2026-09-21T16:45:05.4692683Z",
+  "runId": 35626465181,
+  "frontend": "10b0f9a428ccbd00dcd33da56232f1a21c4e5c3b",
+  "backend": "401182fa97866820828df37a9a1b52884056964b",
+  "pages": [
+    {
+      "url": "https://newfires.top/",
+      "status": 200,
+      "robots": [
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/settings",
+      "status": 200,
+      "robots": [
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/classworks-admin",
+      "status": 200,
+      "robots": [
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/setup",
+      "status": 200,
+      "robots": [
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/classworks-2",
+      "status": 200,
+      "robots": [
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/404",
+      "status": 200,
+      "robots": [
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/index.html",
+      "status": 200,
+      "robots": [
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    }
+  ],
+  "readyStatus": 200,
+  "npepStatus": 503,
+  "npepError": "TEMPORARILY_UNAVAILABLE",
+  "agent": {
+    "ok": true,
+    "busy": false,
+    "queued": 0
+  }
+}

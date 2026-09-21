@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "code": "DEPLOY_COMPLETED",
+  "exitCode": 0,
+  "jobId": "3ebab325-47a8-4899-aa1c-ca7a056304db",
+  "request": {
+    "action": "upgrade",
+    "repository": "tempChanghong/NPClassworks",
+    "commit": "10b0f9a428ccbd00dcd33da56232f1a21c4e5c3b",
+    "runId": "35626465181"
+  },
+  "startedAt": "2026-09-21T16:42:31.627Z",
+  "finishedAt": "2026-09-21T16:43:30.262Z",
+  "release": "部署版本已固定：backend=401182fa97866820828df37a9a1b52884056964b frontend=10b0f9a428ccbd00dcd33da56232f1a21c4e5c3b",
+  "backup": "[NPClassworks] 备份完成：/NPClassworksKV/deploy/backups/npclassworks_NPClassworksKV_20260921T164238Z_pre-upgrade_IVFWzJoKDM.dump"
+}

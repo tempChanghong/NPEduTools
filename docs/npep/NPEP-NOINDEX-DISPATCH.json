@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-21T16:19:09.2400308Z",
+  "workflow": 345174965,
+  "enableStatus": 204,
+  "state": "active",
+  "dispatchStatus": 204,
+  "ref": "main",
+  "expectedFrontend": "e84a0f7064dafc518ccbd1f134bd61b13c5c81bb",
+  "expectedBackend": "401182fa97866820828df37a9a1b52884056964b",
+  "agentHealth": "ok=true,busy=false,queued=0"
+}

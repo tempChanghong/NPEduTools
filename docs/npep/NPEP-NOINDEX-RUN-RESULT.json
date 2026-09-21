@@ -1,0 +1,33 @@
+{
+  "id": 35626465181,
+  "url": "https://github.com/tempChanghong/NPClassworks/actions/runs/35626465181",
+  "head": "10b0f9a428ccbd00dcd33da56232f1a21c4e5c3b",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 106421943482,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 106421943753,
+      "name": "contracts / contracts",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 106421943971,
+      "name": "verify",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 106424720371,
+      "name": "deploy",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ]
+}
