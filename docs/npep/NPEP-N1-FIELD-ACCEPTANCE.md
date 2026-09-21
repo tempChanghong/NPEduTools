@@ -4,7 +4,7 @@
 
 ## 当前状态与发布边界
 
-用户确认采用 Docker 分离部署：网页为 `https://newfires.top`，API 为 `https://api.newfires.top`。当前开发电脑不是班级大屏。NPEP 实现在功能分支，**main 才触发 server.js 自动部署；合入并推送 main 是生产发布动作**。当前未合并、未推送、未部署、未线上配对。
+用户确认采用 Docker 分离部署：网页为 `https://newfires.top`，API 为 `https://api.newfires.top`。当前开发电脑不是班级大屏。NPEP 实现在功能分支，**main 才触发 server.js 自动部署；合入并推送 main 是生产发布动作**。功能分支已推送并完成托管检查；当前未合并或推送 main、未部署、未线上配对。
 
 本轮仅发出公开 `GET /api/v2/npep/info`，不带身份凭据；使用系统 TLS 验证、禁重定向，携带协议版本与随机请求 ID。
 
@@ -19,7 +19,7 @@
 
 服务端操作以 [Docker 分离部署准备记录](../../../NPClassworksKV/docs/NPEP-N1-DEPLOYMENT-READINESS.md) 为准，重点检查：
 
-- 固定并记录三个仓库待发布提交、迁移审阅结果和构建结果。当前已新增 Windows CI 与 `pnpm test:e2e:npep` 网页专项门槛，后者强制启用隔离 NPEP 并拒绝跳过；仍须取得对应提交的实际托管运行记录，见 [Docker 与 CI 接入记录](NPEP-N1-DEPLOYMENT-CI-REPORT.md)。
+- 固定并记录三个仓库待发布提交、迁移审阅结果和构建结果。Windows CI 与 `pnpm test:e2e:npep` 网页专项门槛已取得 [实际托管通过记录](NPEP-N1-HOSTED-CI-REPORT.md)，后者强制启用隔离 NPEP 并拒绝跳过。后续代码或发布组合发生变化时，应重新验证受影响检查。
 - Docker 必须显式接入 NPEP 开关、配置路径和独立持久化目录；仅给宿主机 env 增加变量不够。目录需允许容器运行用户原子替换文件，且不随数据库备份一起恢复。
 - 初始外部配置保持关闭。普通更新不重新生成实例/代际；首次激活、恢复前关闭和代际轮换、恢复后失效旧授权分别审核。
 - 宿主机恢复脚本与容器内的 NPEP 开关一致；实际自动部署使用审核过的配置。不要提前合 main 再补恢复保护。
