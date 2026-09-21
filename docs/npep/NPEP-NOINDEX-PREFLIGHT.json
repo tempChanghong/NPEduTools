@@ -1,0 +1,11 @@
+{
+  "checkedAt": "2026-09-21T16:14:32.2953823Z",
+  "frontendBefore": "37a3f1b01585fd8cfc751c921668a84d5c41264f",
+  "frontendTarget": "e84a0f7064dafc518ccbd1f134bd61b13c5c81bb",
+  "backend": "401182fa97866820828df37a9a1b52884056964b",
+  "files": [
+    "index.html"
+  ],
+  "publicationGates": "disabled_manually",
+  "agentHealth": 502
+}
