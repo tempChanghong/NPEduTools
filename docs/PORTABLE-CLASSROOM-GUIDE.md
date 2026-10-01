@@ -1,11 +1,11 @@
 # NPEduTools 教室试用包：安装、更新与回退
 
-适用：InDev 20260920，Windows x64，ClassIsland 2.1.0.1 本地构建／桥接 0.2.0.0，ExamAware2 1.5.2 本地打包程序／桥接 0.3.0。开发机检查不等于目标大屏整课验收。内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在本包内。
+适用：InDev 20261002（Pre），Windows x64，ClassIsland API 2.1.0.1／桥接 0.2.0.0，ExamAware2 1.5.2／桥接 0.4.0。当前为发版草稿，Windows ZIP 尚未构建／上传，以下安装步骤供正式补齐便携包后使用；源码运行见本版 `RELEASE-NOTES.md`。开发机检查不等于目标大屏整课验收。计划提供的自包含包内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在本包内。
 
 ## 第一次使用
 
-1. 完整解压 ZIP 到固定目录，例如 `D:\NPEduTools\InDev-20260920`。不要只取出 EXE，不要直接在压缩软件中运行。移动目录后应重新设置相关快捷方式。
-2. 双击 `Start-NPEduTools.cmd`，或 `app/NPEduTools.App.exe`。在偏好设置中确认 ClassIsland 程序路径；日常使用普通用户权限即可，不需要以管理员启动本工具。
+1. 完整解压 ZIP 到固定目录，例如 `D:\NPEduTools\InDev-20261002`。不要只取出 EXE，不要直接在压缩软件中运行。移动目录后应重新设置相关快捷方式。
+2. 双击 `Start-NPEduTools.cmd`，或 `app/NPEduTools.App.exe`，启动时核实并允许 Windows UAC；本版立即请求管理员权限。在偏好设置中确认 ClassIsland 程序路径。
 3. 在 ClassIsland 的“应用设置 → 插件”中安装 `ClassIsland-plugin/NPEduTools.ClassIsland.Bridge.cipx`，确认名称为“NPEduTools 时间与课表桥接”，启用并重启 ClassIsland。无需自行解压插件到用户正在使用的安装目录。
 4. 打开 NPEduTools 的“自动录课计划”，核对学校日期、时间与 ClassIsland 显示一致。插件缺失、时间停止前进或连接异常时，等待修复；软件不会改用 Windows 时间代录。
 5. 需要录课时，先退出 NPEduTools，按包内 `RECORDING-TOOLS-INSTALL.md` 运行 `Install-Recording-Tools.ps1` 安装 FFmpeg；本包不附带它，脚本会从上游下载固定版本并验证哈希，也支持离线安装。重新打开后到“录制微课”选择屏幕、音源、目录，点击“保存设置”。先试 8 fps、720p，再按课件清晰度决定是否升至 1080p；选对麦克风和系统声音，实际短录并回放确认。
@@ -16,7 +16,7 @@
 
 ## 文件位置
 
-需要日常／考试模式时，先在“考试看板”保存 ExamAware.exe 位置，通过 ExamAware 官方插件安装功能导入 `ExamAware2-plugin/npedutools-examaware-bridge-0.3.0.ea2x`，按该目录 README 完成配对；在 NPEduTools 的“设置 → 软件连接”配置 ClassIsland 管理员登录任务，再做首次检查。Windows UAC 由操作者核实授权。考试模式暂停自动录课并保留计划；即时软件切换为可选项，默认关闭。
+需要日常／考试模式时，先在“考试看板”保存 ExamAware.exe 位置，通过 ExamAware 官方插件安装功能导入 `ExamAware2-plugin/npedutools-examaware-bridge-0.4.0.ea2x`，按该目录 README 完成配对；在 NPEduTools 的“设置 → 软件连接”配置并核实当前 ClassIsland 程序的管理员登录任务，再做首次检查。Windows UAC 由操作者核实授权。考试模式暂停自动录课并保留计划；本地“同时切换当前运行的软件”仍为可选项，网页远程模式切换则联动运行软件、登录自启动与录课暂停。完整返回前先保存编辑器并结束放映。
 
 **切回日常或退出 ExamAware2 前，先保存并关闭编辑器、结束放映。** 1.5.2 编辑器仍打开时退出可能提前卸载接口，导致无法保存；这是本版暂未解决的已知问题。关闭 NPEduTools 不会替你关闭这两款软件。
 
@@ -32,7 +32,7 @@
 | 异常片段 | 所选保存目录下 `.npeedutools-sessions`；实际记录也会给出路径 |
 | 源码、依赖与校验 | `NPEduTools-source.zip`、`third-party/`、`build-locks/`、`package-manifest.json` |
 
-本包是程序免安装，并非将个人配置也放在程序旁边的完全便携模式。换电脑时配置不会自动跟随；先重新核对屏幕、音源和保存目录。视频、课表、配置、执行账本均不上传至云服务。
+本包是程序免安装，并非将个人配置也放在程序旁边的完全便携模式。换电脑时配置不会自动跟随；先重新核对屏幕、音源和保存目录。录课视频、原始麦克风音频与本机录课计划不上传。学校配对即授权当前学校互联能力：会上传设备状态、操作回执与噪音统计，学校可投递通知、考试方案及定时规则。只需本机功能时不必配对学校。
 
 ## 更新
 

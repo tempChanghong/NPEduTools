@@ -1,6 +1,6 @@
 param(
     [string]$OutputRoot = '.artifacts/releases',
-    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion = 'Pre-20261001'
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion = 'InDev-20261002'
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
