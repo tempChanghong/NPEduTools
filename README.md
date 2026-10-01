@@ -1,6 +1,6 @@
 # NPEduTools
 
-**当前发布候选：InDev 20261002（Pre，无代号）。** [发版草稿](docs/releases/InDev-20261002.md)介绍学校互联、通知、考试模式与原生噪音监测，配套 NPClassworks／KV v1.2.0。草稿待审核，尚未提供本版二进制下载包，也未完成真实班级大屏及学校排程现场验收。此前三仓功能源码已合并 main，[合并与检查记录](docs/releases/Pre-20261001-MERGE-RESULT.md)保留当时的 PR、提交、CI 与部署边界。下文保留各阶段记录，当前 NPEP 行为以[交付索引](docs/npep/README.md)及新说明为准；历史 InDev ZIP 不包含本版新增功能。
+**当前版本：[InDev 20261002（Pre，无代号）](https://github.com/tempChanghong/NPEduTools/releases/tag/InDev-20261002)。** [发版说明](docs/releases/InDev-20261002.md)介绍学校互联、通知、考试模式与原生噪音监测，配套 NPClassworks／KV v1.2.0。Windows 发行附件、固定源码与检查结果见[发布收尾](docs/releases/DELIVERY-20261002.md)；真实班级大屏及学校排程现场验收仍未完成。此前三仓功能源码已合并 main，[合并与检查记录](docs/releases/Pre-20261001-MERGE-RESULT.md)保留当时的 PR、提交、CI 与部署边界。下文保留各阶段记录，当前 NPEP 行为以[交付索引](docs/npep/README.md)及新说明为准；历史 InDev ZIP 不包含本版新增功能。
 
 新增 [可选即时切换与全局模式显示](docs/CLASSROOM-RUNTIME-SWITCH.md)：勾选“同时切换当前运行的软件”后，考试模式准备好 ExamAware2 再正常退出 ClassIsland；日常模式确认考试内容已保存后正常退出考试看板，并通过管理员任务启动 ClassIsland。退出受阻或目标未就绪时显示原因并提供重试；主窗口与展开／收起侧边栏显示当前模式和自动录课暂停状态。开关默认关闭，正式软件完整联动仍待实机验收。
 
