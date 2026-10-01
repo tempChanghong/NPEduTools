@@ -29,11 +29,22 @@ internal static class Program
             using var identity = WindowsIdentity.GetCurrent();
             if (ClassIslandProcess.UserSid(parent) != identity.User?.Value) return 3;
             var request = Protocol.ReadAsync<AdminRequest>(pipe, deadline.Token).GetAwaiter().GetResult();
+            bool mutation = AdminOperationPolicy.RequiresReservation(request.Action);
+            // Ordinary frontend operations retain a worker lease. Fixed runtime commands use
+            // the Host's exclusive lease; acquiring another file handle would reject our own switch.
+            using var reservation = mutation ? NPEduTools.Core.RuntimeOperationFile.TryAcquire(false) : null;
             AdminResult result;
             try
             {
-                using var service = new ScheduledStartup();
-                result = service.Execute(request);
+                if (mutation && reservation is null)
+                    result = new("Rejected", "正在切换运行环境，管理员操作未执行。", ErrorCode: "RuntimeOperationBusy");
+                else if (request.Action is "runtime-status" or "runtime-close")
+                    result = ClassIslandRuntime.Execute(request);
+                else
+                {
+                    using var service = new ScheduledStartup();
+                    result = service.Execute(request with { Action = AdminOperationPolicy.ScheduledAction(request.Action) });
+                }
             }
             catch (Exception ex) when (ex is COMException or System.ComponentModel.Win32Exception or UnauthorizedAccessException or IOException or InvalidOperationException or ArgumentException or NPEduTools.Core.LaunchTargetException)
             {

@@ -8,7 +8,7 @@ public partial class App : Application
     private Mutex? _instance;
     private EventWaitHandle? _activation;
     private RegisteredWaitHandle? _activationWait;
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         AppLaunchOptions options;
@@ -20,6 +20,19 @@ public partial class App : Application
             return;
         }
         string pipe = options.Pipe;
+        try
+        {
+            if (!StartupElevation.Ensure(e.Args)) { Shutdown(); return; }
+            await StartupElevation.CheckExistingHostAsync(pipe);
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or System.IO.IOException or
+            UnauthorizedAccessException or InvalidOperationException or OperationCanceledException or ArgumentException)
+        {
+            MessageBox.Show(error is OperationCanceledException ? "已有后台尚未就绪，请稍后重新启动。" : error.Message,
+                "NPEduTools · 启动权限", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(3);
+            return;
+        }
         _activation = new EventWaitHandle(false, EventResetMode.AutoReset, $@"Local\{pipe}.App.Activate");
         _instance = new Mutex(false, $@"Local\{pipe}.App", out bool created);
         if (!created) { if (!options.AtLogin) _activation.Set(); Shutdown(); return; }

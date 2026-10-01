@@ -1,0 +1,11 @@
+{
+  "checkedAt": "2026-09-21T15:51:41.1325679Z",
+  "readyStatus": 200,
+  "readyBody": "{\"status\":\"success\",\"message\":\"Classworks KV is ready\",\"version\":\"1.1.0\",\"codename\":\"Ikuyo\",\"codenameZh\":\"喜多郁代\",\"time\":1790005899350}",
+  "homeStatus": 200,
+  "npepStatus": 503,
+  "npepContentType": [
+    "application/json; charset=utf-8"
+  ],
+  "npepBody": "{\"protocolVersion\":\"0.1\",\"requestId\":\"26861955-293e-4a1d-9bdf-8805a80c13d9\",\"serverTime\":\"2026-09-21T15:51:40.424Z\",\"error\":{\"code\":\"TEMPORARILY_UNAVAILABLE\",\"message\":\"TEMPORARILY_UNAVAILABLE\",\"retryAfterSeconds\":null}}"
+}

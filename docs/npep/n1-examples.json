@@ -1,0 +1,791 @@
+{
+  "notice": "FAKE fixture values. Never use fixture secrets or IDs as production credentials.",
+  "cases": [
+    {
+      "name": "info-valid",
+      "definition": "infoResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+          "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+          "supportedCapabilities": [
+            "device.status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "createPairing-valid",
+      "definition": "createPairing",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "installationId": "10000000-0000-4000-8000-000000000004",
+        "deviceName": "教室测试屏",
+        "appVersion": "InDev 20260920",
+        "pairingSecret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "requestedCapabilities": [
+          "device.status"
+        ]
+      }
+    },
+    {
+      "name": "createdPairing-valid",
+      "definition": "createdPairingResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "pairingId": "10000000-0000-4000-8000-000000000005",
+          "userCode": "ABCD2345",
+          "state": "PENDING",
+          "expiresAt": "2026-09-20T12:10:00.000Z",
+          "pollAfterSeconds": 5
+        }
+      }
+    },
+    {
+      "name": "pendingPairing-valid",
+      "definition": "pendingPairingResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "pairingId": "10000000-0000-4000-8000-000000000005",
+          "state": "PENDING",
+          "expiresAt": "2026-09-20T12:10:00.000Z",
+          "pollAfterSeconds": 5
+        }
+      }
+    },
+    {
+      "name": "approvedPairing-valid",
+      "definition": "approvedPairingResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "pairingId": "10000000-0000-4000-8000-000000000005",
+          "state": "APPROVED",
+          "expiresAt": "2026-09-20T12:10:00.000Z",
+          "pollAfterSeconds": 5,
+          "approvalId": "10000000-0000-4000-8000-000000000007",
+          "schoolId": "school-example",
+          "schoolName": "示例学校",
+          "administrativeClassId": "class-example",
+          "administrativeClassName": "示例班级",
+          "screenBindingId": "screen-example",
+          "screenBindingName": "教室测试屏",
+          "bindingRevision": 1,
+          "capabilities": [
+            "device.status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "activatedPairing-valid",
+      "definition": "activatedPairingResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "pairingId": "10000000-0000-4000-8000-000000000005",
+          "state": "ACTIVATED",
+          "deviceId": "10000000-0000-4000-8000-000000000010"
+        }
+      }
+    },
+    {
+      "name": "resolvePairing-valid",
+      "definition": "resolvePairing",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000006",
+        "userCode": "ABCD2345"
+      }
+    },
+    {
+      "name": "resolvedPairing-valid",
+      "definition": "resolvedPairingResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "pairingId": "10000000-0000-4000-8000-000000000005",
+          "deviceName": "教室测试屏",
+          "appVersion": "InDev 20260920",
+          "expiresAt": "2026-09-20T12:10:00.000Z",
+          "requestedCapabilities": [
+            "device.status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "approvePairing-valid",
+      "definition": "approvePairing",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000006",
+        "screenBindingId": "screen-example",
+        "capabilities": [
+          "device.status"
+        ]
+      }
+    },
+    {
+      "name": "confirmPairing-valid",
+      "definition": "confirmPairing",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "approvalId": "10000000-0000-4000-8000-000000000007",
+        "credentialId": "10000000-0000-4000-8000-000000000008",
+        "deviceSecret": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"
+      }
+    },
+    {
+      "name": "cancelPairing-valid",
+      "definition": "cancelPairing",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000009"
+      }
+    },
+    {
+      "name": "cancelledPairing-valid",
+      "definition": "cancelledPairingResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "pairingId": "10000000-0000-4000-8000-000000000005",
+          "state": "CANCELLED"
+        }
+      }
+    },
+    {
+      "name": "registration-valid",
+      "definition": "registrationResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "deviceId": "10000000-0000-4000-8000-000000000010",
+          "installationId": "10000000-0000-4000-8000-000000000004",
+          "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+          "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+          "schoolId": "school-example",
+          "administrativeClassId": "class-example",
+          "screenBindingId": "screen-example",
+          "bindingRevision": 1,
+          "credentialGeneration": 1,
+          "capabilities": [
+            "device.status"
+          ],
+          "credentialExpiresAt": "2026-12-19T12:05:00.000Z",
+          "statusEpoch": 0
+        }
+      }
+    },
+    {
+      "name": "openSession-valid",
+      "definition": "openSession",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "runId": "10000000-0000-4000-8000-000000000011",
+        "expectedStatusEpoch": 0
+      }
+    },
+    {
+      "name": "session-valid",
+      "definition": "sessionResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "sessionId": "10000000-0000-4000-8000-000000000012",
+          "runId": "10000000-0000-4000-8000-000000000011",
+          "statusEpoch": 1,
+          "nextPollSeconds": 20
+        }
+      }
+    },
+    {
+      "name": "reportStatus-valid",
+      "definition": "reportStatus",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": 1,
+        "sampleAgeMs": 8,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "DAILY",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "recording": "IDLE",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          }
+        }
+      }
+    },
+    {
+      "name": "statusReceipt-valid",
+      "definition": "statusReceiptResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "disposition": "APPLIED",
+          "acceptedSequence": 1,
+          "receivedAt": "2026-09-20T12:00:00.000Z",
+          "nextPollSeconds": 20
+        }
+      }
+    },
+    {
+      "name": "revokeDevice-valid",
+      "definition": "revokeDevice",
+      "valid": true,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000013",
+        "expectedBindingRevision": 1
+      }
+    },
+    {
+      "name": "revokedDevice-valid",
+      "definition": "revokedDeviceResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "deviceId": "10000000-0000-4000-8000-000000000010",
+          "state": "REVOKED"
+        }
+      }
+    },
+    {
+      "name": "deviceList-valid",
+      "definition": "deviceListResponse",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "items": [
+            {
+              "deviceId": "10000000-0000-4000-8000-000000000010",
+              "installationId": "10000000-0000-4000-8000-000000000004",
+              "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+              "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+              "schoolId": "school-example",
+              "administrativeClassId": "class-example",
+              "screenBindingId": "screen-example",
+              "bindingRevision": 1,
+              "credentialGeneration": 1,
+              "deviceName": "教室测试屏",
+              "state": "ACTIVE",
+              "capabilities": [
+                "device.status"
+              ],
+              "credentialExpiresAt": "2026-12-19T12:05:00.000Z",
+              "connectivity": "ONLINE",
+              "lastSeenAt": "2026-09-20T12:00:00.000Z",
+              "status": {
+                "appVersion": "InDev 20260920",
+                "mode": "DAILY",
+                "modePhase": "IDLE",
+                "modeRevision": 4,
+                "automaticRecording": "DISABLED",
+                "recording": "IDLE",
+                "classIsland": {
+                  "connection": "READY",
+                  "bridgeVersion": "0.2.0.0"
+                },
+                "examAware": {
+                  "connection": "DISCONNECTED",
+                  "bridgeVersion": null
+                }
+              }
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "error-valid",
+      "definition": "error",
+      "valid": true,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "error": {
+          "code": "RATE_LIMITED",
+          "message": "请等待后重试",
+          "retryAfterSeconds": 5
+        }
+      }
+    },
+    {
+      "name": "future-mode-capability-denied",
+      "definition": "createPairing",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "installationId": "10000000-0000-4000-8000-000000000004",
+        "deviceName": "教室测试屏",
+        "appVersion": "InDev 20260920",
+        "pairingSecret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "requestedCapabilities": [
+          "classroom.mode.set"
+        ]
+      }
+    },
+    {
+      "name": "additional-field-denied",
+      "definition": "confirmPairing",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "approvalId": "10000000-0000-4000-8000-000000000007",
+        "credentialId": "10000000-0000-4000-8000-000000000008",
+        "deviceSecret": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA",
+        "runCommand": "powershell"
+      }
+    },
+    {
+      "name": "missing-epoch",
+      "definition": "confirmPairing",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "approvalId": "10000000-0000-4000-8000-000000000007",
+        "credentialId": "10000000-0000-4000-8000-000000000008",
+        "deviceSecret": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"
+      }
+    },
+    {
+      "name": "short-device-secret",
+      "definition": "confirmPairing",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "approvalId": "10000000-0000-4000-8000-000000000007",
+        "credentialId": "10000000-0000-4000-8000-000000000008",
+        "deviceSecret": "weak"
+      }
+    },
+    {
+      "name": "secret-in-approval-response",
+      "definition": "approvedPairingResponse",
+      "valid": false,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "pairingId": "10000000-0000-4000-8000-000000000005",
+          "state": "APPROVED",
+          "expiresAt": "2026-09-20T12:10:00.000Z",
+          "pollAfterSeconds": 5,
+          "approvalId": "10000000-0000-4000-8000-000000000007",
+          "schoolId": "school-example",
+          "schoolName": "示例学校",
+          "administrativeClassId": "class-example",
+          "administrativeClassName": "示例班级",
+          "screenBindingId": "screen-example",
+          "screenBindingName": "教室测试屏",
+          "bindingRevision": 1,
+          "capabilities": [
+            "device.status"
+          ],
+          "deviceSecret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        }
+      }
+    },
+    {
+      "name": "zero-sequence",
+      "definition": "reportStatus",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": 0,
+        "sampleAgeMs": 8,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "DAILY",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "recording": "IDLE",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          }
+        }
+      }
+    },
+    {
+      "name": "unsafe-integer",
+      "definition": "reportStatus",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": 9007199254740992,
+        "sampleAgeMs": 8,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "DAILY",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "recording": "IDLE",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          }
+        }
+      }
+    },
+    {
+      "name": "string-sequence",
+      "definition": "reportStatus",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": "1",
+        "sampleAgeMs": 8,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "DAILY",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "recording": "IDLE",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          }
+        }
+      }
+    },
+    {
+      "name": "old-sample-age",
+      "definition": "reportStatus",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": 1,
+        "sampleAgeMs": 5001,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "DAILY",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "recording": "IDLE",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          }
+        }
+      }
+    },
+    {
+      "name": "private-content-denied",
+      "definition": "reportStatus",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": 1,
+        "sampleAgeMs": 8,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "DAILY",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "recording": "IDLE",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          },
+          "studentNames": [
+            "example"
+          ]
+        }
+      }
+    },
+    {
+      "name": "mode-enum-case",
+      "definition": "reportStatus",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": 1,
+        "sampleAgeMs": 8,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "Daily",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "recording": "IDLE",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          }
+        }
+      }
+    },
+    {
+      "name": "invalid-run-uuid",
+      "definition": "openSession",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "runId": "random",
+        "expectedStatusEpoch": 0
+      }
+    },
+    {
+      "name": "negative-epoch",
+      "definition": "openSession",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "runId": "10000000-0000-4000-8000-000000000011",
+        "expectedStatusEpoch": -1
+      }
+    },
+    {
+      "name": "unknown-error",
+      "definition": "error",
+      "valid": false,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "error": {
+          "code": "ALL_GOOD",
+          "message": "请等待后重试",
+          "retryAfterSeconds": 5
+        }
+      }
+    },
+    {
+      "name": "unsupported-version",
+      "definition": "infoResponse",
+      "valid": false,
+      "value": {
+        "protocolVersion": "1.0",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+          "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+          "supportedCapabilities": [
+            "device.status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "local-time-not-utc",
+      "definition": "infoResponse",
+      "valid": false,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T20:00:00+08:00",
+        "data": {
+          "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+          "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+          "supportedCapabilities": [
+            "device.status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ambiguous-human-code",
+      "definition": "resolvePairing",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000006",
+        "userCode": "IIII0000"
+      }
+    },
+    {
+      "name": "missing-status-field",
+      "definition": "reportStatus",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+        "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+        "sessionId": "10000000-0000-4000-8000-000000000012",
+        "statusEpoch": 1,
+        "sequence": 1,
+        "sampleAgeMs": 8,
+        "status": {
+          "appVersion": "InDev 20260920",
+          "mode": "DAILY",
+          "modePhase": "IDLE",
+          "modeRevision": 4,
+          "automaticRecording": "DISABLED",
+          "classIsland": {
+            "connection": "READY",
+            "bridgeVersion": "0.2.0.0"
+          },
+          "examAware": {
+            "connection": "DISCONNECTED",
+            "bridgeVersion": null
+          }
+        }
+      }
+    },
+    {
+      "name": "added-response-secret",
+      "definition": "registrationResponse",
+      "valid": false,
+      "value": {
+        "protocolVersion": "0.1",
+        "requestId": "10000000-0000-4000-8000-000000000001",
+        "serverTime": "2026-09-20T12:00:00.000Z",
+        "data": {
+          "deviceId": "10000000-0000-4000-8000-000000000010",
+          "installationId": "10000000-0000-4000-8000-000000000004",
+          "serverInstanceId": "10000000-0000-4000-8000-000000000002",
+          "deploymentEpoch": "10000000-0000-4000-8000-000000000003",
+          "schoolId": "school-example",
+          "administrativeClassId": "class-example",
+          "screenBindingId": "screen-example",
+          "bindingRevision": 1,
+          "credentialGeneration": 1,
+          "capabilities": [
+            "device.status"
+          ],
+          "credentialExpiresAt": "2026-12-19T12:05:00.000Z",
+          "statusEpoch": 0,
+          "secret": "hidden"
+        }
+      }
+    },
+    {
+      "name": "fractional-binding-revision",
+      "definition": "revokeDevice",
+      "valid": false,
+      "value": {
+        "requestId": "10000000-0000-4000-8000-000000000013",
+        "expectedBindingRevision": 1.5
+      }
+    }
+  ]
+}

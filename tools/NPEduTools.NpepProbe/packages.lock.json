@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "npedutools.contracts": {
+        "type": "Project"
+      },
+      "npedutools.integrations.npep": {
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.Contracts": "[1.0.0, )"
+        }
+      }
+    }
+  }
+}

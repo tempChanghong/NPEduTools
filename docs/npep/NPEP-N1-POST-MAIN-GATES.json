@@ -1,0 +1,23 @@
+[
+  {
+    "verifiedAt": "2026-09-21T14:49:52.9844068Z",
+    "repo": "NPClassworks",
+    "id": 345174965,
+    "state": "disabled_manually",
+    "recentActiveRuns": []
+  },
+  {
+    "verifiedAt": "2026-09-21T14:49:55.1687939Z",
+    "repo": "NPClassworksKV",
+    "id": 345174964,
+    "state": "disabled_manually",
+    "recentActiveRuns": []
+  },
+  {
+    "verifiedAt": "2026-09-21T14:49:57.3103764Z",
+    "repo": "NPClassworksKV",
+    "id": 330817952,
+    "state": "disabled_manually",
+    "recentActiveRuns": []
+  }
+]

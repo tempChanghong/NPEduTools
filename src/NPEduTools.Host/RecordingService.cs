@@ -14,6 +14,9 @@ public sealed class RecordingService : IAsyncDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Func<SchoolClockFrame> _snapshot;
     private readonly Func<bool> _modePaused;
+    private readonly Func<bool> _remoteExamPaused;
+    private readonly RuntimeOperationGate _runtimeGate;
+    private int _runtimeReserved;
     private readonly SchoolClockTracker _clock = new();
     private readonly RecordingExecutionLedger _ledger;
     private readonly string _bookPath, _executable;
@@ -32,10 +35,13 @@ public sealed class RecordingService : IAsyncDisposable
     private string _message = "自动录制未启用", _error = "";
     private RecordingState _last = new("Idle", "准备录制");
     private static TimeSpan Elapsed => Stopwatch.GetElapsedTime(0);
-    public RecordingService(string pipe, string directory, Func<SchoolClockFrame> snapshot, Func<bool>? modePaused = null)
+    public RecordingService(string pipe, string directory, Func<SchoolClockFrame> snapshot, Func<bool>? modePaused = null,
+        Func<bool>? remoteExamPaused = null, RuntimeOperationGate? runtimeGate = null)
     {
         _snapshot = snapshot;
         _modePaused = modePaused ?? (() => false);
+        _remoteExamPaused = remoteExamPaused ?? (() => false);
+        _runtimeGate = runtimeGate ?? new();
         string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(pipe)))[..24];
         _bookPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "ui", hash + ".recording-plans.json");
         _executable = Path.Combine(AppContext.BaseDirectory, "Recorder", "NPEduTools.Recorder.exe");
@@ -49,8 +55,10 @@ public sealed class RecordingService : IAsyncDisposable
     {
         get
         {
-            var value = new AutomaticRecordingState(_enabled, _client, _modePaused() ? "课堂模式已暂停自动录制；原计划保留。" : _message, _ledger.Document.SkipDate,
-                _ledger.Document.Entries.TakeLast(20).Reverse().ToArray(), string.IsNullOrEmpty(_error) ? null : _error, _modePaused());
+            bool localPause = _modePaused(), remotePause = _remoteExamPaused();
+            var value = new AutomaticRecordingState(_enabled, _client,
+                remotePause ? "远程考试状态已暂停自动录制；原计划保留。" : localPause ? "课堂模式已暂停自动录制；原计划保留。" : _message, _ledger.Document.SkipDate,
+                _ledger.Document.Entries.TakeLast(20).Reverse().ToArray(), string.IsNullOrEmpty(_error) ? null : _error, localPause || remotePause);
             // Long Unicode paths/reasons must not make the entire status endpoint exceed its frame limit.
             while (value.Recent.Length > 0 && JsonSerializer.SerializeToUtf8Bytes(value, Protocol.Json).Length > 32000)
                 value = value with { Recent = value.Recent[..^1] };
@@ -64,6 +72,16 @@ public sealed class RecordingService : IAsyncDisposable
     }
     public async Task<HostResponse> HandleAsync(HostRequest request)
     {
+        if (request.Capability == "recording.status" || request.Capability == "recording.automatic" && request.Automatic?.Action == "lease")
+            return await HandleCoreAsync(request);
+        using var reservation = _runtimeGate.TryEnterMutation();
+        if (reservation is null) return new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy",
+            "正在切换运行环境，请等待操作结束。", Recording: State, Automatic: Automatic);
+        return await HandleCoreAsync(request);
+    }
+
+    private async Task<HostResponse> HandleCoreAsync(HostRequest request)
+    {
         if (request.Capability == "recording.status") return Reply(request);
         await _gate.WaitAsync();
         try
@@ -75,6 +93,9 @@ public sealed class RecordingService : IAsyncDisposable
                 if (command.Action == "start")
                 {
                     if (State.Control?.SessionId == request.RequestId) return Reply(request);
+                    if (Volatile.Read(ref _runtimeReserved) != 0)
+                        return new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy",
+                            "正在切换运行环境，请等待操作结束后再开始录制。", Recording: State, Automatic: Automatic);
                     if (State.Active) throw new InvalidOperationException("已有录制会话，请先结束当前会话。");
                     await RetireAsync();
                     var control = new RecorderControl("Manual", request.RequestId, "", 0, RecorderDeadline.After(TimeSpan.FromSeconds(8)));
@@ -230,6 +251,9 @@ public sealed class RecordingService : IAsyncDisposable
             }
         }
         if (_modePaused()) { await StopAutomaticAsync("课堂模式暂停自动录制"); return; }
+        // N3 reserves an idle recorder before setting this pause. It only blocks new starts;
+        // it never sends a stop command and never clears the user's enabled/plan configuration.
+        if (_remoteExamPaused() || _runtimeGate.ExamRequested || Volatile.Read(ref _runtimeReserved) != 0) return;
         if (!_enabled || !reading.CanStart || now is null) { if (_enabled) _message = reading.Message; return; }
         DateOnly date = DateOnly.FromDateTime(now.Value.Date);
         var source = _clock.Schedule; if (source?.Date != date) source = null;
@@ -279,6 +303,57 @@ public sealed class RecordingService : IAsyncDisposable
         await _gate.WaitAsync();
         try { await StopAutomaticAsync("课堂模式暂停自动录制"); }
         finally { _gate.Release(); }
+    }
+    public async Task<IDisposable> ReserveIdleForRuntimeAsync(CancellationToken token = default)
+    {
+        await _gate.WaitAsync(token);
+        try
+        {
+            if (_stopping || Volatile.Read(ref _runtimeReserved) != 0 ||
+                !CanReserveForRuntime(State, _worker is { Alive: true }))
+                throw new RemoteExamException("RECORDING_BUSY");
+            Volatile.Write(ref _runtimeReserved, 1);
+            return new RuntimeOperationGate.Lease(() => Interlocked.Exchange(ref _runtimeReserved, 0));
+        }
+        finally { _gate.Release(); }
+    }
+    public static bool CanReserveForRuntime(RecordingState state, bool workerAlive) =>
+        !workerAlive && state.Phase is "Idle" or "Saved" or "Failed";
+
+    public async Task<IDisposable> FinishAndReserveForExamAsync(CancellationToken token)
+    {
+        await _gate.WaitAsync(token);
+        bool saving = false;
+        bool ownsReservation = false;
+        try
+        {
+            if (_stopping || Volatile.Read(ref _runtimeReserved) != 0) throw new RemoteExamException("RECORDING_BUSY");
+            Volatile.Write(ref _runtimeReserved, 1);
+            ownsReservation = true;
+            saving = State.Active;
+            if (_worker is not null && State is { Active: true, Control: { } control } && State.Phase != "Saving")
+            {
+                if (control.Owner == "Automatic")
+                    _ledger.Update(control.SessionId, "Finalizing", "学校切入考试，正常保存本节录制。", State);
+                await _worker.CommandAsync("stop", control);
+            }
+        }
+        catch { if (ownsReservation) Volatile.Write(ref _runtimeReserved, 0); throw; }
+        finally { _gate.Release(); }
+        try
+        {
+            var watch = Stopwatch.StartNew();
+            while (watch.Elapsed < TimeSpan.FromSeconds(60))
+            {
+                token.ThrowIfCancellationRequested();
+                if (saving && State.Phase == "Failed") throw new RemoteExamException("RECORDING_SAVE_FAILED");
+                if (CanReserveForRuntime(State, _worker is { Alive: true }))
+                    return new RuntimeOperationGate.Lease(() => Interlocked.Exchange(ref _runtimeReserved, 0));
+                await Task.Delay(100, token);
+            }
+            throw new RemoteExamException("RECORDING_SAVE_TIMEOUT");
+        }
+        catch { Volatile.Write(ref _runtimeReserved, 0); throw; }
     }
     public async Task StopAsync()
     {

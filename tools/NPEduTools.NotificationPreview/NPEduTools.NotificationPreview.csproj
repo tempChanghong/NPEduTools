@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>../../src/NPEduTools.PowerPoint.Assist/app.manifest</ApplicationManifest>
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" />
+    <Compile Include="../../src/NPEduTools.App/SchoolNotification.cs" Link="SchoolNotification.cs" />
+    <Compile Include="../../src/NPEduTools.App/SchoolNotificationWindow.xaml.cs" Link="SchoolNotificationWindow.xaml.cs" />
+    <Compile Include="../../src/NPEduTools.App/SchoolNotificationWindow.Attention.cs" Link="SchoolNotificationWindow.Attention.cs" />
+    <Page Include="../../src/NPEduTools.App/SchoolNotificationWindow.xaml" Link="SchoolNotificationWindow.xaml" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,98 @@
+<Window x:Class="NPEduTools.App.SchoolNotificationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="学校通知 · NPEduTools" Width="1120" Height="720"
+        WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="Manual"
+        Topmost="True" ShowActivated="False" ShowInTaskbar="True"
+        Background="{Binding Surface}" Foreground="White"
+        FontFamily="Segoe UI, Microsoft YaHei UI" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display" AutomationProperties.AutomationId="SchoolNotificationWindow">
+  <Window.Resources>
+    <Style TargetType="ScrollBar">
+      <Setter Property="Width" Value="12" />
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
+        <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+               Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" ViewportSize="{TemplateBinding ViewportSize}">
+          <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+          <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="White" Opacity="0.7" CornerRadius="3" Margin="3,0" /></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+          <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+        </Track>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="NotificationClose" TargetType="Button">
+      <Setter Property="Background" Value="White" /><Setter Property="Foreground" Value="{Binding Surface}" />
+      <Setter Property="BorderBrush" Value="White" /><Setter Property="BorderThickness" Value="2" />
+      <Setter Property="FontSize" Value="22" /><Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="32,14" /><Setter Property="MinWidth" Value="196" /><Setter Property="MinHeight" Value="64" /><Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Grid>
+        <Border x:Name="FocusCue" BorderBrush="White" BorderThickness="2" Margin="-6" Visibility="Collapsed" />
+        <Border x:Name="Outline" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+          <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        </Grid>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Outline" Property="Opacity" Value="0.9" /></Trigger>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="FocusCue" Property="Visibility" Value="Visible" /></Trigger>
+          <Trigger Property="IsPressed" Value="True"><Setter TargetName="Outline" Property="Opacity" Value="0.8" /></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Outline" Property="Opacity" Value="0.6" /></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+  </Window.Resources>
+  <Grid x:Name="LayoutRoot" KeyboardNavigation.TabNavigation="Cycle">
+    <Grid.RenderTransform><TranslateTransform x:Name="EntranceOffset" /></Grid.RenderTransform>
+    <Grid.ColumnDefinitions><ColumnDefinition x:Name="SignalColumn" Width="96" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+    <!-- Uninterrupted color bands balance the priority mark on the right. -->
+    <Grid x:Name="SignalPanel" IsHitTestVisible="False" Focusable="False">
+      <UniformGrid Columns="4">
+        <Rectangle Fill="{Binding TonePale}" /><Rectangle Fill="{Binding ToneLight}" />
+        <Rectangle Fill="{Binding ToneMiddle}" /><Rectangle Fill="{Binding ToneInner}" />
+      </UniformGrid>
+    </Grid>
+    <Grid x:Name="ContentGrid" Grid.Column="1" Margin="40">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <Grid MouseLeftButtonDown="HeaderDrag">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <TextBlock Text="NPEP / 学校通知" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <TextBlock Grid.Column="1" Text="{Binding HeaderLabel}" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+    </Grid>
+    <Border Grid.Row="1" Height="2" Background="White" Margin="0,20,0,24" />
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <ScrollViewer x:Name="MessageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                    PanningMode="VerticalOnly" Padding="0,0,12,0" Focusable="True" AutomationProperties.Name="通知完整内容">
+        <!-- Fill a short viewport to center the message; grow naturally for long scrollable text. -->
+        <Grid MinHeight="{Binding ViewportHeight, ElementName=MessageScroll}">
+        <StackPanel x:Name="MessageContent" VerticalAlignment="Center">
+          <TextBlock x:Name="NotificationTitle" Text="{Binding Notification.Title}" FontSize="44" FontWeight="Bold" TextWrapping="Wrap"
+                     LineHeight="60" LineStackingStrategy="BlockLineHeight" AutomationProperties.AutomationId="SchoolNotificationTitle" />
+          <TextBlock x:Name="NotificationBody" Text="{Binding Notification.Body}" FontSize="28" TextWrapping="Wrap"
+                     LineHeight="44" LineStackingStrategy="BlockLineHeight" Margin="0,22,0,0" AutomationProperties.AutomationId="SchoolNotificationBody" />
+        </StackPanel>
+        </Grid>
+      </ScrollViewer>
+      <StackPanel x:Name="PriorityMark" Grid.Column="1" Width="136" Margin="32,0,0,0" VerticalAlignment="Center"
+                  IsHitTestVisible="False" Focusable="False">
+        <Border Height="4" Background="White" />
+        <TextBlock Text="通知等级" FontSize="16" FontWeight="SemiBold" Margin="0,14,0,0" />
+        <TextBlock Text="{Binding PriorityNumber}" FontFamily="Segoe UI" FontSize="104" FontWeight="Bold"
+                   LineHeight="116" LineStackingStrategy="BlockLineHeight" />
+        <TextBlock Text="{Binding Appearance.Label}" FontSize="22" FontWeight="SemiBold" Margin="0,8,0,0" />
+      </StackPanel>
+    </Grid>
+    <Grid Grid.Row="3" Margin="0,24,0,0">
+      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <Border Grid.ColumnSpan="2" Height="2" Background="White" Margin="0,0,0,20" />
+      <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,0,20,0">
+        <TextBlock x:Name="NotificationSource" Text="{Binding Notification.Source}" TextWrapping="Wrap" FontSize="18" FontWeight="SemiBold" MaxHeight="52" />
+        <TextBlock Text="{Binding TimeLabel}" FontSize="16" Margin="0,6,0,0" TextWrapping="Wrap" />
+      </StackPanel>
+      <Button x:Name="DismissButton" Grid.Row="1" Grid.Column="1" Content="关闭通知  ×" Style="{StaticResource NotificationClose}"
+              Click="DismissClicked" AutomationProperties.Name="关闭通知" AutomationProperties.AutomationId="SchoolNotificationDismiss" />
+    </Grid>
+    </Grid>
+  </Grid>
+</Window>

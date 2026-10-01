@@ -1,0 +1,49 @@
+{
+  "capturedAt": "2026-09-21T14:34:17.6264020Z",
+  "workflows": [
+    {
+      "repo": "NPClassworks",
+      "state": "active",
+      "name": "Deploy production server",
+      "path": ".github/workflows/production-deploy.yml",
+      "id": 345174965
+    },
+    {
+      "repo": "NPClassworksKV",
+      "state": "active",
+      "name": "Deploy production server",
+      "path": ".github/workflows/production-deploy.yml",
+      "id": 345174964
+    },
+    {
+      "repo": "NPClassworksKV",
+      "state": "active",
+      "name": "Docker Build and Push",
+      "path": ".github/workflows/docker-publish.yml",
+      "id": 330817952
+    }
+  ],
+  "refs": [
+    {
+      "repo": "NPClassworks",
+      "sha": "19756f654f94006084d1d954b8be4171db7c9a18",
+      "branch": "main"
+    },
+    {
+      "repo": "NPClassworks",
+      "sha": "37a3f1b01585fd8cfc751c921668a84d5c41264f",
+      "branch": "codex/npep-n1-admin-ui"
+    },
+    {
+      "repo": "NPClassworksKV",
+      "sha": "f731f3227a7c59585aff940f78354585d3b016b7",
+      "branch": "main"
+    },
+    {
+      "repo": "NPClassworksKV",
+      "sha": "e660876c8a22004e14a053a70985d5b350e42d0d",
+      "branch": "codex/npep-n1-server"
+    }
+  ],
+  "activeRuns": []
+}

@@ -13,6 +13,17 @@ public static class ClassIslandProcess
 {
     public sealed record Instance(int Id, long Started, bool Elevated);
 
+    public static bool IsElevated(int processId)
+    {
+        using var handle = OpenProcess(0x1000, false, processId);
+        if (handle.IsInvalid || !OpenProcessToken(handle, 8, out var token)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        using (token)
+        {
+            if (!GetTokenInformation(token, 20, out int elevated, sizeof(int), out _)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            return elevated != 0;
+        }
+    }
+
     public static string UserSid(int processId)
     {
         using var handle = OpenProcess(0x1000, false, processId);
@@ -87,10 +98,12 @@ public static class ClassIslandProcess
     internal static void RequestNormalExit(Instance instance)
         => RequestNormalExitCore(instance);
 
-    public static async Task EnsureStoppedAsync(string executable, string sid, int session)
+    public static async Task EnsureStoppedAsync(string executable, string sid, int session, Instance? expected = null)
     {
         var existing = Find(executable, sid, session);
         if (existing is null) return;
+        if (expected is not null && (existing.Id != expected.Id || existing.Started != expected.Started))
+            throw new InvalidOperationException("ClassIsland 实例已变化，未向新实例发送退出请求。");
         RequestNormalExitCore(existing);
         for (int i = 0; i < 50; i++)
         {

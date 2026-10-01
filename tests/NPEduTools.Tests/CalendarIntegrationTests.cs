@@ -2,6 +2,7 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.Tests;
 
+[Collection(ProcessIntegrationCollection.Name)]
 public sealed class CalendarIntegrationTests
 {
     private static string Pipe() => "NPEduTools.Test.calendar." + Guid.NewGuid().ToString("N");

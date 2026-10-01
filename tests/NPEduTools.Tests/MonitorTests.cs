@@ -5,6 +5,7 @@ using NPEduTools.Contracts;
 namespace NPEduTools.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection(ProcessIntegrationCollection.Name)]
 public sealed class MonitorTests
 {
     private static string Pipe() => "NPEduTools.Test." + Guid.NewGuid().ToString("N");

@@ -5,6 +5,7 @@ using NPEduTools.PowerPoint.Diagnostics;
 namespace NPEduTools.Tests;
 
 [SupportedOSPlatform("windows")]
+[Collection(ProcessIntegrationCollection.Name)]
 public sealed class PowerPointWorkerTests
 {
     [Fact]

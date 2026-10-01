@@ -53,6 +53,8 @@ public partial class MainWindow
         if (!atLogin || !_startupPreferences.EdgeOnlyAtLogin) Show();
         _watch = WatchAsync(_lifetime.Token);
         _management = ManagementLoopAsync(_lifetime.Token);
+        _ = NpepPollAsync();
+        _ = NotificationPollAsync();
         _touchPoll = TouchPollAsync(_lifetime.Token);
         StartOnboarding(atLogin);
     }
@@ -106,7 +108,7 @@ public partial class MainWindow
             LoginStartupToggle.IsEnabled = state != "Conflict";
             LoginStartupMessage.Text = state switch
             {
-                "Registered" => "已登记当前用户的登录启动项。若在 Windows 中禁用，请到“启动应用”重新启用。",
+                "Registered" => "已登记当前用户的登录启动项。启动时需允许 Windows 管理员授权，取消则不运行；若启动项被禁用，请到 Windows“启动应用”启用。",
                 "Conflict" => "同名启动项指向其他位置。请先在原位置关闭自启动，再使用此处设置。",
                 _ => "尚未设置登录启动。开启后，从当前程序位置启动。"
             };

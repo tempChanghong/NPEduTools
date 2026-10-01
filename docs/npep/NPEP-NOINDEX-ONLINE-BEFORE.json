@@ -1,0 +1,32 @@
+[
+  {
+    "path": "/",
+    "status": 200,
+    "robots": "<meta name=\"robots\" content=\"index, follow\" />"
+  },
+  {
+    "path": "/settings",
+    "status": 200,
+    "robots": "<meta name=\"robots\" content=\"index, follow\" />"
+  },
+  {
+    "path": "/classworks-admin",
+    "status": 200,
+    "robots": "<meta name=\"robots\" content=\"index, follow\" />"
+  },
+  {
+    "path": "/setup",
+    "status": 200,
+    "robots": "<meta name=\"robots\" content=\"index, follow\" />"
+  },
+  {
+    "path": "/classworks-2",
+    "status": 200,
+    "robots": "<meta name=\"robots\" content=\"index, follow\" />"
+  },
+  {
+    "path": "/404",
+    "status": 200,
+    "robots": "<meta name=\"robots\" content=\"index, follow\" />"
+  }
+]

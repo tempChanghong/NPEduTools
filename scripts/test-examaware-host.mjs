@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -15,6 +15,7 @@ import net from 'node:net';
 const options = Object.fromEntries(Array.from({ length: (process.argv.length - 2) / 2 }, (_, i) =>
   [process.argv[2 + i * 2], process.argv[3 + i * 2]]));
 const e4 = options['--e4'] === 'true';
+const plans = options['--plans'] === 'true';
 assert.ok(options['--source'], 'Provide --source pointing to the built ExamAware2 checkout.');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = resolve(options['--source']);
@@ -66,11 +67,14 @@ if (${e4}) {
 import(require('node:url').pathToFileURL(${JSON.stringify(join(desktop, 'dist/main/index.js'))}).href);
 `);
 const pipe = `NPEduTools.Test.examaware.real.${randomUUID()}`;
-const e3 = options['--e3'] === 'true' || e4;
-const hostExe = e3 ? join(root, 'tests/NPEduTools.ExamAware.TestHost/bin/Release/net10.0/NPEduTools.ExamAware.TestHost.exe') : join(root, 'src/NPEduTools.Host/bin/Release/net10.0/NPEduTools.Host.exe');
+const e3 = options['--e3'] === 'true' || e4 || plans;
+const hostExe = options['--host'] ? resolve(options['--host']) : e3 ? join(root, 'tests/NPEduTools.ExamAware.TestHost/bin/Release/net10.0/NPEduTools.ExamAware.TestHost.exe') : join(root, 'src/NPEduTools.Host/bin/Release/net10.0/NPEduTools.Host.exe');
 let host, ea, page;
+let sourceCommit = null;
+try { sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+catch { /* A copied source-build fixture has no Git metadata; record its entry hash instead. */ }
 const summary = {
-  sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8', windowsHide: true }).trim(),
+  sourceCommit, sourceEntrySha256: createHash('sha256').update(await readFile(join(desktop, 'dist/main/index.js'))).digest('hex'),
   hostVersion: version, pluginVersion: plugin.version, mode: 'isolated-source-build', checks: [],
   limits: ['Not an official packaged release', 'Native file/message dialogs adapted; permission dialog and installer are real',
     'Protocol registry writes blocked; second-instance command-line deeplinks are tested',
@@ -189,6 +193,59 @@ try {
   summary.connected = connected;
   await page.screenshot({ path: join(output, 'connected-home.png') });
   check('renderer pairing import, real SDK TCP, authenticated version and auto-start readback');
+  if (plans) {
+    assert.equal((await request('examaware.config.set', { executablePath: electronPath, expectedRevision: connected.revision })).outcome, 'Succeeded');
+    const revision = (await status()).revision;
+    assert.equal((await status()).canPresent, true);
+    const config = { examName: '本机桥接放映验收', message: '隔离测试，不是正式考试', examInfos: [
+      { name: '桥接语文测试', start: '2026-09-28T09:00:00', end: '2026-09-28T11:00:00', alertTime: 15, materials: [] }
+    ] };
+    const plan = async data => {
+      const reply = await request('examaware.plan', { expectedRevision: revision,
+        examPlan: { action: 'prepare', dataBase64: Buffer.from(JSON.stringify(data)).toString('base64') } });
+      assert.equal(reply.outcome, 'Accepted');
+      await until(async () => (await status()).planOperation?.state !== 'Sending', 'official plan validation');
+      return status();
+    };
+    assert.equal((await plan({ bad: true })).planOperation.state, 'Invalid');
+    check('real official validator rejects malformed exam configuration');
+    const prepared = await plan(config);
+    assert.equal(prepared.planOperation.state, 'Prepared');
+    assert.equal(prepared.preparedPlan.examName, config.examName);
+    assert.equal(prepared.preparedPlan.exams.length, 1);
+    assert.equal(ea.windows().some(p => p.url().includes('/player')), false);
+    check('real prepare returns summary without opening player');
+    const start = await request('examaware.plan', { expectedRevision: revision, examPlan: { action: 'start', preparationId: prepared.preparedPlan.preparationId } });
+    assert.equal(start.outcome, 'Accepted');
+    await until(async () => (await status()).planOperation?.state === 'Started', 'official player start');
+    const playerPage = await until(() => ea.windows().find(p => p.url().includes('/player')), 'real player window');
+    await playerPage.getByText('桥接语文测试', { exact: true }).first().waitFor();
+    await until(async () => { const s = await status(); return s.player?.sessions.some(x => x.id === s.planOperation.sessionId && x.state === 'ready'); }, 'actual ready readback');
+    await playerPage.screenshot({ path: join(output, 'exam-plan-player.png') });
+    check('real player renders selected exam and official session reads ready');
+    assert.equal((await request('examaware.plan', { requestId: start.requestId, expectedRevision: revision,
+      examPlan: { action: 'start', preparationId: prepared.preparedPlan.preparationId } })).errorCode, 'AlreadyAccepted');
+    const next = await plan(config);
+    assert.equal((await request('examaware.plan', { expectedRevision: revision,
+      examPlan: { action: 'start', preparationId: next.preparedPlan.preparationId } })).errorCode, 'PlayerBusy');
+    assert.equal(ea.windows().filter(p => p.url().includes('/player')).length, 1);
+    check('duplicate and existing player do not create or replace presentation');
+    await ea.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('/player')).close());
+    // ExamAware intentionally ignores a native close; the renderer's exit action authorizes it.
+    assert.equal(playerPage.isClosed(), false);
+    await playerPage.evaluate(() => window.api.player.exitWindow());
+    await until(async () => (await status()).player?.lastSession?.state === 'closed', 'closed readback');
+    check('normal player close reads closed, not just disconnected');
+    await page.evaluate(() => window.api.plugins.toggle('npedutools-examaware-bridge', false));
+    await state('Disconnected'); assert.equal((await status()).preparedPlan, null);
+    await page.evaluate(() => window.api.plugins.toggle('npedutools-examaware-bridge', true));
+    await state('Connected');
+    assert.equal((await request('examaware.plan', { expectedRevision: revision,
+      examPlan: { action: 'start', preparationId: next.preparedPlan.preparationId } })).errorCode, 'PlanExpired');
+    summary.guards = await ea.evaluate(() => globalThis.testGuards);
+    assert.equal(summary.guards.loginItemWrites, 0);
+    check('plugin restart invalidates preparation; no login startup writes');
+  } else {
   await page.evaluate(() => window.api.plugins.reload('npedutools-examaware-bridge'));
   await state('Connected');
   await until(async () => await page.getByText('连接 NPEduTools', { exact: true }).count() === 1, 'one card after reload');
@@ -344,6 +401,7 @@ try {
     assert.equal((await request('examaware.quit')).outcome, 'Accepted');
     await until(async () => (await status()).quit?.state === 'Exited', 'player normal quit');
     ea = null; check('active exam player exits through official SDK with OS confirmation');
+  }
   }
   summary.result = 'passed';
 } catch (error) {

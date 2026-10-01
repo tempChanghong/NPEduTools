@@ -1,0 +1,1130 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "NPEP-EXAM-20260928",
+  "capturedAt": "2026-09-28T12:45:07.544Z",
+  "status": "working-tree-review-only",
+  "scope": "Changed and untracked source/documentation files relative to each baseHead, not a deployable archive. Manifest excludes itself. Ignored build outputs and private local state are not release inputs. Final commits and artifacts remain pending review.",
+  "repositories": [
+    {
+      "name": "NPEduTools",
+      "root": "D:/CodeProjects/NPEduTools",
+      "branch": "codex/npep-n1-ci",
+      "baseHead": "862c44d8bf9650092b6e210b3bbe3ad72537edfc",
+      "observedRemoteMain": "2d25809eabf26d360337b1517dac7c0c735b21f6",
+      "mainVersusHeadLeftRight": "0\t25",
+      "included": [
+        {
+          "path": "docs/DEVELOPER-LEARNING-GUIDE.md",
+          "state": "untracked",
+          "sha256": "4612b0313aa90dd45d522982aad3d223aeaa05cac432364b62d1b041d15fb7cc"
+        },
+        {
+          "path": "docs/NPEP-FOUNDATION-PLAN.md",
+          "state": "modified",
+          "sha256": "63691389f4da679b9a01ad234ef60967b60b1b1cfd19bae675dc5f29eb075aea"
+        },
+        {
+          "path": "docs/examples/examaware-plan-example.json",
+          "state": "untracked",
+          "sha256": "4cb3ef37839bc0e77e68d4444d2cbf527f7a21b537a480d4f5a74279cf5a603a"
+        },
+        {
+          "path": "docs/npep/EXAM-MODE-ARCHITECTURE-20260927.md",
+          "state": "untracked",
+          "sha256": "9b0d38db1326b8d97fe7ebe7c6afa191d3c42243be3dbf3ab5a976102388d9d0"
+        },
+        {
+          "path": "docs/npep/EXAM-MODE-OVERVIEW.md",
+          "state": "untracked",
+          "sha256": "125c18f19c47e0880c62c4ac9276fba5fcf0b5a220a71bd33171e8ab224f5956"
+        },
+        {
+          "path": "docs/npep/EXAM-PRIORITY-20260928.md",
+          "state": "untracked",
+          "sha256": "476c3cae63cc20e8bc6c869bf93ac754d237ff0ff89c18a7fb262d3dc83df31b"
+        },
+        {
+          "path": "docs/npep/EXAMAWARE-PLAN-LOCAL.md",
+          "state": "untracked",
+          "sha256": "3f6fad021f30145071b3d44933077cac7b4400a65847fa888779f6007d8eccd7"
+        },
+        {
+          "path": "docs/npep/EXAMAWARE-PLAN-REMOTE.md",
+          "state": "untracked",
+          "sha256": "cf4e4ed8743fdf33ee76797e74202c031088e1d5b98ccb6355fa79e7734abc32"
+        },
+        {
+          "path": "docs/npep/NPEP-N1-ACTIVATION-RESULT.md",
+          "state": "untracked",
+          "sha256": "b6145b68dc6fa78db84efc4554bd26372ccdaeb96e3f1735abb1bfc679a5514d"
+        },
+        {
+          "path": "docs/npep/NPEP-N1-DEVICE-GUIDE.md",
+          "state": "modified",
+          "sha256": "87bc26555f38637a4cc6192e9274d8feac6c1f30ffbf7a711ad91ec7cdbd4bde"
+        },
+        {
+          "path": "docs/npep/NPEP-N1-FUNCTIONAL-CHECKLIST-20260924.md",
+          "state": "untracked",
+          "sha256": "ea88764944ccc73441fef34baa0503d251870c4bfee9b240009fbfb10bc324e0"
+        },
+        {
+          "path": "docs/npep/NPEP-N1-PILOT-PROGRESS-20260924.md",
+          "state": "untracked",
+          "sha256": "5e5a80196c53839df53e1a56aa6ac3312bc5d6e93170103d4f38da1f25100363"
+        },
+        {
+          "path": "docs/npep/NPEP-N2-BACKEND-DEPLOYMENT-20260924.md",
+          "state": "untracked",
+          "sha256": "18be29c23fe6adbd9bb69b24ee885187c261c344b71506ed621e671547c31cb3"
+        },
+        {
+          "path": "docs/npep/NPEP-N2-CUSTOM-NOTIFICATION-UI.md",
+          "state": "untracked",
+          "sha256": "54da1a990112a158f065f88b8590f4b6ea9db6c6f4568bb664d6ecdd32731606"
+        },
+        {
+          "path": "docs/npep/NPEP-N2-DELIVERY-REPORT.md",
+          "state": "untracked",
+          "sha256": "5340fd6da9c97623844db81b36e459413dd25f3f4865313905cb21f9dc0fcb4c"
+        },
+        {
+          "path": "docs/npep/NPEP-N3-COMPLETION-20260926.md",
+          "state": "untracked",
+          "sha256": "0ea756af3119f56f7b0d96569d6d73cfd1ad091df25ed74e0ad4ea5c5fad0940"
+        },
+        {
+          "path": "docs/npep/NPEP-N3-KERNEL-IMPLEMENTATION-20260925.md",
+          "state": "untracked",
+          "sha256": "e3d5cafe38045a3f977b8a3d78d0f09d99609fd2f2718cbc283b7034663c8a0a"
+        },
+        {
+          "path": "docs/npep/NPEP-N3-LOCAL-ADAPTER-20260926.md",
+          "state": "untracked",
+          "sha256": "4aa3f5ff1a5b0d99837a2cdb4828394c2c9b2d58e785b3adf5082fdb55d40081"
+        },
+        {
+          "path": "docs/npep/NPEP-N3-LOCAL-CONSENT-20260926.md",
+          "state": "untracked",
+          "sha256": "0834713b968c8f646323260280725f240371c1b7aa0817d1bb07d1ce62c71e3f"
+        },
+        {
+          "path": "docs/npep/NPEP-N3-MODE-CONTROL-PLAN.md",
+          "state": "untracked",
+          "sha256": "638931e3b4b906f71a7e16e3b8e7795c7a607044821136558cb11b367bcc15a8"
+        },
+        {
+          "path": "docs/npep/NPEP-N3-RUNTIME-CONTROL-PLAN.md",
+          "state": "untracked",
+          "sha256": "dcb3343cec54fb7c205e4fa7a492af1219b9b4ee0c9e9e119f96ef18cf5f1478"
+        },
+        {
+          "path": "docs/npep/NPEP-N3-WEB-DELIVERY-20260926.md",
+          "state": "untracked",
+          "sha256": "03eecb77dc7d0c873cc4dd1b48cc32813f198d8db82989b0aa8311d66a8c2a50"
+        },
+        {
+          "path": "docs/npep/NPEP-STARTUP-AND-TLS-20260926.md",
+          "state": "untracked",
+          "sha256": "3af1828ab2134ad73cf8e4e875a869a973efc974a769d16e8b241e0925199449"
+        },
+        {
+          "path": "docs/npep/README.md",
+          "state": "modified",
+          "sha256": "977e34bc2a6501a4696de7624252c2903739a4c7cd11db5e96c5b43ff3051730"
+        },
+        {
+          "path": "docs/npep/REMOTE-DAILY-20260928.md",
+          "state": "untracked",
+          "sha256": "b59bae161a677c7bd6ab16bfc1edeb9feae2e94b8c6a8d52aef7b51325883154"
+        },
+        {
+          "path": "docs/npep/n3-examples.json",
+          "state": "untracked",
+          "sha256": "e2997eab327fb064fe29d0abe13c8a9cea34185d501ed90756c8fc3734f36809"
+        },
+        {
+          "path": "docs/npep/n3-wire.schema.json",
+          "state": "untracked",
+          "sha256": "e1b4110a0f564a8daa9797a74244880a74eed24ae4ba1eccf32a7da7b6357d96"
+        },
+        {
+          "path": "docs/npep/n4-exam-plan.schema.json",
+          "state": "untracked",
+          "sha256": "bad74d935f815427d0943ba67abc8d07e9e6c1ac3380715bf017dc6b75dacdc3"
+        },
+        {
+          "path": "docs/releases/NPEP-EXAM-20260928-REVIEW.md",
+          "state": "untracked",
+          "sha256": "6a26de7a9b006fd0be9b1009083cd6744532a1fc889248a91f036145d660092e"
+        },
+        {
+          "path": "docs/releases/NPEP-N1-preview-20260924.md",
+          "state": "untracked",
+          "sha256": "16046ee48b4c882ea45f27e295d2e42c5d6329da7cf76d4966a8de2118643d3e"
+        },
+        {
+          "path": "docs/releases/NPEP-N2-preview-20260924.md",
+          "state": "untracked",
+          "sha256": "134ee1e6b68c6af967cee85166c941da8eec986da8a675b4f7fa15f95d096689"
+        },
+        {
+          "path": "docs/releases/NPEP-N2-preview-20260925-r2.md",
+          "state": "untracked",
+          "sha256": "e506dd671bbd525d08082c7a3d1fdcb6cb5c23f7cdf6e5532115c59c6740bd7b"
+        },
+        {
+          "path": "docs/releases/NPEP-N2-preview-20260925-r3.md",
+          "state": "untracked",
+          "sha256": "30a2a01a508228c2fd00297a0b250b757da9b875268893a15ec10a587c952627"
+        },
+        {
+          "path": "docs/releases/NPEP-N2-preview-20260925.md",
+          "state": "untracked",
+          "sha256": "ac58ae5106dcc77b29098c99c7b2d0a1cc8cd8b089d094c6be76349b9ce4ce73"
+        },
+        {
+          "path": "plugins/npedutools-examaware-bridge/README.md",
+          "state": "modified",
+          "sha256": "9633115eac6584f899aff636641269a2f573abcd8dbcb13d9efd79881c80eae1"
+        },
+        {
+          "path": "plugins/npedutools-examaware-bridge/package-lock.json",
+          "state": "modified",
+          "sha256": "51a6535bd409d271daa8f54a50449897e1dfc895db7018ff523e1c8084c24669"
+        },
+        {
+          "path": "plugins/npedutools-examaware-bridge/package.json",
+          "state": "modified",
+          "sha256": "44e6d59999461b3d4c544bd27cbfb55145b1b17ebd8013383d3cabbc9305621f"
+        },
+        {
+          "path": "plugins/npedutools-examaware-bridge/src/main.ts",
+          "state": "modified",
+          "sha256": "b81c5f2672953b0e08356f1cc4f65708c307ffeed90f06f532f0353c982b6c51"
+        },
+        {
+          "path": "plugins/npedutools-examaware-bridge/src/plans.ts",
+          "state": "untracked",
+          "sha256": "8054b53ecdf43d26dda4a592bdaf17a8d978d1d4d4ac87866973b85c8b83f26f"
+        },
+        {
+          "path": "plugins/npedutools-examaware-bridge/test/bridge.test.mjs",
+          "state": "modified",
+          "sha256": "19fa0f48ea7228089daba7f6eb93a6d44a8a65304a381b25ea117f6db1c116bc"
+        },
+        {
+          "path": "scripts/check-npep-exam-plan-contract.mjs",
+          "state": "untracked",
+          "sha256": "2ad62d7766a2decb381e3169a9edf1eb946d468c18ec4e73b990fb64b3943d51"
+        },
+        {
+          "path": "scripts/check-npep-n3-contract.mjs",
+          "state": "untracked",
+          "sha256": "6232d5ff3138ba9e341e97d27ab820d529d7651ac576b57803c2e77ca28a4bbb"
+        },
+        {
+          "path": "scripts/test-examaware-host.mjs",
+          "state": "modified",
+          "sha256": "69367c966b2129ef2070c607b88b52d06183b7517ea39d1ad844edd0a52b08e1"
+        },
+        {
+          "path": "scripts/test-npep-exam-plans.ps1",
+          "state": "untracked",
+          "sha256": "066af6ce4620c61461ccecbee1063c91eabdc43d115bf45eded6169c9bc50c05"
+        },
+        {
+          "path": "scripts/test-npep-n3.ps1",
+          "state": "untracked",
+          "sha256": "f903d3f128890c523d83db7b4776e0c5e3856e2c0640f5992a55b26a77acb4a5"
+        },
+        {
+          "path": "src/NPEduTools.App/App.xaml.cs",
+          "state": "modified",
+          "sha256": "fca14dbf75c387ccfc8ae865d56f976092b97ca33081510d3a4ed3b1c806fd3f"
+        },
+        {
+          "path": "src/NPEduTools.App/ExamAwareWindow.Plans.cs",
+          "state": "untracked",
+          "sha256": "aa88079f2608504379d70c9bf6151dd8c0c496649b9ba4195faa036f31239495"
+        },
+        {
+          "path": "src/NPEduTools.App/ExamAwareWindow.xaml",
+          "state": "modified",
+          "sha256": "36fecf96a88b9b02d7ff8531eb47f460b46dd0a26d01d00f5123eff0078bbdfe"
+        },
+        {
+          "path": "src/NPEduTools.App/ExamAwareWindow.xaml.cs",
+          "state": "modified",
+          "sha256": "440c6c0c8043bd23c67c7e0eb9bd4d5801ddb704c3972f30df5744a48e25f6a4"
+        },
+        {
+          "path": "src/NPEduTools.App/MainWindow.NotificationDelivery.cs",
+          "state": "untracked",
+          "sha256": "9baba668172bc64e5ef9cbd465c59b51ea25e5fdc61b3466cc864efe385f3698"
+        },
+        {
+          "path": "src/NPEduTools.App/MainWindow.Notifications.cs",
+          "state": "untracked",
+          "sha256": "b82e06994b673a04f31205efdbafc5fa57d1bfc9862c7182bed9e62b60bfb107"
+        },
+        {
+          "path": "src/NPEduTools.App/MainWindow.Npep.cs",
+          "state": "modified",
+          "sha256": "95dbf43e973e6bca29aa398fbacb563fcad8e60c48eed824d6542f8501c916db"
+        },
+        {
+          "path": "src/NPEduTools.App/MainWindow.RemoteExam.cs",
+          "state": "untracked",
+          "sha256": "13bd8a98fcc3505648e983aacc99a3c994e10ef378b54057a89eea41298e91f5"
+        },
+        {
+          "path": "src/NPEduTools.App/MainWindow.Startup.cs",
+          "state": "modified",
+          "sha256": "2d0347a9ff7ba72e9ea1be00c4b11f094f3d6fcadfa3b5d73f6995ffa3993318"
+        },
+        {
+          "path": "src/NPEduTools.App/MainWindow.xaml",
+          "state": "modified",
+          "sha256": "8d734f5b631a2b40084fe512041168e7a30d65d50459e2a7f143660d098bf93a"
+        },
+        {
+          "path": "src/NPEduTools.App/MainWindow.xaml.cs",
+          "state": "modified",
+          "sha256": "a98447c687797f1f8897f7bfa874869ad5a5594cb97a0416d7362575b76f6109"
+        },
+        {
+          "path": "src/NPEduTools.App/NPEduTools.App.csproj",
+          "state": "modified",
+          "sha256": "0e2c9d6d7878e45a7c091b566d1dc74bdecc50fb403d7312301b63110ea154a7"
+        },
+        {
+          "path": "src/NPEduTools.App/SchoolNotification.cs",
+          "state": "untracked",
+          "sha256": "48851b867ebca1fe5864173d3f4f9e7b2c45e206cf65ddd9b7e591b193c97332"
+        },
+        {
+          "path": "src/NPEduTools.App/SchoolNotificationWindow.Attention.cs",
+          "state": "untracked",
+          "sha256": "8fce5eeb16b3403db63953c250c91d2ea4f109635674c81903cd9765fc74eeaf"
+        },
+        {
+          "path": "src/NPEduTools.App/SchoolNotificationWindow.xaml",
+          "state": "untracked",
+          "sha256": "d52434d5e0b76e99b72b972d19734232cecfa22e4a0ee789197dcad4dbae0424"
+        },
+        {
+          "path": "src/NPEduTools.App/SchoolNotificationWindow.xaml.cs",
+          "state": "untracked",
+          "sha256": "c1aa83c4f145bea378fd624e5d89a87477207ac399343a6e4e35c9e5e2a90f9c"
+        },
+        {
+          "path": "src/NPEduTools.App/StartupElevation.cs",
+          "state": "untracked",
+          "sha256": "cf53fde631c7d917fc37bf21492ccffce76520a44d13b6440a8082f66a43edb9"
+        },
+        {
+          "path": "src/NPEduTools.App/app.manifest",
+          "state": "untracked",
+          "sha256": "b3028c060daf20a9020ec5b8bcfe9169fb8439c544af9364e7961b0385484a93"
+        },
+        {
+          "path": "src/NPEduTools.ClassIsland.Admin/AdminClient.cs",
+          "state": "modified",
+          "sha256": "6417b10a4381450136d719ce8be22213c60cddd92219dd69fc2e25a603531900"
+        },
+        {
+          "path": "src/NPEduTools.ClassIsland.Admin/AdminModels.cs",
+          "state": "modified",
+          "sha256": "9d59a2a723026f1036a5c0e6022dd75c694e98bdef3f5c04b6d380c9061eb9cd"
+        },
+        {
+          "path": "src/NPEduTools.ClassIsland.Admin/AdminOperationPolicy.cs",
+          "state": "untracked",
+          "sha256": "e4148c939b6f581b5985bb29539a2b57853d0bf3b32024cf2f9a587faad2f859"
+        },
+        {
+          "path": "src/NPEduTools.ClassIsland.Admin/ClassIslandProcess.cs",
+          "state": "modified",
+          "sha256": "27d6da34cefff0f346ef3cb9c0013ec5e1ad6a42855ba56588e28af1308e26cd"
+        },
+        {
+          "path": "src/NPEduTools.ClassIsland.Admin/ClassIslandRuntime.cs",
+          "state": "untracked",
+          "sha256": "c14ea6eab59821bc7416dbf900d5228ae254076a63c282928b5a80f72b74979c"
+        },
+        {
+          "path": "src/NPEduTools.ClassIsland.Admin/Program.cs",
+          "state": "modified",
+          "sha256": "20756160057799f32010e4d94b1b5b2df0415c9dbda70f58a11a1c1fdd1edcfc"
+        },
+        {
+          "path": "src/NPEduTools.Contracts/ExamAware.cs",
+          "state": "modified",
+          "sha256": "e8414cb480a2f2e032ce2ebf425a5e83dbbbd8492d59a3217cb2ced9824fc10a"
+        },
+        {
+          "path": "src/NPEduTools.Contracts/ExamAwarePlans.cs",
+          "state": "untracked",
+          "sha256": "e415a38cebd7ed28ca438794056c106cd47edb445069dd402987e53c7ea187b4"
+        },
+        {
+          "path": "src/NPEduTools.Contracts/Npep.cs",
+          "state": "modified",
+          "sha256": "cd70f2f57707a7c70dc58c18134ccb56792b6b43148736ddbb39339e536b50f7"
+        },
+        {
+          "path": "src/NPEduTools.Contracts/NpepNotifications.cs",
+          "state": "untracked",
+          "sha256": "5ea850d6386b579d1a29a85e1321291f50cdd329947eaf5c8ef2e51360e0be26"
+        },
+        {
+          "path": "src/NPEduTools.Contracts/Protocol.cs",
+          "state": "modified",
+          "sha256": "0d4dabc8c1957731769bfe3092334ee561d6ad82b10e7212933e3f93048baabe"
+        },
+        {
+          "path": "src/NPEduTools.Contracts/RemoteExam.cs",
+          "state": "untracked",
+          "sha256": "5c323892b5a7475fb5980105f5e66c73fd7fdcd21f4fd5ba532fd7bf4dda02cf"
+        },
+        {
+          "path": "src/NPEduTools.Core/RuntimeOperationFile.cs",
+          "state": "untracked",
+          "sha256": "b07775717560fabc23efb71795cb23e78984cabca8b3cd146d2094b6e9995623"
+        },
+        {
+          "path": "src/NPEduTools.Host/ClassroomModeEffects.RemoteDaily.cs",
+          "state": "untracked",
+          "sha256": "595d0121ae375e347ab29450ab1b78d497f57d2d2e056448bfed245c4285f702"
+        },
+        {
+          "path": "src/NPEduTools.Host/ClassroomModeEffects.cs",
+          "state": "modified",
+          "sha256": "193dd0ba75308ffe8b18c56a375522e2b09988376ab01074b74e09ccd3fae82d"
+        },
+        {
+          "path": "src/NPEduTools.Host/ClassroomModeService.RemoteExam.cs",
+          "state": "untracked",
+          "sha256": "423bd15617242bbb42826af5532a8c05afabfb669a050e68994b6f7df294d0ad"
+        },
+        {
+          "path": "src/NPEduTools.Host/ClassroomModeService.cs",
+          "state": "modified",
+          "sha256": "2b923f22df02c900c91c1dbc64631fd40af9c656ff248eb4ea6fafa753300e2d"
+        },
+        {
+          "path": "src/NPEduTools.Host/ClassroomStartupCoordinator.cs",
+          "state": "untracked",
+          "sha256": "07545f97b52a70c6e0f685955e3aad6b86e488c471d687e10f77eb1f0b71feff"
+        },
+        {
+          "path": "src/NPEduTools.Host/ExamAwareService.Plans.cs",
+          "state": "untracked",
+          "sha256": "9ef74e37b63968013150094bf845aa307f1f11ed4a2a0b3cc7e924f70f50b3f0"
+        },
+        {
+          "path": "src/NPEduTools.Host/ExamAwareService.cs",
+          "state": "modified",
+          "sha256": "b222de7366002328b1ac2c50f8579d2941a954d9f3147a84fa8b55443aa6719f"
+        },
+        {
+          "path": "src/NPEduTools.Host/ExamAwareTarget.cs",
+          "state": "modified",
+          "sha256": "e42189ddd7c023182dd644b19acc8983f9582ef232c0bf944ce7257d3036872c"
+        },
+        {
+          "path": "src/NPEduTools.Host/ExamPlanTransport.cs",
+          "state": "untracked",
+          "sha256": "624f9e3f500c78c7a6cc4ca9b7b90c5afc4a16a2208f7f2ecde75dfd326e519c"
+        },
+        {
+          "path": "src/NPEduTools.Host/LaunchService.cs",
+          "state": "modified",
+          "sha256": "4a5c8aa1e7f5a743f580bd3cbce7b879638e80859187fc1fe20ff1ff9ce6c476"
+        },
+        {
+          "path": "src/NPEduTools.Host/NPEduTools.Host.csproj",
+          "state": "modified",
+          "sha256": "221a6aee42a33c237b38f1140361d86f9018074e9caec70cbd39617220f03b92"
+        },
+        {
+          "path": "src/NPEduTools.Host/PipeServer.RemoteExam.cs",
+          "state": "untracked",
+          "sha256": "140bad44081ea54062ad448c9c3259cfff8bc4d8bf0332a58749f4e091ee83e0"
+        },
+        {
+          "path": "src/NPEduTools.Host/PipeServer.cs",
+          "state": "modified",
+          "sha256": "9e7b3a3a10d4117358a225bbd63c565496a228b33e28c600101f175083047d11"
+        },
+        {
+          "path": "src/NPEduTools.Host/Program.cs",
+          "state": "modified",
+          "sha256": "8bc8519b11de10f09a0c15d25f83e88ccf1520fcc5293f506a8ae3648ea15d86"
+        },
+        {
+          "path": "src/NPEduTools.Host/RecordingService.cs",
+          "state": "modified",
+          "sha256": "feee1cebb4f816036878934c67bf97c04a614f050c84f44f5936594a0d84e785"
+        },
+        {
+          "path": "src/NPEduTools.Host/RemoteExamActions.cs",
+          "state": "untracked",
+          "sha256": "a5a603a1756f693a3e934950329acaddfd0eae4aeb43aa4da4c9f8f3f7d3e9c7"
+        },
+        {
+          "path": "src/NPEduTools.Host/RemoteExamExecutor.cs",
+          "state": "untracked",
+          "sha256": "058309ed603e459e52283a6cf893faa8f6d5cb1bc8a5d5cf839c8a6f28d52855"
+        },
+        {
+          "path": "src/NPEduTools.Host/RemoteExamModels.cs",
+          "state": "untracked",
+          "sha256": "76da8bdc662a0f42bcbb62e99e79606660cc7b6ca43b025659ebff1d423d9447"
+        },
+        {
+          "path": "src/NPEduTools.Host/RemoteExamStore.cs",
+          "state": "untracked",
+          "sha256": "b2c698543f11e62c6da589eef36bae90f7870c834c8dfafe5d3e71542aa58a6e"
+        },
+        {
+          "path": "src/NPEduTools.Host/RemoteExamTransport.cs",
+          "state": "untracked",
+          "sha256": "8445e2c085f1e7ddde0acb47102fb4160cbabfc24b9a6f6e3da8ae5d199abcdc"
+        },
+        {
+          "path": "src/NPEduTools.Host/RuntimeOperationGate.cs",
+          "state": "untracked",
+          "sha256": "a407a9045c1a4bb391388a9e8fe7fadc2b358a72455917dea04d7bd486c8aaf6"
+        },
+        {
+          "path": "src/NPEduTools.Host/WindowsRemoteExamPlatform.cs",
+          "state": "untracked",
+          "sha256": "a019f788807950ce7e4d065025d757a8a8115c01a589192ce83b702fb77cd4b0"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NPEduTools.Integrations.Npep.csproj",
+          "state": "modified",
+          "sha256": "4a10896e96210ad519b9a5482e3dc20e2d07601ec8c0c03a136b4eb28a46a3bc"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepApi.Control.cs",
+          "state": "untracked",
+          "sha256": "2ee6c14ebf35731c5c13d4e670ed12a35146dc3ade254fe6cd815843ccf6fd65"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepApi.Notifications.cs",
+          "state": "untracked",
+          "sha256": "d85245a14dab668cab6e7a29d5d743fc68ef03d7e4b08ae95ed81d65f2cd5efe"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepApi.Plans.cs",
+          "state": "untracked",
+          "sha256": "17acc5c360c5a195c6d8d794627695d22ff582357169cef97f731108447ac44e"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepApi.cs",
+          "state": "modified",
+          "sha256": "c3b3ac5a104465265b53ddf94e8ac72a4ab16e905b2d897bba894750653eafed"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepControlJournal.cs",
+          "state": "untracked",
+          "sha256": "04a194b6e02223a4e79841dbb0bd57888a20dfa8c343f4b4336541d2285f409b"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepControlPolicyStore.cs",
+          "state": "untracked",
+          "sha256": "500ee52e24bad5ddd1931bee66f1cc4c39ba20484bcd04a5791e80f0f08b26e8"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepDevice.Control.cs",
+          "state": "untracked",
+          "sha256": "aea706e895699a89274060c773b0825933c79dd0bb2d0e22989577b1d01a640c"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepDevice.Notifications.cs",
+          "state": "untracked",
+          "sha256": "bddad09b3b5fe342067102320bd0ca2d1c5d32493e40ed0ec6a5828406bba663"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepDevice.Plans.cs",
+          "state": "untracked",
+          "sha256": "981d833989767023704f5eaf6214f6b3b1355e07d811fffac3693c14f4b32eb5"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepDevice.cs",
+          "state": "modified",
+          "sha256": "e557321958b1115f0237666bca91920bb5ca984e4e03dfcea2417e93dc6e9e22"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepExamPlanProtocol.cs",
+          "state": "untracked",
+          "sha256": "89e80319c49d8e252ed1037ad5c88858aa11ceb0d7c6485c578de01e4ab90638"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepInbox.cs",
+          "state": "untracked",
+          "sha256": "0beea32ffadd48739c0bd98f7cfa9eedca8b720e1d6d144e910015e4395546be"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepPlanJournal.cs",
+          "state": "untracked",
+          "sha256": "b78b808b1c3e24da762797773a036960d3e16a3f319fc9d5e232e918db3c4cb1"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepProtocol.cs",
+          "state": "modified",
+          "sha256": "553125dd26b1b247499216ec98f87da3131da5f9eab0c734a1b016f732bd716b"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepRuntime.Control.cs",
+          "state": "untracked",
+          "sha256": "11a19082070e30777e11567f161183d465f55622505ef14d8e41d3f4a429ec8a"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepRuntime.ControlLoop.cs",
+          "state": "untracked",
+          "sha256": "889351ea0155f9b25ab768af8d5ecccb28f01c4e765edb1bdb395ed14fae536c"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepRuntime.Notifications.cs",
+          "state": "untracked",
+          "sha256": "f0f6d7c84415b3ee213dd1992cbd6b6fc61dfb512bc2ecef2c1ecaf099ce06b2"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepRuntime.Plans.cs",
+          "state": "untracked",
+          "sha256": "fed4eaed226c2b148f23d46610e3eac7abe7e0ef4c6caa470c205a3f8d7ec15f"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepRuntime.cs",
+          "state": "modified",
+          "sha256": "29bc78441cc6c09f8d5af287f8b045cbde940ec0162381a6ff04887bced19c86"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepRuntimeProtocol.cs",
+          "state": "untracked",
+          "sha256": "af9f032669432eec8390bfcaad09ced7202aaf97292bb2f3c13e38afe9fa87b1"
+        },
+        {
+          "path": "src/NPEduTools.Integrations.Npep/NpepVault.cs",
+          "state": "modified",
+          "sha256": "5a09c8c9e0185a7247978752cc3eaf2500d388f2e5b7b22eaf7df424337bd6fb"
+        },
+        {
+          "path": "tests/NPEduTools.ExamAware.TestHost/packages.lock.json",
+          "state": "modified",
+          "sha256": "c1066b293d803c33bdcd1da44c80e3b51f3cd577b0655e321bda65921cebcc3a"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Acceptance/ControlHttpAcceptance.cs",
+          "state": "untracked",
+          "sha256": "b18b60be6a9ae342b38955d54be6a2ec0e2b225ae97665d02fb42d0ae378bc8e"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Acceptance/ExamPlanHttpAcceptance.cs",
+          "state": "untracked",
+          "sha256": "95f32a6940781b63d11ef012eb8bf6bced81541d4a39a53177a94e5260f534f3"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Acceptance/NotificationAcceptance.cs",
+          "state": "untracked",
+          "sha256": "929808a274ccb080a5c5e5b46f80b8bbd1e7d4601074113d2f4596b7af9c6487"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Acceptance/Program.cs",
+          "state": "modified",
+          "sha256": "8d096a30c12c44aaa16d3c123287b229f154433a7f997e0639f6833273d2eda9"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/ControlPolicyTests.cs",
+          "state": "untracked",
+          "sha256": "5fe8d620412ccf09f214121a7438300f63640d231072adde073345617b312da3"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/FakeServer.cs",
+          "state": "modified",
+          "sha256": "209038bf22d567c95ac1eb5d2d3e3d01b6526e324d6e4ced6651b889e0dbb781"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/HttpTransportTests.cs",
+          "state": "untracked",
+          "sha256": "c80933da5c4860f7deb5ef52e66dd05978135959a85e5322e5bc9e75386203d4"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/NPEduTools.Npep.Tests.csproj",
+          "state": "modified",
+          "sha256": "99720bbaa7e97f5cfa6ce08d0042df4484fdf6cf6fdc0d0708e4df16a789a83b"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/NotificationTests.cs",
+          "state": "untracked",
+          "sha256": "c60a2d3581ede6332d8c48086ec76d2d2cc9699b88636063d1cd7ace211331a6"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/ProtocolTests.cs",
+          "state": "modified",
+          "sha256": "2b576ba26b75b723b81f1eddf3abf9c142cba2d1af4be69da82a8e0185f9ad7b"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/RuntimeTests.Control.cs",
+          "state": "untracked",
+          "sha256": "86eafb52b3cfd291d415b87a4b5484c767a132f90e7562a1bfa8922a5a0136e4"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/RuntimeTests.ControlWire.cs",
+          "state": "untracked",
+          "sha256": "9afcfe797593daa4c3c802ef9157e8f897ec82bd992a2d0c70cf03043aca1581"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/RuntimeTests.Plans.cs",
+          "state": "untracked",
+          "sha256": "3d30496a845443a0c77eaf4bf3ede16967d47ab110f94c508b78b69277084eb7"
+        },
+        {
+          "path": "tests/NPEduTools.Npep.Tests/RuntimeTests.cs",
+          "state": "modified",
+          "sha256": "eff8e7592d3d663a061de2609df5d7f8e645ebe8e6640c4af370701f6aceb02c"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/AdminRuntimeReservationTests.cs",
+          "state": "untracked",
+          "sha256": "875d884d79b2f111b6e1b9c762b0c53ffcc6ad7452bab6d9314227e4bd0c39e9"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/ExamAwareTests.Plans.cs",
+          "state": "untracked",
+          "sha256": "e398d26c32962034bb3b1cf5e52185a55884b166721bbd18ba58ac99cc1014f0"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/ExamAwareTests.RemoteDaily.cs",
+          "state": "untracked",
+          "sha256": "af413bfd0a396cfd493356880009237fb11978be7e0f0f95aaedcbc5334a1773"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/ExamAwareTests.RemoteExam.cs",
+          "state": "untracked",
+          "sha256": "1669d082b57a45bfb3e3c53f4157b4109153c13656666b3265d8a7a3ff457144"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/ExamAwareTests.RemoteExamMode.cs",
+          "state": "untracked",
+          "sha256": "3cc73c2e489dd866ab75dbe86a6ff192c051ee2429a5047043154033437b6587"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/ExamAwareTests.cs",
+          "state": "modified",
+          "sha256": "e2e9b03688d17bb7dd743e6e72e905301ecef768618d43579b1b8827e7490a48"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/LaunchTests.cs",
+          "state": "modified",
+          "sha256": "db7a83c16dd0404f61e43fe95209cd1e92ef2dc4edeb48bae9fdadfa247896ff"
+        },
+        {
+          "path": "tests/NPEduTools.Tests/RemoteExamTests.cs",
+          "state": "untracked",
+          "sha256": "eccca168deec8f68093e6ce07281668b23bfd75f83043cc7b749e884235d6a09"
+        },
+        {
+          "path": "tools/NPEduTools.NotificationPreview/NPEduTools.NotificationPreview.csproj",
+          "state": "untracked",
+          "sha256": "dc4f41988af951f29245e9d34027a49757fad15e2ff615c846f7946bb4f9af53"
+        },
+        {
+          "path": "tools/NPEduTools.NotificationPreview/Program.cs",
+          "state": "untracked",
+          "sha256": "106e0651b50d50a8b37dd74da75610854f83d856e9641f0c1907ee8e7b2f965c"
+        },
+        {
+          "path": "tools/NPEduTools.NotificationPreview/packages.lock.json",
+          "state": "untracked",
+          "sha256": "531d4cf71e5420c1c03da4c06778ba2a212c7058a3882e7a3a873ae2f811511e"
+        }
+      ],
+      "excluded": [
+        {
+          "path": "temp/npep-n1-preview-package.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-noindex-browser-failed.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-noindex-browser-failed.zip",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-noindex-browser-success.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-noindex-contract-failed.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-noindex-deploy-success.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-permission-pair-35619568746.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-permission-pair-35619568746.zip",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-permission-quality-35619564330.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-site-metadata-browser.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "temp/npep-site-metadata-deploy.log",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "test.ea2",
+          "reason": "Personal or temporary exam data; not a release input"
+        },
+        {
+          "path": "测试考试方案.json",
+          "reason": "Personal or temporary exam data; not a release input"
+        }
+      ]
+    },
+    {
+      "name": "NPClassworks",
+      "root": "D:/CodeProjects/NPClassworks",
+      "branch": "codex/npep-n1-admin-ui",
+      "baseHead": "8cc9dd4a820877b28586d2a9acc1c614f1007e29",
+      "observedRemoteMain": "8cc9dd4a820877b28586d2a9acc1c614f1007e29",
+      "mainVersusHeadLeftRight": "0\t0",
+      "included": [
+        {
+          "path": ".gitignore",
+          "state": "modified",
+          "sha256": "00d65fa228e6becc784e91b668eddab8e4736fdc74e46e9c8f2b2af25302b1d2"
+        },
+        {
+          "path": "AGENTS.md",
+          "state": "modified",
+          "sha256": "053d482938b564afead5f760fa0f0d59a0ec205131ad14b7525c1d37221d10ce"
+        },
+        {
+          "path": "docs/NPEP-EXAM-PLANS.md",
+          "state": "untracked",
+          "sha256": "2965f17b3674aa3de6f46db744fff5e1f59a646c7950ea3bb0c735acd875cee4"
+        },
+        {
+          "path": "docs/NPEP-N3-IMPLEMENTATION.md",
+          "state": "untracked",
+          "sha256": "0719df2464fdc498167c540036abb08192ac2327f57edc9e18ad01578b0134cb"
+        },
+        {
+          "path": "docs/local-development.md",
+          "state": "untracked",
+          "sha256": "0304bbb4ca516222aa09e9b0daf4beae6fa3f9ac41e45bf649c56616504fbc5b"
+        },
+        {
+          "path": "package.json",
+          "state": "modified",
+          "sha256": "5b45cb9af8dfd27926f79d30671e928a6ffb9c0577e57b135ddd5934bc17f5a9"
+        },
+        {
+          "path": "scripts/dev-local.js",
+          "state": "untracked",
+          "sha256": "dc6e84d9075c617f497d16dd12f80fd249d95263840198ca6f831d845c1197d5"
+        },
+        {
+          "path": "scripts/test-npep-exam-plans-browser.mjs",
+          "state": "untracked",
+          "sha256": "89edc0173e606737af8caa9b6d3460aaa9f2400971ad08a1db4aef36562078f8"
+        },
+        {
+          "path": "src/components/admin/NpepDeviceManager.vue",
+          "state": "modified",
+          "sha256": "e35037ae7afcb24d4f12fca7373e3538e10db1882ad473935e1a3b46b28ad64b"
+        },
+        {
+          "path": "src/components/admin/NpepExamPlanControl.vue",
+          "state": "untracked",
+          "sha256": "5a4172d9647227cf5efd5dc2d527b7743eb8e4c39c187fe5de63bc27d70e5893"
+        },
+        {
+          "path": "src/components/admin/NpepRuntimeControl.vue",
+          "state": "untracked",
+          "sha256": "39b5c6ed9678d08c0f5436218fca5661124d4242f9f43531b73a78cae848d081"
+        },
+        {
+          "path": "src/components/v2/NotificationDeliveryDialog.vue",
+          "state": "modified",
+          "sha256": "7a64c9b5be50ed8b7355b1621d496a63e9a682e67e00b9524a561b98510711fe"
+        },
+        {
+          "path": "src/components/v2/PublicationComposer.vue",
+          "state": "modified",
+          "sha256": "bc2830ee5d23aae95fe39dcc207e63c6324c13bd9a8de9277b6ece4288a64754"
+        },
+        {
+          "path": "src/composables/admin/useNpepExamPlans.js",
+          "state": "untracked",
+          "sha256": "3394a1a6e13e9dfeae8c960e8da8ce73a81bcdee61b446457d208af377e2b7b5"
+        },
+        {
+          "path": "src/composables/admin/useNpepRuntimeControl.js",
+          "state": "untracked",
+          "sha256": "504504ab8b5d3f598932f3d9f6088bfdd4ec8773df951bac46578d79c206c5ec"
+        },
+        {
+          "path": "src/pages/setup.vue",
+          "state": "modified",
+          "sha256": "bc51109d81c19f0689b8755a684d897c4f0e8d2884b55f79d9c8dbf08580720f"
+        },
+        {
+          "path": "src/utils/classworksV2Client.js",
+          "state": "modified",
+          "sha256": "759208ac7c8e9bd3743d63ec8691863e15e09f0374948658c457f144475bd844"
+        },
+        {
+          "path": "src/utils/npepExamPlans.js",
+          "state": "untracked",
+          "sha256": "301cd20ca81b5499c84954b3ed267f88cae6afaea9cbc6370ca8a8bb82eaa6e8"
+        },
+        {
+          "path": "src/utils/npepPresentation.js",
+          "state": "modified",
+          "sha256": "6fc2fc1a5783f75893adf9d9c913c18bfd3084a019cdaa5137031602dac1ca03"
+        },
+        {
+          "path": "src/utils/npepRuntimePresentation.js",
+          "state": "untracked",
+          "sha256": "f5808b374cea742c5d8ae5211594aa51947c846efdc00295a5716f3e246a5e64"
+        },
+        {
+          "path": "tests/devLocal.test.js",
+          "state": "untracked",
+          "sha256": "e3ccf7f690126611ed1e05c2de499e531dd3a50b25068d5c7d79768cd2d79cfc"
+        },
+        {
+          "path": "tests/e2e/notice-sound.spec.js",
+          "state": "modified",
+          "sha256": "fe5de40700617e3e5f2600717d0ce2817ecd5a0b076881cb41cefb95edde03fc"
+        },
+        {
+          "path": "tests/npepExamPlanFlows.test.js",
+          "state": "untracked",
+          "sha256": "1898e921859a74bf0cb416f7dbf96728541263019985ee6a4f29fa8b9aff30e5"
+        },
+        {
+          "path": "tests/npepExamPlans.test.js",
+          "state": "untracked",
+          "sha256": "f40e455d08602c9bcf981cc176c27f4ad2daee0838bc40ef08a629ff7e0fc59f"
+        },
+        {
+          "path": "tests/npepRuntime.test.js",
+          "state": "untracked",
+          "sha256": "ddbf30da97c645e2d5e52a09e5a454d6ed218d36543c33531f80e8d7be2818da"
+        },
+        {
+          "path": "tests/setupCompilation.test.js",
+          "state": "untracked",
+          "sha256": "f0477cccb7fc907d1c72c06a7c2c3d3170db5bc3fcc6037bd4393bd0622ddbf0"
+        },
+        {
+          "path": "vite.config.mjs",
+          "state": "modified",
+          "sha256": "86fe3892d3e0155528184f27c4140b22a55138bb05308b898d8f10c5f9092732"
+        }
+      ],
+      "excluded": []
+    },
+    {
+      "name": "NPClassworksKV",
+      "root": "D:/CodeProjects/NPClassworksKV",
+      "branch": "codex/npep-n2-notifications-release",
+      "baseHead": "ebcdc74c4cd862a3fbca39b23225fdfd88e89576",
+      "observedRemoteMain": "ebcdc74c4cd862a3fbca39b23225fdfd88e89576",
+      "mainVersusHeadLeftRight": "0\t0",
+      "included": [
+        {
+          "path": "bin/www",
+          "state": "modified",
+          "sha256": "6adb4f8a3d969533847e9e10f6267348d70c3d23264d4d7a9500b48b323842ac"
+        },
+        {
+          "path": "docs/NPEP-EXAM-PLANS.md",
+          "state": "untracked",
+          "sha256": "3bb6eb29f2127e0f51686afd8b94badc72d5e18e62792a505f895efc53d0d910"
+        },
+        {
+          "path": "docs/NPEP-N3-IMPLEMENTATION.md",
+          "state": "untracked",
+          "sha256": "25cf8c56d7aeb0f689298957f47625107a08abd3456d1d806b326324b9d9450c"
+        },
+        {
+          "path": "docs/NPEP-N3-SERVER-CONTRACT-REVIEW.md",
+          "state": "untracked",
+          "sha256": "e8e47513b83146c5875c2a256081b0e6bed01ad2709da5f3bdfae1b7f976113c"
+        },
+        {
+          "path": "docs/classworks-2-local-debugging.md",
+          "state": "modified",
+          "sha256": "9cf69ebefe6ad9fe544954e5c0db385a503dc3eb92518d63335224e7ce85eadd"
+        },
+        {
+          "path": "docs/npep-n3/examples.json",
+          "state": "untracked",
+          "sha256": "e2997eab327fb064fe29d0abe13c8a9cea34185d501ed90756c8fc3734f36809"
+        },
+        {
+          "path": "docs/npep-n3/generate-examples.mjs",
+          "state": "untracked",
+          "sha256": "ea7a3a725326d682c34c61682bf90a93f70107fd97101ffc471bf8bf2869b536"
+        },
+        {
+          "path": "docs/npep-n3/runtime-control.schema.json",
+          "state": "untracked",
+          "sha256": "e1b4110a0f564a8daa9797a74244880a74eed24ae4ba1eccf32a7da7b6357d96"
+        },
+        {
+          "path": "docs/npep-n3/validate-examples.mjs",
+          "state": "untracked",
+          "sha256": "6351c5a01c8a994c1759b01e0d4cef6cb5f5676ec97f3d1388f667a54e211e99"
+        },
+        {
+          "path": "domain/npep/exam-plan.schema.json",
+          "state": "untracked",
+          "sha256": "bad74d935f815427d0943ba67abc8d07e9e6c1ac3380715bf017dc6b75dacdc3"
+        },
+        {
+          "path": "domain/npep/examPlans.js",
+          "state": "untracked",
+          "sha256": "a0fc0f630fe1aa0149aefcb5931bec5f5270279a1d35ceaf864694628d48ab33"
+        },
+        {
+          "path": "domain/npep/runtime-control.schema.json",
+          "state": "untracked",
+          "sha256": "e1b4110a0f564a8daa9797a74244880a74eed24ae4ba1eccf32a7da7b6357d96"
+        },
+        {
+          "path": "domain/npep/runtimeControl.js",
+          "state": "untracked",
+          "sha256": "908ee4307f7e839af2e4056cae07fefefcecd73c56157c5f9bd462273b28ffa8"
+        },
+        {
+          "path": "package.json",
+          "state": "modified",
+          "sha256": "8289be1e60edbf8dc154ea567b84f9135a0305a08172322e278c669736381b16"
+        },
+        {
+          "path": "prisma/migrations/20260926000000_npep_runtime_control/migration.sql",
+          "state": "untracked",
+          "sha256": "8e76300d3986bb7844d9a2776e738510cb36f6906777c61d25d4363cbe664f5e"
+        },
+        {
+          "path": "prisma/migrations/20260927000000_npep_exam_plans/migration.sql",
+          "state": "untracked",
+          "sha256": "5399814704f45a07460e96a30a165028ce0650b3a11627708c9f70170823390b"
+        },
+        {
+          "path": "prisma/schema.prisma",
+          "state": "modified",
+          "sha256": "16e5307769aeafe9634c2431a4903a1d2819cbb54b75211764f2aa193b1ca705"
+        },
+        {
+          "path": "routes/v2/npep.js",
+          "state": "modified",
+          "sha256": "a274539a39d4fffa9ab60f9c292c81a4b27c3399591d8de38808186079ccc357"
+        },
+        {
+          "path": "scripts/init-debug-env.js",
+          "state": "modified",
+          "sha256": "b2a070caafcacc91c11058bac4ebb989bfe233a48c63fa1be752ac9252af907d"
+        },
+        {
+          "path": "scripts/prepare-debug-npep.js",
+          "state": "untracked",
+          "sha256": "e452ca00ae483fe1d37e057e6bbf3ba390bb337400ebedd4f9a92142d2000f26"
+        },
+        {
+          "path": "scripts/prepare-debug.js",
+          "state": "modified",
+          "sha256": "4746f8237a87615d840a01bddf8d4b1b53694808cbe8f3cf91d5962e4c3b7855"
+        },
+        {
+          "path": "scripts/run-database-tests.js",
+          "state": "modified",
+          "sha256": "599342c162571f07891433af205c242a99634518b89750f54d8b239e29698807"
+        },
+        {
+          "path": "scripts/run-native-npep-tests.js",
+          "state": "untracked",
+          "sha256": "391e0200df7c4603f221bec6341a845f511a2bfc755df414cec24ab20f6f9bbc"
+        },
+        {
+          "path": "services/npepExamPlanRepository.js",
+          "state": "untracked",
+          "sha256": "5289a97a8b4df864fc417e03f937e7c16c716e41ccbef9964cdb957ca5125e9d"
+        },
+        {
+          "path": "services/npepExamPlanService.js",
+          "state": "untracked",
+          "sha256": "41c05bc589a4ae53205b0330aed7a482149671bb14210752dc988bfef2195452"
+        },
+        {
+          "path": "services/npepRuntimeRepository.js",
+          "state": "untracked",
+          "sha256": "f62c7a60e446ad2d87beccc9db55449bd825d404cbffb8d24ccfd3e6056cb886"
+        },
+        {
+          "path": "services/npepRuntimeService.js",
+          "state": "untracked",
+          "sha256": "0b8f607aefcf43b69b8aeeb97d773933f8f504000e8e29c8f4bbbaeda152ce7d"
+        },
+        {
+          "path": "services/npepService.js",
+          "state": "modified",
+          "sha256": "ab8cf8c77e0ad2d7eb2f28de039693caf4654bd0ab435be1657e3aef4433c733"
+        },
+        {
+          "path": "tests/debugNpep.test.js",
+          "state": "untracked",
+          "sha256": "c399cce57f34d5360e3fdcbf1b76207c7d8d98e3173f61e99491c328491d08c5"
+        },
+        {
+          "path": "tests/npepDatabase.integration.test.js",
+          "state": "modified",
+          "sha256": "b9c5efe319f7ba6f82e45ab7e9bea8ec1ccdb091747a1b60867b71a8be226edf"
+        },
+        {
+          "path": "tests/npepExamPlans.test.js",
+          "state": "untracked",
+          "sha256": "575f5e62c2ae994bc996da964bfc2b9a981f7d8e2b714a2da54ed7de7bff5e4e"
+        },
+        {
+          "path": "tests/npepHttpErrors.test.js",
+          "state": "untracked",
+          "sha256": "a5ae28c5d25e6616ce6aa5131c7e9de40045e7e361e1a923defaa432fd56df35"
+        },
+        {
+          "path": "tests/npepRuntime.test.js",
+          "state": "untracked",
+          "sha256": "7b0beded550cdaf7a6533247613dfb98f2986e43cbfb10e57d0df4b274ed6f7e"
+        },
+        {
+          "path": "utils/instrumentation.js",
+          "state": "modified",
+          "sha256": "4fb06847a45e86ea4625d1c8a9d45b5a4de8a142a8b56ace4d1e82e5ca474e8a"
+        }
+      ],
+      "excluded": []
+    }
+  ]
+}

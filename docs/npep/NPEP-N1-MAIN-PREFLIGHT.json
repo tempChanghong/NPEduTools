@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-09-21T14:48:12.8978018Z",
+  "workflows": [
+    {
+      "id": 345174965,
+      "repo": "NPClassworks",
+      "state": "disabled_manually"
+    },
+    {
+      "id": 345174964,
+      "repo": "NPClassworksKV",
+      "state": "disabled_manually"
+    },
+    {
+      "id": 330817952,
+      "repo": "NPClassworksKV",
+      "state": "disabled_manually"
+    }
+  ],
+  "runs": [
+    {
+      "id": 35608546438,
+      "repo": "NPClassworks",
+      "sha": "37a3f1b01585fd8cfc751c921668a84d5c41264f",
+      "conclusion": "success"
+    },
+    {
+      "id": 35609940329,
+      "repo": "NPClassworks",
+      "sha": "37a3f1b01585fd8cfc751c921668a84d5c41264f",
+      "conclusion": "success"
+    },
+    {
+      "id": 35609934460,
+      "repo": "NPClassworksKV",
+      "sha": "e660876c8a22004e14a053a70985d5b350e42d0d",
+      "conclusion": "success"
+    }
+  ],
+  "refs": [
+    {
+      "repo": "NPClassworksKV",
+      "comparison": "ahead",
+      "target": "e660876c8a22004e14a053a70985d5b350e42d0d",
+      "before": "f731f3227a7c59585aff940f78354585d3b016b7"
+    },
+    {
+      "repo": "NPClassworks",
+      "comparison": "ahead",
+      "target": "37a3f1b01585fd8cfc751c921668a84d5c41264f",
+      "before": "19756f654f94006084d1d954b8be4171db7c9a18"
+    }
+  ]
+}

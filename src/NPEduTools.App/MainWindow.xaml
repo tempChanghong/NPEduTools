@@ -71,6 +71,7 @@
           <Button Content="录制微课" Style="{StaticResource Navigation}" Click="OpenRecordingClicked" AutomationProperties.AutomationId="RecordingNav" />
           <Button Content="自动录课计划" Style="{StaticResource Navigation}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="OpenRecordingPlan" />
           <Button Content="考试看板" Style="{StaticResource Navigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
+          <Button Content="噪音监测" Style="{StaticResource Navigation}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="OpenNoise" />
           <Button Content="课堂模式" Style="{StaticResource Navigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
         </StackPanel></ScrollViewer>
         <StackPanel Grid.Row="2">
@@ -238,9 +239,92 @@
             <Button x:Name="GeneralSettingsTab" Content="常规" Tag="active" Style="{StaticResource Navigation}" Click="GeneralSettingsClicked" AutomationProperties.AutomationId="GeneralSettingsTab" Margin="0,0,8,0" />
             <Button x:Name="TeachingSettingsTab" Content="课堂工具" Style="{StaticResource Navigation}" Click="TeachingSettingsClicked" AutomationProperties.AutomationId="TeachingSettingsTab" Margin="0,0,8,0" />
             <Button x:Name="ConnectionsSettingsTab" Content="软件连接" Style="{StaticResource Navigation}" Click="ConnectionsSettingsClicked" AutomationProperties.AutomationId="ConnectionsSettingsTab" />
+            <Button x:Name="NpepSettingsTab" Content="学校互联" Style="{StaticResource Navigation}" Click="NpepSettingsClicked" AutomationProperties.AutomationId="NpepSettingsTab" Margin="8,0,0,0" />
           </StackPanel>
           <ScrollViewer x:Name="SettingsScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
           <StackPanel>
+            <StackPanel x:Name="NpepSettingsPanel" Visibility="Collapsed">
+              <Border Style="{StaticResource Surface}" Background="#EAF6F2"><StackPanel>
+                <TextBlock Text="NPEP · 学校互联" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="连接 NPClassworks，让学校管理员了解这台大屏的课堂模式与软件连接状态。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,0" />
+                <TextBlock Text="连接后共享设备状态并接收本班学校通知；弹窗规则与网页一致。不会上传屏幕、声音、录课文件或完整课表，不接受远程模式切换或录制指令。" TextWrapping="Wrap" Foreground="#526A60" FontSize="12" Margin="0,8,0,0" />
+              </StackPanel></Border>
+              <Border Style="{StaticResource Surface}"><StackPanel>
+                <DockPanel><Button Content="刷新" Click="NpepRefreshClicked" DockPanel.Dock="Right" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="NpepRefresh" /><TextBlock x:Name="NpepStatusTitle" Text="正在读取互联状态…" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" AutomationProperties.AutomationId="NpepStatusTitle" /></DockPanel>
+                <TextBlock x:Name="NpepMessage" Text="等待后台连接" TextWrapping="Wrap" Foreground="#64776D" Margin="0,10,0,0" AutomationProperties.AutomationId="NpepMessage" />
+                <TextBlock x:Name="NpepReceipt" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,6,0,0" />
+                <TextBlock x:Name="NpepError" TextWrapping="Wrap" Foreground="#A14334" FontSize="12" Margin="0,6,0,0" AutomationProperties.AutomationId="NpepError" />
+                <StackPanel x:Name="NpepCreatePanel" Margin="0,18,0,0">
+                  <TextBlock Text="学校服务地址" FontWeight="SemiBold" /><TextBlock Text="支持 HTTP 或 HTTPS 地址，例如 http://localhost:3000。" FontSize="12" Foreground="#64776D" Margin="0,4,0,8" />
+                  <TextBox x:Name="NpepOriginBox" AutomationProperties.AutomationId="NpepOrigin" AutomationProperties.Name="学校服务地址" TextChanged="NpepInputChanged" MaxLength="2048" />
+                  <Button x:Name="NpepInspectButton" Content="检查服务" Click="NpepInspectClicked" HorizontalAlignment="Left" Margin="0,10,0,0" AutomationProperties.AutomationId="NpepInspect" />
+                  <StackPanel x:Name="NpepServerPanel" Visibility="Collapsed" Margin="0,14,0,0">
+                    <TextBlock x:Name="NpepServerIdentity" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" AutomationProperties.AutomationId="NpepServerIdentity" />
+                    <CheckBox x:Name="NpepServerConfirmed" Content="我已与管理员核对这是学校的服务" Style="{StaticResource Switch}" Checked="NpepConsentChanged" Unchecked="NpepConsentChanged" Margin="0,12,0,12" AutomationProperties.AutomationId="NpepServerConfirmed" />
+                    <TextBlock Text="设备名称（便于管理员辨认）" Margin="0,0,0,8" />
+                    <TextBox x:Name="NpepNameBox" Text="教室大屏" MaxLength="64" TextChanged="NpepInputChanged" AutomationProperties.AutomationId="NpepDeviceName" />
+                    <Button x:Name="NpepPairButton" Content="创建配对码" Style="{StaticResource Primary}" HorizontalAlignment="Left" Click="NpepPairClicked" Margin="0,12,0,0" AutomationProperties.AutomationId="NpepPair" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel x:Name="NpepCodePanel" Visibility="Collapsed" Margin="0,18,0,0">
+                  <TextBlock Text="请管理员在学校管理 → 大屏设备 → NPEP 设备互联中输入" TextWrapping="Wrap" Foreground="#64776D" />
+                  <TextBlock x:Name="NpepCode" FontSize="32" FontWeight="SemiBold" Foreground="#147D68" Margin="0,8,0,4" AutomationProperties.AutomationId="NpepPairingCode" />
+                  <TextBlock x:Name="NpepExpiry" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" />
+                  <TextBlock Text="仅向本校管理员提供此码。批准后在本机确认；完成配对即授权学校切换考试／日常模式（含自启动）和投递考试方案。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,6,0,0" />
+                </StackPanel>
+                <StackPanel x:Name="NpepBindingPanel" Visibility="Collapsed" Margin="0,18,0,0">
+                  <TextBlock Text="连接归属" FontWeight="SemiBold" />
+                  <TextBlock x:Name="NpepBinding" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="NpepBinding" />
+                  <TextBlock x:Name="NpepBoundOrigin" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,6,0,0" />
+                  <Expander Header="归属核对编号" FontSize="12" Margin="0,8,0,0"><TextBlock x:Name="NpepBindingIdentity" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,0" /></Expander>
+                  <StackPanel x:Name="NpepConfirmPanel" Visibility="Collapsed">
+                    <CheckBox x:Name="NpepBindingConfirmed" Content="归属正确，同意状态共享、通知与学校考试控制" Style="{StaticResource Switch}" Margin="0,14,0,10" Checked="NpepConsentChanged" Unchecked="NpepConsentChanged" AutomationProperties.AutomationId="NpepBindingConfirmed" />
+                    <Button x:Name="NpepConfirmButton" Content="确认连接" Click="NpepConfirmClicked" HorizontalAlignment="Left" Style="{StaticResource Primary}" AutomationProperties.AutomationId="NpepConfirm" />
+                  </StackPanel>
+                </StackPanel>
+                <WrapPanel Margin="0,18,0,0">
+                  <Button x:Name="NpepRecoverButton" Content="恢复未完成操作" Click="NpepRecoverClicked" Visibility="Collapsed" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepRecover" />
+                  <Button x:Name="NpepPauseButton" Content="暂停上报" Click="NpepPauseClicked" Visibility="Collapsed" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepPause" />
+                  <Button x:Name="NpepUnpairButton" Content="解除绑定" Click="NpepUnpairClicked" Visibility="Collapsed" Style="{StaticResource Quiet}" Margin="0,0,0,8" AutomationProperties.AutomationId="NpepUnpair" />
+                </WrapPanel>
+              </StackPanel></Border>
+              <Border Style="{StaticResource Surface}"><StackPanel>
+                <TextBlock Text="远程考试模式" FontSize="17" FontWeight="SemiBold" />
+                <TextBlock x:Name="RemoteExamBinding" Text="正在读取当前学校绑定…" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,12" />
+                <TextBlock Text="学校配对即授权考试控制：切换考试／日常模式（含登录自启动）、投递方案及明确请求开始放映。" TextWrapping="Wrap" />
+                <TextBlock Text="解绑或学校撤销设备后停止接收新请求。" Margin="0,12,0,0" TextWrapping="Wrap" />
+                <TextBlock x:Name="ExamPlanPolicyMessage" TextWrapping="Wrap" Margin="0,6,0,10" Foreground="#607078" />
+                <TextBlock Text="学校切入考试时优先执行：正常保存当前录制，暂时收起通知，关闭 ClassIsland 登录自启动、开启 ExamAware2 登录自启动，准备考试看板并退出 ClassIsland。重复请求会核对实际状态、补做缺失步骤，已有放映保留。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,8" />
+                <TextBlock Text="学校也可远程返回日常：恢复日常自启动，正常退出 ExamAware2，等待 ClassIsland 就绪后解除远程录课暂停。放映或编辑器阻止退出时保留暂停并报告原因。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,0,0,8" />
+                <TextBlock x:Name="RemoteExamPolicyMessage" Text="正在读取 N3 通道状态…" TextWrapping="Wrap" Foreground="#64776D" />
+                <TextBlock x:Name="RemoteExamRuntimeMessage" Text="正在读取本地考试状态…" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,12,0,0" />
+                <TextBlock Text="检查后台权限、程序位置、录制状态和软件连接。仅检查当前环境，不会启动或退出软件，也不会修改 Windows 自启动。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,12" />
+                <Button x:Name="RemoteExamCheckButton" Content="检查考试环境" Click="RemoteExamCheckClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="RemoteExamPreflight" />
+                <TextBlock x:Name="RemoteExamCheckMessage" Text="本机检查不代表已授权学校远程控制。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,10,0,0" />
+                <Button x:Name="RemoteExamEndButton" Content="解除本次远程录课暂停" Click="RemoteExamEndClicked" IsEnabled="False" HorizontalAlignment="Left" Margin="0,12,0,0" AutomationProperties.AutomationId="RemoteExamEndLocal" />
+                <TextBlock Text="考试结束后，先在“课堂模式”返回日常（可同时切换软件）；失败时先恢复切换前设置。再在此核实并解除远程录课暂停，当前课时可能按原计划开始录制。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,0" />
+                <Expander Header="最近操作记录" Margin="0,12,0,0"><TextBlock x:Name="RemoteExamHistoryText" Text="暂无记录。" TextWrapping="Wrap" Foreground="#526A60" /></Expander>
+              </StackPanel></Border>
+              <Border Style="{StaticResource Surface}"><StackPanel>
+                <TextBlock Text="学校通知" FontSize="17" FontWeight="SemiBold" />
+                <TextBlock x:Name="NotificationInboxMessage" Text="正在读取通知状态…" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,10" AutomationProperties.AutomationId="NotificationInboxMessage" />
+                <ItemsControl x:Name="NotificationInboxItems"><ItemsControl.ItemTemplate><DataTemplate>
+                  <Button Tag="{Binding}" Click="OpenSchoolNotificationClicked" HorizontalContentAlignment="Stretch" Margin="0,0,0,8" AutomationProperties.Name="{Binding Title}">
+                    <StackPanel><TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontSize="15" /><TextBlock Text="{Binding DisplayLabel}" FontSize="12" Foreground="#64776D" Margin="0,4,0,0" /></StackPanel>
+                  </Button>
+                </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,18"><Button x:Name="NotificationPrevious" Content="上一页" Click="NotificationPreviousClicked" IsEnabled="False" Margin="0,0,8,0" /><Button x:Name="NotificationNext" Content="下一页" Click="NotificationNextClicked" IsEnabled="False" /></StackPanel>
+                <TextBlock Text="窗口样式预览" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock Text="纯色、大字号，保持置顶直到手动关闭。请关闭当前预览后再查看其他级别。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,0" />
+                <WrapPanel Margin="0,14,0,0">
+                  <Button Content="次要 · 绿色" Tag="Minor" Background="#087F5B" Foreground="White" Click="NotificationPreviewClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="PreviewMinorNotification" />
+                  <Button Content="普通 · 蓝色" Tag="Normal" Background="#2157B8" Foreground="White" Click="NotificationPreviewClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="PreviewNormalNotification" />
+                  <Button Content="重要 · 黄色" Tag="Important" Background="#947000" Foreground="White" Click="NotificationPreviewClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="PreviewImportantNotification" />
+                  <Button Content="紧急 · 红色" Tag="Urgent" Background="#C52B36" Foreground="White" Click="NotificationPreviewClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="PreviewUrgentNotification" />
+                </WrapPanel>
+                <TextBlock Text="以上四个按钮仅预览样式，不会发送学校通知或回执。真实接收情况以上方通知状态为准。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
+              </StackPanel></Border>
+            </StackPanel>
             <StackPanel x:Name="GeneralSettingsPanel">
             <Border Style="{StaticResource Surface}">
               <StackPanel>

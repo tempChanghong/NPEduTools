@@ -1,0 +1,107 @@
+{
+  "at": "2026-09-22T04:25:12.5438443Z",
+  "runId": 35686135000,
+  "runConclusion": "success",
+  "frontend": "8cc9dd4a820877b28586d2a9acc1c614f1007e29",
+  "deployCode": "DEPLOY_COMPLETED",
+  "release": "部署版本已固定：backend=401182fa97866820828df37a9a1b52884056964b frontend=8cc9dd4a820877b28586d2a9acc1c614f1007e29",
+  "backup": "[NPClassworks] 备份完成：/NPClassworksKV/deploy/backups/npclassworks_NPClassworksKV_20260922T042311Z_pre-upgrade_eAecsBQCCq.dump",
+  "pages": [
+    {
+      "url": "https://newfires.top/",
+      "status": 200,
+      "tags": [
+        "<link rel=\"canonical\" href=\"https://newfires.top/\">",
+        "<meta property=\"og:url\" content=\"https://newfires.top/\">",
+        "<meta property=\"og:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"twitter:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/settings",
+      "status": 200,
+      "tags": [
+        "<link rel=\"canonical\" href=\"https://newfires.top/\">",
+        "<meta property=\"og:url\" content=\"https://newfires.top/\">",
+        "<meta property=\"og:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"twitter:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/classworks-admin",
+      "status": 200,
+      "tags": [
+        "<link rel=\"canonical\" href=\"https://newfires.top/\">",
+        "<meta property=\"og:url\" content=\"https://newfires.top/\">",
+        "<meta property=\"og:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"twitter:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/setup",
+      "status": 200,
+      "tags": [
+        "<link rel=\"canonical\" href=\"https://newfires.top/\">",
+        "<meta property=\"og:url\" content=\"https://newfires.top/\">",
+        "<meta property=\"og:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"twitter:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/classworks-2",
+      "status": 200,
+      "tags": [
+        "<link rel=\"canonical\" href=\"https://newfires.top/\">",
+        "<meta property=\"og:url\" content=\"https://newfires.top/\">",
+        "<meta property=\"og:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"twitter:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/404",
+      "status": 200,
+      "tags": [
+        "<link rel=\"canonical\" href=\"https://newfires.top/\">",
+        "<meta property=\"og:url\" content=\"https://newfires.top/\">",
+        "<meta property=\"og:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"twitter:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    },
+    {
+      "url": "https://newfires.top/index.html",
+      "status": 200,
+      "tags": [
+        "<link rel=\"canonical\" href=\"https://newfires.top/\">",
+        "<meta property=\"og:url\" content=\"https://newfires.top/\">",
+        "<meta property=\"og:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"twitter:image\" content=\"https://newfires.top/pwa/image/social-icon-512x512.png\">",
+        "<meta name=\"robots\" content=\"noindex, follow\" />"
+      ],
+      "passed": true
+    }
+  ],
+  "imageStatus": 200,
+  "imageContentType": [
+    "image/png"
+  ],
+  "readyStatus": 200,
+  "npepStatus": 503,
+  "npepError": "TEMPORARILY_UNAVAILABLE",
+  "agent": {
+    "ok": true,
+    "busy": false,
+    "queued": 0
+  }
+}

@@ -29,6 +29,7 @@ public sealed class ExamAwareTarget : IExamAwareTarget
                     if (process.SessionId != current.SessionId ||
                         !string.Equals(ClassIslandLaunchTarget.ProcessPath(process), path, StringComparison.OrdinalIgnoreCase))
                         throw new IOException("检测到其他位置或会话的 ExamAware2，无法核实目标退出，请先检查。");
+                    VerifyUser(process.Id);
                     found = true;
                 }
                 catch (InvalidOperationException) when (process.HasExited) { }
@@ -55,6 +56,7 @@ public sealed class ExamAwareTarget : IExamAwareTarget
             if (process.HasExited || process.SessionId != current.SessionId ||
                 !string.Equals(ClassIslandLaunchTarget.ProcessPath(process), path, StringComparison.OrdinalIgnoreCase))
                 throw new LaunchTargetException("PeerIdentityMismatch", "桥接进程与所选程序位置或当前会话不符，未发送退出请求。");
+            VerifyUser(process.Id);
             return new ObservedProcess(process);
         }
         catch { process.Dispose(); throw; }
@@ -93,6 +95,7 @@ public sealed class ExamAwareTarget : IExamAwareTarget
                     if (process.SessionId != current.SessionId ||
                         !string.Equals(ClassIslandLaunchTarget.ProcessPath(process), path, StringComparison.OrdinalIgnoreCase))
                         throw new LaunchTargetException("DifferentExamAwareInstance", "已有其他路径或会话的 ExamAware 运行，请先核对安装位置。");
+                    VerifyUser(process.Id);
                 }
                 catch (InvalidOperationException) { }
             }
@@ -102,5 +105,13 @@ public sealed class ExamAwareTarget : IExamAwareTarget
         if (link is not null) start.ArgumentList.Add(link);
         // ExamAware's own single-instance handler restores the existing main window.
         using var started = Process.Start(start) ?? throw new IOException("启动进程失败。");
+    }
+
+    private static void VerifyUser(int processId)
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        if (NPEduTools.ClassIsland.Admin.ClassIslandProcess.UserSid(processId) != identity.User?.Value)
+            throw new LaunchTargetException("PeerIdentityMismatch", "ExamAware2 属于其他用户，未操作该实例。");
     }
 }

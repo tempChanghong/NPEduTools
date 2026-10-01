@@ -42,6 +42,20 @@
       </Border>
       <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16">
         <StackPanel>
+          <TextBlock Text="考试方案 · 本机放映" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock Text="选择 ExamAware 编辑器导出的 UTF-8 JSON（最多 24 KiB、32 场考试），校验后核对摘要，再手动开始放映。已有放映不会被替换。" Foreground="#718089" TextWrapping="Wrap" Margin="0,8,0,12" />
+          <WrapPanel>
+            <Button x:Name="PreparePlanButton" Content="选择并校验方案…" Click="PreparePlanClicked" IsEnabled="False" Margin="0,0,8,8" AutomationProperties.AutomationId="ExamAwarePreparePlan" />
+            <Button x:Name="PresentPlanButton" Content="开始放映" Style="{StaticResource Primary}" Click="PresentPlanClicked" IsEnabled="False" Margin="0,0,8,8" AutomationProperties.AutomationId="ExamAwarePresentPlan" />
+          </WrapPanel>
+          <TextBlock x:Name="PlanFileText" TextWrapping="Wrap" Foreground="#718089" />
+          <TextBlock x:Name="PlanSummaryText" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.AutomationId="ExamAwarePlanSummary" />
+          <TextBlock x:Name="PlanOperationText" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="#536A60" AutomationProperties.AutomationId="ExamAwarePlanOperation" />
+          <TextBlock x:Name="PlayerStateText" Text="放映状态：未知" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.AutomationId="ExamAwarePlayerState" />
+        </StackPanel>
+      </Border>
+      <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16">
+        <StackPanel>
           <TextBlock Text="正常退出" FontSize="16" FontWeight="SemiBold" />
           <TextBlock Text="请先保存并关闭考试编辑器，再结束放映。ExamAware 1.5.2 的编辑器仍打开时可能无法完成退出。退出遵循学校管理策略，不会强制结束进程。" TextWrapping="Wrap" Foreground="#718089" Margin="0,8,0,12" />
           <Button x:Name="QuitButton" Content="退出 ExamAware" Click="QuitClicked" IsEnabled="False" HorizontalAlignment="Left" AutomationProperties.AutomationId="ExamAwareQuit" />

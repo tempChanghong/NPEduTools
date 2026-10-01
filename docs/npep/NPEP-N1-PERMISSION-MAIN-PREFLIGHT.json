@@ -1,0 +1,39 @@
+{
+  "verifiedAt": "2026-09-21T15:38:19.0733683Z",
+  "checks": [
+    {
+      "repo": "NPClassworks",
+      "workflow": 345174965,
+      "state": "disabled_manually",
+      "activeRuns": 0
+    },
+    {
+      "repo": "NPClassworksKV",
+      "workflow": 345174964,
+      "state": "disabled_manually",
+      "activeRuns": 0
+    },
+    {
+      "repo": "NPClassworksKV",
+      "workflow": 330817952,
+      "state": "disabled_manually",
+      "activeRuns": 0
+    },
+    {
+      "repo": "NPClassworksKV",
+      "run": 35619564330,
+      "sha": "401182fa97866820828df37a9a1b52884056964b",
+      "conclusion": "success"
+    },
+    {
+      "repo": "NPClassworks",
+      "run": 35619568746,
+      "sha": "37a3f1b01585fd8cfc751c921668a84d5c41264f",
+      "conclusion": "success"
+    }
+  ],
+  "backendBefore": "e660876c8a22004e14a053a70985d5b350e42d0d",
+  "backendTarget": "401182fa97866820828df37a9a1b52884056964b",
+  "frontend": "37a3f1b01585fd8cfc751c921668a84d5c41264f",
+  "comparison": "ahead"
+}

@@ -25,6 +25,23 @@ public sealed class LaunchTests : IDisposable
     }
 
     [Fact]
+    public async Task RuntimeLeaseOutlivesLaunchAcceptanceUntilVerificationCompletes()
+    {
+        var gate = new RuntimeOperationGate();
+        var reader = new FakeReader { Pause = new(TaskCreationOptions.RunContinuationsAsynchronously) };
+        await using var service = new LaunchService(_directory, new FakeTarget(), reader, runtimeGate: gate);
+        await ConfigureAsync(service);
+        try
+        {
+            Assert.Equal("Running", (await service.HandleAsync(Request("classisland.start"), default)).Outcome);
+            Assert.Null(gate.TryReserveSwitch());
+            Assert.Equal("Succeeded", (await service.HandleAsync(Request("classisland.config.get"), default)).Outcome);
+        }
+        finally { reader.Pause!.SetResult(); }
+        Assert.Equal("Succeeded", (await FinishedAsync(service)).Outcome);
+    }
+
+    [Fact]
     public async Task VerificationNeverStartsAnExitedProcess()
     {
         var target = new FakeTarget();
@@ -119,6 +136,28 @@ public sealed class LaunchTests : IDisposable
         target.ExitImmediately = true;
         await service.HandleAsync(Request("classisland.start"), default);
         Assert.Equal("ClassIslandExited", (await FinishedAsync(service)).ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("classisland.start", false)]
+    [InlineData("classisland.start", true)]
+    [InlineData("classisland.verify", false)]
+    [InlineData("classisland.verify", true)]
+    public async Task ExistingProcessExitingDuringReadIsReportedWithoutRelaunch(string capability, bool healthy)
+    {
+        var target = new FakeTarget { Running = true };
+        var reader = new FakeReader { Healthy = healthy, OnRead = () => target.Running = false };
+        await using var service = new LaunchService(_directory, target, reader, TimeSpan.FromSeconds(1));
+        await ConfigureAsync(service);
+        var request = new HostRequest(Protocol.Version, Guid.NewGuid(), capability,
+            ExecutablePath: @"C:\Test\ClassIsland.exe", ExpectedRevision: 1);
+
+        Assert.Equal("Running", (await service.HandleAsync(request, default)).Outcome);
+        var result = await FinishedAsync(service);
+
+        Assert.Equal("Failed", result.Outcome);
+        Assert.Equal("ClassIslandExited", result.ErrorCode);
+        Assert.Equal(0, target.Starts);
     }
 
     [Fact]
@@ -237,10 +276,12 @@ public sealed class LaunchTests : IDisposable
     private sealed class FakeReader : ILessonStatusReader
     {
         public bool Healthy = true;
+        public Action? OnRead;
         public TaskCompletionSource? Pause;
         public async Task<StatusResult> ReadAsync(StatusQuery query, CancellationToken cancellationToken)
         {
             if (Pause is not null) await Pause.Task.WaitAsync(cancellationToken);
+            OnRead?.Invoke();
             return Healthy ? new("Succeeded", null, "已读取", new(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
                 "None", null, true, false, false, -1, new Dictionary<string, long>())) : new("Unavailable", "NotReady", "未就绪");
         }

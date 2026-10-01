@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/NPEduTools.Integrations.Npep/NPEduTools.Integrations.Npep.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/NPEduTools.Core/NPEduTools.Core.csproj" />
+    <Compile Include="../../src/NPEduTools.Host/NoiseService.cs" Link="NoiseService.cs" />
+    <Compile Include="../../src/NPEduTools.Host/NoiseTransport.cs" Link="NoiseTransport.cs" />
+    <Compile Include="../../src/NPEduTools.Host/NoiseScheduleService.cs" Link="NoiseScheduleService.cs" />
+  </ItemGroup>
+</Project>

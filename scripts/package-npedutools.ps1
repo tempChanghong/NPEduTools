@@ -1,6 +1,6 @@
 param(
     [string]$OutputRoot = '.artifacts/releases',
-    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion = 'InDev-20260920'
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion = 'Pre-20261001'
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
@@ -113,7 +113,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
         }
     } finally { $archive.Dispose() }
     Copy-Item -LiteralPath $locks -Destination (Join-Path $package 'build-locks') -Recurse
-    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel='indev';rid='win-x64';selfContained=$true;recordingToolsBundled=$false;createdAt=[DateTimeOffset]::Now;
+    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel= $(if ($ReleaseVersion.StartsWith('Pre-')) { 'pre' } else { 'indev' });rid='win-x64';selfContained=$true;recordingToolsBundled=$false;createdAt=[DateTimeOffset]::Now;
         sourceCommit=(git rev-parse HEAD);workingTreeDirty=([bool](git status --porcelain));sourceArchiveSha256=(Get-FileHash $sourceZip).Hash;
         sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';examAwareValidated='1.5.2 local build';examAwareBridgeVersion=$examManifest.version;files=@()}
     $manifest.files = @(Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName | ForEach-Object {

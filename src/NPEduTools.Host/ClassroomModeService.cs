@@ -13,8 +13,10 @@ public interface IClassroomModeEffects
 }
 
 /// <summary>Accepted requests survive client disconnect; each external write is preceded by a durable recovery point.</summary>
-public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomModeEffects effects) : IAsyncDisposable
+public sealed partial class ClassroomModeService(ClassroomModeStore store, IClassroomModeEffects effects,
+    RuntimeOperationGate? runtimeGate = null) : IAsyncDisposable
 {
+    private readonly RuntimeOperationGate _runtimeGate = runtimeGate ?? new();
     private readonly object _gate = new();
     private Task _operation = Task.CompletedTask;
     private bool _stopping;
@@ -22,6 +24,16 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
     public ClassroomModeState Snapshot => store.State;
 
     public HostResponse Handle(HostRequest request)
+    {
+        if (request.Capability == "classroom.status") return HandleCore(request);
+        var lease = _runtimeGate.TryEnterMutation();
+        if (lease is null) return new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy",
+            "正在切换运行环境，请等待操作结束。", ClassroomMode: store.State);
+        try { return HandleCore(request); }
+        finally { RuntimeOperationGate.ReleaseAfter(lease, _operation); }
+    }
+
+    private HostResponse HandleCore(HostRequest request)
     {
         lock (_gate)
         {
@@ -87,15 +99,9 @@ public sealed class ClassroomModeService(ClassroomModeStore store, IClassroomMod
                 Message = "已暂停自动录课，正在设置自启动；ClassIsland 可能请求管理员授权。" });
             touched = true;
             await effects.PauseRecordingAsync();
-            // Enable the intended startup first; avoid leaving both apps disabled if the second action fails.
-            if (ci && !before.ClassIslandEnabled) await effects.SetClassIslandAsync(before, true);
-            if (ea && !before.ExamAwareEnabled) await effects.SetExamAwareAsync(before, true);
-            if (!ci && before.ClassIslandEnabled) await effects.SetClassIslandAsync(before, false);
-            if (!ea && before.ExamAwareEnabled) await effects.SetExamAwareAsync(before, false);
-            var after = await effects.ObserveAsync(false);
-            RequireSamePrograms(before, after);
-            if (after.ClassIslandEnabled != ci || after.ExamAwareEnabled != ea)
-                throw new InvalidOperationException("读回结果与目标不一致，可能有其他窗口修改了设置。");
+            var after = await ClassroomStartupCoordinator.ApplyAsync(before, ci, ea,
+                enabled => effects.SetClassIslandAsync(before, enabled), enabled => effects.SetExamAwareAsync(before, enabled),
+                () => effects.ObserveAsync(false), () => Task.CompletedTask);
             if (!restore && request.ClassroomMode!.SwitchRunning)
             {
                 await CompleteRuntimeAsync(new(target, after, DateTimeOffset.UtcNow));

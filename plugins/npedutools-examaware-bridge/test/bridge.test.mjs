@@ -12,8 +12,33 @@ import { setTimeout as delay } from 'node:timers/promises';
 import renderer from '../dist/renderer/index.mjs';
 const require = createRequire(import.meta.url);
 const entry = require('../dist/main/index.cjs').default;
-const hostExe = resolve('../../src/NPEduTools.Host/bin/Release/net10.0/NPEduTools.Host.exe');
+const hostExe = process.env.NPEEDUTOOLS_TEST_HOST ?? resolve('../../src/NPEduTools.Host/bin/Release/net10.0/NPEduTools.Host.exe');
 const subscribe = (events, event, handler) => { events.on(event, handler); return { dispose: () => events.off(event, handler) }; };
+
+const examConfig = { examName: '期中考试', message: '保持安静', examInfos: [{ name: '语文', start: '2026-09-28T09:00:00', end: '2026-09-28T11:00:00', alertTime: 15 }] };
+const planData = () => Buffer.from(JSON.stringify(examConfig)).toString('base64');
+function playerFixture(ctx) {
+  const state = { starts: 0, prepares: 0, sessions: [], failRead: false, deny: false, hold: undefined };
+  ctx.api.player = {
+    prepare: async (source, options) => {
+      state.prepares++; assert.equal(source.kind, 'json'); assert.equal(options.maxBytes, 24576);
+      if (state.hold) await state.hold;
+      if (state.deny) throw Object.assign(new Error('permission'), { code: 'permission-denied' });
+      const config = JSON.parse(source.data);
+      if (!config.examInfos) throw Object.assign(new Error('invalid'), { code: 'invalid-config' });
+      return { config, json: JSON.stringify(config), validation: { valid: true }, source: 'json' };
+    },
+    listSessions: async () => { if (state.failRead) throw new Error('unavailable'); return state.sessions; },
+    startFromConfig: async (config, options) => {
+      assert.deepEqual(config, examConfig);
+      assert.deepEqual(options, { replaceExisting: false, waitForReady: false, maxBytes: 24576 });
+      state.starts++;
+      const session = { id: randomUUID(), state: 'opening', examName: config.examName };
+      state.sessions.push(session); return session;
+    }
+  };
+  return state;
+}
 
 // Adapter follows the official SDK TCP handle contract. Actual bytes cross Windows TCP and the .NET Host pipe.
 async function connectTcp(options) {
@@ -200,12 +225,12 @@ async function commandFixture(t, readyProof = true) {
   write({ version: 2, type: 'ready', nonce: challenge.nonce, proof: readyProof ? hmac(`host-auth\n${nonce}\n${challenge.nonce}`) : '0'.repeat(64) });
   let sequence = 0;
   return { ctx, frames, get calls() { return calls; }, deny() { denied = true; },
-    send({ id = randomUUID(), expired = false, badProof = false, repeatedSequence = false, action = 'quit', enabled } = {}) {
-      const issuedAt = Date.now() - (expired ? 10000 : 0), payload = JSON.stringify({ requestId: id, action, issuedAt, expiresAt: issuedAt + 3000, enabled });
+    send({ id = randomUUID(), expired = false, badProof = false, repeatedSequence = false, action = 'quit', enabled, dataBase64, preparationId } = {}) {
+      const issuedAt = Date.now() - (expired ? 10000 : 0), payload = JSON.stringify({ requestId: id, action, issuedAt, expiresAt: issuedAt + 3000, enabled, dataBase64, preparationId });
       const n = repeatedSequence ? sequence : ++sequence;
       write({ version: 2, type: 'command', sequence: n, payload, proof: badProof ? '0'.repeat(64) : hmac(`host\n${nonce}\n${challenge.nonce}\n${n}\ncommand\n${payload}`) });
       return id;
-    }, reply: id => frames.filter(f => f.type === 'reply' || f.type === 'autostart.reply').map(f => JSON.parse(f.payload)).filter(f => f.requestId === id)
+    }, reply: id => frames.filter(f => ['reply', 'autostart.reply', 'plan.reply'].includes(f.type)).map(f => JSON.parse(f.payload)).filter(f => f.requestId === id)
   };
 }
 test('quit acknowledges before invocation; duplicate IDs and expired commands never execute', async t => {
@@ -290,4 +315,79 @@ test('a heartbeat started before a write cannot publish stale registration after
   const afterReply = f.frames.length;
   oldRead(true); await delay(150);
   assert.ok(f.frames.slice(afterReply).filter(x => x.type === 'status').every(x => JSON.parse(x.payload).autoStartRegistered !== true));
+});
+
+test('plan preparation never launches; start is explicit and never replaces, observed readiness is independent', async t => {
+  const f = await commandFixture(t), player = playerFixture(f.ctx);
+  const prepare = f.send({ action: 'plan.prepare', dataBase64: planData() });
+  const result = await until(() => f.reply(prepare).find(x => x.state === 'Prepared'));
+  assert.equal(result.summary.examName, examConfig.examName); assert.equal(player.starts, 0);
+  assert.equal(result.summary.exams.length, 1);
+  const start = f.send({ action: 'plan.start', preparationId: result.summary.preparationId });
+  await until(() => f.reply(start).some(x => x.state === 'Started'));
+  assert.equal(player.starts, 1);
+  await until(() => f.frames.some(x => x.type === 'status' && JSON.parse(x.payload).player?.sessions[0]?.state === 'opening'));
+  player.sessions[0].state = 'ready';
+  await until(() => f.frames.some(x => x.type === 'status' && JSON.parse(x.payload).player?.sessions[0]?.state === 'ready'));
+  f.send({ id: start, action: 'plan.start', preparationId: result.summary.preparationId });
+  await until(() => f.reply(start).some(x => x.state === 'Busy'));
+  const again = f.send({ action: 'plan.start', preparationId: result.summary.preparationId });
+  await until(() => f.reply(again).some(x => x.state === 'Expired')); assert.equal(player.starts, 1);
+  player.sessions[0].state = 'closed';
+  await until(() => f.frames.some(x => x.type === 'status' && JSON.parse(x.payload).player?.lastSession?.state === 'closed' && !JSON.parse(x.payload).player.sessions.length));
+});
+
+test('active player and observation failure both block start without replacement', async t => {
+  const f = await commandFixture(t), player = playerFixture(f.ctx);
+  for (const unavailable of [false, true]) {
+    const prepare = f.send({ action: 'plan.prepare', dataBase64: planData() });
+    const result = await until(() => f.reply(prepare).find(x => x.state === 'Prepared'));
+    player.sessions = unavailable ? [] : [{ id: 'existing', state: 'ready', examName: 'other' }];
+    player.failRead = unavailable;
+    const start = f.send({ action: 'plan.start', preparationId: result.summary.preparationId });
+    await until(() => f.reply(start).some(x => x.state === (unavailable ? 'Unconfirmed' : 'Busy')));
+    assert.equal(player.starts, 0);
+  }
+});
+
+test('invalid plan, oversize summary and permission denial never produce a usable preparation', async t => {
+  const f = await commandFixture(t), player = playerFixture(f.ctx);
+  for (const value of ['@@@@', Buffer.from('{}').toString('base64'), Buffer.from(JSON.stringify({ ...examConfig, examName: 'x'.repeat(161) })).toString('base64')]) {
+    const id = f.send({ action: 'plan.prepare', dataBase64: value });
+    await until(() => f.reply(id).some(x => x.state === 'Invalid'));
+  }
+  player.deny = true;
+  const id = f.send({ action: 'plan.prepare', dataBase64: planData() });
+  await until(() => f.reply(id).some(x => x.state === 'Denied')); assert.equal(player.starts, 0);
+});
+
+test('pending preparation blocks quit/startup and disconnection drops late result', async t => {
+  const f = await commandFixture(t), player = playerFixture(f.ctx); let release;
+  player.hold = new Promise(resolve => { release = resolve; });
+  const id = f.send({ action: 'plan.prepare', dataBase64: planData() });
+  await until(() => player.prepares === 1);
+  const quit = f.send(); await until(() => f.reply(quit).some(x => x.state === 'Failed')); assert.equal(f.calls, 0);
+  const startup = f.send({ action: 'autostart.set', enabled: true });
+  await until(() => f.reply(startup).some(x => x.state === 'Failed'));
+  await f.ctx.api.settings.replace({}); release(); await delay(100);
+  assert.equal(f.reply(id).length, 0); assert.equal(player.starts, 0);
+});
+
+test('expired or forged plan request never reaches official prepare', async t => {
+  const f = await commandFixture(t), player = playerFixture(f.ctx);
+  const expired = f.send({ action: 'plan.prepare', dataBase64: planData(), expired: true });
+  await until(() => f.reply(expired).some(x => x.state === 'Expired'));
+  f.send({ action: 'plan.prepare', dataBase64: planData(), badProof: true });
+  await delay(150); assert.equal(player.prepares, 0);
+});
+
+test('bounded replay cache reports its limit explicitly, never pretends to prepare', async t => {
+  const f = await commandFixture(t), player = playerFixture(f.ctx);
+  for (let i = 0; i < 64; i++) {
+    const id = f.send({ action: 'plan.prepare', dataBase64: planData(), expired: true });
+    await until(() => f.reply(id).some(x => x.state === 'Expired'));
+  }
+  const id = f.send({ action: 'plan.prepare', dataBase64: planData() });
+  await until(() => f.reply(id).some(x => x.state === 'LimitReached'));
+  assert.equal(player.prepares, 0);
 });
