@@ -15,7 +15,11 @@ public partial class MainWindow
     {
         while (!_lifetime.IsCancellationRequested)
         {
-            if (IsVisible && SettingsPage.Visibility == Visibility.Visible && NpepSettingsPanel.Visibility == Visibility.Visible) await RefreshNpepAsync();
+            if (IsVisible && SettingsPage.Visibility == Visibility.Visible && NpepSettingsPanel.Visibility == Visibility.Visible)
+            {
+                await RefreshNpepAsync();
+                await RefreshRemoteExamAsync();
+            }
             try { await Task.Delay(1000, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
     }
@@ -42,7 +46,7 @@ public partial class MainWindow
         NpepStatusTitle.Text = state is null ? "后台未连接" : state.Error == "PAIRING_EXPIRED" ? "配对码已过期" : state.State switch
         {
             "UNPAIRED" => "尚未配对", "CREATING" => "配对申请待恢复", "PENDING" => "等待管理员批准", "APPROVED" => "请在本机确认连接",
-            "CONFIRMING" => "正在确认配对结果", "ACTIVE" => state.ReportingPaused ? "已暂停上报" : state.Connection == "ONLINE" ? "已连接学校服务" : state.Connection == "STOPPED" ? "已配对 · 连接已停止" : "已配对 · 等待连接",
+            "CONFIRMING" => "正在确认配对结果", "ACTIVE" => state.ReportingPaused ? "已暂停互联" : state.Connection == "ONLINE" ? "已连接学校服务" : state.Connection == "STOPPED" ? "已配对 · 连接已停止" : "已配对 · 等待连接",
             "SUSPENDED" => "连接已停用", "UNPAIRING" => "解绑尚未完成", _ => "互联暂不可用"
         };
         NpepMessage.Text = state?.Message ?? "无法读取后台状态。连接恢复后会自动刷新，此处不把旧状态显示为在线。";
@@ -55,14 +59,14 @@ public partial class MainWindow
         NpepCode.Text = NpepText(state?.Pairing, "userCode");
         NpepExpiry.Text = "配对截止（学校服务器 UTC）：" + NpepText(state?.Pairing, "expiresAt");
         NpepBindingPanel.Visibility = state?.Approval is not null ? Visibility.Visible : Visibility.Collapsed;
-        NpepBinding.Text = $"学校：{NpepText(state?.Approval, "schoolName")}\n班级：{NpepText(state?.Approval, "administrativeClassName")}\n大屏：{NpepText(state?.Approval, "screenBindingName")}\n共享内容：只读设备状态";
+        NpepBinding.Text = $"学校：{NpepText(state?.Approval, "schoolName")}\n班级：{NpepText(state?.Approval, "administrativeClassName")}\n大屏：{NpepText(state?.Approval, "screenBindingName")}\n连接功能：设备状态、学校通知、考试模式（含自启动）与考试方案放映";
         NpepBoundOrigin.Text = state?.Origin;
         NpepBindingIdentity.Text = $"学校：{NpepText(state?.Approval, "schoolId")}\n班级：{NpepText(state?.Approval, "administrativeClassId")}\n大屏：{NpepText(state?.Approval, "screenBindingId")}\n批准编号：{NpepText(state?.Approval, "approvalId")}";
         NpepConfirmPanel.Visibility = state?.State == "APPROVED" ? Visibility.Visible : Visibility.Collapsed;
         NpepRecoverButton.Visibility = state?.State is "CREATING" or "CONFIRMING" || state?.State is "PENDING" or "ACTIVE" && state.Connection == "STOPPED" ? Visibility.Visible : Visibility.Collapsed;
         NpepRecoverButton.Content = state?.State == "ACTIVE" ? "重新连接" : "恢复未完成操作";
         NpepPauseButton.Visibility = state?.State == "ACTIVE" ? Visibility.Visible : Visibility.Collapsed;
-        NpepPauseButton.Content = state?.ReportingPaused == true ? "恢复上报" : "暂停上报";
+        NpepPauseButton.Content = state?.ReportingPaused == true ? "恢复互联" : "暂停互联";
         NpepUnpairButton.Visibility = state is not null && state.State is not ("UNPAIRED" or "STORE_UNAVAILABLE") ? Visibility.Visible : Visibility.Collapsed;
         NpepUnpairButton.Content = state?.State is "PENDING" or "APPROVED" or "CREATING" ? "取消配对" : "解除绑定";
         UpdateNpepControls();
@@ -116,7 +120,7 @@ public partial class MainWindow
     private async void NpepUnpairClicked(object sender, RoutedEventArgs e)
     {
         if (_npepState is null) return;
-        if (MessageBox.Show(this, "将停止状态上报并删除本机配对凭据。若远端暂时无法连接，还需要学校管理员撤销登记。继续解除绑定吗？", "解除学校互联", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+        if (MessageBox.Show(this, "将停止通知接收、状态上报并删除本机配对凭据。若远端暂时无法连接，还需要学校管理员撤销登记。继续解除绑定吗？", "解除学校互联", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             await SendNpepAsync(new("unpair", _npepState.Revision));
     }
 }

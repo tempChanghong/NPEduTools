@@ -6,7 +6,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class ExamAwareTests : IDisposable
+public sealed partial class ExamAwareTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "NPEduTools.ExamAwareTests", Guid.NewGuid().ToString("N"));
     private sealed class Target : IExamAwareTarget

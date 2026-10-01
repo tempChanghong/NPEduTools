@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace NPEduTools.Integrations.Npep;
 
-public sealed class NpepDevice : IDisposable
+public sealed partial class NpepDevice : IDisposable
 {
     private readonly NpepVault _vault;
     private readonly Func<string, NpepApi> _factory;
@@ -13,9 +13,11 @@ public sealed class NpepDevice : IDisposable
     private readonly string _runId = NpepProtocol.Id();
     private long _sequence;
     private bool _suspended;
+    internal string DataDirectory { get; }
     public NpepDevice(string directory) : this(directory, origin => new(origin)) { }
     internal NpepDevice(string directory, Func<string, NpepApi> factory)
     {
+        DataDirectory = Path.GetFullPath(directory);
         _vault = new(directory);
         try { _saved = _vault.Load(); _suspended = _saved?.Text("stage") is "SUSPENDED" or "UNPAIRING"; }
         catch { _vault.Dispose(); throw; }

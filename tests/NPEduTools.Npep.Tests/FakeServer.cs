@@ -51,6 +51,9 @@ internal sealed class FakeServer
         string path = request.RequestUri!.AbsolutePath["/api/v2/npep/".Length..];
         var body = request.Content is null ? null : JsonNode.Parse(await request.Content.ReadAsStringAsync()) as JsonObject;
         Requests.Add((path, body?.Copy()));
+        // This fixture models an unchanged N1 server. N2 must degrade without breaking status reporting.
+        if (path is "device/notifications" or "device/notification-receipts")
+            return new(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
         Assert.Equal("0.1", request.Headers.GetValues("X-NPEP-Version").Single());
         if (body is not null) Assert.Equal(body.Text("requestId"), request.Headers.GetValues("X-Request-Id").Single());
         if (path == "info") return Fixtures.Reply(request, Info.Copy());

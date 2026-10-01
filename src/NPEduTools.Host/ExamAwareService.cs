@@ -10,12 +10,13 @@ using NPEduTools.Core;
 namespace NPEduTools.Host;
 
 /// <summary>Authenticated reverse connection with explicit, bounded normal-quit requests.</summary>
-public sealed class ExamAwareService : IAsyncDisposable
+public sealed partial class ExamAwareService : IAsyncDisposable
 {
     private sealed record Receipt(Guid Id, string Capability);
     private sealed record Saved(int Version, string? Path, long Revision, int Port, string Key, Receipt[] Receipts);
     private readonly string _path;
     private readonly IExamAwareTarget _target;
+    private readonly RuntimeOperationGate _runtimeGate;
     private readonly SemaphoreSlim _commands = new(1);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _sync = new();
@@ -44,9 +45,10 @@ public sealed class ExamAwareService : IAsyncDisposable
     private ExamAwareAutoStartAck? _autoStartAck;
     private Session? _autoStartSession;
 
-    public ExamAwareService(string directory, IExamAwareTarget target)
+    public ExamAwareService(string directory, IExamAwareTarget target, RuntimeOperationGate? runtimeGate = null)
     {
         _target = target;
+        _runtimeGate = runtimeGate ?? new();
         _path = Path.Combine(directory, "examaware.json");
         try
         {
@@ -58,7 +60,7 @@ public sealed class ExamAwareService : IAsyncDisposable
                 _saved = JsonSerializer.Deserialize<Saved>(File.ReadAllText(_path), Protocol.Json) ?? throw new InvalidDataException();
                 if (_saved.Version != 1 || _saved.Port is < 1024 or > 65535 || _saved.Revision < 0 ||
                     _saved.Key is null || _saved.Key.Length != 64 || !IsHex(_saved.Key) || _saved.Receipts is null || _saved.Receipts.Length > 64 ||
-                    _saved.Receipts.Any(x => x is null || x.Id == Guid.Empty || x.Capability is not ("examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.quit" or "examaware.pairing.reset" or "examaware.autostart.set")) ||
+                    _saved.Receipts.Any(x => x is null || x.Id == Guid.Empty || x.Capability is not ("examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.quit" or "examaware.pairing.reset" or "examaware.autostart.set" or "examaware.plan")) ||
                     _saved.Path is { Length: > 2048 })
                     throw new InvalidDataException();
             }
@@ -87,11 +89,24 @@ public sealed class ExamAwareService : IAsyncDisposable
                 _failure ?? (!fresh ? "尚未连接桥接插件；可先打开软件并完成配对。" : supported ? "桥接已连接" : "已连接，但此版本尚未验证。当前支持 Windows 1.5.2。"),
                 fresh ? _sample!.Version : null, supported ? _sample!.AutoStartRegistered : null,
                 fresh ? _sample!.Packaged : null, _failure is null ? _saved.Port : null, _quit,
-                supported && _sample!.CanSetAutoStart, _autoStart);
+                supported && _sample!.CanSetAutoStart, _autoStart, supported && _sample!.CanPresent,
+                supported && ReferenceEquals(_planSession, _session) ? _preparedPlan : null, _planOperation,
+                supported ? _sample!.Player : null);
         }
     }
 
     public async Task<HostResponse> HandleAsync(HostRequest request, CancellationToken token = default)
+    {
+        if (request.Capability is "examaware.status" or "examaware.pairing.get")
+            return await HandleCoreAsync(request, token);
+        var lease = _runtimeGate.TryEnterMutation();
+        if (lease is null) return new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy",
+            "正在切换运行环境，请等待操作结束。", ExamAware: Snapshot());
+        try { return await HandleCoreAsync(request, token); }
+        finally { RuntimeOperationGate.ReleaseAfter(lease, Task.WhenAll(_quitTask, _autoStartTask, _planTask)); }
+    }
+
+    private async Task<HostResponse> HandleCoreAsync(HostRequest request, CancellationToken token)
     {
         await _commands.WaitAsync(token);
         try
@@ -104,8 +119,11 @@ public sealed class ExamAwareService : IAsyncDisposable
                 return Reply("Succeeded", null, "配对信息已读取。", new(2, "127.0.0.1", _saved.Port, _saved.Key));
             if (_saved.Receipts.Any(x => x.Id == request.RequestId))
                 return Reply("Rejected", "AlreadyAccepted", "该请求已受理过，没有重复执行。请查看操作状态。");
+            if (!_planTask.IsCompleted)
+                return Reply("Rejected", "PlanBusy", "正在处理考试方案，请等待本次操作结果。");
             if (!_autoStartTask.IsCompleted)
                 return Reply("Rejected", "AutoStartBusy", "正在确认登录自启动设置，请稍候再操作。");
+            if (request.Capability == "examaware.plan") return BeginPlan(request);
             if (request.Capability == "examaware.autostart.set")
             {
                 if (request.AutoStartEnabled is not { } enabled)
@@ -139,7 +157,7 @@ public sealed class ExamAwareService : IAsyncDisposable
                 {
                     Save(_saved with { Key = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
                         Revision = checked(_saved.Revision + 1), Receipts = Receipts(request) });
-                    lock (_sync) { _session?.Client.Dispose(); _session = null; _peer = null; _sample = null; }
+                    lock (_sync) { _session?.Client.Dispose(); _session = null; _peer = null; _sample = null; _preparedPlan = null; }
                     return Reply("Succeeded", null, "旧配对已撤销。请重新导出配对文件并在 ExamAware 中导入。");
                 }
                 if (_saved.Path is null) return Reply("Rejected", "PathMissing", "请先保存程序位置，以便核对要退出的进程。");
@@ -167,7 +185,7 @@ public sealed class ExamAwareService : IAsyncDisposable
                 if (request.ExpectedRevision != _saved.Revision) return Reply("Rejected", "RevisionConflict", "配置已变化，请刷新后重试。");
                 string path = _target.Validate(request.ExecutablePath!);
                 Save(_saved with { Path = path, Revision = checked(_saved.Revision + 1) });
-                lock (_sync) _autoStart = null;
+                lock (_sync) { _autoStart = null; _preparedPlan = null; }
                 return Reply("Succeeded", null, "程序位置已保存。版本以桥接读回为准。");
             }
             if (request.Capability is not ("examaware.start" or "examaware.settings" or "examaware.plugins"))
@@ -207,6 +225,60 @@ public sealed class ExamAwareService : IAsyncDisposable
             }
             using var process = _target.Capture(pid, _target.Validate(path));
             if (process.HasExited) throw new InvalidOperationException("ExamAware2 已退出，请重试准备软件。");
+        }
+        finally { _commands.Release(); }
+    }
+
+    internal async Task SetStartupUnderRuntimeLeaseAsync(long revision, bool enabled, Func<Task> beforeDispatch)
+    {
+        if (!_runtimeGate.Switching) throw new RemoteExamException("OPERATION_BUSY");
+        await beforeDispatch();
+        var id = Guid.NewGuid();
+        var response = await HandleCoreAsync(new(Protocol.Version, id, "examaware.autostart.set",
+            ExpectedRevision: revision, AutoStartEnabled: enabled), CancellationToken.None);
+        if (response.Outcome != "Accepted") throw new RemoteExamException("STARTUP_NOT_READY", "ExamAware2 自启动请求未受理：" + response.Message);
+        // Do not release the outer runtime lease while an accepted command still owns the socket.
+        await _autoStartTask;
+        var result = Snapshot().AutoStartChange;
+        if (result is null || result.RequestId != id || result.State != "Succeeded" || result.Registered != enabled)
+            throw new RemoteExamException("STARTUP_NOT_READY", "ExamAware2 自启动设置未确认：" + (result?.Message ?? "未取得本次操作的读回结果。"));
+    }
+
+    internal async Task QuitUnderRuntimeLeaseAsync(long revision, Func<Task> beforeDispatch)
+    {
+        if (!_runtimeGate.Switching) throw new RemoteExamException("OPERATION_BUSY");
+        await beforeDispatch();
+        // Do not tear down the bridge beneath an active presentation.
+        if (Snapshot().Player is { Known: true, Sessions.Length: > 0 })
+            throw new RemoteExamException("EXAMAWARE_PRESENTING");
+        var id = Guid.NewGuid();
+        var response = await HandleCoreAsync(new(Protocol.Version, id, "examaware.quit",
+            ExpectedRevision: revision), CancellationToken.None);
+        if (response.Outcome != "Accepted") throw new RemoteExamException("EXAMAWARE_EXIT_FAILED", response.Message);
+        await _quitTask;
+        var result = Snapshot().Quit;
+        if (result is null || result.RequestId != id || result.State != "Exited")
+            throw new RemoteExamException("EXAMAWARE_EXIT_FAILED", result?.Message);
+    }
+
+    // Internal N3 entry: not a generic capability bypass. The executor already owns the switch
+    // reservation; validate the pinned local configuration under the same lock as local edits.
+    internal async Task StartForRemoteExamAsync(RemoteExamConfiguration expected, Func<Task> beforeDispatch,
+        CancellationToken token)
+    {
+        await beforeDispatch(); // Outside _commands: inspection also takes that lock.
+        await _commands.WaitAsync(token);
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            if (_failure is not null) throw new RemoteExamException("EXAMAWARE_UNAVAILABLE");
+            if (_saved.Revision != expected.ExamAwareRevision ||
+                !string.Equals(_saved.Path, expected.ExamAwarePath, StringComparison.OrdinalIgnoreCase))
+                throw new RemoteExamException("CONFIGURATION_DRIFT");
+            if (!_quitTask.IsCompleted || !_autoStartTask.IsCompleted || !_planTask.IsCompleted) throw new RemoteExamException("OPERATION_BUSY");
+            string path = _target.Validate(expected.ExamAwarePath);
+            // The executor persists intent before this call. Do not retry launch after failure.
+            _target.Open(path, null);
         }
         finally { _commands.Release(); }
     }
@@ -343,9 +415,21 @@ public sealed class ExamAwareService : IAsyncDisposable
                     using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                     deadline.CancelAfter(TimeSpan.FromSeconds(sequence == 1 ? 4 : 7));
                     var frame = await Protocol.ReadAsync<ExamAwareFrame>(stream, deadline.Token);
-                    if (frame.Version != 2 || frame.Type is not ("status" or "reply" or "autostart.reply") || frame.Sequence != sequence || frame.Payload is null ||
+                    if (frame.Version != 2 || frame.Type is not ("status" or "reply" or "autostart.reply" or "plan.reply") || frame.Sequence != sequence || frame.Payload is null ||
                         !Verify(key, FrameText("peer", nonce, challenge.Nonce, sequence, frame.Type, frame.Payload), frame.Proof)) break;
                     sequence++;
+                    if (frame.Type == "plan.reply")
+                    {
+                        var ack = JsonSerializer.Deserialize<ExamAwarePlanAck>(frame.Payload, Protocol.Json);
+                        if (ack is null || !ExamAwarePlanContract.Valid(ack)) break;
+                        lock (_sync)
+                        {
+                            if (_saved.Key != key || _peer != id) break;
+                            if (ReferenceEquals(_planSession, session) && _planOperation?.RequestId == ack.RequestId &&
+                                _planOperation.State == "Sending" && _planAck is null) _planAck = ack;
+                        }
+                        continue;
+                    }
                     if (frame.Type == "autostart.reply")
                     {
                         var ack = JsonSerializer.Deserialize<ExamAwareAutoStartAck>(frame.Payload, Protocol.Json);
@@ -374,7 +458,7 @@ public sealed class ExamAwareService : IAsyncDisposable
                         continue;
                     }
                     var sample = JsonSerializer.Deserialize<ExamAwareSample>(frame.Payload, Protocol.Json);
-                    if (sample is null || sample.Name is null || sample.Name.Length > 128 || sample.Version is null || sample.Version.Length > 64 || sample.Platform is null || sample.Platform.Length > 16) break;
+                    if (sample is null || sample.Name is null || sample.Name.Length > 128 || sample.Version is null || sample.Version.Length > 64 || sample.Platform is null || sample.Platform.Length > 16 || !ExamAwarePlanContract.Valid(sample.Player)) break;
                     lock (_sync)
                     {
                         if (_saved.Key != key || (_peer is not null && _peer != id && Stopwatch.GetElapsedTime(_sampleAt) < TimeSpan.FromSeconds(7))) break;
@@ -382,8 +466,8 @@ public sealed class ExamAwareService : IAsyncDisposable
                     }
                 }
             }
-            catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or JsonException or ArgumentException or ObjectDisposedException) { }
-            finally { lock (_sync) { if (_peer == id) { _peer = null; _sample = null; _session = null; } } }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or SocketException or OperationCanceledException or JsonException or ArgumentException or ObjectDisposedException) { }
+            finally { lock (_sync) { if (_peer == id) { _peer = null; _sample = null; _session = null; _preparedPlan = null; } } }
         }
     }
 
@@ -399,6 +483,7 @@ public sealed class ExamAwareService : IAsyncDisposable
         await Task.WhenAll(_loops);
         await _quitTask;
         await _autoStartTask;
+        await _planTask;
         _lock?.Dispose();
         _lifetime.Dispose();
         _commands.Dispose();

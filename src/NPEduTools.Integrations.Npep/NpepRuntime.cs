@@ -5,7 +5,7 @@ using NPEduTools.Contracts;
 namespace NPEduTools.Integrations.Npep;
 
 /// <summary>One Host owns credentials, UI operations and reporting. Snapshots never wait on network I/O.</summary>
-public sealed class NpepRuntime : IAsyncDisposable
+public sealed partial class NpepRuntime : IAsyncDisposable
 {
     private readonly object _sync = new();
     private readonly SemaphoreSlim _work = new(1);
@@ -24,15 +24,18 @@ public sealed class NpepRuntime : IAsyncDisposable
     private double _delay;
     private int _failures;
     private bool _blocked, _disposed;
+    private NpepCommand? _tlsRetryCommand;
 
-    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample)
-        : this(() => new NpepDevice(directory), appVersion, sample) { }
-    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample)
+    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null)
+        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules) { }
+    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null)
     {
         _sample = sample; _appVersion = appVersion;
         try
         {
             _device = factory();
+            _controlPolicy = new(_device.DataDirectory);
+            _planPolicy = new(_device.DataDirectory, "exam-plan-policy.json");
             Publish("WAITING", _device.View().Text("state") switch
             {
                 "UNPAIRED" => "尚未连接学校服务。只有完成配对后才会上报设备状态。",
@@ -46,6 +49,11 @@ public sealed class NpepRuntime : IAsyncDisposable
         catch (Exception e) when (StorageError(e))
         { _state = _state with { State = "STORE_UNAVAILABLE", Connection = "DISABLED", Error = "CREDENTIAL_STORE_UNAVAILABLE", Message = "凭据无法读取或已被另一实例占用。请关闭冲突实例后重启后台；原文件已保留。" }; }
         _loop = Task.Run(LoopAsync);
+        InitializeNotifications();
+        InitializeControl(control);
+        InitializePlans(plans);
+        InitializeNoise(noise);
+        InitializeNoiseSchedules(schedules);
     }
 
     public NpepState Snapshot()
@@ -61,6 +69,7 @@ public sealed class NpepRuntime : IAsyncDisposable
 
     public HostResponse Handle(HostRequest request)
     {
+        if (request.Capability == "npep.notifications") return HandleNotifications(request);
         lock (_sync)
         {
             HostResponse Reply(string outcome, string? error, string message) => new(Protocol.Version, request.RequestId, outcome, error, message, Npep: Snapshot());
@@ -70,9 +79,14 @@ public sealed class NpepRuntime : IAsyncDisposable
             var c = request.Npep;
             if (c is null || !NpepContract.Valid(c)) return Reply("Rejected", "InvalidNpepCommand", "互联操作参数不正确。");
             if (_state.Busy || c.Revision != _state.Revision) return Reply("Rejected", "NpepStateChanged", "状态已更新或操作仍在进行，请刷新后重试。");
+            _controlPolicy?.Rotate(); // Invalidate queued control intents before pause/resume/unpair work starts.
+            _planPolicy?.Rotate();
+            _controlCancellation?.Cancel();
             _requests.Enqueue(request.RequestId); if (_requests.Count > 128) _requests.Dequeue();
             _state = _state with { Revision = _state.Revision + 1, Busy = true, OperationId = request.RequestId, Error = null, Message = "正在处理，请稍候…" };
             _network?.Cancel();
+            _inbox?.Status("WAITING", "正在更新互联状态，完成后重新核对通知。");
+            Interlocked.Exchange(ref _notificationWake, 1);
             _command = Task.Run(() => CommandAsync(c));
             return Reply("Accepted", null, "已受理；网络操作在后台完成，关闭此页面不会取消操作。");
         }
@@ -83,41 +97,50 @@ public sealed class NpepRuntime : IAsyncDisposable
         await _work.WaitAsync();
         try
         {
-            var token = _lifetime.Token;
             _blocked = false;
-            switch (c.Action)
-            {
-                case "inspect":
-                    if (_device!.View().Text("state") != "UNPAIRED") throw new NpepException("PAIRING_ALREADY_EXISTS");
-                    _verified = null; _verifiedOrigin = null;
-                    var info = await _device.InspectServerAsync(c.Origin!, token);
-                    _verified = info; _verifiedOrigin = NpepApi.ValidateOrigin(c.Origin!);
-                    Publish("VERIFIED", "服务可连接。请核对服务地址与实例标识，再创建配对码。"); break;
-                case "pair":
-                    if (_verified is null || NpepApi.ValidateOrigin(c.Origin!) != _verifiedOrigin ||
-                        c.ServerInstanceId != _verified.Text("serverInstanceId") || c.DeploymentEpoch != _verified.Text("deploymentEpoch")) throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
-                    await _device!.BeginAsync(c.Origin!, _verified, c.DeviceName!, _appVersion, token);
-                    Publish("WAITING", "请学校管理员在 NPClassworks 中输入配对码，选择对应班级的大屏。"); break;
-                case "poll": await _device!.PollApprovalAsync(token); Publish("WAITING", "审批信息已更新，请核对后在本机确认。"); break;
-                case "confirm": await _device!.ConfirmAsync(c.ApprovalId!, token); Publish("CONNECTING", "配对完成，正在发送首次状态。"); break;
-                case "recover": await _device!.RecoverConfirmationAsync(token); Publish("CONNECTING", "已恢复原配对，正在连接。"); break;
-                case "resume-create": await _device!.ResumeCreateAsync(token); Publish("WAITING", "已恢复原配对申请。"); break;
-                case "pause": await _device!.SetReportingPausedAsync(true, token); Publish("PAUSED", "已暂停上报。学校端会在在线窗口结束后显示离线；配对保留。"); break;
-                case "resume": await _device!.SetReportingPausedAsync(false, token); Publish("CONNECTING", "正在恢复状态上报。"); break;
-                case "unpair":
-                    string outcome = await _device!.UnpairAsync(token);
-                    _verified = null; _verifiedOrigin = null; _receivedAt = 0;
-                    Publish("DISABLED", outcome == "LOCAL_ONLY" ? "本机已解绑，但无法确认远端撤销。请学校管理员检查并撤销该设备。" : "已解除绑定并停止上报。", outcome == "LOCAL_ONLY" ? "LOCAL_ONLY" : null); break;
-            }
-            _failures = 0; _delay = c.Action is "pair" or "poll" or "resume-create" ? 5 : 0;
+            _tlsRetryCommand = null; // An explicit user action supersedes the previous retry.
+            await PerformCommandAsync(c, _lifetime.Token);
         }
-        catch (Exception e) when (Handled(e)) { Failure(e); }
+        catch (Exception e) when (Handled(e))
+        {
+            if (IsTlsFailure(e)) _tlsRetryCommand = c;
+            Failure(e);
+        }
         finally
         {
             _attemptAt = Stopwatch.GetTimestamp();
             lock (_sync) _state = _state with { Busy = false, Revision = _state.Revision + 1 };
             _work.Release();
         }
+    }
+
+    private async Task PerformCommandAsync(NpepCommand c, CancellationToken token)
+    {
+        switch (c.Action)
+        {
+            case "inspect":
+                if (_device!.View().Text("state") != "UNPAIRED") throw new NpepException("PAIRING_ALREADY_EXISTS");
+                _verified = null; _verifiedOrigin = null;
+                var info = await _device.InspectServerAsync(c.Origin!, token);
+                _verified = info; _verifiedOrigin = NpepApi.ValidateOrigin(c.Origin!);
+                Publish("VERIFIED", "服务可连接。请核对服务地址与实例标识，再创建配对码。"); break;
+            case "pair":
+                if (_verified is null || NpepApi.ValidateOrigin(c.Origin!) != _verifiedOrigin ||
+                    c.ServerInstanceId != _verified.Text("serverInstanceId") || c.DeploymentEpoch != _verified.Text("deploymentEpoch")) throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
+                await _device!.BeginAsync(c.Origin!, _verified, c.DeviceName!, _appVersion, token);
+                Publish("WAITING", "请学校管理员在 NPClassworks 中输入配对码，选择对应班级的大屏。"); break;
+            case "poll": await _device!.PollApprovalAsync(token); Publish("WAITING", "审批信息已更新，请核对后在本机确认。"); break;
+            case "confirm": await _device!.ConfirmAsync(c.ApprovalId!, token); Publish("CONNECTING", "配对完成，正在发送首次状态。"); break;
+            case "recover": await _device!.RecoverConfirmationAsync(token); Publish("CONNECTING", "已恢复原配对，正在连接。"); break;
+            case "resume-create": await _device!.ResumeCreateAsync(token); Publish("WAITING", "已恢复原配对申请。"); break;
+            case "pause": await _device!.SetReportingPausedAsync(true, token); Publish("PAUSED", "已暂停互联（通知与状态）。学校端会在在线窗口结束后显示离线；配对保留。"); break;
+            case "resume": await _device!.SetReportingPausedAsync(false, token); Publish("CONNECTING", "正在恢复通知接收与状态上报。"); break;
+            case "unpair":
+                string outcome = await _device!.UnpairAsync(token);
+                _verified = null; _verifiedOrigin = null; _receivedAt = 0;
+                Publish("DISABLED", outcome == "LOCAL_ONLY" ? "本机已解绑，但无法确认远端撤销。请学校管理员检查并撤销该设备。" : "已解除绑定并停止上报。", outcome == "LOCAL_ONLY" ? "LOCAL_ONLY" : null); break;
+        }
+        _failures = 0; _delay = c.Action is "pair" or "poll" or "resume-create" ? 5 : 0;
     }
 
     private async Task LoopAsync()
@@ -136,7 +159,15 @@ public sealed class NpepRuntime : IAsyncDisposable
                 }
                 var view = _device.View();
                 string stage = view.Text("state");
-                if (stage == "PENDING")
+                if (_tlsRetryCommand is { } pending)
+                {
+                    attempted = true;
+                    // Recover the persisted candidate instead of creating another pairing/secret.
+                    string action = stage switch { "CREATING" => "resume-create", "CONFIRMING" => "recover", _ => pending.Action };
+                    await PerformCommandAsync(pending with { Action = action }, _network.Token);
+                    _tlsRetryCommand = null;
+                }
+                else if (stage == "PENDING")
                 {
                     attempted = true;
                     await _device.PollApprovalAsync(_network.Token);
@@ -172,12 +203,13 @@ public sealed class NpepRuntime : IAsyncDisposable
         bool paused = view["reportingPaused"]?.GetValue<bool>() == true;
         lock (_sync)
         {
+            SynchronizeControlScope(view, connection);
             bool changed = _state.State != stage || _state.ReportingPaused != paused;
             _state = _state with
             {
                 Revision = _state.Revision + (changed ? 1 : 0), State = stage,
                 Connection = paused ? "PAUSED" : stage is "SUSPENDED" or "UNPAIRING" ? "STOPPED" : connection,
-                Message = paused ? "已暂停上报，配对保留。恢复后会重新检查授权。" : message,
+                Message = paused ? "已暂停互联（通知与状态），配对保留。恢复后会重新检查授权。" : message,
                 Origin = view["origin"]?.GetValue<string>() ?? _verifiedOrigin, Server = _verified?.Copy(),
                 Pairing = view["pairing"] as JsonObject, Approval = view["approval"] as JsonObject,
                 ReportingPaused = paused, LastReceivedAt = stage == "UNPAIRED" ? null : receivedAt ?? _state.LastReceivedAt, Error = error
@@ -186,9 +218,9 @@ public sealed class NpepRuntime : IAsyncDisposable
     }
     private void Failure(Exception e, bool background = false)
     {
-        bool tls = e is HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError };
+        bool tls = IsTlsFailure(e);
         string code = tls ? "TLS_VALIDATION_FAILED" : e is NpepException n ? n.Code : e is HttpRequestException or OperationCanceledException ? "NETWORK_UNAVAILABLE" : "CREDENTIAL_STORE_UNAVAILABLE";
-        bool retry = !tls && (e is HttpRequestException or OperationCanceledException || e is NpepException problem && (problem.Status == 429 || problem.Status >= 500));
+        bool retry = tls || e is HttpRequestException or OperationCanceledException || e is NpepException problem && (problem.Status == 429 || problem.Status >= 500);
         _blocked = !retry;
         int backoff = Math.Min(60, 5 * (1 << Math.Min(_failures++, 4)));
         _delay = Math.Max(backoff, (e as NpepException)?.RetryAfterSeconds ?? 0) * (1 + Random.Shared.NextDouble() * .2);
@@ -200,17 +232,21 @@ public sealed class NpepRuntime : IAsyncDisposable
             "SESSION_SUPERSEDED" or "REVISION_CONFLICT" => "当前会话已被替换。请检查是否有另一实例使用该配对；此实例不会自动抢回会话。",
             _ => "互联操作未完成或授权已失效，请查看错误并处理；不会自动重新配对。"
         };
-        Publish(retry ? "OFFLINE" : "STOPPED", tls ? "无法建立可信的 HTTPS 连接。请核对学校地址、本机系统时间及服务器证书；程序不会跳过安全验证。" : retry
+        Publish(retry ? "OFFLINE" : "STOPPED", tls ? "HTTPS 证书验证失败，将持续自动重试，证书恢复后自动连接。请核对学校地址、本机系统时间及服务器证书；每次重试仍严格验证证书。" : retry
             ? background ? "暂时无法连接学校服务，将自动重试。配对信息保留。" : "网络操作结果尚未确认。请刷新状态，恢复未完成操作或重试检查服务；原候选凭据保留。"
             : stopped, code);
     }
     private static bool StorageError(Exception e) => e is IOException or UnauthorizedAccessException or NpepException or System.Text.Json.JsonException;
-    private static bool Handled(Exception e) => StorageError(e) || e is HttpRequestException or OperationCanceledException;
+    private static bool IsTlsFailure(Exception e) => e is System.Security.Authentication.AuthenticationException or
+        HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } ||
+        e.InnerException is { } inner && IsTlsFailure(inner);
+    private static bool Handled(Exception e) => StorageError(e) || e is HttpRequestException or OperationCanceledException or System.Security.Authentication.AuthenticationException;
     public async ValueTask DisposeAsync()
     {
         Task command;
         lock (_sync) { _disposed = true; _lifetime.Cancel(); _network?.Cancel(); command = _command; }
-        await Task.WhenAll(_loop, command);
+        await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop);
+        await _controlLoop;
         _device?.Dispose(); _work.Dispose(); _lifetime.Dispose();
     }
 }

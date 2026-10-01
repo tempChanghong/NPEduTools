@@ -7,7 +7,7 @@ using NPEduTools.Core;
 namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
-public sealed partial class ClassroomModeEffects(LaunchService launch, ExamAwareService examAware, RecordingService recording, ILessonStatusReader? reader = null) : IClassroomModeEffects
+public sealed partial class ClassroomModeEffects(LaunchService launch, ExamAwareService examAware, RecordingService recording, ILessonStatusReader? reader = null) : IClassroomModeEffects, IRemoteClassroomModeEffects
 {
     private readonly string _helper = Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe");
     private async Task<LaunchSettings> ClassIslandSettingsAsync()
@@ -20,13 +20,13 @@ public sealed partial class ClassroomModeEffects(LaunchService launch, ExamAware
     private async Task<AdminStatus> ClassIslandStatusAsync(string path)
     {
         var response = await AdminClient.RunAsync(_helper, "status", path);
-        if (response.Outcome != "Succeeded" || response.Status is not { TaskState: "Enabled" or "Disabled" } status)
-            throw new InvalidOperationException("ClassIsland 管理员任务不可用。请先创建当前程序的管理员自启动任务；同名冲突任务不会被覆盖。 " + response.Message);
+        if (response.Outcome != "Succeeded" || response.Status is not { TaskState: "Enabled" or "Disabled" or "Missing" } status)
+            throw new InvalidOperationException("无法核对 ClassIsland 管理员自启动任务；同名冲突任务不会被覆盖。 " + response.Message);
         return status;
     }
     private static bool Ready(ExamAwareStatus state) => state.BridgeState == "Connected" &&
         state.CanSetAutoStart && state.AutoStartRegistered is not null &&
-        state.AutoStartChange?.State != "Sending" && state.Quit?.State is not ("Sending" or "AwaitingExit");
+        state.PlanOperation?.State != "Sending" && state.AutoStartChange?.State != "Sending" && state.Quit?.State is not ("Sending" or "AwaitingExit");
     public async Task<ClassroomStartupSnapshot> ObserveAsync(bool connect)
     {
         var ci = await ClassIslandSettingsAsync();
@@ -82,4 +82,35 @@ public sealed partial class ClassroomModeEffects(LaunchService launch, ExamAware
         throw new InvalidOperationException("ExamAware 自启动设置未得到确认。");
     }
     public Task PauseRecordingAsync() => recording.PauseForClassroomModeAsync();
+
+    public async Task ValidateRemoteAsync(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var ci = await ClassIslandSettingsAsync();
+        try { await ClassIslandStatusAsync(ci.ExecutablePath!); }
+        catch (InvalidOperationException) { throw new RemoteExamException("CLASSISLAND_TASK_REQUIRED"); }
+        var ea = examAware.Snapshot();
+        if (ea.BridgeState == "Connected" && (!ea.CanSetAutoStart || ea.AutoStartRegistered is null))
+            throw new RemoteExamException("STARTUP_NOT_READY");
+        token.ThrowIfCancellationRequested();
+    }
+
+    public async Task SetClassIslandRemoteAsync(ClassroomStartupSnapshot expected, bool enabled, Func<Task> beforeDispatch)
+    {
+        ClassroomModeService.RequireSamePrograms(expected, await ObserveAsync(false));
+        var status = await ClassIslandStatusAsync(expected.ClassIslandPath);
+        await beforeDispatch();
+        if ((status.TaskState == "Enabled") == enabled) return;
+        var response = await AdminClient.SetStartupUnderRuntimeLeaseAsync(_helper, expected.ClassIslandPath,
+            enabled, status.Fingerprint!, beforeDispatch);
+        if (response.Outcome != "Succeeded" || response.Status?.TaskState != (enabled ? "Enabled" : "Disabled"))
+            throw new RemoteExamException("STARTUP_NOT_READY", "ClassIsland 管理员自启动设置未完成：" + response.Message +
+                (response.ErrorCode is { } code ? $"（{code}）" : ""));
+    }
+
+    public async Task SetExamAwareRemoteAsync(ClassroomStartupSnapshot expected, bool enabled, Func<Task> beforeDispatch)
+    {
+        ClassroomModeService.RequireSamePrograms(expected, await ObserveAsync(false));
+        await examAware.SetStartupUnderRuntimeLeaseAsync(expected.ExamAwareRevision, enabled, beforeDispatch);
+    }
 }

@@ -1,5 +1,11 @@
 # NPEP：互联基础与首阶段协作草案
 
+> 历史设计文档。当前规则以[考试互联一页用例与验收](npep/EXAM-MODE-OVERVIEW.md)为准。下文“不改 Windows 自启动”和独立许可已被后续用户决定替代；长期噪音／摄像头构想仍未进入实施范围。
+
+2026-09-25 产品定稿：N3 改为[单设备远程切入考试运行环境](npep/NPEP-N3-RUNTIME-CONTROL-PLAN.md)，只处理当前软件运行和自动录课暂停，不修改 Windows 自启动；现场首次开启一次远程控制，后续无需逐次产品确认，UAC 按需现场处理。本文后续章节涉及自启动、SwitchRunning 选项及本地模式服务直接复用的内容属于早期设计，不再是 N3 实施依据。接口细节仍待双端冻结；现已开始[执行内核与录制保留权实现](npep/NPEP-N3-KERNEL-IMPLEMENTATION-20260925.md)，尚未开放远程入口或部署。
+
+2026-09-24 产品调整：N2 改为 NPEduTools 自定义置顶通知窗口，四级纯色白字、手动关闭，暂不接 ClassIsland 通知。下文 ClassIsland 提醒提供方方案保留为历史设计，不再是当前 N2 实现目标。当前展示层和接收通道的完成边界见[自定义通知窗口记录](npep/NPEP-N2-CUSTOM-NOTIFICATION-UI.md)。
+
 日期：2026-09-20。名称：NOVARK POWER EDUCATION PLUS（NPEP）。状态：架构提案，未冻结协议，未实现功能，未部署。目标是让学校管理通过 NPClassworks 安全联动教室内的 NPEduTools，并逐步接入 ClassIsland 等本地软件。
 
 后续进展：N1 已完成共同契约审阅并进入隔离实现，见[设备端实现与联调记录](npep/NPEP-N1-IMPLEMENTATION-REPORT.md)及[共同契约与示例](npep/README.md)。本文保留最初阶段背景；具体 N1 路径、字段和边界以 [NPEP-N1-CONTRACT.md](npep/NPEP-N1-CONTRACT.md) 为准。N2/N3 仍是待后续设计的能力。

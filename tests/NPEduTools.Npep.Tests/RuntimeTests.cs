@@ -3,7 +3,7 @@ using NPEduTools.Integrations.Npep;
 
 namespace NPEduTools.Npep.Tests;
 
-public sealed class RuntimeTests
+public sealed partial class RuntimeTests
 {
     private sealed class CancelHandler(TaskCompletionSource entered) : HttpMessageHandler
     {
@@ -119,7 +119,7 @@ public sealed class RuntimeTests
         Assert.Equal("UNPAIRED", reopened.View().Text("state"));
     }
     [Fact]
-    public async Task CertificateFailureRemainsVisibleAndDoesNotRetryAutomatically()
+    public async Task CertificateFailureRemainsVisibleAndRetriesWithoutClaimingTrust()
     {
         using var dir = new TestDirectory(); int requests = 0;
         await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new NpepApi(origin, new Handler(_ =>
@@ -128,11 +128,75 @@ public sealed class RuntimeTests
             throw new HttpRequestException(HttpRequestError.SecureConnectionError, "private certificate details");
         }))), "test", Sample);
         Assert.Equal("TLS_VALIDATION_FAILED", (await Command(runtime, "inspect")).Error);
-        await Task.Delay(600);
-        Assert.Equal(1, requests);
+        Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
+        await Until(() => Volatile.Read(ref requests) >= 2);
+        Assert.Equal("TLS_VALIDATION_FAILED", runtime.Snapshot().Error);
+        Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
         Assert.DoesNotContain("private", runtime.Snapshot().Message);
         Assert.Null(runtime.Snapshot().Server);
     }
+
+    [Fact]
+    public async Task CertificateRecoveryAutomaticallyCompletesTheOriginalInspection()
+    {
+        using var dir = new TestDirectory(); var server = new FakeServer(); int requests = 0;
+        await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new NpepApi(origin, new Handler(request =>
+        {
+            if (Interlocked.Increment(ref requests) == 1)
+                throw new HttpRequestException(HttpRequestError.SecureConnectionError, "private certificate details");
+            return server.Send(request);
+        }))), "test", Sample);
+        await Command(runtime, "inspect");
+        await Until(() => runtime.Snapshot().Connection == "VERIFIED");
+        Assert.Null(runtime.Snapshot().Error);
+        Assert.NotNull(runtime.Snapshot().Server);
+        Assert.Equal("UNPAIRED", runtime.Snapshot().State);
+        Assert.DoesNotContain(server.Requests, r => r.Path == "pairings");
+    }
+
+    [Fact]
+    public async Task ActiveDeviceRecoversFromTlsFailureWithoutManualResume()
+    {
+        using var dir = new TestDirectory(); var server = new FakeServer(); int broken = 1;
+        using (var device = new NpepDevice(dir.Path, server.Api)) await server.ActivateAsync(device);
+        await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new NpepApi(origin, new Handler(request =>
+        {
+            if (Volatile.Read(ref broken) == 1)
+                throw new HttpRequestException(HttpRequestError.SecureConnectionError, "private certificate details");
+            return server.Send(request);
+        }))), "test", Sample);
+        await Until(() => runtime.Snapshot().Error == "TLS_VALIDATION_FAILED");
+        Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
+        Assert.Equal("ACTIVE", runtime.Snapshot().State);
+        Interlocked.Exchange(ref broken, 0);
+        await Until(() => runtime.Snapshot().Connection == "ONLINE");
+        Assert.Null(runtime.Snapshot().Error);
+        Assert.NotNull(runtime.Snapshot().LastReceivedAt);
+    }
+    [Fact]
+    public async Task TlsRetryResumesTheSamePairingCandidate()
+    {
+        using var dir = new TestDirectory(); var server = new FakeServer(); int attempts = 0;
+        await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new NpepApi(origin, new Handler(async request =>
+        {
+            var response = await server.Send(request);
+            if (request.RequestUri!.AbsolutePath.EndsWith("/pairings", StringComparison.Ordinal) &&
+                Interlocked.Increment(ref attempts) == 1)
+            {
+                response.Dispose();
+                throw new HttpRequestException(HttpRequestError.SecureConnectionError, "test TLS interruption");
+            }
+            return response;
+        }))), "test", Sample);
+        await Command(runtime, "inspect");
+        Assert.Equal("CREATING", (await Command(runtime, "pair", server)).State);
+        await Until(() => runtime.Snapshot().State == "PENDING");
+        var creates = server.Requests.Where(r => r.Path == "pairings").ToArray();
+        Assert.Equal(2, creates.Length);
+        Assert.True(NpepProtocol.Equal(creates[0].Body, creates[1].Body));
+        Assert.False(server.Active); // Approval and local confirmation remain required.
+    }
+
     [Fact]
     public async Task InvalidStoreDoesNotDisableOtherHostCapabilities()
     {
@@ -143,9 +207,19 @@ public sealed class RuntimeTests
     }
     [Theory]
     [InlineData("mode", null)]
-    [InlineData("inspect", "http://school.test")]
+    [InlineData("inspect", "ftp://school.test")]
     [InlineData("inspect", "https://user:secret@school.test")]
     [InlineData("inspect", "https://school.test/path")]
     public void LocalContractRejectsControlCommandsAndUnsafeOrigins(string action, string? origin)
         => Assert.NotNull(Protocol.Validate(new(1, Guid.NewGuid(), "npep.command", Npep: new(action, 0, origin))));
+
+    [Theory]
+    [InlineData("http://localhost:3000")]
+    [InlineData("http://school.test")]
+    [InlineData("https://school.test")]
+    public void LocalContractAllowsInspectAndPairOverBothTransports(string origin)
+    {
+        Assert.Null(Protocol.Validate(new(1, Guid.NewGuid(), "npep.command", Npep: new("inspect", 0, origin))));
+        Assert.Null(Protocol.Validate(new(1, Guid.NewGuid(), "npep.command", Npep: new("pair", 0, origin, "测试设备", Guid.NewGuid().ToString("D"), Guid.NewGuid().ToString("D")))));
+    }
 }

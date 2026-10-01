@@ -22,18 +22,19 @@ public partial class ExamAwareWindow : Window
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
-    private async Task<HostResponse> RequestAsync(string capability, bool save = false, bool? autoStartEnabled = null, long? expectedRevision = null)
+    private async Task<HostResponse> RequestAsync(string capability, bool save = false, bool? autoStartEnabled = null, long? expectedRevision = null, ExamAwarePlanInput? plan = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
         return await HostClient.RequestAsync(_pipe, new HostRequest(Protocol.Version, Guid.NewGuid(), capability,
             ExecutablePath: save ? Executable.Text.Trim() : null,
-            ExpectedRevision: expectedRevision ?? (save ? _revision : null), AutoStartEnabled: autoStartEnabled), deadline.Token);
+            ExpectedRevision: expectedRevision ?? (save ? _revision : null), AutoStartEnabled: autoStartEnabled, ExamPlan: plan), deadline.Token);
     }
     private void Render(ExamAwareStatus? state)
     {
         bool ready = !_busy && state?.BridgeState == "Connected" && state.ExecutablePath is not null &&
-            state.Quit?.State is not ("Sending" or "AwaitingExit") && state.AutoStartChange?.State != "Sending";
+            state.Quit?.State is not ("Sending" or "AwaitingExit") && state.AutoStartChange?.State != "Sending" && state.PlanOperation?.State != "Sending";
+        RenderPlan(state, ready);
         QuitButton.IsEnabled = ready;
         EnableAutoStartButton.IsEnabled = ready && state!.CanSetAutoStart && state.AutoStartRegistered != true;
         DisableAutoStartButton.IsEnabled = ready && state!.CanSetAutoStart && state.AutoStartRegistered != false;
@@ -57,18 +58,19 @@ public partial class ExamAwareWindow : Window
             {
                 try { Render((await RequestAsync("examaware.status")).ExamAware); }
                 catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)
-                { QuitButton.IsEnabled = EnableAutoStartButton.IsEnabled = DisableAutoStartButton.IsEnabled = false; Connection.Text = "暂时无法连接 NPEduTools 后台。"; VersionText.Text = "版本：未知"; AutoStartText.Text = "登录自启动登记：未知"; }
+                { RenderPlan(null, false); QuitButton.IsEnabled = EnableAutoStartButton.IsEnabled = DisableAutoStartButton.IsEnabled = false; Connection.Text = "暂时无法连接 NPEduTools 后台。"; VersionText.Text = "版本：未知"; AutoStartText.Text = "登录自启动登记：未知"; }
             }
             try { await Task.Delay(1500, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
     }
-    private async Task RunAsync(string capability, bool save = false, bool? autoStartEnabled = null, long? expectedRevision = null)
+    private async Task RunAsync(string capability, bool save = false, bool? autoStartEnabled = null, long? expectedRevision = null, ExamAwarePlanInput? plan = null)
     {
         if (_busy) return;
         _busy = true; Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = QuitButton.IsEnabled = false;
         try
         {
-            var response = await RequestAsync(capability, save, autoStartEnabled, expectedRevision);
+            var response = await RequestAsync(capability, save, autoStartEnabled, expectedRevision, plan);
+            if (plan?.Action == "prepare") _allowPreparedPlan = response.Outcome == "Accepted";
             Render(response.ExamAware); Message.Text = response.Message;
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)

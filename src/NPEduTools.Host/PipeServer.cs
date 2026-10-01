@@ -11,9 +11,10 @@ using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
-public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
+public sealed partial class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
-    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null)
+    SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
+    RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     public async Task RunAsync(CancellationToken token)
@@ -44,6 +45,8 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                 var watch = Stopwatch.StartNew();
                 HostResponse response;
                 string? error = Protocol.Validate(request);
+                using var shutdownReservation = error is null && request.Capability == "host.stop"
+                    ? runtimeGate?.TryEnterMutation() : null;
                 if (error is null && request.Capability == "classisland.watch")
                 {
                     await WatchAsync(pipe, request, token);
@@ -53,12 +56,20 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
+                else if (request.Capability.StartsWith("noise.", StringComparison.Ordinal))
+                    response = noise?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台以使用噪音监测。");
+                else if (request.Capability is "remoteexam.preflight" or "remoteexam.inspect")
+                    response = await RemoteExamPreflightAsync(request, token);
+                else if (request.Capability is "remoteexam.status" or "remoteexam.command")
+                    response = await RemoteExamLocalAsync(request, token);
                 else if (request.Capability.StartsWith("npep.", StringComparison.Ordinal))
                     response = npep?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NpepUnavailable", "请更新并重启后台以使用学校互联。");
                 else if (request.Capability == "host.cached-status")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "已有本地缓存",
                         SchoolClock: schoolClock?.PeekSnapshot(), Recording: recording?.State,
                         Automatic: recording?.Automatic, ExamAware: examAware?.Snapshot(), ClassroomMode: classroom?.Snapshot);
+                else if (request.Capability == "host.stop" && runtimeGate is not null && shutdownReservation is null)
+                    response = new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy", "正在切换运行环境，后台暂不能停止。");
                 else if (request.Capability == "host.stop" && classroom is not null && !classroom.BeginShutdown())
                     response = new(Protocol.Version, request.RequestId, "Rejected", "ClassroomBusy", "课堂模式正在切换，请等待完成或恢复提示后再停止后台。");
                 else if (request.Capability.StartsWith("classroom.", StringComparison.Ordinal))
@@ -126,6 +137,57 @@ public sealed class PipeServer(string pipeName, ILessonStatusReader reader, Acti
             }
         }
     }
+
+    private async Task<HostResponse> RemoteExamPreflightAsync(HostRequest request, CancellationToken token)
+    {
+        if (remoteExam is null) return new(Protocol.Version, request.RequestId, "Rejected", "RemoteExamUnavailable", "此后台不支持考试环境检查，请重启新版后台。");
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(TimeSpan.FromMilliseconds(request.TimeoutMs));
+            var current = request.Capability == "remoteexam.inspect"
+                ? await remoteExam.InspectLocallyAsync(deadline.Token) : await remoteExam.PreflightAsync(deadline.Token, switchMode: true);
+            return new(Protocol.Version, request.RequestId, "Succeeded", null,
+                "本机检查通过：后台具有管理员权限，录制器空闲，程序路径有效。" +
+                (current.ExamAwareReady ? "ExamAware2 桥接已就绪。" : "ExamAware2 桥接尚未就绪，实际切换时需要准备并确认。") +
+                (current.ClassIslandStopped ? "ClassIsland 当前已停止。" : "ClassIsland 当前实例已核实。") +
+                "本次仅检查，没有切换软件或修改自启动。实际远程执行还需要本机许可和学校服务授权。", RemoteExam: RemoteExamSnapshot());
+        }
+        catch (RemoteExamException error)
+        { return new(Protocol.Version, request.RequestId, "Rejected", error.Code, error.LocalMessage ?? RemoteExamPreflightMessage(error.Code)); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or
+            System.ComponentModel.Win32Exception or LaunchTargetException or OperationCanceledException)
+        { return new(Protocol.Version, request.RequestId, "Rejected", "PREFLIGHT_UNAVAILABLE", "未能完成本机检查，请核对程序位置、桥接和后台状态。没有执行软件切换。"); }
+    }
+
+    private static string RemoteExamPreflightMessage(string code) => code switch
+    {
+        "HOST_NOT_ELEVATED" => "当前实际执行的后台没有管理员权限。请在结束录制后退出整个 NPEduTools，再以管理员身份启动；只提升前台不会替换已运行的普通权限后台。",
+        "RECORDING_BUSY" => "录制器正在工作或状态未确认，本次不切换，也不会停止录制。",
+        "OPERATION_BUSY" => "当前有通知窗口或软件管理操作，请处理完后重新检查。",
+        "CLASSISLAND_TASK_REQUIRED" => "请先在 ClassIsland 设置中创建并核实当前程序的管理员自启动任务。远程操作不会新建或覆盖任务。",
+        "STARTUP_NOT_READY" => "自启动设置尚未得到确认，请检查 ExamAware 桥接权限及 ClassIsland 管理员任务；如切换已开始，请在课堂模式中恢复切换前设置。",
+        "MODE_CONTROL_UNAVAILABLE" => "后台尚不支持完整考试模式，请更新并重启后台。",
+        "DAILY_MODE_REQUIRED" => "当前仍是本地考试模式。请先在课堂模式中返回日常，再核实并解除本次远程录课暂停。",
+        "CLASSISLAND_CONFIGURATION_REQUIRED" => "请先保存 ClassIsland 程序位置并处理配置警告。",
+        "EXAMAWARE_CONFIGURATION_REQUIRED" => "请先保存 ExamAware2 程序位置并处理桥接服务配置问题。",
+        "CLASSISLAND_EXECUTABLE_INVALID" => "ClassIsland 程序文件无效或缺失，请在 ClassIsland 设置中重新保存位置。",
+        "EXAMAWARE_EXECUTABLE_INVALID" => "ExamAware2 程序文件无效、缺失或版本不受支持，请在考试看板中重新保存位置。",
+        "EXAMAWARE_EXECUTABLE_UNREADABLE" => "无法读取 ExamAware2 程序文件，请检查位置和文件访问权限。",
+        "CLASSISLAND_IDENTITY_UNAVAILABLE" => "无法核实 ClassIsland 的路径、用户、会话或唯一实例，请先检查本地运行状态。",
+        "EXAMAWARE_IDENTITY_UNAVAILABLE" => "无法核实 ExamAware2 的程序实例或所属用户，请检查其他位置、用户或会话中的进程。",
+        "CONFIGURATION_DRIFT" => "检查期间程序配置发生变化，请重新检查。",
+        "DESKTOP_UNAVAILABLE" => "当前交互桌面不可用，请解锁电脑后重新检查。",
+        "RECOVERY_REQUIRED" => "存在未解决的切换记录，请先核实并处理原操作。",
+        "STORAGE_UNAVAILABLE" => "远程考试状态文件不可用，原记录已保留，请先处理存储问题。",
+        "STATE_CHANGED" => "本地状态已变化，请重新核实后再操作。",
+        "POLICY_CHANGED" => "学校绑定或许可版本已变化，请刷新后重新确认。",
+        "CONTROL_OFFLINE" => "请等待当前学校连接恢复后再开启许可；离线时仍可关闭已有许可。",
+        "POLICY_STORE_UNAVAILABLE" => "本地许可文件不可用，控制已禁用，原文件已保留。",
+        "RESOLUTION_NOT_REQUIRED" => "该操作没有持有 N3 暂停，无需结束。",
+        "OPERATION_NOT_FOUND" => "找不到该操作记录，请刷新状态。",
+        _ => "本机检查未通过：" + code
+    };
 
     private async Task WatchAsync(Stream pipe, HostRequest request, CancellationToken token)
     {

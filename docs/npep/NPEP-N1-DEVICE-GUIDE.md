@@ -6,7 +6,7 @@
 
 | 位置 | 作用 |
 | --- | --- |
-| `src/NPEduTools.Integrations.Npep` | HTTPS 协议校验、DPAPI 凭据、双向配对确认、会话与只读状态上报、解绑 |
+| `src/NPEduTools.Integrations.Npep` | HTTP／HTTPS 协议校验、DPAPI 凭据、双向配对确认、会话与只读状态上报、解绑 |
 | `tools/NPEduTools.NpepProbe` | 需显式运行的设备侧命令行入口；不含学校管理员令牌 |
 | `tests/NPEduTools.Npep.Tests` | 契约样例、错误响应、凭据保存、网络丢回执、撤销与状态映射测试 |
 | `tests/NPEduTools.Npep.Acceptance` | 仅连接回环地址的真实跨端验收程序；使用测试学校管理员 fixture 完成双方操作 |
@@ -31,7 +31,7 @@ DPAPI 依赖当前 Windows 用户。测试不会将凭据写入 NPEduTools 正�
 
 ## 设备侧手动验收流程
 
-以下命令参数是占位示例。`--data-dir` 每次使用同一个独立测试目录；服务地址必须是操作人员确认的 HTTPS origin，不能含用户信息、查询参数或路径前缀。
+以下命令参数是占位示例。`--data-dir` 每次使用同一个独立测试目录；服务地址可以是操作人员确认的 HTTP 或 HTTPS origin，不能含用户信息、查询参数或路径前缀。HTTP 为明文传输；HTTPS 仍严格校验证书，失败时不会自动改用 HTTP。此支持不受 Debug／Release 或主机位置限制。
 
 ```powershell
 ./scripts/dotnet.ps1 run --project tools/NPEduTools.NpepProbe -c Release -- info --data-dir .artifacts/npep-manual --server https://school.example

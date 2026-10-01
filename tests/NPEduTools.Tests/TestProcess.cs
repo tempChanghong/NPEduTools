@@ -18,7 +18,6 @@ internal sealed class TestProcess : IAsyncDisposable
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "NPEduTools.sln")))
             directory = directory.Parent;
         string root = directory?.FullName ?? throw new InvalidOperationException("Repository not found.");
-        string configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
         string localDotnet = Path.Combine(root, ".tools", "dotnet", "dotnet.exe");
         // Keep child processes on the same host chosen by our build script / test SDK.
         string? selectedHost = Environment.GetEnvironmentVariable("NPEEDUTOOLS_DOTNET_HOST")
@@ -30,9 +29,20 @@ internal sealed class TestProcess : IAsyncDisposable
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = root
         };
-        info.ArgumentList.Add(Path.Combine(root, testProject ? "tests" : "src", project, "bin", configuration, "net10.0", project + ".dll"));
+        string assembly = ResolveAssemblyPath(root, AppContext.BaseDirectory, project, testProject);
+        if (!File.Exists(assembly)) throw new FileNotFoundException("Build the peer in the same artifacts/configuration as the test assembly.", assembly);
+        info.ArgumentList.Add(assembly);
         foreach (string arg in args) info.ArgumentList.Add(arg);
         return info;
+    }
+
+    internal static string ResolveAssemblyPath(string root, string baseDirectory, string project, bool testProject)
+    {
+        var output = new DirectoryInfo(baseDirectory);
+        // --artifacts-path: bin/<project>/<pivot>. Do not launch a stale conventional Debug build.
+        if (output.Parent?.Name == "NPEduTools.Tests" && output.Parent.Parent?.Name == "bin")
+            return Path.Combine(output.Parent.Parent.FullName, project, output.Name, project + ".dll");
+        return Path.Combine(root, testProject ? "tests" : "src", project, "bin", output.Parent!.Name, "net10.0", project + ".dll");
     }
 
     public static async Task<TestProcess> StartAsync(string project, bool testProject, params string[] args)

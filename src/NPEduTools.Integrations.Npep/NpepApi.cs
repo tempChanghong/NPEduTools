@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace NPEduTools.Integrations.Npep;
 
-public sealed class NpepApi : IDisposable
+public sealed partial class NpepApi : IDisposable
 {
     private readonly HttpClient _http;
     public string Origin { get; }
@@ -17,7 +17,7 @@ public sealed class NpepApi : IDisposable
     }
     public static string ValidateOrigin(string origin)
     {
-        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http") ||
             uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/" ||
             origin.Contains('\\') || string.IsNullOrWhiteSpace(uri.Host)) throw new NpepException("INVALID_SERVER_ORIGIN");
         return uri.GetLeftPart(UriPartial.Authority);

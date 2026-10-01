@@ -5,6 +5,12 @@
       "npedutools.contracts": {
         "type": "Project"
       },
+      "npedutools.core": {
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.Contracts": "[1.0.0, )"
+        }
+      },
       "npedutools.integrations.npep": {
         "type": "Project",
         "dependencies": {

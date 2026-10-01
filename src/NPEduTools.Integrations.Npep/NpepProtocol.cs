@@ -41,24 +41,25 @@ public static class NpepProtocol
     public static void Validate(string definition, JsonObject value)
     {
         using var document = JsonDocument.Parse(value.ToJsonString(Json));
-        if (!Check(Schema.RootElement.GetProperty("definitions").GetProperty(definition), document.RootElement))
+        if (!Check(Schema.RootElement, Schema.RootElement.GetProperty("definitions").GetProperty(definition), document.RootElement))
             throw new NpepException("INVALID_RESPONSE");
     }
-    private static bool Check(JsonElement schema, JsonElement value)
+    internal static bool Check(JsonElement root, JsonElement schema, JsonElement value, bool utf16 = false, bool multiline = false)
     {
-        if (schema.TryGetProperty("$ref", out var reference)) return Check(Schema.RootElement.GetProperty("definitions").GetProperty(reference.GetString()![14..]), value);
-        if (schema.TryGetProperty("anyOf", out var alternatives)) return alternatives.EnumerateArray().Any(s => Check(s, value));
+        if (schema.TryGetProperty("$ref", out var reference)) return Check(root, root.GetProperty("definitions").GetProperty(reference.GetString()![14..]), value, utf16, multiline);
+        if (schema.TryGetProperty("anyOf", out var alternatives)) return alternatives.EnumerateArray().Any(s => Check(root, s, value, utf16, multiline));
         if (schema.TryGetProperty("const", out var constant) && !JsonElement.DeepEquals(constant, value)) return false;
         if (schema.TryGetProperty("enum", out var choices) && !choices.EnumerateArray().Any(c => JsonElement.DeepEquals(c, value))) return false;
         if (!schema.TryGetProperty("type", out var type)) return true;
         switch (type.GetString())
         {
+            case "boolean": return value.ValueKind is JsonValueKind.True or JsonValueKind.False;
             case "null": return value.ValueKind == JsonValueKind.Null;
             case "object":
                 if (value.ValueKind != JsonValueKind.Object) return false;
                 var properties = schema.GetProperty("properties");
                 if (schema.GetProperty("required").EnumerateArray().Any(p => !value.TryGetProperty(p.GetString()!, out _))) return false;
-                return value.EnumerateObject().All(p => properties.TryGetProperty(p.Name, out var s) && Check(s, p.Value));
+                return value.EnumerateObject().All(p => properties.TryGetProperty(p.Name, out var s) && Check(root, s, p.Value, utf16, multiline));
             case "array":
                 if (value.ValueKind != JsonValueKind.Array) return false;
                 int count = value.GetArrayLength();
@@ -66,17 +67,21 @@ public static class NpepProtocol
                     schema.TryGetProperty("maxItems", out var maxItems) && count > maxItems.GetInt32()) return false;
                 if (schema.TryGetProperty("uniqueItems", out var unique) && unique.GetBoolean() &&
                     value.EnumerateArray().Select(x => x.GetRawText()).Distinct(StringComparer.Ordinal).Count() != count) return false;
-                return value.EnumerateArray().All(x => Check(schema.GetProperty("items"), x));
+                return value.EnumerateArray().All(x => Check(root, schema.GetProperty("items"), x, utf16, multiline));
             case "string":
                 if (value.ValueKind != JsonValueKind.String) return false;
                 string text = value.GetString()!;
-                int length = text.EnumerateRunes().Count();
+                int length = utf16 ? text.Length : text.EnumerateRunes().Count();
                 if (schema.TryGetProperty("minLength", out var min) && length < min.GetInt32() ||
                     schema.TryGetProperty("maxLength", out var max) && length > max.GetInt32()) return false;
                 if (schema.TryGetProperty("pattern", out var pattern) && !Regex.IsMatch(text, pattern.GetString()!, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100))) return false;
                 if (schema.TryGetProperty("format", out var format) && format.GetString() == "date-time" &&
                     !DateTimeOffset.TryParseExact(text, "yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _)) return false;
-                return !text.Any(char.IsControl);
+                return !text.Any(c => char.IsControl(c) && !(multiline && c is '\r' or '\n' or '\t'));
+            case "number":
+                if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double numeric) || !double.IsFinite(numeric)) return false;
+                return (!schema.TryGetProperty("minimum", out var numericLow) || numeric >= numericLow.GetDouble()) &&
+                    (!schema.TryGetProperty("maximum", out var numericHigh) || numeric <= numericHigh.GetDouble());
             case "integer":
                 if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out long number)) return false;
                 return (!schema.TryGetProperty("minimum", out var low) || number >= low.GetInt64()) &&

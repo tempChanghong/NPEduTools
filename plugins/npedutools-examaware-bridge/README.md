@@ -1,17 +1,27 @@
-# NPEduTools ExamAware 桥接 0.3.0
+# NPEduTools ExamAware 桥接 0.4.0
 
-适配 Windows ExamAware2 **1.5.2**，官方 Plugin API V2 / SDK 1.5.2。提供版本、登录自启动登记状态查询、显式正常退出，以及确认后开启/关闭登录自启动。不读取考试正文。
+适配 Windows ExamAware2 **1.5.2**，官方 Plugin API V2 / SDK 1.5.2。提供版本、登录自启动登记状态查询、显式正常退出、确认后开启/关闭登录自启动，以及用户选择的本地考试方案校验和手动放映。
 
 ## 安装、升级与连接
 
 1. 在 NPEduTools「考试看板」选择正式安装目录中的 `ExamAware.exe`，保存位置。
-2. 通过 ExamAware 官方本地插件安装功能导入 `npedutools-examaware-bridge-0.3.0.ea2x`，审阅权限并启用。此版本在原有 `app.quit` 之外新增 `app.configure`，用于登录自启动设置。
+2. 通过 ExamAware 官方本地插件安装功能导入 `npedutools-examaware-bridge-0.4.0.ea2x`，审阅权限并启用。0.4.0 新增 `player.start` 和 `player.observe`，用于方案校验、手动放映及状态读取；保留原有退出与自启动权限。
 3. 在更新后的 NPEduTools 导出配对文件，在 ExamAware **主页面**点击「连接 NPEduTools」并导入。
 4. 返回 NPEduTools 确认「桥接已连接」。配对文件含凭据，导入后可以删除。
 
 **需同时更新 NPEduTools 和插件。** 从 0.2.0 升级仍使用 v2 配对，现有 v2 文件可继续导入；从 0.1.x 升级需重新导出、导入配对文件。私有配对版本与官方 Plugin API V2 的版本含义不同。旧安装若未被安装器替换，请禁用或卸载旧桥接，保持一个启用实例。1.5.2 安装器的高权限列表未单列 `app.configure`；它实际已在本插件清单声明，并受 SDK 权限检查。
 
 使用官方 `ctx.api.network.connectTcp` 反向连接本机回环地址，不需要 HTTP 服务或管理员权限。正常重启沿用端口与配对；「撤销当前配对」更换密钥，使旧文件失效，需要重新导出和导入。ExamAware 内的「断开 NPEduTools」只清除插件侧配对。
+
+## 本地考试方案
+
+NPEduTools「考试看板 → 考试方案 · 本机放映」选择 UTF-8 JSON，桥接调用官方 `player.prepare` 后返回摘要；用户确认后调用 `startFromConfig`，明确指定 `replaceExisting: false`。`waitForReady: false` 的返回仅表示创建会话，是否就绪由 `listSessions` 心跳另行读回。已有活动会话或状态未知时禁止启动，不改内部配置文件，不自动播放或重试。
+
+文件上限 24 KiB/32 场，名称 160、提示语 2000、摘要文本总计 6000 个 UTF-16 单元；编码后仍须满足既有 64 KiB 帧上限。已校验内容只保存在当前连接内存中；断线或重连后须重新选择。N3 切换不自动加载方案，网页投递不在本阶段范围。
+
+沿用桥接单次激活最多 64 条命令的重放缓存限制；反复调试达到上限时会明确提示，请停用再启用桥接，并重新校验方案。不会为继续请求而自动重启 ExamAware。
+
+步骤、简图与源码入口见 [`docs/npep/EXAMAWARE-PLAN-LOCAL.md`](../../docs/npep/EXAMAWARE-PLAN-LOCAL.md)。关闭播放须使用 ExamAware 放映页面自己的退出入口。
 
 ## 正常退出与已知限制
 
@@ -42,9 +52,18 @@
 
 ## 构建与验证
 
-仓库根目录执行 `./scripts/build-examaware-bridge.ps1`：固定依赖、TypeScript 检查、CJS/ESM 构建、19 项回归测试、生成 `.artifacts/examaware-bridge/npedutools-examaware-bridge-0.3.0.ea2x`。需要 Node.js 24、npm 11、项目 .NET SDK 与 NuGet 依赖。仅重打包已验证产物可使用 `-PackageOnly`。
+仓库根目录执行 `./scripts/build-examaware-bridge.ps1`：固定依赖、TypeScript 检查、CJS/ESM 构建、25 项回归测试、生成 `.artifacts/examaware-bridge/npedutools-examaware-bridge-0.4.0.ea2x`。需要 Node.js 24、npm 11、项目 .NET SDK 与 NuGet 依赖。仅重打包已验证产物可使用 `-PackageOnly`。
 
-独立开发使用 `npm ci --ignore-scripts`、`npm run build`；`npm test` 需要先构建仓库 Release Host。测试使用独立管道与临时配置，不启动用户的 ExamAware。
+独立开发使用 `npm ci --ignore-scripts`、`npm run build`；`npm test` 默认使用仓库 Release Host，也可设置 `NPEEDUTOOLS_TEST_HOST` 为隔离输出的 Host.exe。测试使用独立管道与临时配置，不启动用户的 ExamAware。
+
+仅验证当前放映闭环可运行（仓库根目录；路径按本机调整）：
+
+```powershell
+./scripts/dotnet.ps1 build tests/NPEduTools.ExamAware.TestHost --artifacts-path .artifacts/exam-plan-real '-m:1'
+node scripts/test-examaware-host.mjs --source C:/path/to/ExamAware2-build --playwright C:/path/to/playwright/package.json --plans true --host .artifacts/exam-plan-real/bin/NPEduTools.ExamAware.TestHost/debug/NPEduTools.ExamAware.TestHost.exe
+```
+
+需要已有 ExamAware 1.5.2 源码构建、可用 Electron 依赖和新插件包。`--plans` 会启动有窗口的隔离实例，使用临时 userData，屏蔽原生登录启动写入并退出清理。不会操作日常使用的 ExamAware 实例。
 
 SDK npm 包包含 `workspace:*` 依赖，overrides 固定 core 1.1.1 / rpc 0.3.0。主进程与渲染端均打包所需官方 SDK 代码，不依赖安装目录之外的 SDK。没有修改官方 SDK。
 

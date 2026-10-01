@@ -7,12 +7,21 @@ using NPEduTools.Integrations.Npep;
 
 // Explicit opt-in, loopback-only acceptance harness. Never installed with the application.
 // A dedicated test CA is trusted ONLY by these handlers; machine/user trust stores are untouched.
+if (args.Length == 3 && args[0] == "--control-http")
+    return await ControlHttpAcceptance.RunAsync(args[1], args[2]);
+if (args.Length == 3 && args[0] == "--plan-http")
+    return await ControlHttpAcceptance.RunAsync(args[1], args[2], plans: true);
+if (args.Length == 3 && args[0] == "--noise-http")
+    return await ControlHttpAcceptance.RunAsync(args[1], args[2], noise: true);
+if (args.Length == 3 && args[0] == "--noise-schedule-http")
+    return await ControlHttpAcceptance.RunAsync(args[1], args[2], schedules: true);
 if (args.Length == 5 && args[0] == "--runtime-worker")
     return await ResilienceAcceptance.WorkerAsync(args[1], args[2], args[3], args[4]);
 
-if (args.Length is not (4 or 6) || args[0] != "--fixture" || args[2] != "--data-dir" || args.Length == 6 && args[4] != "--pipe")
+bool notifications = args.Length == 5 && args[4] == "--notifications";
+if ((!notifications && args.Length is not (4 or 6)) || args[0] != "--fixture" || args[2] != "--data-dir" || args.Length == 6 && args[4] != "--pipe")
 {
-    Console.Error.WriteLine("--fixture <ignored local fixture.json> --data-dir <new isolated directory> [--pipe <isolated Host pipe>]");
+    Console.Error.WriteLine("--fixture <ignored local fixture.json> --data-dir <new isolated directory> [--pipe <isolated Host pipe> | --notifications]");
     return 2;
 }
 var checks = new List<string>();
@@ -96,17 +105,22 @@ try
         var list = await Admin(schoolPath + "/devices", "deviceListResponse");
         var entry = ((JsonArray)list["items"]!).OfType<JsonObject>().Single(d => d.Text("deviceId") == deviceId);
         Check(entry.Text("connectivity") == "ONLINE" && NpepProtocol.Equal(entry["status"], sample.Status), "School sees exact minimal status and ONLINE");
+        if (notifications) await NotificationAcceptance.RunAsync(restarted, args[3], fixture, Handler, Check);
         var revoke = NpepProtocol.Body(); revoke["expectedBindingRevision"] = entry["bindingRevision"]!.DeepClone();
         await Admin(schoolPath + "/devices/" + deviceId + "/revoke", "revokedDeviceResponse", revoke);
         bool denied = false;
-        try { await restarted.ReportAsync(sample.Status, 0); }
+        try
+        {
+            if (notifications) await restarted.FetchNotificationsAsync(default);
+            else await restarted.ReportAsync(sample.Status, 0);
+        }
         catch (NpepException e) when (e.Status is 401 or 403) { denied = true; }
         Check(denied && restarted.View().Text("state") == "SUSPENDED", "Admin revoke invalidates device and suspends client");
         await restarted.UnpairAsync();
         Check(!File.Exists(Path.Combine(args[3], "npep.credentials.dpapi")), "Local credential cleanup completes");
     }
-    await RuntimeAcceptance.RunAsync(args[3] + "-runtime", origin, fixture, Api, Handler, args[1], Admin, Check);
-    Console.WriteLine($"N1 real HTTPS/PostgreSQL acceptance: {checks.Count} checks passed.");
+    if (!notifications) await RuntimeAcceptance.RunAsync(args[3] + "-runtime", origin, fixture, Api, Handler, args[1], Admin, Check);
+    Console.WriteLine($"{(notifications ? "N2" : "N1")} real HTTPS/PostgreSQL acceptance: {checks.Count} checks passed.");
     return 0;
 }
 catch (NpepException e) { Console.Error.WriteLine($"FAIL {e.Code} HTTP {e.Status}; completed {checks.Count} checks. Local test state is retained for diagnosis."); return 1; }

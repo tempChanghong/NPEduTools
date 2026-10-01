@@ -1,6 +1,7 @@
 import { defineMainPlugin, type MainPluginContext, type TcpSocketHandle } from '@dsz-examaware/plugin-sdk';
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { pairing, type Pairing } from './pairing.js';
+import { createPlanController, type PlanCommand } from './plans.js';
 const sign = (key: string, text: string) => createHmac('sha256', Buffer.from(key, 'hex')).update(text).digest('hex');
 const verify = (key: string, text: string, proof: unknown) => typeof proof === 'string' && /^[a-f0-9]{64}$/.test(proof) && timingSafeEqual(Buffer.from(proof, 'hex'), Buffer.from(sign(key, text), 'hex'));
 const MAX = 65536;
@@ -36,6 +37,7 @@ export function activateBridge(ctx: MainPluginContext) {
     let buffer = Buffer.alloc(0), serverNonce = '', clientNonce = '', ready = false;
     let sequence = 0, incoming = 0, sampling = false, queue = Promise.resolve();
     const active = () => !stopped && current === generation;
+    const plans = createPlanController(ctx.api, active);
     const fail = () => { if (active()) schedule(); };
     const deadline = setTimeout(fail, 5000);
     const interval = setInterval(() => { if (ready) void sample(); }, 2000);
@@ -54,15 +56,17 @@ export function activateBridge(ctx: MainPluginContext) {
       queue = next.catch(fail); return next;
     }
     async function sample() {
-      if (!ready || sampling || !active() || commandOwner) return;
+      if (!ready || sampling || !active() || commandOwner && !planBusy) return;
       sampling = true;
       const observedEpoch = mutationEpoch;
       try {
         const info = await ctx.api.app.info(); let registered: boolean | null = null;
         try { registered = await ctx.api.app.getAutoStart(); } catch { /* Unknown, never false. */ }
-        if (!active() || commandOwner || observedEpoch !== mutationEpoch) return;
+        const player = plans.supported() ? await plans.observe() : undefined;
+        if (!active() || commandOwner && !planBusy || observedEpoch !== mutationEpoch) return;
         await send('status', { name: info.name, version: info.version, platform: info.platform,
-          packaged: info.packaged, autoStartRegistered: registered, processId: process.pid, canSetAutoStart: true });
+          packaged: info.packaged, autoStartRegistered: registered, processId: process.pid, canSetAutoStart: true,
+          ...(plans.supported() ? { canPresent: true, player } : {}) });
         failures = 0;
       } catch { fail(); } finally { sampling = false; }
     }
@@ -104,6 +108,26 @@ export function activateBridge(ctx: MainPluginContext) {
         if (owns) { commandOwner = undefined; mutationEpoch++; void sample(); }
       }
     }
+    let planBusy = false;
+    async function planCommand(command: PlanCommand) {
+      let owns = false;
+      try {
+        if (consumed.size >= 64 && !consumed.has(command.requestId)) {
+          await send('plan.reply', { requestId: command.requestId, state: 'LimitReached' }); return;
+        }
+        if (commandOwner || consumed.has(command.requestId)) {
+          await send('plan.reply', { requestId: command.requestId, state: 'Busy' }); return;
+        }
+        consumed.add(command.requestId);
+        if (!active() || Date.now() > command.expiresAt || Date.now() < command.issuedAt - 1000) {
+          await send('plan.reply', { requestId: command.requestId, state: 'Expired' }); return;
+        }
+        commandOwner = command.requestId; owns = true; planBusy = true; mutationEpoch++;
+        const reply = await plans.execute(command);
+        if (active()) await send('plan.reply', reply);
+      } catch { fail(); }
+      finally { if (owns) { commandOwner = undefined; planBusy = false; mutationEpoch++; void sample(); } }
+    }
     function receive(message: any) {
       if (!serverNonce) {
         if (message.version !== 2 || message.type !== 'hello' || typeof message.nonce !== 'string' ||
@@ -120,11 +144,17 @@ export function activateBridge(ctx: MainPluginContext) {
             !verify(config.key, `host\n${serverNonce}\n${clientNonce}\n${message.sequence}\ncommand\n${message.payload}`, message.proof)) throw new Error('auth');
         incoming++;
         const command = JSON.parse(message.payload);
-        if (!['quit', 'autostart.set'].includes(command.action) || typeof command.requestId !== 'string' || !/^[0-9a-f-]{36}$/.test(command.requestId) ||
+        if (!['quit', 'autostart.set', 'plan.prepare', 'plan.start'].includes(command.action) || typeof command.requestId !== 'string' || !/^[0-9a-f-]{36}$/.test(command.requestId) ||
             !Number.isSafeInteger(command.issuedAt) || !Number.isSafeInteger(command.expiresAt) ||
             command.expiresAt - command.issuedAt <= 0 || command.expiresAt - command.issuedAt > 3000 ||
             (command.action === 'autostart.set' ? typeof command.enabled !== 'boolean' : command.enabled !== undefined)) throw new Error('command');
-        if (command.action === 'quit') void quit(command); else void setAutoStart(command);
+        if (command.action.startsWith('plan.')) {
+          const allowed = ['requestId', 'action', 'issuedAt', 'expiresAt', command.action === 'plan.prepare' ? 'dataBase64' : 'preparationId'];
+          if (Object.keys(command).some(k => !allowed.includes(k)) || (command.action === 'plan.prepare'
+            ? typeof command.dataBase64 !== 'string' || command.dataBase64.length > 32768
+            : typeof command.preparationId !== 'string' || !/^[0-9a-f-]{36}$/.test(command.preparationId))) throw new Error('command');
+          void planCommand(command);
+        } else if (command.action === 'quit') void quit(command); else void setAutoStart(command);
       }
     }
     const data = connection.onData(chunk => {

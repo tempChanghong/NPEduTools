@@ -53,7 +53,7 @@ public sealed class NpepVault : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CryptUnprotectData(ref Blob input, IntPtr description, IntPtr entropy, IntPtr reserved, IntPtr prompt, int flags, out Blob output);
     [DllImport("kernel32.dll")] private static extern IntPtr LocalFree(IntPtr memory);
-    private static byte[] Protect(byte[] bytes, bool encrypt)
+    internal static byte[] Protect(byte[] bytes, bool encrypt)
     {
         var input = new Blob { Size = bytes.Length, Data = Marshal.AllocHGlobal(bytes.Length) };
         Blob output = default;

@@ -16,7 +16,7 @@ public static class NpepContract
         if (c.Revision < 0) return false;
         bool Uuid(string? s) => s is not null && Guid.TryParseExact(s, "D", out var id) && id != Guid.Empty;
         bool Origin(string? s) => s is { Length: > 0 and <= 2048 } && !s.Any(char.IsControl) && !s.Contains('\\') &&
-            Uri.TryCreate(s, UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.UserInfo == "" && uri.Query == "" && uri.Fragment == "" && uri.AbsolutePath == "/";
+            Uri.TryCreate(s, UriKind.Absolute, out var uri) && uri.Scheme is ("https" or "http") && uri.UserInfo == "" && uri.Query == "" && uri.Fragment == "" && uri.AbsolutePath == "/";
         if (c.Action == "inspect") return Origin(c.Origin) && c.DeviceName is null && c.ServerInstanceId is null && c.DeploymentEpoch is null && c.ApprovalId is null;
         if (c.Action == "pair") return Origin(c.Origin) && c.DeviceName is { Length: > 0 and <= 64 } && !string.IsNullOrWhiteSpace(c.DeviceName) && !c.DeviceName.Any(char.IsControl) && Uuid(c.ServerInstanceId) && Uuid(c.DeploymentEpoch) && c.ApprovalId is null;
         if (c.Action == "confirm") return Uuid(c.ApprovalId) && c.Origin is null && c.DeviceName is null && c.ServerInstanceId is null && c.DeploymentEpoch is null;

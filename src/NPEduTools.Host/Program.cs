@@ -130,7 +130,8 @@ string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeE
     ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "config")
     : Path.Combine(Path.GetTempPath(), "NPEduTools", "instances",
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(pipeName)))[..24]));
-await using var launch = new LaunchService(dataDirectory, new ClassIslandLaunchTarget(), reader);
+var runtimeGate = new RuntimeOperationGate(coordinateDesktop: true);
+await using var launch = new LaunchService(dataDirectory, new ClassIslandLaunchTarget(), reader, runtimeGate: runtimeGate);
 await using var touch = new TouchAssistService(() =>
 {
     var start = new ProcessStartInfo(Environment.ProcessPath!)
@@ -142,16 +143,30 @@ await using var touch = new TouchAssistService(() =>
 });
 Console.WriteLine($"Host ready: {pipeName}");
 var classroomStore = new ClassroomModeStore(dataDirectory);
-await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot, () => classroomStore.State.AutomaticPaused);
-await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget());
-await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader));
+// Load the independent N3 protection before the scheduler. No remote execute entry is exposed yet.
+var remoteExamStore = new RemoteExamStore(dataDirectory);
+await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot,
+    () => classroomStore.State.AutomaticPaused, () => remoteExamStore.State.AutomaticPaused, runtimeGate);
+await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget(), runtimeGate);
+await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader), runtimeGate);
+await using var noise = new NoiseService(id => OperatingSystem.IsWindows()
+    ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory);
+var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
+await using var noiseSchedules = new NoiseScheduleService(noise, schoolClock.Snapshot,
+    () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
+    Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available);
+var remoteExamActions = new RemoteExamActions(launch, examAware, recording, classroom, new WindowsRemoteExamPlatform());
+var remoteExam = new RemoteExamExecutor(remoteExamStore, runtimeGate, remoteExamActions);
 string npepVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "unknown";
 await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npepVersion,
     () => new(Protocol.Version, Guid.Empty, "Succeeded", null, "已有本地缓存", SchoolClock: schoolClock.PeekSnapshot(),
-        Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot));
+        Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
+    new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
+    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules);
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep).RunAsync(shutdown.Token);
+    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
+        runtimeGate, remoteExam, noise).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

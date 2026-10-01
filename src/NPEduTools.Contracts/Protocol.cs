@@ -18,7 +18,11 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AutomaticRecordingCommand? Automatic = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AutoStartEnabled = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeCommand? ClassroomMode = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepCommand? Npep = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepCommand? Npep = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepNotificationCommand? Notification = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RemoteExamCommand? RemoteExam = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePlanInput? ExamPlan = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCommand? Noise = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -48,7 +52,11 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwareStatus? ExamAware = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePairing? ExamAwarePairing = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomModeState? ClassroomMode = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepState? Npep = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepState? Npep = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepInboxState? Inbox = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RemoteExamStatus? RemoteExam = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseState? Noise = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<NoiseDevice>? NoiseDevices = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -88,10 +96,15 @@ public static class Protocol
     public static string? Validate(HostRequest request)
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
+        if (request.Capability == "noise.command" ? request.Noise is null || !NoiseContract.Valid(request.Noise) : request.Noise is not null) return "InvalidNoiseCommand";
+        if (request.Capability.StartsWith("noise.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
+        if (request.Capability == "examaware.plan" ? request.ExamPlan is null || !ExamAwarePlanContract.Valid(request.ExamPlan) : request.ExamPlan is not null) return "InvalidExamPlan";
+        if (request.Capability == "remoteexam.command" ? request.RemoteExam is null || !RemoteExamContract.Valid(request.RemoteExam) : request.RemoteExam is not null) return "InvalidRemoteExamCommand";
+        if (request.Capability == "npep.notifications" ? request.Notification is null || !NpepNotificationContract.Valid(request.Notification) : request.Notification is not null) return "InvalidNotificationCommand";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("npep.status" or "npep.command" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
-            "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or
-            "recording.status" or "recording.command" or "recording.automatic" or
+        if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
+            "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
+            "noise.status" or "noise.devices" or "noise.command" or "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
@@ -100,7 +113,7 @@ public static class Protocol
             if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
                 request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
         }
-        else if (request.Capability is "examaware.autostart.set" or "classroom.set" or "classroom.restore" or "classroom.retry")
+        else if (request.Capability is "examaware.plan" or "examaware.autostart.set" or "classroom.set" or "classroom.restore" or "classroom.retry")
         {
             if (request.ExecutablePath is not null || request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
         }
@@ -124,6 +137,7 @@ public static class Protocol
         if (request.Capability == "npep.command" ? request.Npep is null || !NpepContract.Valid(request.Npep) : request.Npep is not null) return "InvalidNpepCommand";
         if (request.Capability.StartsWith("npep.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.Capability == "host.cached-status" && request.ObserveMs != 0) return "UnexpectedParameters";
+        if (request.Capability.StartsWith("remoteexam.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.ObserveMs < 0 || request.ObserveMs > 5000 || request.ObserveMs >= request.TimeoutMs)
             return "InvalidObservationWindow";
         if (request.Capability == "classisland.watch" && request.ObserveMs != 0) return "InvalidObservationWindow";

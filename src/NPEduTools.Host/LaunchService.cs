@@ -14,10 +14,13 @@ public sealed class LaunchService : IAsyncDisposable
     private Task? _active;
     private bool _storageFault;
     private readonly string? _loadError;
+    private readonly RuntimeOperationGate _runtimeGate;
 
-    public LaunchService(string directory, IClassIslandLaunchTarget target, ILessonStatusReader reader, TimeSpan? readinessTimeout = null)
+    public LaunchService(string directory, IClassIslandLaunchTarget target, ILessonStatusReader reader, TimeSpan? readinessTimeout = null,
+        RuntimeOperationGate? runtimeGate = null)
     {
         _target = target;
+        _runtimeGate = runtimeGate ?? new();
         _reader = reader;
         _readinessTimeout = readinessTimeout ?? TimeSpan.FromSeconds(20);
         try
@@ -37,6 +40,17 @@ public sealed class LaunchService : IAsyncDisposable
     }
 
     public async Task<HostResponse> HandleAsync(HostRequest request, CancellationToken token)
+    {
+        if (request.Capability is "classisland.config.get" or "classisland.execution.get")
+            return await HandleCoreAsync(request, token);
+        var lease = _runtimeGate.TryEnterMutation();
+        if (lease is null) return new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy",
+            "正在切换运行环境，请等待操作结束。");
+        try { return await HandleCoreAsync(request, token); }
+        finally { RuntimeOperationGate.ReleaseAfter(lease, _active ?? Task.CompletedTask); }
+    }
+
+    private async Task<HostResponse> HandleCoreAsync(HostRequest request, CancellationToken token)
     {
         await _gate.WaitAsync(token);
         try
@@ -122,7 +136,7 @@ public sealed class LaunchService : IAsyncDisposable
                     result = result with { Outcome = "Succeeded", Message = existing ? "ClassIsland 已运行，课程接口已就绪。" : "ClassIsland 启动成功，课程接口已就绪。" };
                     break;
                 }
-                if (!existing && !_target.IsRunning(execution.ExecutablePath))
+                if (!_target.IsRunning(execution.ExecutablePath))
                 {
                     result = result with { Outcome = "Failed", ErrorCode = "ClassIslandExited", Message = "ClassIsland 在就绪前退出，请检查本体运行环境。" };
                     break;

@@ -17,12 +17,28 @@ public sealed class ProtocolTests
         Assert.NotEmpty(name);
     }
     [Theory]
-    [InlineData("http://npep.test")]
+    [InlineData("ftp://npep.test")]
+    [InlineData("http://user:password@npep.test")]
+    [InlineData("http://npep.test/api")]
+    [InlineData("http://npep.test/?secret=x")]
     [InlineData("https://user:password@npep.test")]
     [InlineData("https://npep.test/api")]
     [InlineData("https://npep.test/?secret=x")]
     [InlineData("https://npep.test/#fragment")]
-    public void RejectsAmbiguousOrInsecureOrigins(string origin) => Assert.Throws<NpepException>(() => new NpepApi(origin));
+    public void RejectsAmbiguousOrUnsupportedOrigins(string origin) => Assert.Throws<NpepException>(() => new NpepApi(origin));
+    [Theory]
+    [InlineData("http://localhost:3000", "http://localhost:3000")]
+    [InlineData("http://127.0.0.1:3031/", "http://127.0.0.1:3031")]
+    [InlineData("http://192.168.1.20:3000", "http://192.168.1.20:3000")]
+    [InlineData("http://school.test", "http://school.test")]
+    [InlineData("http://[::1]:3000", "http://[::1]:3000")]
+    [InlineData("https://school.test/", "https://school.test")]
+    public void AcceptsHttpAndHttpsWithoutHostRestrictions(string input, string expected)
+    {
+        using var api = new NpepApi(input);
+        Assert.Equal(expected, api.Origin);
+        Assert.NotEqual(NpepApi.ValidateOrigin("http://school.test"), NpepApi.ValidateOrigin("https://school.test"));
+    }
     [Fact]
     public void RejectsDuplicateKeysBeforeDeserializing() => Assert.Throws<NpepException>(() => NpepProtocol.Parse("{\"data\":{\"mode\":\"DAILY\",\"mode\":\"EXAM\"}}"u8));
     [Theory]

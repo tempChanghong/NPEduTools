@@ -7,5 +7,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" PrivateAssets="all" />
     <Using Include="Xunit" />
     <None Include="../../docs/npep/n1-examples.json" Link="n1-examples.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/npep/n3-examples.json" Link="n3-examples.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

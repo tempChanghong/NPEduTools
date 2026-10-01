@@ -17,6 +17,10 @@
   </ItemGroup>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
   <ItemGroup>
+    <None Include="../../docs/npep/noise-schedule-cases.json" Link="Fixtures/noise-schedule-cases.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/npep/noise-schedule-wire-cases.json" Link="Fixtures/noise-schedule-wire-cases.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="../../src/NPEduTools.App/StartupPreferences.cs" Link="App/StartupPreferences.cs" />
     <Compile Include="../../src/NPEduTools.App/ClassroomModePresentation.cs" Link="App/ClassroomModePresentation.cs" />
     <Compile Include="../../src/NPEduTools.App/ClassroomSetupCheck.cs" Link="App/ClassroomSetupCheck.cs" />

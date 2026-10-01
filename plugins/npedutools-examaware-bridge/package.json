@@ -1,10 +1,10 @@
 {
   "name": "npedutools-examaware-bridge",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
-  "description": "NPEduTools 本机桥接：状态查询、正常退出与登录自启动设置",
+  "description": "NPEduTools 本机桥接：状态、退出、自启动、考试方案校验与手动放映",
   "main": "./dist/main/index.cjs",
   "module": "./dist/renderer/index.mjs",
   "scripts": {
@@ -30,7 +30,9 @@
       "files.dialog",
       "files.read",
       "app.quit",
-      "app.configure"
+      "app.configure",
+      "player.start",
+      "player.observe"
     ],
     "activation": {
       "rendererWindows": [
