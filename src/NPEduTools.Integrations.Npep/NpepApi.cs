@@ -29,7 +29,7 @@ public sealed partial class NpepApi : IDisposable
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
         token = deadline.Token;
         // Callers cannot turn this adapter into an arbitrary authenticated URL fetcher.
-        if (path is not ("info" or "pairings" or "device/me" or "device/sessions" or "device/status" or "device/revoke") &&
+        if (path is not ("info" or "pairings" or "pairings/claim" or "device/me" or "device/sessions" or "device/status" or "device/revoke") &&
             !System.Text.RegularExpressions.Regex.IsMatch(path, "^pairings/[0-9a-f-]{36}(/confirm|/cancel)?$")) throw new NpepException("INVALID_ENDPOINT");
         if (body is not null) NpepProtocol.Validate(requestDefinition ?? throw new ArgumentNullException(nameof(requestDefinition)), body);
         string requestId = body?.Text("requestId") ?? NpepProtocol.Id();

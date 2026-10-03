@@ -7,6 +7,8 @@ using NPEduTools.Integrations.Npep;
 
 // Explicit opt-in, loopback-only acceptance harness. Never installed with the application.
 // A dedicated test CA is trusted ONLY by these handlers; machine/user trust stores are untouched.
+if (args.Length == 3 && args[0] == "--screen-pairing-http")
+    return await ScreenPairingAcceptance.RunAsync(args[1], args[2]);
 if (args.Length == 3 && args[0] == "--control-http")
     return await ControlHttpAcceptance.RunAsync(args[1], args[2]);
 if (args.Length == 3 && args[0] == "--plan-http")

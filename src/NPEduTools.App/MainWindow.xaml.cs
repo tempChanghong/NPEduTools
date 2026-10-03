@@ -36,6 +36,7 @@ public partial class MainWindow : Window
         _upstream = upstream;
         InitializeComponent();
         DataContext = _model;
+        InitializeNpepConnection();
         InitializeOnboarding();
         InitializeTray();
         InitializeStartupPreferences();

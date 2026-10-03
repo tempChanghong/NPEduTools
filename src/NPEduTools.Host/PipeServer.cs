@@ -17,6 +17,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
+    private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public async Task RunAsync(CancellationToken token)
     {
         // Four fixed accept loops bound active connections, parsing buffers and stalled clients.
@@ -123,8 +124,10 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     try { await Protocol.WriteAsync(pipe, response, writeDeadline.Token); }
                     finally
                     {
-                        // An accepted shutdown survives client disconnection. Other windows get one heartbeat.
-                        await Task.Delay(TimeSpan.FromMilliseconds(1500), token);
+                        // Accepted shutdown survives client disconnection. Wake subscriptions and
+                        // wait for their final frame/disconnection, rather than
+                        // assuming a heartbeat will be scheduled within a fixed sleep on a busy machine.
+                        await DrainSubscriptionsAsync(token);
                         stop();
                     }
                 }
@@ -191,22 +194,42 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
 
     private async Task WatchAsync(Stream pipe, HostRequest request, CancellationToken token)
     {
-        bool accepted = monitor is not null && await _subscriptions.WaitAsync(0, token);
+        bool accepted = monitor is not null && !_watchStopping.Task.IsCompleted && await _subscriptions.WaitAsync(0, token);
         try
         {
             do
             {
-                var snapshot = accepted ? monitor!.Snapshot(request.RequestId) : new WatchSnapshot(
+                var snapshot = accepted || (_watchStopping.Task.IsCompleted && monitor is not null)
+                    ? monitor!.Snapshot(request.RequestId) : new WatchSnapshot(
                     Protocol.Version, request.RequestId, Guid.Empty, 0, Guid.Empty, DateTimeOffset.UtcNow,
                     "Rejected", "SubscriptionLimit", "状态订阅已达上限，请关闭多余窗口后重试。", null);
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 deadline.CancelAfter(TimeSpan.FromSeconds(2));
                 await Protocol.WriteAsync(pipe, snapshot, deadline.Token);
                 if (!accepted || snapshot.Outcome == "Stopped") return;
-                await Task.Delay(TimeSpan.FromSeconds(1), token);
+                await Task.WhenAny(Task.Delay(TimeSpan.FromSeconds(1), token), _watchStopping.Task);
             } while (!token.IsCancellationRequested);
         }
         finally { if (accepted) _subscriptions.Release(); }
+    }
+
+    private async Task DrainSubscriptionsAsync(CancellationToken token)
+    {
+        _watchStopping.TrySetResult();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(4));
+        int acquired = 0;
+        try
+        {
+            // Both slots become available only after the active writers have completed.
+            // Each write is independently bounded, so an unread client cannot hold shutdown forever.
+            for (; acquired < 2; acquired++) await _subscriptions.WaitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        {
+            log(JsonSerializer.Serialize(new { timestamp = DateTimeOffset.UtcNow, error = "SubscriptionShutdownDeadline" }));
+        }
+        finally { if (acquired > 0) _subscriptions.Release(acquired); }
     }
 
     private static bool IsCurrentSession(NamedPipeServerStream pipe)

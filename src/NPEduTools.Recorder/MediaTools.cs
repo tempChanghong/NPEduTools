@@ -24,7 +24,7 @@ internal static class MediaTools
         }
         catch (Exception error) when (error is System.Runtime.InteropServices.COMException or InvalidOperationException) { }
         bool ready = File.Exists(Tool("ffmpeg")) && File.Exists(Tool("ffprobe"));
-        return new(ready, ready ? null : "尚未安装录制组件。请按程序包内 RECORDING-TOOLS-INSTALL.md 安装 FFmpeg，然后重新检测。", displays, microphones, speakers);
+        return new(ready, ready ? null : "录制组件缺失。请完整解压包含 FFmpeg 的 NPEduTools 程序包后重新检测；旧版精简包请按其安装说明补齐组件。", displays, microphones, speakers);
     }
     private static RecordingDevice[] Devices(MMDeviceEnumerator enumerator, DataFlow flow)
     {

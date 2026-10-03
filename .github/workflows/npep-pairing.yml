@@ -1,0 +1,128 @@
+name: NPEP three-repository pairing acceptance
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      desktop_sha:
+        description: Full NPEduTools commit SHA (empty uses workflow commit)
+        type: string
+        required: false
+        default: ''
+      web_sha:
+        description: Full NPClassworks commit SHA, no branch names
+        type: string
+        required: true
+      backend_sha:
+        description: Full NPClassworksKV commit SHA, no branch names
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      desktop_sha:
+        type: string
+        required: true
+      web_sha:
+        type: string
+        required: true
+      backend_sha:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  pairing:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DESKTOP_SHA: ${{ inputs.desktop_sha || github.event.pull_request.head.sha || github.sha }}
+      WEB_SHA: ${{ inputs.web_sha }}
+      BACKEND_SHA: ${{ inputs.backend_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: tempChanghong/NPEduTools
+          ref: ${{ env.DESKTOP_SHA }}
+          path: NPEduTools
+          persist-credentials: false
+      - name: Resolve and require immutable source references
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if ($env:EVENT_NAME -eq 'pull_request') {
+            $sources = Get-Content 'NPEduTools/scripts/npep-pairing-ci.json' -Raw | ConvertFrom-Json
+            if ($sources.schemaVersion -ne 1) { throw 'Unsupported pairing CI source record.' }
+            $env:WEB_SHA = $sources.web_sha
+            $env:BACKEND_SHA = $sources.backend_sha
+          }
+          foreach ($value in @($env:DESKTOP_SHA, $env:WEB_SHA, $env:BACKEND_SHA)) {
+            if ($value -notmatch '^[0-9a-fA-F]{40}$') { throw 'Each source reference must be a full commit SHA.' }
+          }
+          "WEB_SHA=$env:WEB_SHA" >> $env:GITHUB_ENV
+          "BACKEND_SHA=$env:BACKEND_SHA" >> $env:GITHUB_ENV
+      - uses: actions/checkout@v4
+        with:
+          repository: tempChanghong/NPClassworks
+          ref: ${{ env.WEB_SHA }}
+          path: NPClassworks
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: tempChanghong/NPClassworksKV
+          ref: ${{ env.BACKEND_SHA }}
+          path: NPClassworksKV
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: NPEduTools/global.json
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+        working-directory: NPClassworks
+      - run: pnpm install --frozen-lockfile
+        working-directory: NPClassworksKV
+      - run: pnpm exec playwright install chromium
+        working-directory: NPClassworks
+      - name: Locate native PostgreSQL tools (install only on disposable runner if missing)
+        run: |
+          $candidates = @(Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+          if (-not $candidates.Count) {
+            choco install postgresql17 --yes --no-progress --params '/Password:isolated-ci-only /Port:55439'
+            if ($LASTEXITCODE -ne 0) { throw 'Native PostgreSQL installation failed.' }
+            $candidates = @(Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory)
+          }
+          $bin = $candidates | ForEach-Object { Join-Path $_.FullName 'bin' } | Where-Object {
+            (Test-Path (Join-Path $_ 'initdb.exe')) -and (Test-Path (Join-Path $_ 'pg_ctl.exe')) -and
+            (Test-Path (Join-Path $_ 'pg_dump.exe')) -and (Test-Path (Join-Path $_ 'pg_restore.exe'))
+          } | Select-Object -First 1
+          if (-not $bin) { throw 'Complete native PostgreSQL tools were not found.' }
+          "NPEP_TEST_PG_BIN=$bin" >> $env:GITHUB_ENV
+      - name: Run local-equivalent pairing, browser, upgrade and real HTTP/.NET checks
+        working-directory: NPEduTools
+        run: |
+          ./scripts/test-npep-pairing.ps1 -Browser -Database -RequireClean `
+            -DesktopCommit $env:DESKTOP_SHA -WebCommit $env:WEB_SHA -BackendCommit $env:BACKEND_SHA
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npep-pairing-acceptance
+          path: |
+            NPEduTools/.artifacts/screen-pairing/runs/**/result.json
+            NPEduTools/.artifacts/screen-pairing/runs/**/sources.json
+            NPEduTools/.artifacts/screen-pairing/runs/**/*.trx
+            NPClassworks/.artifacts/pairing-browser/**/*.png
+            NPClassworks/.artifacts/pairing-browser/**/result.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

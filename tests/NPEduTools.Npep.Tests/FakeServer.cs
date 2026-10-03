@@ -35,7 +35,7 @@ internal sealed class FakeServer
     public JsonObject Info { get; } = Fixtures.Data("infoResponse");
     public JsonObject Approval { get; } = Fixtures.Data("approvedPairingResponse");
     public JsonObject? Create, Confirm, SessionRequest;
-    public bool Active, Revoked, LoseConfirmBeforeCommit, LoseConfirmAfterCommit, LoseSession, LoseStatus, FailRevoke, SessionConflict, ChangeEpoch;
+    public bool Active, Revoked, LoseCreateAfterCommit, LoseConfirmBeforeCommit, LoseConfirmAfterCommit, LoseSession, LoseStatus, FailRevoke, SessionConflict, ChangeEpoch;
     public long Epoch;
     public NpepApi Api(string origin) => new(origin, new Handler(Send));
     public JsonObject Registration()
@@ -57,7 +57,14 @@ internal sealed class FakeServer
         Assert.Equal("0.1", request.Headers.GetValues("X-NPEP-Version").Single());
         if (body is not null) Assert.Equal(body.Text("requestId"), request.Headers.GetValues("X-Request-Id").Single());
         if (path == "info") return Fixtures.Reply(request, Info.Copy());
-        if (path == "pairings") { Create = body; return Fixtures.Reply(request, Fixtures.Data("createdPairingResponse")); }
+        if (path is "pairings" or "pairings/claim")
+        {
+            if (path == "pairings/claim") NpepProtocol.Validate("claimScreenPairing", body!);
+            if (Create is not null) Assert.True(NpepProtocol.Equal(Create, body));
+            Create = body;
+            if (LoseCreateAfterCommit) { LoseCreateAfterCommit = false; throw new HttpRequestException("test create response loss"); }
+            return Fixtures.Reply(request, Fixtures.Data("createdPairingResponse"));
+        }
         if (path.StartsWith("pairings/", StringComparison.Ordinal))
         {
             Assert.Equal("npepp1." + Approval.Text("pairingId") + "." + Create!.Text("pairingSecret"), request.Headers.Authorization?.Parameter);

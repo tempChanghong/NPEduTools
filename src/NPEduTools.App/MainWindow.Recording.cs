@@ -37,7 +37,7 @@ public partial class MainWindow
     {
         string clock = TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss");
         RecordingHomeStatus.Text = state.Active ? $"{state.Message} · {clock}" : state.Message;
-        RecordingHomeButton.Content = state.Active ? "录制控制" : "配置与录制";
+        RecordingHomeAction.Text = state.Active ? "录制控制  →" : "配置与录制  →";
         _quick?.UpdateRecording(state);
     }
     private async void SkipAutomaticToday()

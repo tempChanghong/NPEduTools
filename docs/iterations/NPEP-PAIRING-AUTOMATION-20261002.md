@@ -1,0 +1,61 @@
+# 配对流程自动化收尾
+
+2026-10-02 · 本地实现，未提交／推送／部署；人工与真实大屏验收按要求跳过。
+
+| 任务卡 | 内容 |
+| --- | --- |
+| 主交付 | 一个入口检查三仓来源、配对协议、浏览器点击和数据库升级兼容 |
+| 范围 | 自动测试与 CI；不新增产品功能，不改调试库或生产，不使用 Docker |
+| 自动完成标准 | 浏览器检查、真实旧数据迁移、三仓契约与回归通过；来源或测试失败明确记为 FAILED |
+| 人工状态 | NOT_RUN；不以自动结果替代设备验收 |
+
+在 NPEduTools 根目录执行（Windows PowerShell 5.1／PowerShell 7）：
+
+```powershell
+./scripts/test-npep-pairing.ps1 -Browser -Database
+# 仓库不是相邻目录时，另外指定 -WebRoot 和 -BackendRoot。
+```
+
+独立结果写入 `.artifacts/screen-pairing/runs/<编号>/result.json`，包含每阶段结果；`sources.json` 记录三仓实际 HEAD 与工作区是否有未提交改动，TRX 保留桌面测试结果。本地脏工作区可以测试，但不会被描述为不可变版本。任一步失败立即停止，后续阶段不执行；中断保留 RUNNING，不会假报通过。
+
+## 检查内容
+
+- **浏览器**：Playwright 启动隔离 Chromium，渲染真实 Vue／Vuetify 配对组件并使用真实 HTTP 客户端。7 组检查覆盖未授权禁止生成码、年级预览与确认重置、码替换／刷新不持久保存、全校范围、冲突后刷新、占用提示和学期切换。管理员和大屏使用独立浏览器上下文；网络只允许临时 loopback 服务。统一入口还用后端 schema 校验实际浏览器请求。
+- **升级**：临时原生 PostgreSQL 先应用网页配对迁移前的迁移链，确认预授权字段／短码表确实不存在，再写入合成的已连接设备、已批准申请、待审批申请。应用新迁移后检查原凭据和数据库存储时间不变、旧凭据上报、旧批准确认、旧码审批确认、新屏默认关闭，以及重复 migrate deploy 无变更。5 个子用例加父用例共 6 项；没有下载或启动旧版二进制。
+- **跨端回归**：升级之后继续既有 42 项 PostgreSQL／HTTP／.NET 验收；另有网页 17 项、后端边界 18 项、桌面传输 129 项、引导／共享会话 49 项、三仓来源检查回归和协议一致性检查。真实软件切换使用模拟系统副作用，不能写为真实大屏通过。
+
+## CI 与合并顺序
+
+中央联合工作流位于 `.github/workflows/npep-pairing.yml`，支持 PR、GitHub Actions 手动运行与 workflow_call。PR 使用提交在 `scripts/npep-pairing-ci.json` 的网页／后端完整 SHA，以及 PR 桌面 head SHA，所以新工作流不必先合入 main 就能验证。手动／复用调用输入 `desktop_sha`、`web_sha`、`backend_sha`；均须完整 40 位提交 SHA，网页和后端没有 main 默认值。手动运行时桌面 SHA 留空使用本次工作流提交的 SHA。三个 checkout 放在同一 runner 的相邻目录，随后运行同一入口，并启用 `-RequireClean`。实际 HEAD 不匹配、不是完整 SHA、产品错误或工作区有改动均在业务测试前拒绝。
+
+CI 使用 Windows、原生 PostgreSQL 和 Chromium；runner 缺少 PostgreSQL 时只在临时 runner 安装。仅有读取仓库权限，不使用学校凭据，不上传数据库文件或配对秘密，不进行部署。附件只有来源／结果 JSON、TRX、合成浏览器截图。现有前端 PR 浏览器 job 也加入 `pnpm test:e2e:pairing`，独立运行 UI 夹具检查，不依赖另外两仓的默认分支。
+
+联合 CI 不能验证尚未提交的本地文件。后续先提交三个功能分支，记录对应 SHA，在中央工作流运行这组 SHA；结果通过再准备合并。若用于外仓 workflow_call，中央工作流须先存在于被引用的桌面仓库 ref；本轮没有改自动部署入口。
+
+## 本轮结果
+
+Windows PowerShell 5.1 实际执行 `-Browser -Database` 完整入口通过：来源检查回归 1 项、网页 17 项、后端 18 项、桌面 129＋49 项、7 组浏览器点击、升级 6 项及后续真实数据库跨端 42 项；共享契约检查通过，无跳过。结果编号：`937f76fd80734221ba670dd0e746c184`，JSON 和 TRX 在上述 runs 目录。浏览器编号：`a764d43c-9614-46e0-a0f3-dc95cad1d6ca`，结果标记 `backendContractChecked=true`。
+
+来源检查用合成 Git 仓库验证了错误 SHA、分支名代替 SHA、缺少 CI SHA、错误产品、重复仓库和未提交改动的拒绝；另用 PowerShell 5.1 实测错误后端 SHA，确认在业务测试前停止并写入 FAILED。三仓当前均有本地改动，已如实记录 dirty=true，本地通过不对应三个 HEAD 的干净发布版本。
+
+定向 ESLint、JS 语法与 Git 空白检查通过；中央及前端 workflow YAML 解析与必填 SHA／只读权限检查通过。测试中首次出现的夹具凭据哈希、时间比较和控件定位错误已修正，完整入口重跑通过。时间不变用数据库 epoch 比较，避免测试机时区影响读回断言。成功运行的临时数据库已清理；失败运行由 runner 关闭数据库并保留临时诊断文件，不上传这些文件。
+
+GitHub 托管 CI 尚未运行，人工／生产／真实大屏均未验收；没有提交、推送或部署。
+
+## 2026-10-03 提交审核阶段
+
+上面的状态是本地实现完成时的记录。本轮三仓统一建立 `codex/npep-preauthorized-pairing-20261003`，从已合并的 main 基线继续；桌面将录制组件交付与学校配对／引导分成提交。浏览器测试产物、旧 CI 日志、本地考试方案和任何环境配置不纳入提交。
+
+首次审核组合：后端 `e83218d7370c586b6b42113ef44b778e9ee61c2d`，网页 `d07f7047ef7304fa08ed4070aeb906494ad1a927`。中央 PR CI 检查固定来源；更换任一伴随提交时必须同步来源记录并重跑，最新固定组合以 `scripts/npep-pairing-ci.json` 为准。托管结果和完整桌面 SHA 写在三份 PR 的审核说明中，不用提交中的“已通过”宣称替代运行结果。
+
+后端生成代码同时补齐现有 schema 已定义但旧生成目录缺失的 N3/N4 模型，这是 schema 对应产物；本次新迁移仅增加屏幕预授权字段、申请来源字段与短码票据表。旧设备凭据保持有效，现有／新屏幕预授权默认关闭。年级／全校操作只覆盖预览中的现有有效大屏，后续新大屏不自动继承。
+
+三份 PR 供审核，不自动合并；网页和后端 main 会触发既有生产部署。人工／真实大屏验收仍为 NOT_RUN，旧版本标签和发布附件保持不变。
+
+### CI 发现的后台退出竞态
+
+首组固定三仓的联合 CI [37083946241](https://github.com/tempChanghong/NPEduTools/actions/runs/37083946241) 已通过。独立桌面全量回归 [37083946130](https://github.com/tempChanghong/NPEduTools/actions/runs/37083946130) 编译通过，但 647 项中有一项订阅退出失败：Host 固定等待 1.5 秒后关闭管道，繁忙环境下订阅可能尚未发送最终 Stopped 帧，客户端读到 EndOfStreamException。
+
+修复为发布停止状态后主动唤醒订阅，并等待两个订阅槽释放再退出；每次写入仍有 2 秒截止，整体排空最多 4 秒，失联客户端不会无限阻止退出。不是延长测试超时或忽略失败。已有 MonitorTests 六项定向回归已通过；修复后的完整桌面回归和固定三仓联合 CI 必须重新执行，最终结果以草稿 PR 的当前 head 为准。
+
+后台修复提交 `111efd7298054b9d94599e157a71185c17f5cdc1` 的本地全量 647 项与托管 [N1 Windows 检查](https://github.com/tempChanghong/NPEduTools/actions/runs/37084525357) 均通过；其联合 CI [37084525613](https://github.com/tempChanghong/NPEduTools/actions/runs/37084525613) 也通过。前端完整浏览器检查另发现 online 早于实际网络恢复导致背景停留空白，追加了有限重试及两项浏览器回归，本地背景 11 项通过。网页现固定为 `cc9c1a14ebf986f4ace6828f1715f7d02d3f7310`；同步来源记录后重新执行当前 head 的联合 CI。后端提交未变化。

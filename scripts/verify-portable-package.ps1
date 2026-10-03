@@ -1,5 +1,6 @@
 param([string]$PackageRoot = $PSScriptRoot, [switch]$AllowInstalledRecordingTools)
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $root = [IO.Path]::GetFullPath($PackageRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
 $manifest = Get-Content -LiteralPath (Join-Path $root 'package-manifest.json') -Raw | ConvertFrom-Json
 $seen = @{}
@@ -34,11 +35,17 @@ foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host
     $runtime = Get-Content -LiteralPath (Join-Path $directory ($component[1]+'.runtimeconfig.json')) -Raw | ConvertFrom-Json
     if ($runtime.runtimeOptions.framework -or $runtime.runtimeOptions.frameworks -or -not $runtime.runtimeOptions.includedFrameworks) { throw "Framework-dependent component: $directory" }
 }
-if ($manifest.recordingToolsBundled -ne $false) { foreach ($directory in @('app/Recorder/Tools','app/Host/Recorder/Tools')) {
+if ($manifest.recordingToolsBundled -ne $false) {
+    $mediaLock = Get-Content -LiteralPath (Join-Path $root 'recording-bundle.lock.json') -Raw | ConvertFrom-Json
+    if ($mediaLock.profile -ne 'npedutools-recording-v1') { throw 'Unknown bundled recording profile.' }
+    $sourceMaterial = Join-Path $root ('third-party/ffmpeg/' + $mediaLock.sourceBundle.name)
+    if ((Get-Item -LiteralPath $sourceMaterial).Length -ne $mediaLock.sourceBundle.length -or (Get-FileHash -LiteralPath $sourceMaterial).Hash -ne $mediaLock.sourceBundle.sha256) { throw 'Bundled FFmpeg corresponding source mismatch.' }
+    foreach ($directory in @('app/Recorder/Tools','app/Host/Recorder/Tools')) {
     $toolsRoot = Join-Path $root $directory
     $toolsManifest = Get-Content -LiteralPath (Join-Path $toolsRoot 'manifest.json') -Raw | ConvertFrom-Json
-    foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
-        if ((Get-FileHash -LiteralPath (Join-Path $toolsRoot $name)).Hash -ne $toolsManifest.files.$name) { throw 'Recording tool hash mismatch.' }
+    if ($toolsManifest.profile -ne $mediaLock.profile -or $toolsManifest.version -ne $mediaLock.version -or $toolsManifest.sourceBundle.sha256 -ne $mediaLock.sourceBundle.sha256) { throw 'Bundled recording metadata mismatch.' }
+    foreach ($name in @('ffmpeg.exe','ffprobe.exe','LICENSE','README.txt')) {
+        if ($toolsManifest.files.$name -ne $mediaLock.files.$name -or (Get-FileHash -LiteralPath (Join-Path $toolsRoot $name)).Hash -ne $mediaLock.files.$name) { throw 'Recording tool hash mismatch.' }
     }
 }
 }

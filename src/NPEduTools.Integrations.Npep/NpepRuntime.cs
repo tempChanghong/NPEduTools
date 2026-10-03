@@ -40,8 +40,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             {
                 "UNPAIRED" => "尚未连接学校服务。只有完成配对后才会上报设备状态。",
                 "ACTIVE" => "已读取原配对，正在检查授权并恢复连接。",
-                "PENDING" => "已恢复配对申请，等待管理员批准。",
-                "APPROVED" => "管理员已批准，请核对学校、班级和大屏后在本机确认。",
+                "PENDING" => _device.View()["pairingSource"]?.GetValue<string>() == "SCREEN" ? "已恢复网页配对，正在读取学校预授权。" : "已恢复配对申请，等待管理员批准。",
+                "APPROVED" => "学校已授权，请核对学校、班级和大屏后在本机确认。",
                 "SUSPENDED" => "原连接已停用，请解除旧绑定并重新配对。",
                 _ => "存在未完成的操作，请恢复原操作或解除绑定；不会创建新的配对。"
             });
@@ -123,12 +123,23 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 _verified = null; _verifiedOrigin = null;
                 var info = await _device.InspectServerAsync(c.Origin!, token);
                 _verified = info; _verifiedOrigin = NpepApi.ValidateOrigin(c.Origin!);
-                Publish("VERIFIED", "服务可连接。请核对服务地址与实例标识，再创建配对码。"); break;
+                Publish("VERIFIED", "服务可连接。请核对服务地址与实例标识，再输入网页配对码或创建配对申请。"); break;
             case "pair":
+            case "claim":
                 if (_verified is null || NpepApi.ValidateOrigin(c.Origin!) != _verifiedOrigin ||
                     c.ServerInstanceId != _verified.Text("serverInstanceId") || c.DeploymentEpoch != _verified.Text("deploymentEpoch")) throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
-                await _device!.BeginAsync(c.Origin!, _verified, c.DeviceName!, _appVersion, token);
-                Publish("WAITING", "请学校管理员在 NPClassworks 中输入配对码，选择对应班级的大屏。"); break;
+                if (c.Action == "claim")
+                {
+                    await _device!.ClaimScreenPairingAsync(c.Origin!, _verified, c.DeviceName!, _appVersion, c.UserCode!, token);
+                    await _device.PollApprovalAsync(token);
+                    Publish("WAITING", "已读取学校预授权。请核对学校、班级与大屏，并在本机确认连接。");
+                }
+                else
+                {
+                    await _device!.BeginAsync(c.Origin!, _verified, c.DeviceName!, _appVersion, token);
+                    Publish("WAITING", "请学校管理员在 NPClassworks 中输入配对码，选择对应班级的大屏。");
+                }
+                break;
             case "poll": await _device!.PollApprovalAsync(token); Publish("WAITING", "审批信息已更新，请核对后在本机确认。"); break;
             case "confirm": await _device!.ConfirmAsync(c.ApprovalId!, token); Publish("CONNECTING", "配对完成，正在发送首次状态。"); break;
             case "recover": await _device!.RecoverConfirmationAsync(token); Publish("CONNECTING", "已恢复原配对，正在连接。"); break;
@@ -171,7 +182,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 {
                     attempted = true;
                     await _device.PollApprovalAsync(_network.Token);
-                    Publish("WAITING", _device.View().Text("state") == "APPROVED" ? "管理员已批准。请核对学校、班级和大屏，再点击确认连接。" : "等待学校管理员批准…");
+                    Publish("WAITING", _device.View().Text("state") == "APPROVED" ? "学校已授权。请核对学校、班级和大屏，再点击确认连接。" : view["pairingSource"]?.GetValue<string>() == "SCREEN" ? "正在读取学校预授权…" : "等待学校管理员批准…");
                     _delay = 5; _failures = 0;
                 }
                 else if (stage == "ACTIVE" && view["reportingPaused"]?.GetValue<bool>() != true)
@@ -212,7 +223,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 Message = paused ? "已暂停互联（通知与状态），配对保留。恢复后会重新检查授权。" : message,
                 Origin = view["origin"]?.GetValue<string>() ?? _verifiedOrigin, Server = _verified?.Copy(),
                 Pairing = view["pairing"] as JsonObject, Approval = view["approval"] as JsonObject,
-                ReportingPaused = paused, LastReceivedAt = stage == "UNPAIRED" ? null : receivedAt ?? _state.LastReceivedAt, Error = error
+                ReportingPaused = paused, LastReceivedAt = stage == "UNPAIRED" ? null : receivedAt ?? _state.LastReceivedAt, Error = error,
+                PairingSource = view["pairingSource"]?.GetValue<string>()
             };
         }
     }
@@ -227,6 +239,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         string stopped = code switch
         {
             "PAIRING_EXPIRED" => "配对码已过期。请取消本次配对后重新创建；不会自动延长期限。",
+            "PAIRING_CODE_UNAVAILABLE" => "网页配对码已使用、过期或失效。请取消本次申请，再在班级大屏网页生成新码。",
+            "SCREEN_PAIRING_DISABLED" or "PREAUTHORIZATION_CHANGED" => "学校预授权已关闭或变更。请取消本次申请，联系管理员核对后重新生成配对码。",
             "AUTH_INVALID" or "CREDENTIAL_EXPIRED" => "原授权已失效，请与学校管理员核对后解除旧绑定并重新配对。",
             "INSTANCE_MISMATCH" or "BINDING_CHANGED" => "学校服务或设备归属发生变化，连接已停止。请核对归属后重新配对。",
             "SESSION_SUPERSEDED" or "REVISION_CONFLICT" => "当前会话已被替换。请检查是否有另一实例使用该配对；此实例不会自动抢回会话。",

@@ -149,7 +149,7 @@ try {
     Toggle 'OobeUseAutomatic'; Click 'OobeNext'; Click 'OobeNext'
     $null = Wait-Control 'OobeTitle' '准备好开始了'
     Click 'OobeNext'
-    $null = Wait-Control 'QuickToolsTab' '' 'NPEduTools 快捷工具'
+    $null = Wait-Control 'HomeTab' '' 'NPEduTools'
     $checks.Add('Completed users can reopen and finish independent shortcut-only setup without ClassIsland steps')
     Stop-App
 
