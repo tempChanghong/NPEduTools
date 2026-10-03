@@ -1,6 +1,6 @@
-# InDev 20260920 第三方材料
+# NPEduTools 第三方材料（下一版本的内置录制组件）
 
-本版程序包不附带 FFmpeg、ffprobe 及其二进制 ZIP。录制组件由使用者按 `RECORDING-TOOLS-INSTALL.md` 直接从 Gyan 上游下载，版本、归档及可执行文件哈希固定在 `recording-tools.json`。本项目不镜像该二进制；安装后的个人目录不要当作本版发行包重新上传。
+本次打包候选内置自行构建的 FFmpeg 9.0.1／ffprobe 与静态 x264；精确源码归档、许可证、构建脚本及配置保存在 `third-party/ffmpeg/NPEduTools-recording-tools-source.zip`，运行文件和源码材料哈希由 `recording-bundle.lock.json` 固定。不再要求用户另行安装组件，也不再分发 Gyan 的多依赖 essentials 构建。此前不含 FFmpeg 的已发布 ZIP 仍保持其历史分离安装语义。
 
 ## 随包材料
 
@@ -14,6 +14,7 @@
 
 | 发布组件 | 许可 | 材料与来源 |
 | --- | --- | --- |
+| 自行构建 FFmpeg 9.0.1 + x264 0.165.r3222 | 组合构建 GPL-3.0-or-later；x264 保留原许可 | FFmpeg `bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa`、x264 `b35605ace3ddf7c1a5d67a2eb553f034aef41d55`；对应源码、原始许可、完整配置、工具链版本和 GCC 运行时例外声明随包提供 |
 | ClassIsland.Shared / Shared.IPC 2.1.0.1 | LGPL-3.0-only | NuGet repository commit `15273f82c9d2d55929df83b5fb806e68ee4547c0`；对应源码归档中的两个同名项目、Global.props、GeneratePackage.props、Protobuf 定义和各自 LICENSE.txt |
 | ExamAware plugin-sdk 1.5.2 | GPL-3.0-only | npm gitHead `7979213fed918eaece7a5bf424e15f534778d7f2`；对应归档的 packages/plugin-sdk、workspace 配置及 pnpm 锁文件 |
 | ExamAware core 1.1.1 / rpc 0.3.0 | GPL-3.0-only | npm gitHead 分别为 `d27cfebf7f5becbd4b08ba30b4241441328dc91a`、`ee1dee1b9e4912099d506a16547f35604e736d23`；作为 SDK 关联源码补充保留，不能将三者误写成同一发布提交 |
@@ -32,7 +33,7 @@ ExamAware 插件内的 `dist/bundle-inputs.json` 记录 esbuild 实际输入。�
 
 ## 构建与替换
 
-本项目：Windows 上安装 `global.json` 指定的 .NET SDK 10.0.400 和 Node.js；执行 `scripts/dotnet.ps1 restore NPEduTools.sln --locked-mode`，随后执行 `scripts/package-npedutools.ps1`。打包过程使用提交的 NuGet/npm 锁文件，下载并校验第三方源码，不调用 FFmpeg 引导脚本。完整自包含发布所用锁文件另见 `build-locks/`。
+本项目：Windows 上安装 `global.json` 指定的 .NET SDK 10.0.400 和 Node.js；执行 `scripts/dotnet.ps1 restore NPEduTools.sln --locked-mode`。维护者先按 `FFMPEG-BUNDLED-BUILD.md` 构建录制组件，再执行 `scripts/package-npedutools.ps1 -ReleaseVersion <新版本号> -ReleaseNotesPath docs/releases/NEXT-FFMPEG.md`；只接纳经锁文件核对且附完整对应材料的专用构建。完整自包含发布所用锁文件另见 `build-locks/`；如要复现历史不含组件的包，应使用其对应的历史打包脚本和文档。
 
 ClassIsland：解开 ClassIsland 源码归档，在其根目录安装上游 global.json 所要求的 SDK，然后执行 `dotnet build ClassIsland.Shared.IPC/ClassIsland.Shared.IPC.csproj -c Release -f net8.0`，会同时构建 Shared。项目保留包版本及代码生成设置，所需 NuGet 包按项目声明恢复。仓库内 EdgeTtsSharp 子模块属于宿主语音功能，这两个契约项目不引用它；本包不包含它的二进制。替换时退出 NPEduTools，在引用这些库的应用/Host 目录备份并替换同名 DLL，或者修改本项目引用后整体重建。
 
@@ -44,4 +45,4 @@ ExamAware SDK：解开 plugin-sdk 对应完整仓库，按根 package.json 的 p
 
 [本版本发布页](https://github.com/tempChanghong/NPEduTools/releases/tag/InDev-20260920) 提供项目源码和第三方源码附件，公开时必须和二进制同时提供。程序 ZIP 也直接携带这两类材料。维护者可运行 `scripts/collect-third-party-sources.ps1 -OutputDirectory <目录>` 重新收集并核验；不得以 GitHub 自动生成的本项目 Source code ZIP 替代第三方源码。
 
-升级依赖后须重新核对 actual deps、bundle inputs、许可证和源码锁定信息。此前包含 FFmpeg 的候选包已被本版分离安装方案取代，不应再用于公开发布。
+升级依赖后须重新核对 actual deps、bundle inputs、许可证和源码锁定信息。历史缺少 Gyan 完整对应材料的候选仍不应重新分发；本次专用构建与其是不同制品，不能只把旧 Gyan EXE 塞进新包来替代。

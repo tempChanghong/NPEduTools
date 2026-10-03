@@ -1,9 +1,24 @@
 param(
     [string]$OutputRoot = '.artifacts/releases',
-    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion = 'InDev-20261002'
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion,
+    [string]$RecordingToolsDirectory = '.tools/recording-bundled',
+    [string]$ReleaseNotesPath
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+if (-not $ReleaseVersion) { throw 'Specify -ReleaseVersion for the next version; no published version is selected by default.' }
+$publishedVersions = Get-Content (Join-Path $PSScriptRoot 'published-desktop-versions.json') -Raw | ConvertFrom-Json
+if ($ReleaseVersion -in $publishedVersions) { throw "Published version is frozen: $ReleaseVersion. Use a new version; published packages remain unchanged." }
+$existingTag = @(& git -C $projectRoot tag --list $ReleaseVersion)
+if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect local release tags.' }
+if ($existingTag.Count) { throw "Release tag already exists: $ReleaseVersion. Use a new version; published packages remain unchanged." }
+if (-not $ReleaseNotesPath) {
+    $ReleaseNotesPath = "docs/releases/$ReleaseVersion.md"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $ReleaseNotesPath) -PathType Leaf)) { throw "Release notes missing: $ReleaseNotesPath" }
+$recordingRuntime = [IO.Path]::GetFullPath((Join-Path $projectRoot $RecordingToolsDirectory))
+& (Join-Path $PSScriptRoot 'verify-recording-bundle.ps1') -RuntimeRoot $recordingRuntime
+$recordingManifest = Get-Content (Join-Path $recordingRuntime 'manifest.json') -Raw | ConvertFrom-Json
 $output = [IO.Path]::GetFullPath((Join-Path $projectRoot $OutputRoot))
 $id = 'NPEduTools-' + $ReleaseVersion
 $buildId = $id + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
@@ -34,6 +49,11 @@ try {
     foreach ($destination in @((Join-Path $app 'Recorder'),(Join-Path $app 'Host/Recorder'))) {
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
         Copy-Item -Path (Join-Path $recorder '*') -Destination $destination -Recurse -Force
+        $mediaDirectory = Join-Path $destination 'Tools'
+        New-Item -ItemType Directory -Path $mediaDirectory -Force | Out-Null
+        foreach ($name in @('ffmpeg.exe','ffprobe.exe','LICENSE','README.txt','manifest.json')) {
+            Copy-Item -LiteralPath (Join-Path $recordingRuntime $name) -Destination $mediaDirectory
+        }
     }
     # Obtain the exact path emitted by the SDK package verifier; never pick a stale newest package.
     $bridgeOutput = @(& (Join-Path $PSScriptRoot 'package-classisland-bridge.ps1'))
@@ -53,11 +73,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PORTABLE-CLASSROOM-GUIDE.md') -Destination (Join-Path $package 'README.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/CLASSROOM-ACCEPTANCE.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/DEPENDENCIES.md') -Destination $package
-    Copy-Item -LiteralPath (Join-Path $projectRoot "docs/releases/$ReleaseVersion.md") -Destination (Join-Path $package 'RELEASE-NOTES.md')
+    Copy-Item -LiteralPath (Join-Path $projectRoot $ReleaseNotesPath) -Destination (Join-Path $package 'RELEASE-NOTES.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-portable-package.ps1') -Destination $package
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install-recording-tools.ps1') -Destination (Join-Path $package 'Install-Recording-Tools.ps1')
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'recording-tools.json') -Destination $package
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/RECORDING-TOOLS-INSTALL.md') -Destination $package
     @'
 @echo off
 start "" "%~dp0app\NPEduTools.App.exe"
@@ -69,6 +86,12 @@ start "" "%~dp0app\NPEduTools.App.exe"
         if ((Get-FileHash (Join-Path $projectRoot ('third-party/' + $item.file))).Hash -ne $item.sha256) { throw "License hash mismatch: $($item.file)" }
     }
     Copy-Item -Path (Join-Path $projectRoot 'third-party/*') -Destination $notices -Recurse -Force
+    $mediaNotices = Join-Path $notices 'ffmpeg'
+    New-Item -ItemType Directory -Path $mediaNotices -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $recordingRuntime $recordingManifest.sourceBundle.name) -Destination $mediaNotices
+    Copy-Item -LiteralPath (Join-Path $recordingRuntime 'manifest.json') -Destination $mediaNotices
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'recording-bundle.lock.json') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/FFMPEG-BUNDLED-BUILD.md') -Destination $package
     & (Join-Path $PSScriptRoot 'collect-third-party-sources.ps1') -OutputDirectory (Join-Path $notices 'sources')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/THIRD-PARTY-MATERIALS.md') -Destination $package
     foreach ($runtimeId in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64')) {
@@ -113,7 +136,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
         }
     } finally { $archive.Dispose() }
     Copy-Item -LiteralPath $locks -Destination (Join-Path $package 'build-locks') -Recurse
-    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel= $(if ($ReleaseVersion.StartsWith('Pre-')) { 'pre' } else { 'indev' });rid='win-x64';selfContained=$true;recordingToolsBundled=$false;createdAt=[DateTimeOffset]::Now;
+    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel= $(if ($ReleaseVersion.StartsWith('Pre-')) { 'pre' } else { 'indev' });rid='win-x64';selfContained=$true;recordingToolsBundled=$true;createdAt=[DateTimeOffset]::Now;
         sourceCommit=(git rev-parse HEAD);workingTreeDirty=([bool](git status --porcelain));sourceArchiveSha256=(Get-FileHash $sourceZip).Hash;
         sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';examAwareValidated='1.5.2 local build';examAwareBridgeVersion=$examManifest.version;files=@()}
     $manifest.files = @(Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName | ForEach-Object {

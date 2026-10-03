@@ -14,7 +14,11 @@
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
   <Target Name="CopyRecordingRuntime" AfterTargets="Build" Condition="'$(ExcludeRecordingTools)' != 'true'">
-    <ItemGroup><RecordingRuntime Include="../../.tools/recording/ffmpeg.exe;../../.tools/recording/ffprobe.exe;../../.tools/recording/LICENSE;../../.tools/recording/README.txt;../../.tools/recording/manifest.json" Condition="Exists('../../.tools/recording/manifest.json')" /></ItemGroup>
+    <PropertyGroup>
+      <RecordingRuntimeDirectory Condition="Exists('../../.tools/recording-bundled/manifest.json')">../../.tools/recording-bundled</RecordingRuntimeDirectory>
+      <RecordingRuntimeDirectory Condition="'$(RecordingRuntimeDirectory)' == ''">../../.tools/recording</RecordingRuntimeDirectory>
+    </PropertyGroup>
+    <ItemGroup><RecordingRuntime Include="$(RecordingRuntimeDirectory)/ffmpeg.exe;$(RecordingRuntimeDirectory)/ffprobe.exe;$(RecordingRuntimeDirectory)/LICENSE;$(RecordingRuntimeDirectory)/README.txt;$(RecordingRuntimeDirectory)/manifest.json" Condition="Exists('$(RecordingRuntimeDirectory)/manifest.json')" /></ItemGroup>
     <Copy SourceFiles="@(RecordingRuntime)" DestinationFolder="$(OutDir)Tools" SkipUnchangedFiles="true" />
   </Target>
 </Project>

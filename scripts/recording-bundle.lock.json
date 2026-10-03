@@ -1,0 +1,37 @@
+{
+  "sources": [
+    {
+      "name": "ffmpeg-bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa.tar.gz",
+      "project": "FFmpeg",
+      "version": "9.0.1",
+      "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
+      "sha256": "fb1931fd4eb29297ee1c1017a24f800c4d8fbea35b4f2aaeb28308a48a9149b4",
+      "length": 17326616
+    },
+    {
+      "name": "x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz",
+      "project": "x264",
+      "version": "0.165.r3222",
+      "commit": "b35605ace3ddf7c1a5d67a2eb553f034aef41d55",
+      "url": "https://codeload.github.com/ShiftMediaProject/x264/tar.gz/b35605ace3ddf7c1a5d67a2eb553f034aef41d55",
+      "sha256": "cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9",
+      "length": 1040327
+    }
+  ],
+  "files": {
+    "README.txt": "AFFDDEDA74AA80A5FB5100397E0F382EBC5374CDC5E8CFE7FD30A98F03B28ADB",
+    "ffprobe.exe": "388853CFE16A0EFBA8055306ED7726E8257FD1F1ABAF4031652ED5460CE4F101",
+    "ffmpeg.exe": "F4A6B0EDECB255FB94E9657444AB3423D4D683EA032B54FDBEE7C002ADEC9E98",
+    "LICENSE": "8CEB4B9EE5ADEDDE47B31E975C1D90C73AD27B6B165A1DCD80C7C545EB65B903"
+  },
+  "version": "9.0.1",
+  "profile": "npedutools-recording-v1",
+  "sourceBundle": {
+    "name": "NPEduTools-recording-tools-source.zip",
+    "sha256": "2F4AAC9CF3B316F9CC17CE8788BC620F313AEC5C18DE126DE6F0A91E753EE762",
+    "length": 18782666
+  },
+  "license": "GPL-3.0-or-later",
+  "recipeSha256": "8D27B29376078A4E101C0669374AA557925430164528F26C112852CD481C6C39"
+}

@@ -1,5 +1,7 @@
 # NPEduTools
 
+**下一版本正在准备内置录制组件。** 新打包流程内置自行构建的 FFmpeg／ffprobe，并附精确源码与构建材料；已发布的 InDev 20261002 附件保持不变。见[下一版草稿](docs/releases/NEXT-FFMPEG.md)和[本轮任务卡](docs/iterations/NEXT-20261002.md)。
+
 **当前版本：[InDev 20261002（Pre，无代号）](https://github.com/tempChanghong/NPEduTools/releases/tag/InDev-20261002)。** [发版说明](docs/releases/InDev-20261002.md)介绍学校互联、通知、考试模式与原生噪音监测，配套 NPClassworks／KV v1.2.0。Windows 发行附件、固定源码与检查结果见[发布收尾](docs/releases/DELIVERY-20261002.md)；真实班级大屏及学校排程现场验收仍未完成。此前三仓功能源码已合并 main，[合并与检查记录](docs/releases/Pre-20261001-MERGE-RESULT.md)保留当时的 PR、提交、CI 与部署边界。下文保留各阶段记录，当前 NPEP 行为以[交付索引](docs/npep/README.md)及新说明为准；历史 InDev ZIP 不包含本版新增功能。
 
 新增 [可选即时切换与全局模式显示](docs/CLASSROOM-RUNTIME-SWITCH.md)：勾选“同时切换当前运行的软件”后，考试模式准备好 ExamAware2 再正常退出 ClassIsland；日常模式确认考试内容已保存后正常退出考试看板，并通过管理员任务启动 ClassIsland。退出受阻或目标未就绪时显示原因并提供重试；主窗口与展开／收起侧边栏显示当前模式和自动录课暂停状态。开关默认关闭，正式软件完整联动仍待实机验收。
@@ -22,7 +24,7 @@
 
 按本地 ClassIsland Docs 和源码核对的 [分阶段规划](docs/CLASSISLAND-RECORDING-BRIDGE-PLAN.md)，已完成 [P0 桥接验证](docs/CLASSISLAND-RECORDING-BRIDGE-P0.md)、[学校时钟预演](docs/CLASSISLAND-SCHOOL-CLOCK-PREVIEW.md)、未来日期与多类计划，以及 [P3 真实录制](docs/AUTO-RECORDING-EXECUTION.md)。Host 统一协调手动/自动录制，执行记录独立保存，暂停和时间回拨不延长截止，失联后录制器自行结束。先在微课窗口“保存设置”，再启用自动录制；重启后开关默认关闭。
 
-已生成 [P4 配套试用包及验证报告](docs/PORTABLE-RELEASE-VALIDATION.md)：包含 Windows x64 自包含主程序、后台、录制器与 0.2.0.0 桥接 `.cipx`。完整解压后双击 `Start-NPEduTools.cmd`；[安装与回退说明](docs/PORTABLE-CLASSROOM-GUIDE.md)随包提供。新解压包与真实 ClassIsland 已完成自动短录及 29 项联调检查；目标大屏整课、音频与休眠结果仍按 [现场验收表](docs/CLASSROOM-ACCEPTANCE.md) 待填。开发者可运行 `./scripts/package-npedutools.ps1` 重新打包。
+已生成 [P4 配套试用包及验证报告](docs/PORTABLE-RELEASE-VALIDATION.md)：包含 Windows x64 自包含主程序、后台、录制器与 0.2.0.0 桥接 `.cipx`。完整解压后双击 `Start-NPEduTools.cmd`；[安装与回退说明](docs/PORTABLE-CLASSROOM-GUIDE.md)随包提供。新解压包与真实 ClassIsland 已完成自动短录及 29 项联调检查；目标大屏整课、音频与休眠结果仍按 [现场验收表](docs/CLASSROOM-ACCEPTANCE.md) 待填。上述为 P4 阶段记录；当前开发者打包必须明确指定新版本号，步骤见[本轮任务卡](docs/iterations/NEXT-20261002.md)。
 
 新增可运行的 [PowerPoint 触摸翻页工具](docs/POWERPOINT-TOUCH-ASSIST.md)：按参考项目 PowerPoint-Touch-Assist 的效果，轻点放映画面后补发空格，推进动画或下一页，提供暂停和退出。运行 `./scripts/start-powerpoint-assist.ps1`；便携包完整解压即可运行，无需安装 .NET。默认只响应触摸标记，鼠标保持原行为。开发机真实 PowerPoint 的模拟触摸链路已通过，目标 Office 2024 大屏的物理触摸仍需现场试用。
 

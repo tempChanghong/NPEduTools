@@ -7,3 +7,5 @@
 .idea/
 TestResults/
 *.user
+**/__pycache__/
+*.py[cod]
