@@ -189,6 +189,7 @@
           "NPEduTools.Core": "[1.0.0, )",
           "NPEduTools.Integrations.ClassIsland": "[1.0.0, )",
           "NPEduTools.Integrations.Npep": "[1.0.0, )",
+          "NPEduTools.Integrations.SecRandom": "[1.0.0, )",
           "NPEduTools.PowerPoint.Diagnostics": "[1.0.0, )"
         }
       },
@@ -206,6 +207,9 @@
         "dependencies": {
           "NPEduTools.Contracts": "[1.0.0, )"
         }
+      },
+      "npedutools.integrations.secrandom": {
+        "type": "Project"
       },
       "npedutools.powerpoint.diagnostics": {
         "type": "Project"

@@ -1,0 +1,46 @@
+<Window x:Class="NPEduTools.App.SecRandomWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="课堂点名 · SecRandom" Width="780" Height="740" MinWidth="620" MinHeight="540" WindowStartupLocation="CenterScreen"
+        Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI" Icon="/Assets/npedutools.ico" UseLayoutRounding="True">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+    <StackPanel Margin="28">
+      <TextBlock Text="课堂点名" FontSize="28" FontWeight="SemiBold" />
+      <TextBlock Text="使用 SecRandom V3 的点名与闪抽。名单、算法和历史由 SecRandom 管理。" TextWrapping="Wrap" Foreground="#718089" Margin="0,8,0,24" />
+      <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16"><StackPanel>
+        <TextBlock Text="程序位置" FontSize="18" FontWeight="SemiBold" />
+        <TextBlock Text="选择 SecRandomLauncher.exe 或 SecRandom.Desktop.exe；无需安装桥接插件。" TextWrapping="Wrap" Foreground="#718089" Margin="0,8,0,12" />
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <TextBox x:Name="Executable" MinHeight="44" VerticalContentAlignment="Center" AutomationProperties.AutomationId="SecRandomExecutable" AutomationProperties.Name="SecRandom 程序位置" />
+          <Button Content="浏览…" Grid.Column="1" Click="BrowseClicked" Margin="8,0,0,0" AutomationProperties.AutomationId="SecRandomBrowse" />
+        </Grid>
+        <WrapPanel x:Name="ConfigActions" Margin="0,12,0,0">
+          <Button Content="保存位置" Click="SaveClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SecRandomSave" />
+          <Button Content="从 URL 登记查找" Click="DiscoverClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SecRandomDiscover" />
+        </WrapPanel>
+      </StackPanel></Border>
+      <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16"><StackPanel>
+        <TextBlock Text="本机操作" FontSize="18" FontWeight="SemiBold" />
+        <TextBlock x:Name="Connection" Text="正在连接后台…" TextWrapping="Wrap" Margin="0,12,0,0" AutomationProperties.AutomationId="SecRandomConnection" />
+        <TextBlock x:Name="CheckedAt" TextWrapping="Wrap" Foreground="#718089" FontSize="12" Margin="0,6,0,12" />
+        <WrapPanel x:Name="Actions">
+          <Button x:Name="OpenButton" Content="打开点名页" Style="{StaticResource Primary}" Click="OpenClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SecRandomOpen" />
+          <Button x:Name="ShowFloatButton" Content="显示浮窗" Click="ShowFloatClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SecRandomShowFloat" />
+          <Button x:Name="HideFloatButton" Content="隐藏浮窗" Click="HideFloatClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SecRandomHideFloat" />
+          <Button x:Name="CheckButton" Content="检查接口" Click="CheckClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SecRandomCheck" />
+        </WrapPanel>
+        <Border Background="#EAF6F2" CornerRadius="10" Padding="16" Margin="0,8,0,0"><StackPanel>
+          <TextBlock Text="闪抽一人" FontSize="16" FontWeight="SemiBold" />
+          <TextBlock Text="按照 SecRandom 当前闪抽配置执行一次真实抽取，并写入它的历史。请先在 SecRandom 设置好名单。" TextWrapping="Wrap" Foreground="#536A60" Margin="0,8,0,12" />
+          <Button x:Name="DrawButton" Content="闪抽一人" Click="DrawClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="SecRandomQuickDraw" />
+        </StackPanel></Border>
+      </StackPanel></Border>
+      <Border Background="White" CornerRadius="14" Padding="20"><StackPanel>
+        <TextBlock Text="执行结果" FontSize="18" FontWeight="SemiBold" />
+        <TextBlock x:Name="Message" TextWrapping="Wrap" Margin="0,12,0,0" AutomationProperties.AutomationId="SecRandomMessage" />
+        <TextBlock x:Name="OperationText" TextWrapping="Wrap" Foreground="#536A60" Margin="0,8,0,0" AutomationProperties.AutomationId="SecRandomOperation" />
+        <TextBlock x:Name="WinnerText" TextWrapping="Wrap" FontSize="26" FontWeight="SemiBold" Margin="0,12,0,0" AutomationProperties.AutomationId="SecRandomWinner" />
+        <Button x:Name="AcknowledgeButton" Content="已核实，解除待核实状态" Visibility="Collapsed" Click="AcknowledgeClicked" HorizontalAlignment="Left" Margin="0,12,0,0" AutomationProperties.AutomationId="SecRandomAcknowledge" />
+        <TextBlock Text="关闭此窗口不会停止后台操作。闪抽超时后不会自动重发；请先核实 SecRandom 窗口及历史。" TextWrapping="Wrap" Foreground="#718089" FontSize="12" Margin="0,16,0,0" />
+      </StackPanel></Border>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

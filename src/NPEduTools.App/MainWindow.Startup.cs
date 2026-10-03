@@ -38,6 +38,8 @@ public partial class MainWindow
             entry => _ = OpenShortcutAsync(entry), ShowShortcutManager, RepairShortcut);
         _quick.SetShortcuts(_shortcuts);
         _quick.SetExamAwareAction(OpenExamAwareQuick);
+        _quick.SetSecRandomAction(ShowSecRandom);
+        _quick.SetSecRandomQuickDrawAction(QuickDrawSecRandomAsync);
         _quick.SetClassroomModeAction(ShowClassroomMode);
         _ = ClassroomModePollAsync();
         _quick.SetRecordingActions(ShowRecording,

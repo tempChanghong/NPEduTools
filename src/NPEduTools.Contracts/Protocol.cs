@@ -22,7 +22,8 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepNotificationCommand? Notification = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RemoteExamCommand? RemoteExam = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePlanInput? ExamPlan = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCommand? Noise = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCommand? Noise = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomCommand? SecRandom = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -56,7 +57,8 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepInboxState? Inbox = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RemoteExamStatus? RemoteExam = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseState? Noise = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<NoiseDevice>? NoiseDevices = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<NoiseDevice>? NoiseDevices = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomState? SecRandom = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -96,6 +98,9 @@ public static class Protocol
     public static string? Validate(HostRequest request)
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
+        if (request.Capability == "secrandom.command" ? request.SecRandom is null || !SecRandomContract.Valid(request.SecRandom) : request.SecRandom is not null)
+            return "InvalidSecRandomCommand";
+        if (request.Capability.StartsWith("secrandom.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.Capability == "noise.command" ? request.Noise is null || !NoiseContract.Valid(request.Noise) : request.Noise is not null) return "InvalidNoiseCommand";
         if (request.Capability.StartsWith("noise.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.Capability == "examaware.plan" ? request.ExamPlan is null || !ExamAwarePlanContract.Valid(request.ExamPlan) : request.ExamPlan is not null) return "InvalidExamPlan";
@@ -103,17 +108,18 @@ public static class Protocol
         if (request.Capability == "npep.notifications" ? request.Notification is null || !NpepNotificationContract.Valid(request.Notification) : request.Notification is not null) return "InvalidNotificationCommand";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
+            "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
             "noise.status" or "noise.devices" or "noise.command" or "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
-        if (request.Capability is "classisland.config.set" or "classisland.verify" or "examaware.config.set")
+        if (request.Capability is "classisland.config.set" or "classisland.verify" or "examaware.config.set" or "secrandom.config.set")
         {
             if (string.IsNullOrWhiteSpace(request.ExecutablePath) || request.ExecutablePath.Length > 2048 ||
                 request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
         }
-        else if (request.Capability is "examaware.plan" or "examaware.autostart.set" or "classroom.set" or "classroom.restore" or "classroom.retry")
+        else if (request.Capability is "secrandom.command" or "examaware.plan" or "examaware.autostart.set" or "classroom.set" or "classroom.restore" or "classroom.retry")
         {
             if (request.ExecutablePath is not null || request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
         }

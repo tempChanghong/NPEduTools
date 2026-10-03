@@ -14,7 +14,7 @@ namespace NPEduTools.Host;
 public sealed partial class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
     SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
-    RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null)
+    RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -57,6 +57,8 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
+                else if (request.Capability.StartsWith("secrandom.", StringComparison.Ordinal))
+                    response = secRandom?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "SecRandomUnavailable", "请重启新版后台以使用 SecRandom。");
                 else if (request.Capability.StartsWith("noise.", StringComparison.Ordinal))
                     response = noise?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台以使用噪音监测。");
                 else if (request.Capability is "remoteexam.preflight" or "remoteexam.inspect")
