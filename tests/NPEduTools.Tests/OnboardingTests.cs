@@ -12,6 +12,9 @@ public sealed class OnboardingTests : IDisposable
     [InlineData(OnboardingFeatures.Shortcuts | OnboardingFeatures.Touch, 3)]
     [InlineData(OnboardingFeatures.Recording, 4)]
     [InlineData(OnboardingFeatures.Automatic, 5)]
+    [InlineData(OnboardingFeatures.Classroom, 4)]
+    [InlineData(OnboardingFeatures.School | OnboardingFeatures.Noise, 5)]
+    [InlineData((OnboardingFeatures)127, 8)]
     public void OnlyRelevantStepsAreShown(OnboardingFeatures features, int count)
     {
         var state = new OnboardingState(Features: features);
@@ -62,7 +65,8 @@ public sealed class OnboardingTests : IDisposable
 
     [Theory]
     [InlineData("{\"Version\":999}")]
-    [InlineData("{\"Features\":32}")]
+    [InlineData("{\"Version\":1,\"Features\":32}")]
+    [InlineData("{\"Features\":128}")]
     [InlineData("{\"Step\":\"classisland\"}")]
     [InlineData("{\"Completed\":true}")]
     [InlineData("{\"Reviewed\":[\"preferences\"],\"Skipped\":[\"preferences\"]}")]
@@ -109,6 +113,51 @@ public sealed class OnboardingTests : IDisposable
             Assert.Equal(original, File.ReadAllText(path));
         }
         finally { File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData(false, "preferences")]
+    [InlineData(true, "review")]
+    public void LegacyProgressUpgradesWithoutReopeningOrRewriting(bool completed, string step)
+    {
+        Directory.CreateDirectory(_root);
+        string original = System.Text.Json.JsonSerializer.Serialize(new OnboardingState(Version: 1,
+            Features: OnboardingFeatures.Automatic, Step: step, Completed: completed, Deferred: true,
+            Reviewed: ["welcome"], Skipped: ["preferences"]));
+        File.WriteAllText(PathFor, original);
+        var store = new OnboardingStore(PathFor);
+        var state = store.Read()!;
+        Assert.Equal(2, state.Version);
+        Assert.Equal(step, state.Step);
+        Assert.Equal(completed, state.Completed);
+        Assert.True(state.Deferred);
+        Assert.False(state.ShouldShow(false));
+        Assert.Equal(original, File.ReadAllText(PathFor));
+        store.Save(state);
+        Assert.Equal(2, System.Text.Json.JsonDocument.Parse(File.ReadAllText(PathFor)).RootElement.GetProperty("Version").GetInt32());
+    }
+
+    [Fact]
+    public void NewPurposesResumeAndSkipWithoutLosingOtherProgress()
+    {
+        var state = new OnboardingState(Features: OnboardingFeatures.Classroom | OnboardingFeatures.School | OnboardingFeatures.Noise);
+        Assert.Equal(new[] { "welcome", "preferences", "classroom", "school", "noise", "review" }, state.Steps);
+        state = state.Advance(false).Advance(false).Advance(true);
+        var store = new OnboardingStore(PathFor);
+        store.Save(state with { Deferred = true });
+        var restored = store.Read()!;
+        Assert.Equal("school", restored.Step);
+        Assert.Equal(new[] { "classroom" }, restored.Skipped);
+        Assert.Equal("classroom", restored.Back().Step);
+        restored = restored.Advance(false).Advance(true).Advance(false);
+        Assert.True(restored.Completed);
+        Assert.Contains("school", restored.Reviewed!);
+        Assert.Contains("noise", restored.Skipped!);
+        var changed = restored.Select(OnboardingFeatures.Noise);
+        Assert.DoesNotContain("classroom", changed.Steps);
+        Assert.DoesNotContain("school", changed.Steps);
+        Assert.Equal(new[] { "preferences" }, changed.Reviewed);
+        Assert.Empty(changed.Skipped!);
     }
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }

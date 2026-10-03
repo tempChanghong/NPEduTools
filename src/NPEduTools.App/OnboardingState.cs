@@ -4,16 +4,23 @@ using System.Text.Json;
 namespace NPEduTools.App;
 
 [Flags]
-public enum OnboardingFeatures { None = 0, Shortcuts = 1, Touch = 2, Recording = 4, Automatic = 8 }
+public enum OnboardingFeatures
+{
+    None = 0, Shortcuts = 1, Touch = 2, Recording = 4, Automatic = 8,
+    Classroom = 16, School = 32, Noise = 64
+}
 
-public sealed record OnboardingState(int Version = 1, OnboardingFeatures Features = OnboardingFeatures.Shortcuts,
+public sealed record OnboardingState(int Version = 2, OnboardingFeatures Features = OnboardingFeatures.Shortcuts,
     string Step = "welcome", string[]? Reviewed = null, string[]? Skipped = null, bool Completed = false, bool Deferred = false)
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public string[] Steps => StepsFor(Features);
     public static string[] StepsFor(OnboardingFeatures features) => ["welcome", "preferences",
         .. features.HasFlag(OnboardingFeatures.Automatic) ? new[] { "classisland" } : [],
-        .. (features & (OnboardingFeatures.Recording | OnboardingFeatures.Automatic)) != 0 ? new[] { "recording" } : [], "review"];
+        .. (features & (OnboardingFeatures.Recording | OnboardingFeatures.Automatic)) != 0 ? new[] { "recording" } : [],
+        .. features.HasFlag(OnboardingFeatures.Classroom) ? new[] { "classroom" } : [],
+        .. features.HasFlag(OnboardingFeatures.School) ? new[] { "school" } : [],
+        .. features.HasFlag(OnboardingFeatures.Noise) ? new[] { "noise" } : [], "review"];
 
     public OnboardingState Select(OnboardingFeatures features)
     {
@@ -52,12 +59,14 @@ public sealed class OnboardingStore(string path)
         if (new FileInfo(path).Length > 16384) throw new InvalidDataException("引导记录过大。");
         var state = JsonSerializer.Deserialize<OnboardingState>(File.ReadAllText(path));
         Validate(state);
-        return state;
+        // Upgrade progress in memory; never reopen a completed walkthrough or rewrite on read.
+        return state! with { Version = 2 };
     }
 
     public void Save(OnboardingState state)
     {
         Validate(state);
+        state = state with { Version = 2 };
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -70,7 +79,8 @@ public sealed class OnboardingStore(string path)
 
     private static void Validate(OnboardingState? state)
     {
-        if (state is null || state.Version != 1 || ((int)state.Features & ~15) != 0 || !state.Steps.Contains(state.Step) ||
+        if (state is null || state.Version is not (1 or 2) ||
+            ((int)state.Features & ~(state.Version == 1 ? 15 : 127)) != 0 || !state.Steps.Contains(state.Step) ||
             state.Completed && state.Step != "review" ||
             (state.Reviewed ?? []).Concat(state.Skipped ?? []).Any(s => !state.Steps.Contains(s) || s == "review") ||
             (state.Reviewed ?? []).Intersect(state.Skipped ?? []).Any())

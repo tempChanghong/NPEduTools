@@ -42,9 +42,12 @@ public partial class MainWindow
         _quick?.Collapse(false);
         if (_onboardingWindow is null)
         {
-            _onboardingWindow = new OnboardingWindow(_pipe, _onboarding, SaveOnboarding,
-                ShowSettings, ShowClassIslandPathSettings, ShowRecording, ShowShortcutManager,
-                automatic => { HideToEdge(); if (automatic) ShowRecordingPlan(); else _quick?.OpenPanel(); },
+            _onboardingWindow = new OnboardingWindow(_pipe, _onboarding, SaveOnboarding, SchoolConnectionSession,
+                new(ShowSettings, ShowClassIslandPathSettings, ShowRecording, ShowShortcutManager,
+                    ShowClassroomMode, ShowExamAware,
+                    () => { ShowSettings(); SelectSettingsCategory("Npep"); },
+                    () => OpenNoiseClicked(this, new RoutedEventArgs())),
+                automatic => { if (automatic) ShowRecordingPlan(); else { SelectPage(false); RestoreWindow(); } },
                 _onboardingError);
             _onboardingWindow.Closed += (_, _) => _onboardingWindow = null;
         }

@@ -32,6 +32,7 @@ public sealed partial class NpepDevice : IDisposable
         ["pairing"] = _saved?["pairing"]?.DeepClone(),
         ["approval"] = _saved?["approval"]?.DeepClone(),
         ["registration"] = _saved?["registration"]?.DeepClone(),
+        ["pairingSource"] = _saved?["source"]?.DeepClone(),
         ["reportingPaused"] = _saved?["reportingPaused"]?.DeepClone() ?? JsonValue.Create(false),
         ["suspended"] = _suspended
     };
@@ -57,6 +58,12 @@ public sealed partial class NpepDevice : IDisposable
     }
 
     public async Task<JsonObject> BeginAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, CancellationToken token = default)
+        => await BeginCoreAsync(origin, confirmedInfo, deviceName, appVersion, null, token);
+
+    public async Task<JsonObject> ClaimScreenPairingAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string userCode, CancellationToken token = default)
+        => await BeginCoreAsync(origin, confirmedInfo, deviceName, appVersion, userCode, token);
+
+    private async Task<JsonObject> BeginCoreAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string? userCode, CancellationToken token)
     {
         await _gate.WaitAsync(token);
         try
@@ -75,9 +82,10 @@ public sealed partial class NpepDevice : IDisposable
             request["deviceName"] = deviceName; request["appVersion"] = appVersion;
             request["pairingSecret"] = secret;
             request["requestedCapabilities"] = new JsonArray("device.status");
-            NpepProtocol.Validate("createPairing", request);
+            if (userCode is not null) request["userCode"] = userCode;
+            NpepProtocol.Validate(userCode is null ? "createPairing" : "claimScreenPairing", request);
             Save(new() { ["stage"] = "CREATING", ["origin"] = api.Origin, ["info"] = actual.Copy(),
-                ["create"] = request, ["pairingSecret"] = secret });
+                ["create"] = request, ["pairingSecret"] = secret, ["source"] = userCode is null ? "ADMIN" : "SCREEN" });
             return await ResumeCreateCoreAsync(token);
         }
         finally { _gate.Release(); }
@@ -92,7 +100,8 @@ public sealed partial class NpepDevice : IDisposable
     {
         if (Required().Text("stage") != "CREATING") throw new NpepException("PAIRING_STATE_CONFLICT");
         using var api = Api();
-        var pairing = await api.SendAsync("pairings", "createdPairingResponse", (JsonObject)Required()["create"]!, "createPairing", token: token);
+        bool screen = Required()["source"]?.GetValue<string>() == "SCREEN";
+        var pairing = await api.SendAsync(screen ? "pairings/claim" : "pairings", "createdPairingResponse", (JsonObject)Required()["create"]!, screen ? "claimScreenPairing" : "createPairing", token: token);
         var next = Required().Copy(); next["pairing"] = pairing; next["stage"] = "PENDING"; Save(next);
         return View();
     }

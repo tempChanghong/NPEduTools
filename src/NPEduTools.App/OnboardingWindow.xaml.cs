@@ -7,11 +7,16 @@ using NPEduTools.Core;
 
 namespace NPEduTools.App;
 
+internal sealed record OnboardingActions(Action Preferences, Action ClassIsland, Action Recording, Action Shortcuts,
+    Action Classroom, Action ExamAware, Action School, Action Noise);
+
 public partial class OnboardingWindow : Window
 {
     private readonly string _endpoint;
     private readonly Action<OnboardingState> _save;
     private readonly Action _preferences, _classIsland, _recording, _shortcuts;
+    private readonly OnboardingActions _actions;
+    private readonly NpepConnectionSession _schoolConnection;
     private readonly Action<bool> _finish;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(750) };
@@ -22,19 +27,25 @@ public partial class OnboardingWindow : Window
     private DateOnly? _confirmedDate;
     private Guid _bridgeInstance;
     private long _epoch;
+    private bool _schoolAdvanceBusy;
 
-    internal OnboardingWindow(string endpoint, OnboardingState state, Action<OnboardingState> save,
-        Action preferences, Action classIsland, Action recording, Action shortcuts, Action<bool> finish, string? initialError)
+    internal OnboardingWindow(string endpoint, OnboardingState state, Action<OnboardingState> save, NpepConnectionSession schoolConnection,
+        OnboardingActions actions, Action<bool> finish, string? initialError)
     {
-        _endpoint = endpoint; _save = save; _preferences = preferences; _classIsland = classIsland;
-        _recording = recording; _shortcuts = shortcuts; _finish = finish;
+        _endpoint = endpoint; _save = save; _actions = actions; _schoolConnection = schoolConnection;
+        _preferences = actions.Preferences; _classIsland = actions.ClassIsland;
+        _recording = actions.Recording; _shortcuts = actions.Shortcuts; _finish = finish;
         // Rechecking starts a new walkthrough only on the user's explicit open action.
         _state = state.Completed ? new(Features: state.Features) : state;
         InitializeComponent();
+        SchoolConnection.Bind(schoolConnection);
         UseShortcuts.IsChecked = state.Features.HasFlag(OnboardingFeatures.Shortcuts);
         UseTouch.IsChecked = state.Features.HasFlag(OnboardingFeatures.Touch);
         UseRecording.IsChecked = state.Features.HasFlag(OnboardingFeatures.Recording);
         UseAutomatic.IsChecked = state.Features.HasFlag(OnboardingFeatures.Automatic);
+        UseClassroom.IsChecked = state.Features.HasFlag(OnboardingFeatures.Classroom);
+        UseSchool.IsChecked = state.Features.HasFlag(OnboardingFeatures.School);
+        UseNoise.IsChecked = state.Features.HasFlag(OnboardingFeatures.Noise);
         ConfirmClock.Checked += (_, _) =>
         {
             _confirmedDate = _clock.Read(_elapsed.Elapsed).Now is { } now ? DateOnly.FromDateTime(now.Date) : null;
@@ -42,7 +53,12 @@ public partial class OnboardingWindow : Window
         };
         _timer.Tick += async (_, _) => { if (_state.Step == "classisland") await CheckClockAsync(); };
         Loaded += (_, _) => _timer.Start();
-        Activated += (_, _) => { if (_state.Step == "preferences") RefreshPreferences(); };
+        Activated += (_, _) =>
+        {
+            if (_state.Step == "preferences") RefreshPreferences();
+            if (_state.Step is "classroom" or "noise") _ = RefreshPreparationAsync();
+            if (_state.Step == "school") _ = _schoolConnection.RefreshAsync();
+        };
         Closing += (_, e) =>
         {
             if (!_closing && !Persist(CurrentChoices() with { Deferred = true })) e.Cancel = true;
@@ -65,7 +81,10 @@ public partial class OnboardingWindow : Window
         var features = (UseShortcuts.IsChecked == true ? OnboardingFeatures.Shortcuts : 0) |
             (UseTouch.IsChecked == true ? OnboardingFeatures.Touch : 0) |
             (UseRecording.IsChecked == true ? OnboardingFeatures.Recording : 0) |
-            (UseAutomatic.IsChecked == true ? OnboardingFeatures.Automatic : 0);
+            (UseAutomatic.IsChecked == true ? OnboardingFeatures.Automatic : 0) |
+            (UseClassroom.IsChecked == true ? OnboardingFeatures.Classroom : 0) |
+            (UseSchool.IsChecked == true ? OnboardingFeatures.School : 0) |
+            (UseNoise.IsChecked == true ? OnboardingFeatures.Noise : 0);
         return features == _state.Features ? _state : _state.Select(features);
     }
 
@@ -77,20 +96,60 @@ public partial class OnboardingWindow : Window
     }
 
     private static string Label(string step) => step switch
-    { "welcome" => "选择用途", "preferences" => "使用偏好", "classisland" => "连接学校时间", "recording" => "录制准备", _ => "准备好开始了" };
+    {
+        "welcome" => "选择用途", "preferences" => "使用偏好", "classisland" => "连接学校时间",
+        "recording" => "录制准备", "classroom" => "准备考试环境", "school" => "连接学校（NPEP）",
+        "noise" => "准备噪音监测", _ => "准备好开始了"
+    };
+
+    private void RefreshProgress(OnboardingState state)
+    {
+        int current = Array.IndexOf(state.Steps, state.Step);
+        ProgressText.Text = $"初始设置 · {current + 1} / {state.Steps.Length}";
+        StepList.ItemsSource = state.Steps.Select((step, index) => new
+        {
+            Title = $"{index + 1}  {Label(step)}",
+            Background = index == current ? "#EAF6F2" : "#EEF2F0",
+            Foreground = index == current ? "#147D68" : "#718089"
+        }).ToArray();
+    }
+    private void ChoicesChanged(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded && _state.Step == "welcome") RefreshProgress(CurrentChoices());
+    }
+
+    private string ReviewStatus(string step)
+    {
+        if ((_state.Skipped ?? []).Contains(step)) return "已跳过，待配置";
+        if (!(_state.Reviewed ?? []).Contains(step)) return "尚待处理";
+        return step switch
+        {
+            "preferences" => "已查看，使用现有设置",
+            "school" => "本步已处理；配对与在线状态以学校互联页为准",
+            "classroom" or "noise" => "已查看准备说明；配置以管理页实时状态为准",
+            _ => "本次已检查（非持续状态）"
+        };
+    }
 
     private void Render()
     {
         foreach (var (panel, step) in new[] { (WelcomePage, "welcome"), (PreferencesPage, "preferences"),
-            (ClassIslandPage, "classisland"), (RecordingPage, "recording"), (ReviewPage, "review") })
+            (ClassIslandPage, "classisland"), (RecordingPage, "recording"), (ClassroomPage, "classroom"),
+            (SchoolPage, "school"), (NoisePage, "noise"), (ReviewPage, "review") })
             panel.Visibility = _state.Step == step ? Visibility.Visible : Visibility.Collapsed;
         StepTitle.Text = Label(_state.Step);
-        ProgressText.Text = $"初始设置 · {Array.IndexOf(_state.Steps, _state.Step) + 1} / {_state.Steps.Length}";
+        RefreshProgress(_state);
         BackButton.Visibility = _state.Step == "welcome" ? Visibility.Hidden : Visibility.Visible;
         SkipButton.Visibility = _state.Step is "welcome" or "review" ? Visibility.Collapsed : Visibility.Visible;
-        NextButton.Content = _state.Step == "welcome" ? "开始设置" : _state.Step == "review" ? "完成并开始使用" : "下一步";
+        NextButton.Content = _state.Step switch
+        {
+            "welcome" => "开始设置", "review" => "完成并开始使用",
+            "classroom" or "noise" => "已了解，下一步", _ => "下一步"
+        };
         ShortcutHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Shortcuts) ? Visibility.Visible : Visibility.Collapsed;
         TouchHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Touch) ? Visibility.Visible : Visibility.Collapsed;
+        if (_state.Step is "classroom" or "noise") _ = RefreshPreparationAsync();
+        if (_state.Step == "school") _ = _schoolConnection.RefreshAsync();
         if (_state.Step == "preferences") RefreshPreferences();
         if (_state.Step == "classisland")
         {
@@ -103,10 +162,10 @@ public partial class OnboardingWindow : Window
         if (_state.Step == "review")
         {
             ReviewText.Text = string.Join("\n", _state.Steps.Where(s => s is not ("welcome" or "review")).Select(s =>
-                $"{Label(s)}：{((_state.Skipped ?? []).Contains(s) ? "已跳过，待配置" : (_state.Reviewed ?? []).Contains(s) ? s == "preferences" ? "已查看，使用现有设置" : "本次已检查（非持续状态）" : "尚待处理")}"));
+                $"{Label(s)}：{ReviewStatus(s)}"));
             FinishHint.Text = _state.Features.HasFlag(OnboardingFeatures.Automatic)
                 ? "下一步打开自动录课计划。请核对周期规则、单日计划和预演结果，再主动启用自动录制。完成引导本身不会开启录制。"
-                : "下一步进入侧边栏。需要管理时，随时打开主窗口。";
+                : "完成后保留主窗口，可从课堂工作台打开常用工具，或展开侧边栏。尚未配置的功能可以稍后继续。";
         }
     }
 
@@ -124,6 +183,7 @@ public partial class OnboardingWindow : Window
 
     private async void NextClicked(object sender, RoutedEventArgs e)
     {
+        if (_schoolAdvanceBusy || _lifetime.IsCancellationRequested) return;
         ErrorText.Text = "";
         if (_state.Step == "preferences")
         {
@@ -139,6 +199,30 @@ public partial class OnboardingWindow : Window
         {
             // Always re-read/probe on navigation: settings or devices may have changed since the last check.
             if (!await CheckRecordingAsync()) return;
+        }
+        if (_state.Step == "school")
+        {
+            var before = _state;
+            _schoolAdvanceBusy = true;
+            NextButton.IsEnabled = BackButton.IsEnabled = SkipButton.IsEnabled = false;
+            bool refreshed;
+            try { refreshed = await _schoolConnection.RefreshAsync(); }
+            finally
+            {
+                _schoolAdvanceBusy = false;
+                NextButton.IsEnabled = BackButton.IsEnabled = SkipButton.IsEnabled = true;
+            }
+            if (_lifetime.IsCancellationRequested || !ReferenceEquals(before, _state)) return;
+            if (!refreshed)
+            {
+                ErrorText.Text = "连接状态正在刷新或后台暂不可用，请稍后重试；也可以跳过此项。";
+                return;
+            }
+            if (!_schoolConnection.CanFinish)
+            {
+                ErrorText.Text = "请完成配对并在本机确认归属；未完成时可选择“跳过此项”或“稍后设置”，申请会保留。";
+                return;
+            }
         }
         var next = CurrentChoices().Advance(false);
         if (!Persist(next)) return;
