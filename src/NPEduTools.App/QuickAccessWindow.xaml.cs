@@ -17,6 +17,20 @@ namespace NPEduTools.App;
 public partial class QuickAccessWindow : Window
 {
     private Action? _examAware;
+    private Action? _secRandom;
+    public void SetSecRandomAction(Action action) => _secRandom = action;
+    private void SecRandomClicked(object sender, RoutedEventArgs e) => _secRandom?.Invoke();
+    private Func<Task<string>>? _secRandomQuickDraw;
+    public void SetSecRandomQuickDrawAction(Func<Task<string>> action) => _secRandomQuickDraw = action;
+    private async void RailSecRandomClicked(object sender, RoutedEventArgs e)
+    {
+        if (_secRandomQuickDraw is null || !RailSecRandom.IsEnabled) return;
+        RailSecRandom.IsEnabled = false;
+        RailSecRandomGlyph.Text = "…";
+        RailSecRandom.ToolTip = "正在闪抽，请稍候；不会重复提交。";
+        try { RailSecRandom.ToolTip = await _secRandomQuickDraw(); }
+        finally { RailSecRandomGlyph.Text = "抽"; RailSecRandom.IsEnabled = true; }
+    }
     private Action? _classroomMode;
     public void SetClassroomModeAction(Action action) => _classroomMode = action;
     private void ClassroomModeClicked(object sender, RoutedEventArgs e) => _classroomMode?.Invoke();
@@ -30,7 +44,7 @@ public partial class QuickAccessWindow : Window
     }
     public void SetExamAwareAction(Action action) => _examAware = action;
     private void ExamAwareClicked(object sender, RoutedEventArgs e) => _examAware?.Invoke();
-    private const double RailWidth = 80, RailHeight = 284, PanelWidth = 440, PanelHeight = 620;
+    private const double RailWidth = 80, RailHeight = 340, PanelWidth = 440, PanelHeight = 620;
     private sealed record Placement(bool LeftSide = false, double RelativeY = 0.78, string? Display = null);
     private readonly string _settingsPath;
     private readonly Action _power, _pause, _startClassIsland, _settings;

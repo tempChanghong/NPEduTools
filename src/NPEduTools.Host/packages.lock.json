@@ -196,6 +196,9 @@
           "NPEduTools.Contracts": "[1.0.0, )"
         }
       },
+      "npedutools.integrations.secrandom": {
+        "type": "Project"
+      },
       "npedutools.powerpoint.diagnostics": {
         "type": "Project"
       }

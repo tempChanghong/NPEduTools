@@ -3,6 +3,7 @@
   <ItemGroup><InternalsVisibleTo Include="NPEduTools.Tests" /></ItemGroup>
   <ItemGroup><PackageReference Include="NAudio.Wasapi" Version="2.2.1" /></ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../NPEduTools.Integrations.SecRandom/NPEduTools.Integrations.SecRandom.csproj" />
     <ProjectReference Include="../NPEduTools.Integrations.Npep/NPEduTools.Integrations.Npep.csproj" />
     <ProjectReference Include="../NPEduTools.ClassIsland.Admin/NPEduTools.ClassIsland.Admin.csproj" />
     <ProjectReference Include="../NPEduTools.Recorder/NPEduTools.Recorder.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />

@@ -84,6 +84,7 @@
           <Button Content="录制微课" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingClicked" AutomationProperties.AutomationId="RecordingNav" />
           <Button Content="自动录课计划" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="OpenRecordingPlan" />
           <Button Content="考试看板" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
+          <Button Content="课堂点名 · SecRandom" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
           <Button Content="噪音监测" Style="{StaticResource SidebarNavigation}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="OpenNoise" />
           <Button Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
         </StackPanel></ScrollViewer>

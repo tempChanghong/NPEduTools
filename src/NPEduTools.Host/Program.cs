@@ -131,6 +131,7 @@ string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeE
     : Path.Combine(Path.GetTempPath(), "NPEduTools", "instances",
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(pipeName)))[..24]));
 var runtimeGate = new RuntimeOperationGate(coordinateDesktop: true);
+await using var secRandom = new SecRandomService(dataDirectory, runtimeGate);
 await using var launch = new LaunchService(dataDirectory, new ClassIslandLaunchTarget(), reader, runtimeGate: runtimeGate);
 await using var touch = new TouchAssistService(() =>
 {
@@ -166,7 +167,7 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
 try
 {
     await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
