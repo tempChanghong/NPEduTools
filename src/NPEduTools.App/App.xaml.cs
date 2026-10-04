@@ -38,7 +38,24 @@ public partial class App : Application
         _activation = new EventWaitHandle(false, EventResetMode.AutoReset, $@"Local\{pipe}.App.Activate");
         _instance = new Mutex(false, $@"Local\{pipe}.App", out bool created);
         if (!created) { if (!options.AtLogin) _activation.Set(); Shutdown(); return; }
+        // Consent precedes MainWindow construction, Host startup, school polling and device features.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        try
+        {
+            var agreements = AgreementCatalog.Load();
+            AgreementAcceptanceRecord? accepted = null;
+            try { accepted = new AgreementAcceptanceStore(AgreementAcceptanceStore.PathFor(pipe)).Read(); }
+            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or System.IO.InvalidDataException) { }
+            if (accepted?.IsCurrent(agreements) != true && new AgreementsWindow(pipe).ShowDialog() != true)
+            { Shutdown(); return; }
+        }
+        catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            MessageBox.Show("协议无法读取或确认，请使用完整程序包并检查配置目录权限。", "NPEduTools · 服务与隐私", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(4); return;
+        }
         MainWindow = new MainWindow(pipe, options.Upstream);
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
         _activationWait = ThreadPool.RegisterWaitForSingleObject(_activation, (_, _) =>
             Dispatcher.BeginInvoke(() => ((MainWindow)MainWindow).RestoreWindow()), null, Timeout.Infinite, false);
         ((MainWindow)MainWindow).Start(options.AtLogin, options.GuardRecovery);

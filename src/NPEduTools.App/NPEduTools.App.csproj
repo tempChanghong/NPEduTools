@@ -10,6 +10,8 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../docs/legal/*-AGREEMENT.md" LogicalName="NPEduTools.Legal.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../LICENSE" LogicalName="NPEduTools.Legal.GPL-3.0.txt" />
     <Resource Include="../../images/branding/npedutools.ico" Link="Assets/npedutools.ico" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />

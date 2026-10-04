@@ -7,15 +7,16 @@ namespace NPEduTools.App;
 public enum OnboardingFeatures
 {
     None = 0, Shortcuts = 1, Touch = 2, Recording = 4, Automatic = 8,
-    Classroom = 16, School = 32, Noise = 64
+    Classroom = 16, School = 32, Noise = 64, SecRandom = 128
 }
 
-public sealed record OnboardingState(int Version = 2, OnboardingFeatures Features = OnboardingFeatures.Shortcuts,
+public sealed record OnboardingState(int Version = 3, OnboardingFeatures Features = OnboardingFeatures.Shortcuts,
     string Step = "welcome", string[]? Reviewed = null, string[]? Skipped = null, bool Completed = false, bool Deferred = false)
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public string[] Steps => StepsFor(Features);
     public static string[] StepsFor(OnboardingFeatures features) => ["welcome", "preferences",
+        .. features.HasFlag(OnboardingFeatures.SecRandom) ? new[] { "secrandom" } : [],
         .. features.HasFlag(OnboardingFeatures.Automatic) ? new[] { "classisland" } : [],
         .. (features & (OnboardingFeatures.Recording | OnboardingFeatures.Automatic)) != 0 ? new[] { "recording" } : [],
         .. features.HasFlag(OnboardingFeatures.Classroom) ? new[] { "classroom" } : [],
@@ -60,13 +61,13 @@ public sealed class OnboardingStore(string path)
         var state = JsonSerializer.Deserialize<OnboardingState>(File.ReadAllText(path));
         Validate(state);
         // Upgrade progress in memory; never reopen a completed walkthrough or rewrite on read.
-        return state! with { Version = 2 };
+        return state! with { Version = 3 };
     }
 
     public void Save(OnboardingState state)
     {
         Validate(state);
-        state = state with { Version = 2 };
+        state = state with { Version = 3 };
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -79,8 +80,8 @@ public sealed class OnboardingStore(string path)
 
     private static void Validate(OnboardingState? state)
     {
-        if (state is null || state.Version is not (1 or 2) ||
-            ((int)state.Features & ~(state.Version == 1 ? 15 : 127)) != 0 || !state.Steps.Contains(state.Step) ||
+        if (state is null || state.Version is not (1 or 2 or 3) ||
+            ((int)state.Features & ~(state.Version == 1 ? 15 : state.Version == 2 ? 127 : 255)) != 0 || !state.Steps.Contains(state.Step) ||
             state.Completed && state.Step != "review" ||
             (state.Reviewed ?? []).Concat(state.Skipped ?? []).Any(s => !state.Steps.Contains(s) || s == "review") ||
             (state.Reviewed ?? []).Intersect(state.Skipped ?? []).Any())

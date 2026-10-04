@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/NPEduTools.App/NPEduTools.App.csproj" /></ItemGroup>
+  <ItemGroup><None Include="../../src/NPEduTools.App/App.xaml" Link="AppResources.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>

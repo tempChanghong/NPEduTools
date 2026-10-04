@@ -11,7 +11,8 @@ public partial class OnboardingWindow
     private async Task RefreshPreparationAsync()
     {
         string step = _state.Step;
-        if (_preparationBusy || _lifetime.IsCancellationRequested || step is not ("classroom" or "noise")) return;
+        if (_preparationBusy || _lifetime.IsCancellationRequested || step is not ("classroom" or "noise" or "secrandom")) return;
+        if (step == "secrandom") { await CheckSecRandomPreparationAsync(); return; }
         _preparationBusy = true;
         var target = step == "classroom" ? ClassroomText : NoiseText;
         target.Text = "正在读取后台状态…";
@@ -48,7 +49,7 @@ public partial class OnboardingWindow
         {
             _preparationBusy = false;
             // If navigation changed while awaiting a read, populate the new page instead of leaving it blank.
-            if (!_lifetime.IsCancellationRequested && _state.Step != step && _state.Step is ("classroom" or "noise"))
+            if (!_lifetime.IsCancellationRequested && _state.Step != step && _state.Step is ("classroom" or "noise" or "secrandom"))
                 _ = RefreshPreparationAsync();
         }
     }
@@ -58,4 +59,28 @@ public partial class OnboardingWindow
     private void ExamAwareClicked(object sender, RoutedEventArgs e) => _actions.ExamAware();
     private void SchoolClicked(object sender, RoutedEventArgs e) => _actions.School();
     private void NoiseClicked(object sender, RoutedEventArgs e) => _actions.Noise();
+    private void SecRandomClicked(object sender, RoutedEventArgs e) => _actions.SecRandom();
+    private void AgreementsClicked(object sender, RoutedEventArgs e) => new AgreementsWindow(_endpoint, false) { Owner = this }.ShowDialog();
+    private async Task<bool> CheckSecRandomPreparationAsync()
+    {
+        if (_preparationBusy || _lifetime.IsCancellationRequested) return false;
+        _preparationBusy = true;
+        NextButton.IsEnabled = BackButton.IsEnabled = SkipButton.IsEnabled = false;
+        try
+        {
+            var response = await RequestAsync("secrandom.status");
+            if (_lifetime.IsCancellationRequested || _state.Step != "secrandom") return false;
+            var state = response.SecRandom;
+            bool configured = response.Outcome == "Succeeded" && !string.IsNullOrWhiteSpace(state?.ExecutablePath) && File.Exists(state.ExecutablePath);
+            SecRandomText.Text = configured
+                ? $"程序位置已保存，文件可访问。\n接口：{state!.Connection}。本步不会启动软件、读取名单或执行抽取。\n请在点名页核对 SecRandom V3 接口及名单；侧栏“抽”按钮会执行真实闪抽。"
+                : "尚未保存可访问的 SecRandom 程序位置。请打开点名配置，从 URL 登记查找或浏览选择程序，再保存；也可跳过。";
+            if (!configured) ErrorText.Text = "请保存 SecRandom 程序位置，或选择“跳过此项”。";
+            else ErrorText.Text = "";
+            return configured;
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        { if (!_lifetime.IsCancellationRequested) { SecRandomText.Text = "暂时无法读取点名配置，请检查后台或稍后配置。"; ErrorText.Text = "点名配置未确认，可以跳过后再设置。"; } return false; }
+        finally { _preparationBusy = false; NextButton.IsEnabled = BackButton.IsEnabled = SkipButton.IsEnabled = true; }
+    }
 }

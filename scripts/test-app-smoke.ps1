@@ -25,6 +25,7 @@ $hostExe = Join-Path (Split-Path $appExe -Parent) 'Host/NPEduTools.Host.exe'
 $peerDll = Join-Path $projectRoot "tests/NPEduTools.ClassIsland.TestPeer/bin/$Configuration/net10.0/NPEduTools.ClassIsland.TestPeer.dll"
 if (-not (Test-Path -LiteralPath $appExe)) { throw 'Build Release before running the UI smoke test.' }
 $pipe = 'NPEduTools.Test.ui.' + [Guid]::NewGuid().ToString('N')
+& (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $upstream = 'NPEduTools.Test.ui.' + [Guid]::NewGuid().ToString('N')
 $owned = [Collections.Generic.List[Diagnostics.Process]]::new()
 $checks = [Collections.Generic.List[string]]::new()
