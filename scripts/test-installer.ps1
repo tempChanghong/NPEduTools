@@ -78,8 +78,19 @@ try {
     Check 'tracked payload removed' (-not (Test-Path -LiteralPath (Join-Path $install 'version.txt')))
     Check 'untracked and external user files preserved' (((Get-Content (Join-Path $install 'user-file.txt')).Trim() -eq 'preserve') -and ((Get-Content (Join-Path $scratch 'outside-user-data.txt')).Trim() -eq 'preserve'))
     Check 'test version registration removed' (-not (Test-Path -LiteralPath $registry))
+    # Inno's self-delete helper outlives the exit code. Reinstalling while it is
+    # still running can allocate unins001.exe or let the old helper delete the
+    # file the test intends to use. Wait for the private old uninstaller only.
+    $deleteDeadline = [DateTime]::UtcNow.AddSeconds(10)
+    while ((Test-Path -LiteralPath $uninstaller) -and [DateTime]::UtcNow -lt $deleteDeadline) {
+        Start-Sleep -Milliseconds 100
+    }
+    Check 'old uninstaller self-delete completed before reinstall' (-not (Test-Path -LiteralPath $uninstaller))
     Execute $next 'reinstall'
     Check 'reinstall retains user file' ((Get-Content (Join-Path $install 'user-file.txt')).Trim() -eq 'preserve')
+    $reinstalledUninstallers = @(Get-ChildItem -LiteralPath $install -Filter 'unins*.exe' -File)
+    Check 'reinstall has one current uninstaller' ($reinstalledUninstallers.Count -eq 1)
+    $uninstaller = $reinstalledUninstallers[0].FullName
     Execute $uninstaller 'final-uninstall'
     $summary.status = 'PASSED'
 } catch {
