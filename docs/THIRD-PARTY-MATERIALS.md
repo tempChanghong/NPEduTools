@@ -1,13 +1,13 @@
-# NPEduTools 第三方材料（下一版本的内置录制组件）
+# NPEduTools v1.0.0 第三方材料
 
-本次打包候选内置自行构建的 FFmpeg 9.0.1／ffprobe 与静态 x264；精确源码归档、许可证、构建脚本及配置保存在 `third-party/ffmpeg/NPEduTools-recording-tools-source.zip`，运行文件和源码材料哈希由 `recording-bundle.lock.json` 固定。不再要求用户另行安装组件，也不再分发 Gyan 的多依赖 essentials 构建。此前不含 FFmpeg 的已发布 ZIP 仍保持其历史分离安装语义。
+v1.0.0 内置自行构建的 FFmpeg 9.0.1／ffprobe 与静态 x264；精确源码归档、许可证、构建脚本及配置保存在 `third-party/ffmpeg/NPEduTools-recording-tools-source.zip`，运行文件和源码材料哈希由 `recording-bundle.lock.json` 固定。不再要求用户另行安装组件，也不再分发 Gyan 的多依赖 essentials 构建。此前不含 FFmpeg 的已发布 ZIP 仍保持其历史分离安装语义。
 
 ## 随包材料
 
 - `third-party/inventory.json`：由实际发布的 `.deps.json` 生成的 NuGet 组件清单；各组件目录保留 NuGet 元数据与自带声明。
 - `third-party/licenses/`：补齐 NuGet 未携带的上游许可证和 WPF 第三方声明。`licenses.lock.json` 记录固定提交的原文地址及 SHA-256，不修改原文。
 - `.NET Runtime` 和 `WindowsDesktop Runtime` 10.0.11 的许可证、运行时第三方声明及 NuGet 元数据保留在对应目录。
-- `third-party/sources/`：ClassIsland 与 ExamAware 对应提交的完整仓库源码归档、构建文件和锁文件。`sources.lock.json` 记录来源、提交、长度及哈希。这些文件同时作为 `NPEduTools-InDev-20260920-third-party-sources.zip` 单独提供，程序包内已包含，不必重复下载。
+- `third-party/sources/`：ClassIsland 与 ExamAware 对应提交的完整仓库源码归档、构建文件和锁文件。`sources.lock.json` 记录来源、提交、长度及哈希。这些文件同时作为 `NPEduTools-v1.0.0-third-party-sources.zip` 单独提供，程序包内已包含，不必重复下载。
 - `NPEduTools-source.zip`：本项目源码、插件源码、构建脚本及依赖锁文件。程序未对下表的上游库实现作本地修改。
 
 ## 组件映射
@@ -33,7 +33,7 @@ ExamAware 插件内的 `dist/bundle-inputs.json` 记录 esbuild 实际输入。�
 
 ## 构建与替换
 
-本项目：Windows 上安装 `global.json` 指定的 .NET SDK 10.0.400 和 Node.js；执行 `scripts/dotnet.ps1 restore NPEduTools.sln --locked-mode`。维护者先按 `FFMPEG-BUNDLED-BUILD.md` 构建录制组件，再执行 `scripts/package-npedutools.ps1 -ReleaseVersion <新版本号> -ReleaseNotesPath docs/releases/NEXT-FFMPEG.md`；只接纳经锁文件核对且附完整对应材料的专用构建。完整自包含发布所用锁文件另见 `build-locks/`；如要复现历史不含组件的包，应使用其对应的历史打包脚本和文档。
+本项目：Windows 上安装 `global.json` 指定的 .NET SDK 10.0.400 和 Node.js；执行 `scripts/dotnet.ps1 restore NPEduTools.sln --locked-mode`。维护者先按 `FFMPEG-BUNDLED-BUILD.md` 构建录制组件，再执行 `scripts/package-npedutools.ps1 -ReleaseVersion <新版本号> -ReleaseNotesPath docs/releases/<新版本号>.md`；只接纳经锁文件核对且附完整对应材料的专用构建。完整自包含发布所用锁文件另见 `build-locks/`；如要复现历史不含组件的包，应使用其对应的历史打包脚本和文档。
 
 ClassIsland：解开 ClassIsland 源码归档，在其根目录安装上游 global.json 所要求的 SDK，然后执行 `dotnet build ClassIsland.Shared.IPC/ClassIsland.Shared.IPC.csproj -c Release -f net8.0`，会同时构建 Shared。项目保留包版本及代码生成设置，所需 NuGet 包按项目声明恢复。仓库内 EdgeTtsSharp 子模块属于宿主语音功能，这两个契约项目不引用它；本包不包含它的二进制。替换时退出 NPEduTools，在引用这些库的应用/Host 目录备份并替换同名 DLL，或者修改本项目引用后整体重建。
 
@@ -43,6 +43,6 @@ ExamAware SDK：解开 plugin-sdk 对应完整仓库，按根 package.json 的 p
 
 ## 获取与维护
 
-[本版本发布页](https://github.com/tempChanghong/NPEduTools/releases/tag/InDev-20260920) 提供项目源码和第三方源码附件，公开时必须和二进制同时提供。程序 ZIP 也直接携带这两类材料。维护者可运行 `scripts/collect-third-party-sources.ps1 -OutputDirectory <目录>` 重新收集并核验；不得以 GitHub 自动生成的本项目 Source code ZIP 替代第三方源码。
+[本版本发布页](https://github.com/tempChanghong/NPEduTools/releases/tag/v1.0.0) 提供项目源码和第三方源码附件，公开时必须和二进制同时提供。程序 ZIP 也直接携带这两类材料。维护者可运行 `scripts/collect-third-party-sources.ps1 -OutputDirectory <目录>` 重新收集并核验；不得以 GitHub 自动生成的本项目 Source code ZIP 替代第三方源码。
 
 升级依赖后须重新核对 actual deps、bundle inputs、许可证和源码锁定信息。历史缺少 Gyan 完整对应材料的候选仍不应重新分发；本次专用构建与其是不同制品，不能只把旧 Gyan EXE 塞进新包来替代。

@@ -1,15 +1,15 @@
-# NPEduTools 教室试用包：安装、更新与回退
+# NPEduTools v1.0.0：安装、更新与回退
 
-适用：下一版本的内置录制组件包（版本号待定），Windows x64，ClassIsland API 2.1.0.1／桥接 0.2.0.0，ExamAware2 1.5.2／桥接 0.4.0。已发布的 InDev 20261002 仍按随包原说明安装录制组件。发行附件与源码运行方法见对应包的 `RELEASE-NOTES.md`。开发机检查不等于目标大屏整课验收。自包含包内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在本包内。
+适用：v1.0.0 EVA-01（初号机）内置录制组件包，Windows x64，ClassIsland API 2.1.0.1／桥接 0.2.0.0，ExamAware2 1.5.2／桥接 0.4.0。已发布的 InDev 20261002 仍按随包原说明安装录制组件。发行附件与源码运行方法见对应包的 `RELEASE-NOTES.md`。开发机检查不等于目标大屏整课验收。自包含包内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在本包内。
 
 ## 第一次使用
 
-1. 完整解压 ZIP 到独立固定目录，例如 `D:\NPEduTools\Trial`。不要只取出 EXE，不要直接在压缩软件中运行。移动目录后应重新设置相关快捷方式。
+1. 完整解压 ZIP 到独立固定目录，例如 `D:\NPEduTools`。不要只取出 EXE，不要直接在压缩软件中运行。移动目录后应重新设置相关快捷方式。
 2. 双击 `Start-NPEduTools.cmd`，或 `app/NPEduTools.App.exe`，启动时核实并允许 Windows UAC；本版立即请求管理员权限。在偏好设置中确认 ClassIsland 程序路径。
 3. 在 ClassIsland 的“应用设置 → 插件”中安装 `ClassIsland-plugin/NPEduTools.ClassIsland.Bridge.cipx`，确认名称为“NPEduTools 时间与课表桥接”，启用并重启 ClassIsland。无需自行解压插件到用户正在使用的安装目录。
-4. 打开 NPEduTools 的“自动录课计划”，核对学校日期、时间与 ClassIsland 显示一致。插件缺失、时间停止前进或连接异常时，等待修复；软件不会改用 Windows 时间代录。
-5. 本次随包录制修订候选已经内置 FFmpeg／ffprobe，无需另装组件。到“录制微课”选择屏幕、音源、目录，点击“保存设置”。先试 8 fps、720p，再按课件清晰度决定是否升至 1080p；选对麦克风和系统声音，实际短录并回放确认。旧版未含组件的 ZIP 仍按其自带安装说明处理，不要将旧目录覆盖到新包。
-6. 保存周期/指定日期计划，检查 17 项默认排除和冲突。先做预演；核对后单独点击“启用自动录制”。保存计划、启动软件、打开窗口都不会自动启用采集。
+4. 打开 NPEduTools 的“自动录课”，核对学校日期、时间与 ClassIsland 显示一致。插件缺失、时间停止前进或连接异常时，等待修复；软件不会改用 Windows 时间代录。
+5. 本版内置 FFmpeg／ffprobe，无需另装组件。到“录制微课”选择屏幕、音源、目录，点击“保存设置”。先试 8 fps、720p，再按课件清晰度决定是否升至 1080p；选对麦克风和系统声音，实际短录并回放确认。旧版未含组件的 ZIP 仍按其自带安装说明处理，不要将旧目录覆盖到新包。
+6. 保存周期/指定日期计划，检查 17 项默认排除和冲突。先点击“查看近期安排”核对计划；确认后单独启用自动录制。保存计划、启动软件、打开窗口都不会自动启用采集。
 7. 收起窗口后可以用侧边栏控制录制。暂停不延长截止；不再需要当天录制时，选择“今天不再自动录制”。完整退出时等待保存完成。
 
 课程默认按学校课表开始前 2 分钟至结束后至多 5 分钟执行；它是按课表推算，尚未直接订阅自定义“二分钟铃”。固定时段直接使用所设起止时间。重启后自动录制开关保持关闭。
@@ -38,7 +38,7 @@
 
 1. 停用自动录制，停止并保存当前会话，完整退出 NPEduTools。不要用覆盖文件的方式替换运行中的录制器。
 2. 备份整个 `%LocalAppData%\NPEduTools`，保留视频及 `.npeedutools-sessions`。ClassIsland 按其自身方式备份档案与插件配置。
-3. 将新 ZIP 解压到旁边的新目录，保留旧程序目录。使用新目录的启动入口；配置仍按当前用户读取。随包修订已含录制组件，完整解压即可，不必复制旧 FFmpeg。
+3. 将新 ZIP 解压到旁边的新目录，保留旧程序目录。使用新目录的启动入口；配置仍按当前用户读取。本版已含录制组件，完整解压即可，不必复制旧 FFmpeg。
 4. 桥接插件 ID 为 `npedutools.recordingbridge`，更新使用同 ID 的新 `.cipx`，通过 ClassIsland 插件管理完成并重启。核对版本与学校时间。
 5. 新版本完成短录与回放后再启用自动录制。如已设置登录启动，到新版本偏好设置重新登记，避免仍指向旧目录。
 
@@ -51,9 +51,9 @@
 
 ## 校验与故障定位
 
-ZIP 旁的 `.sha256` 校验完整压缩包；包内 `package-manifest.json` 列出各文件哈希。管理员可在 PowerShell 中执行 `Get-FileHash <ZIP路径> -Algorithm SHA256`，或运行本包 `verify-portable-package.ps1` 检查解压文件。本地哈希用于完整性核对，不是数字签名或发布者身份认证。本预览包未做 Authenticode 签名。
+ZIP 旁的 `.sha256` 校验完整压缩包；包内 `package-manifest.json` 列出各文件哈希。管理员可在 PowerShell 中执行 `Get-FileHash <ZIP路径> -Algorithm SHA256`，或运行本包 `verify-portable-package.ps1` 检查解压文件。本地哈希用于完整性核对，不是数字签名或发布者身份认证。本版尚未做 Authenticode 签名。
 
-包内校验脚本使用 PowerShell 7。随包修订默认检查两处内置 FFmpeg 的精确哈希、许可证及对应源码归档。历史不含组件的包仍默认拒绝混入 FFmpeg，用户另装后才使用其 `-AllowInstalledRecordingTools` 模式。
+包内校验脚本使用 PowerShell 7。本版默认检查两处内置 FFmpeg 的精确哈希、许可证及对应源码归档。历史不含组件的包仍默认拒绝混入 FFmpeg，用户另装后才使用其 `-AllowInstalledRecordingTools` 模式。
 
 启用失败先看时间源、保存路径、音源与可用空间。录制结束显示“中断待检查”时保留原视频和片段，先检查输出，不能通过删账本或重复启用来盲目补录。当前无自动归档/显式重试入口。
 
@@ -63,4 +63,4 @@ ZIP 旁的 `.sha256` 校验完整压缩包；包内 `package-manifest.json` 列�
 
 按同包 `CLASSROOM-ACCEPTANCE.md` 填写目标大屏结果。至少完成整课、连续多课、双音源回放、暂停恢复、ClassIsland 断连及物理休眠验证，再决定常态使用。不存在“开发机短录已通过，所以大屏一定不会假死”的结论。
 
-本包附项目源码快照、实际发布依赖清单、许可证与 ClassIsland/ExamAware/FFmpeg/x264 对应源码及构建材料，详见 `THIRD-PARTY-MATERIALS.md`。以 `package-manifest.json` 中的提交号、工作区状态及源码哈希定位构建内容。随包修订候选不代表 GitHub 旧附件已经替换，以实际下载包的清单为准。
+本包附项目源码快照、实际发布依赖清单、许可证与 ClassIsland/ExamAware/FFmpeg/x264 对应源码及构建材料，详见 `THIRD-PARTY-MATERIALS.md`。以 `package-manifest.json` 中的提交号、工作区状态及源码哈希定位构建内容。本版不会替换 GitHub 旧版本附件，以实际下载包的清单为准。
