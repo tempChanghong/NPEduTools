@@ -35,10 +35,12 @@ public sealed class NoiseScheduleHostTests
     private sealed class Capture : INoiseCapture
     {
         public string DeviceName => "Synthetic; no audio hardware";
-        public event Action<NoiseFrame>? Frame { add { } remove { } }
+        public event Action<NoiseFrame>? Frame;
         public event Action<string>? Failed;
         public bool Disposed;
-        public void Start() { }
+        public ManualResetEventSlim? StartGate;
+        public void Start() => StartGate?.Wait();
+        public void Sample() => Frame?.Invoke(new(0.1, 0.000001, 0.002, 0, false));
         public void Break() => Failed?.Invoke("Disconnected");
         public void Dispose() => Disposed = true;
     }
@@ -55,9 +57,9 @@ public sealed class NoiseScheduleHostTests
         public DateTimeOffset Base = new(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
         private readonly Guid _connection = Guid.NewGuid(), _bridge = Guid.NewGuid();
         private long _sequence;
-        public Fixture()
+        public Fixture(ManualResetEventSlim? startGate = null)
         {
-            Noise = new(_ => { var c = new Capture(); lock (Captures) Captures.Add(c); return c; }, () => [], Time);
+            Noise = new(_ => { var c = new Capture { StartGate = startGate }; lock (Captures) Captures.Add(c); return c; }, () => [], Time);
             Noise.Handle(Command("select", "synthetic"));
             Scheduler = NewScheduler(); Scheduler.Bind(Scope, true); Scheduler.Confirm(Policy());
         }
@@ -78,6 +80,114 @@ public sealed class NoiseScheduleHostTests
     }
     private static async Task Until(Func<bool> condition)
     { using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(4)); while(!condition()) await Task.Delay(10,deadline.Token); }
+
+    private static void DisplayFixture(string name, NoiseTransport transport, NoiseScheduleService scheduler, bool eligible,
+        JsonObject? previousSchedule = null, string? expectedPhase = null)
+    {
+        var noise = transport.Observe();
+        var schedule = scheduler.Observe();
+        NpepNoiseProtocol.Validate("status", noise);
+        NpepNoiseScheduleProtocol.Validate("status", schedule);
+        string? directory = Environment.GetEnvironmentVariable("NPEP_NOISE_DISPLAY_FIXTURES");
+        if (string.IsNullOrWhiteSpace(directory)) return;
+        Directory.CreateDirectory(directory);
+        var fixture = new JsonObject { ["schemaVersion"] = 1, ["source"] = "synthetic-desktop-services",
+            ["scenario"] = name, ["noiseStatus"] = noise, ["scheduleStatus"] = schedule, ["expectedAutoEligible"] = eligible };
+        if (previousSchedule is not null) fixture["previousScheduleStatus"] = previousSchedule.DeepClone();
+        if (expectedPhase is not null) fixture["expectedPhase"] = expectedPhase;
+        File.WriteAllText(System.IO.Path.Combine(directory, name + ".json"), fixture.ToJsonString(new() { WriteIndented = true }));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Display_end_snapshots_preserve_session_while_current_window_can_disappear(bool failed)
+    {
+        await using var f = new Fixture();
+        var policy = f.Policy(); policy["policy"]!["rules"]![0]!["end"] = "19:01";
+        f.Scheduler.Confirm(policy);
+        var transport = new NoiseTransport(f.Noise, f.Path); transport.Bind(f.Scope);
+        await f.Start(); f.Captures[0].Sample(); f.Tick();
+        var previous = f.Scheduler.Observe(); var session = f.Noise.Snapshot().SessionId;
+        if (failed) f.Captures[0].Break();
+        else while (f.Time.Ms < 60000) f.Tick(); // Keep school time advancing without a discontinuous jump.
+        await Until(() => f.Noise.Snapshot().State == (failed ? "Faulted" : "Stopped") && transport.Reports().Count == 1);
+        f.Tick();
+        var current = f.Scheduler.Observe();
+        Assert.Equal(failed ? "WINDOW_FAILED" : "OUTSIDE_WINDOW", current["reason"]!.GetValue<string>());
+        Assert.Equal("None", current["owner"]!.GetValue<string>());
+        Assert.Null(current["sessionId"]);
+        Assert.Equal(session!.Value.ToString("D"), transport.Observe()["sessionId"]!.GetValue<string>());
+        if (!failed) Assert.Null(current["window"]);
+        DisplayFixture(failed ? "failed" : "naturally-ended", transport, f.Scheduler, false, previous, failed ? "unknown" : "ended");
+    }
+
+    [Fact]
+    public async Task Display_snapshots_correlate_start_active_stop_resume_and_manual_capture()
+    {
+        using var gate = new ManualResetEventSlim(false);
+        await using var f = new Fixture(gate);
+        var transport = new NoiseTransport(f.Noise, f.Path);
+        transport.Bind(f.Scope);
+        try
+        {
+            f.Tick(); f.Tick(); f.Tick();
+            await Until(() => f.Captures.Count == 1);
+            var starting = transport.Observe();
+            Assert.Equal("Starting", starting["state"]!.GetValue<string>());
+            Assert.Equal("CAPTURE_STARTING", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+            Assert.Equal(starting["sessionId"]!.GetValue<string>(), f.Scheduler.Observe()["sessionId"]!.GetValue<string>());
+            DisplayFixture("starting", transport, f.Scheduler, false);
+
+            gate.Set(); await Until(() => f.Noise.Snapshot().State == "Active");
+            f.Captures[0].Sample(); f.Tick();
+            var active = transport.Observe(); var scheduled = f.Scheduler.Observe();
+            Assert.Equal("WINDOW_ACTIVE", scheduled["reason"]!.GetValue<string>());
+            Assert.Equal(active["sessionId"]!.GetValue<string>(), scheduled["sessionId"]!.GetValue<string>());
+            Assert.Equal("Good", active["quality"]!.GetValue<string>());
+            Assert.Equal(-60, active["currentDbfs"]!.GetValue<double>(), 5);
+            Assert.Equal("2026-10-01T19:00:02.000", scheduled["schoolNow"]!.GetValue<string>());
+            Assert.Equal("2026-10-01T20:00:00.000", scheduled["window"]!["end"]!.GetValue<string>());
+            DisplayFixture("active", transport, f.Scheduler, true);
+
+            var state = f.Noise.Snapshot();
+            var stop = new JsonObject { ["commandId"] = Guid.NewGuid().ToString("D"), ["action"] = "STOP",
+                ["instanceId"] = state.InstanceId.ToString("D"), ["revision"] = state.Revision,
+                ["sessionId"] = state.SessionId?.ToString("D"), ["durationSeconds"] = 60,
+                ["expiresAt"] = DateTimeOffset.UtcNow.AddSeconds(30).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'") };
+            transport.Execute(stop, () => {});
+            await Until(() => f.Noise.Snapshot().State == "Stopped" && transport.Reports().Count == 1); f.Tick();
+            Assert.Equal("WINDOW_SKIPPED", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+            Assert.Equal("None", f.Scheduler.Observe()["owner"]!.GetValue<string>());
+            Assert.Null(f.Scheduler.Observe()["sessionId"]);
+            Assert.Equal(state.SessionId!.Value.ToString("D"), transport.Reports()[0]!["sessionId"]!.GetValue<string>());
+            DisplayFixture("stopped", transport, f.Scheduler, false);
+
+            var resume = f.Policy();
+            resume["command"] = new JsonObject { ["commandId"] = Guid.NewGuid().ToString("D"),
+                ["version"] = new string('a', 64), ["window"] = f.Scheduler.Observe()["window"]!.DeepClone() };
+            f.Scheduler.Confirm(resume); f.Tick();
+            await Until(() => f.Captures.Count == 2 && f.Noise.Snapshot().State == "Active");
+            f.Captures[1].Sample(); f.Tick();
+            Assert.NotEqual(state.SessionId, f.Noise.Snapshot().SessionId);
+            Assert.Equal(transport.Observe()["sessionId"]!.GetValue<string>(), f.Scheduler.Observe()["sessionId"]!.GetValue<string>());
+            DisplayFixture("resumed", transport, f.Scheduler, true);
+            stop["commandId"] = Guid.NewGuid().ToString("D"); // A new delayed request for the old session, not an idempotent replay.
+            transport.Execute(stop, () => {});
+            Assert.Equal("REJECTED", transport.Receipts().Last()!["outcome"]!.GetValue<string>());
+            Assert.Equal("Active", f.Noise.Snapshot().State);
+
+            f.Noise.Handle(f.Command("stop")); await Until(() => f.Noise.Snapshot().State == "Stopped");
+            // Stopped is published before the completion callback finishes saving its report.
+            // Wait for capture ownership to be released before starting a manual session.
+            await Until(() => f.Noise.Handle(f.Command("start", "synthetic")).Outcome == "Accepted");
+            await Until(() => f.Noise.Snapshot().State == "Active");
+            f.Tick();
+            Assert.Equal("Manual", f.Scheduler.Observe()["owner"]!.GetValue<string>());
+            Assert.Null(f.Scheduler.Observe()["sessionId"]);
+            DisplayFixture("manual", transport, f.Scheduler, false);
+        }
+        finally { gate.Set(); }
+    }
     [Fact]
     public async Task Automatic_session_starts_only_after_advancing_school_clock_and_stops_at_end()
     {
@@ -183,5 +293,37 @@ public sealed class NoiseScheduleHostTests
         await Until(()=>f.Noise.Snapshot().State=="Stopped");Assert.Equal("STATISTICS_STORE_UNAVAILABLE",f.Scheduler.Observe()["reason"]!.GetValue<string>());
         f.Noise.Handle(f.Command("start","synthetic"));await Until(()=>f.Noise.Snapshot().State=="Active");f.Tick();
         Assert.Equal("Active",f.Noise.Snapshot().State);Assert.Equal("MANUAL_ACTIVE",f.Scheduler.Observe()["reason"]!.GetValue<string>());
+    }
+    [Fact]
+    public async Task Hard_host_recovery_requires_new_policy_school_clock_and_clear_exam_gate()
+    {
+        string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "noise-guard-recovery-" + Guid.NewGuid());
+        Directory.CreateDirectory(directory);
+        Guid? oldSession; JsonObject policy; string scope;
+        try
+        {
+            await using (var original = new Fixture())
+            {
+                await original.Start(); oldSession = original.Noise.Snapshot().SessionId;
+                policy = original.Policy(); scope = original.Scope;
+                File.Copy(System.IO.Path.Combine(original.Path, "noise-schedule-state.json"), System.IO.Path.Combine(directory, "noise-schedule-state.json"));
+            }
+            var time = new Clock(); int captures = 0; bool clockReady = false, exam = true; long sequence = 0;
+            Guid connection = Guid.NewGuid(), bridge = Guid.NewGuid();
+            var start = new DateTimeOffset(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
+            await using var noise = new NoiseService(_ => { captures++; return new Capture(); }, () => [], time);
+            var s = noise.Snapshot(); noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("select", s.InstanceId, s.Revision, "synthetic")));
+            await using var schedule = new NoiseScheduleService(noise,
+                () => clockReady ? new(connection, bridge, ++sequence, 0, start.AddMilliseconds(time.Ms), 0, "Advancing", "synthetic") : SchoolClockFrame.Unavailable("test"),
+                () => exam, directory, time, false, statisticsReady: () => true);
+            schedule.Bind(scope, true);
+            void Tick() { time.Ms += 500; schedule.Tick(); }
+            Tick(); Tick(); Tick(); Assert.Equal(0, captures);
+            schedule.Confirm(policy); Tick(); Tick(); Assert.Equal(0, captures);
+            clockReady = true; Tick(); Tick(); Tick(); Assert.Equal(0, captures);
+            exam = false; Tick(); await Until(() => noise.Snapshot().State == "Active");
+            Assert.Equal(1, captures); Assert.NotEqual(oldSession, noise.Snapshot().SessionId);
+        }
+        finally { Directory.Delete(directory, true); }
     }
 }

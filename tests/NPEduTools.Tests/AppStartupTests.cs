@@ -67,6 +67,13 @@ public sealed class AppStartupTests
         Assert.Equal(new AppLaunchOptions("private", "peer", true),
             AppLaunchOptions.Parse(["--pipe", "private", "--startup", "--classisland-pipe", "peer"], "default"));
     }
+    [Fact]
+    public void Guard_recovery_is_explicit_and_quiet()
+    {
+        var options = AppLaunchOptions.Parse(["--pipe", "test", "--guard-recovery"], "default");
+        Assert.True(options.AtLogin); Assert.True(options.GuardRecovery);
+        Assert.False(AppLaunchOptions.Parse(["--startup"], "default").GuardRecovery);
+    }
 
     [Theory]
     [InlineData("--startup --startup")]

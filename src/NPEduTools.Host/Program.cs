@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 using NPEduTools.Host;
 using NPEduTools.Integrations.ClassIsland;
 using NPEduTools.Integrations.Npep;
@@ -101,7 +102,7 @@ if (!createdNew)
 }
 
 using var shutdown = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
+// Ctrl+C is a deliberate maintenance stop, not a crash.
 ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = false, bool bridge = false, DateOnly? schoolDate = null)
 {
     var start = new ProcessStartInfo(Environment.ProcessPath!)
@@ -126,10 +127,7 @@ ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = fa
 using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds, query.IncludeSchedule, schoolDate: query.SchoolDate));
 await using var monitor = new StatusMonitor(() => WorkerStart(true), Console.Error.WriteLine);
 await using var schoolClock = new SchoolClockMonitor(() => WorkerStart(true, bridge: true), Console.Error.WriteLine);
-string dataDirectory = options.GetValueOrDefault("--data-dir", pipeName == PipeEndpoint.DefaultName
-    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "config")
-    : Path.Combine(Path.GetTempPath(), "NPEduTools", "instances",
-        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(pipeName)))[..24]));
+string dataDirectory = options.GetValueOrDefault("--data-dir", GuardFiles.DataDirectory(pipeName));
 var runtimeGate = new RuntimeOperationGate(coordinateDesktop: true);
 await using var secRandom = new SecRandomService(dataDirectory, runtimeGate);
 await using var launch = new LaunchService(dataDirectory, new ClassIslandLaunchTarget(), reader, runtimeGate: runtimeGate);
@@ -151,11 +149,31 @@ await using var recording = new RecordingService(pipeName, dataDirectory, school
 await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget(), runtimeGate);
 await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader), runtimeGate);
 await using var noise = new NoiseService(id => OperatingSystem.IsWindows()
-    ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory);
+    ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory,
+    management: new NoiseManagementStore(dataDirectory));
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
 await using var noiseSchedules = new NoiseScheduleService(noise, schoolClock.Snapshot,
     () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
     Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available);
+noiseTransport.ManagementWindow = noiseSchedules.ProtectionWindow;
+var noiseDisplay = new NoiseDisplayService(() => {
+    var (s, p) = noise.ManagementSnapshot();
+    var w = p.Protected ? noiseSchedules.ProtectionWindow(s.SessionId) : null;
+    return (s, w is null ? null : new SchoolNoiseWindow(
+        DateTimeOffset.Parse(w["start"]!.GetValue<string>() + "Z"), DateTimeOffset.Parse(w["end"]!.GetValue<string>() + "Z")));
+}, () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
+    Path.Combine(dataDirectory, "npep"));
+noiseTransport.Display = noiseDisplay;
+await using var guard = new GuardHostSession(new GuardFiles(Path.Combine(dataDirectory, "guard")), () =>
+{
+    var (state, protection) = noise.ManagementSnapshot();
+    var schedule = noiseSchedules.Observe();
+    return protection.Protected && state.State is "Active" or "Starting" && noiseSchedules.ProtectionWindow(state.SessionId) is not null &&
+        schedule["clockReady"]?.GetValue<bool>() == true && schedule["leaseRemainingSeconds"]?.GetValue<int>() > 0 &&
+        schedule["owner"]?.GetValue<string>() == "Schedule" && schedule["reason"]?.GetValue<string>() == "WINDOW_ACTIVE" &&
+        !classroom.Snapshot.AutomaticPaused && !remoteExamStore.State.AutomaticPaused && !runtimeGate.Switching && !runtimeGate.ExamRequested;
+});
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; if (guard.ExpectedStop()) shutdown.Cancel(); };
 var remoteExamActions = new RemoteExamActions(launch, examAware, recording, classroom, new WindowsRemoteExamPlatform());
 var remoteExam = new RemoteExamExecutor(remoteExamStore, runtimeGate, remoteExamActions);
 string npepVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "unknown";
@@ -167,7 +185,7 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
 try
 {
     await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, guard.ExpectedStop).RunAsync(shutdown.Token);
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

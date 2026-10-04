@@ -27,7 +27,7 @@ foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse) {
     if ($manifest.recordingToolsBundled -eq $false -and $file.Name -match '^ff(mpeg|probe)\.exe$' -and -not $installed.ContainsKey($file.FullName)) { throw "FFmpeg must not be bundled: $($file.FullName)" }
     if ($file.FullName -ne (Join-Path $root 'package-manifest.json') -and -not $seen.ContainsKey($file.FullName) -and -not $installed.ContainsKey($file.FullName)) { throw "Unlisted file: $($file.FullName)" }
 }
-foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host'),@('app/Admin','NPEduTools.ClassIsland.Admin'),@('app/Recorder','NPEduTools.Recorder'),@('app/Host/Recorder','NPEduTools.Recorder'))) {
+foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host'),@('app/Guard','NPEduTools.Guard'),@('app/Admin','NPEduTools.ClassIsland.Admin'),@('app/Recorder','NPEduTools.Recorder'),@('app/Host/Recorder','NPEduTools.Recorder'))) {
     $directory = Join-Path $root $component[0]
     foreach ($name in @(($component[1]+'.exe'),'coreclr.dll','hostfxr.dll','hostpolicy.dll')) {
         if (-not (Test-Path -LiteralPath (Join-Path $directory $name))) { throw "Self-contained runtime missing: $directory/$name" }

@@ -14,7 +14,23 @@
     <ProjectReference Include="../../src/NPEduTools.PowerPoint.Diagnostics/NPEduTools.PowerPoint.Diagnostics.csproj" />
     <ProjectReference Include="../../src/NPEduTools.Cli/NPEduTools.Cli.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../NPEduTools.ClassIsland.TestPeer/NPEduTools.ClassIsland.TestPeer.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../NPEduTools.GuardFixture/NPEduTools.GuardFixture.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/NPEduTools.Guard/NPEduTools.Guard.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
   </ItemGroup>
+  <Target Name="CopyGuardTestBundles" AfterTargets="Build">
+    <MSBuild Projects="../NPEduTools.GuardFixture/NPEduTools.GuardFixture.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);TargetFramework=net10.0">
+      <Output TaskParameter="TargetOutputs" ItemName="GuardFixtureTarget" />
+    </MSBuild>
+    <MSBuild Projects="../../src/NPEduTools.Guard/NPEduTools.Guard.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);TargetFramework=net10.0-windows">
+      <Output TaskParameter="TargetOutputs" ItemName="GuardExecutableTarget" />
+    </MSBuild>
+    <ItemGroup>
+      <GuardFixtureBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardFixtureTarget.Identity)'))/**/*" />
+      <GuardExecutableBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardExecutableTarget.Identity)'))/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GuardFixtureBundle)" DestinationFiles="@(GuardFixtureBundle->'$(OutDir)GuardFixture/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(GuardExecutableBundle)" DestinationFiles="@(GuardExecutableBundle->'$(OutDir)GuardExecutable/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
   <ItemGroup>
     <None Include="../../docs/npep/noise-schedule-cases.json" Link="Fixtures/noise-schedule-cases.json" CopyToOutputDirectory="PreserveNewest" />

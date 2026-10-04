@@ -54,6 +54,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         InitializePlans(plans);
         InitializeNoise(noise);
         InitializeNoiseSchedules(schedules);
+        InitializeNoiseDisplay(noise as INpepNoiseDisplay);
     }
 
     public NpepState Snapshot()
@@ -259,7 +260,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     {
         Task command;
         lock (_sync) { _disposed = true; _lifetime.Cancel(); _network?.Cancel(); command = _command; }
-        await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop);
+        await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop, _noiseDisplayLoop);
         await _controlLoop;
         _device?.Dispose(); _work.Dispose(); _lifetime.Dispose();
     }

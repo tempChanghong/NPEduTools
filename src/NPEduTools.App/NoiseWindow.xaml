@@ -46,7 +46,14 @@
         <TextBlock Text="本次统计" FontSize="17" FontWeight="SemiBold" />
         <TextBlock x:Name="SummaryText" Text="开始后显示有效采样、覆盖率与能量平均电平。" TextWrapping="Wrap" Margin="0,12,0,0" LineHeight="27" />
       </StackPanel></Border>
-      <TextBlock Text="关闭此窗口后继续监测，最长三小时；点击“停止监测”或从托盘退出可释放麦克风。本机实时摘要保留至下次开始；连接学校后，结束报告会暂存并上传，断网恢复后补传。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" />
+      <Border Style="{StaticResource NoiseCard}"><StackPanel>
+        <TextBlock Text="定时监测保护" FontSize="17" FontWeight="SemiBold" />
+        <TextBlock Text="学校定时监测需验证管理权限才能停止或退出后台。提前设置本机管理口令，可在断网时维护；网页使用学校 PIN。手动监测不受此限制。" TextWrapping="Wrap" Margin="0,12,0,12" Foreground="#64776D" />
+        <Button Content="设置／修改本机管理口令" Click="ManagementClicked" HorizontalAlignment="Left" />
+        <TextBlock x:Name="DisplayStatusText" Text="定时监测展示：等待后台状态。" TextWrapping="Wrap" Margin="0,16,0,0" Foreground="#64776D" />
+        <TextBlock x:Name="GuardStatusText" Text="定时监测守护：等待状态。" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="#64776D" />
+      </StackPanel></Border>
+      <TextBlock Text="关闭此窗口后继续监测，手动监测最长三小时。本机实时摘要保留至下次开始；连接学校后，结束报告会暂存并上传，断网恢复后补传。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" />
     </StackPanel>
   </ScrollViewer>
 </Window>

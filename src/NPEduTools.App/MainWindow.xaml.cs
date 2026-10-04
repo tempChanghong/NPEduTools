@@ -10,11 +10,11 @@ namespace NPEduTools.App;
 public partial class MainWindow : Window
 {
     private readonly string _pipe;
+    internal string PipeName => _pipe;
     private readonly string? _upstream;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly StatusViewModel _model = new();
     private Task? _watch;
-    private DateTimeOffset _nextStart;
     private Task? _management;
     private long _configurationRevision;
     private string? _savedPath;
@@ -51,7 +51,7 @@ public partial class MainWindow : Window
             if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording.Detach(); };
+        Closed += (_, _) => { _lifetime.Cancel(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording.Detach(); };
         _model.PropertyChanged += (_, _) =>
         {
             // After success, the next live snapshot owns the quick panel status again.
@@ -66,7 +66,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                EnsureHostStarted();
+                // Reconnect only. Process recovery belongs to the independent, bounded guard.
                 await foreach (var snapshot in HostClient.WatchAsync(_pipe, token))
                 {
                     if (snapshot.Outcome == "Stopped")
@@ -97,7 +97,7 @@ public partial class MainWindow : Window
                     FileNotFoundException => "后台程序缺失，请重新构建或补齐应用目录。",
                     UnauthorizedAccessException => "连接被拒绝，请检查当前用户与进程权限。",
                     InvalidDataException or JsonException => "后台协议不兼容，请关闭旧版后台后重新打开。",
-                    _ => "暂时无法连接后台，正在自动重试。"
+                    _ => "后台未连接，正在重试连接；若未自动恢复，请检查故障后重新打开应用。"
                 });
             }
             try { await Task.Delay(TimeSpan.FromSeconds(2), token); }
@@ -114,8 +114,6 @@ public partial class MainWindow : Window
             instance.Dispose();
             return;
         }
-        if (DateTimeOffset.UtcNow < _nextStart) return;
-        _nextStart = DateTimeOffset.UtcNow.AddSeconds(10);
         string executable = Path.Combine(AppContext.BaseDirectory, "Host", "NPEduTools.Host.exe");
         if (!File.Exists(executable)) throw new FileNotFoundException("Host bundle is missing.");
         var start = new ProcessStartInfo(executable)
@@ -171,6 +169,8 @@ public partial class MainWindow : Window
     private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
     private void SelectPage(bool settings)
     {
+        AboutPageView.Visibility = Visibility.Collapsed;
+        AboutNav.Tag = null;
         PageBreadcrumb.Text = settings ? "设置" : "概览";
         ShortcutPage.Visibility = Visibility.Collapsed;
         ShortcutNav.Tag = null;
@@ -281,6 +281,9 @@ public partial class MainWindow : Window
 
     private async Task<HostResponse> ManagementRequestAsync(HostRequest request)
     {
+        var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, request);
+        if (authorized is null) return new(Protocol.Version, request.RequestId, "Rejected", "MANAGEMENT_CANCELLED", "未验证，定时监测继续。");
+        request = authorized;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
         return await HostClient.RequestAsync(_pipe, request, deadline.Token);
@@ -410,6 +413,7 @@ public partial class MainWindow : Window
         bool shutdownDispatched = false;
         try
         {
+            var shutdownRequest = new HostRequest(Protocol.Version, Guid.NewGuid(), "host.stop");
             if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var modeHost))
             {
                 modeHost.Dispose();
@@ -420,6 +424,12 @@ public partial class MainWindow : Window
                     ShowClassroomMode();
                     return;
                 }
+                var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest);
+                if (authorized is null) { HomeMessage.Text = "未验证，后台与录课设置保持原状态。"; return; }
+                shutdownRequest = authorized;
+                // Fence scheduled starts and journal authorized intent before touching automatic recording.
+                var prepared = await NoiseManagementDialog.Request(_pipe, shutdownRequest with { Capability = "noise.management.prepare-exit" });
+                if (prepared.Outcome != "Succeeded") { HomeMessage.Text = prepared.Message; return; }
             }
             if (_recording.Automatic.Enabled) await _recording.SetAutomaticAsync("disable");
             if (_recording.State.Active)
@@ -432,7 +442,7 @@ public partial class MainWindow : Window
             if (!Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var existing)) { await _recording.DisposeAsync(); _exiting = true; Close(); return; }
             existing.Dispose();
             shutdownDispatched = true;
-            var response = await HostClient.RequestAsync(_pipe, "host.stop", deadline.Token);
+            var response = await HostClient.RequestAsync(_pipe, shutdownRequest, deadline.Token);
             if (response.Outcome != "Succeeded")
             {
                 shutdownDispatched = false;

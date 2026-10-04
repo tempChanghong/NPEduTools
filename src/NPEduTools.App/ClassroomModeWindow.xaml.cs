@@ -28,10 +28,13 @@ public partial class ClassroomModeWindow : Window
     public void Shutdown() { _closing = true; Close(); }
     private async Task<HostResponse> RequestAsync(string capability, string? target = null, long? revision = null, bool running = false)
     {
+        var request = new HostRequest(Protocol.Version, Guid.NewGuid(), capability,
+            ExpectedRevision: revision, ClassroomMode: target is null ? null : new(target, running, running && target == "Daily"));
+        var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, request);
+        if (authorized is null) return new(Protocol.Version, request.RequestId, "Rejected", "MANAGEMENT_CANCELLED", "未验证，定时监测继续。");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
-        return await HostClient.RequestAsync(_pipe, new HostRequest(Protocol.Version, Guid.NewGuid(), capability,
-            ExpectedRevision: revision, ClassroomMode: target is null ? null : new(target, running, running && target == "Daily")), deadline.Token);
+        return await HostClient.RequestAsync(_pipe, authorized, deadline.Token);
     }
     private static string ModeName(string mode) => mode switch { "Daily" => "日常模式", "Exam" => "考试模式", _ => "尚未设置模式" };
     private static string Enabled(bool value) => value ? "开启" : "关闭";

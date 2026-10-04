@@ -22,10 +22,12 @@ internal static class NoiseHttpAcceptance
             if (!response.IsSuccessStatusCode) throw new NpepException(result["error"]!["code"]!.GetValue<string>());
             return (JsonObject)result["data"]!;
         }
-        async Task<JsonObject> Wait(Func<JsonObject, bool> ready)
+        async Task<JsonObject> Wait(Func<JsonObject, bool> ready, string stage)
         {
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(40));
-            while (true) { var v = await Screen(); if (ready(v)) return v; await Task.Delay(100, deadline.Token); }
+            try { while (true) { var v = await Screen(); if (ready(v)) return v; await Task.Delay(100, deadline.Token); } }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            { throw new NpepException("NOISE_WAIT_" + stage + "_TIMEOUT"); }
         }
         var capture = new SyntheticCapture();
         await using var service = new NoiseService(_ => capture, () => []);
@@ -33,16 +35,16 @@ internal static class NoiseHttpAcceptance
         service.Handle(new(Protocol.Version, Guid.NewGuid(), "noise.command", Noise: new("select", s.InstanceId, s.Revision, "synthetic")));
         var transport = new NoiseTransport(service, directory);
         await using var runtime = new NpepRuntime(directory, "noise-acceptance", sample, noise: transport);
-        var view = await Wait(v => v["provider"]?.GetValue<string>() == "native" && v["online"]?.GetValue<bool>() == true);
+        var view = await Wait(v => v["provider"]?.GetValue<string>() == "native" && v["online"]?.GetValue<bool>() == true, "ONLINE");
         JsonObject Command(string action, JsonObject value) => new() { ["requestId"] = NpepProtocol.Id(), ["action"] = action,
             ["instanceId"] = value["status"]!["instanceId"]!.DeepClone(), ["revision"] = value["status"]!["revision"]!.DeepClone(),
             ["sessionId"] = value["status"]!["sessionId"]?.DeepClone(), ["durationSeconds"] = 60 };
         var start = Command("START", view); var queued = await Screen(start);
         if ((await Screen(start))["command"]!["commandId"]!.GetValue<string>() != queued["command"]!["commandId"]!.GetValue<string>()) throw new Exception("Duplicate command");
-        view = await Wait(v => v["status"]?["state"]?.GetValue<string>() == "Active" && v["commands"]![0]!["receipt"] is not null);
+        view = await Wait(v => v["status"]?["state"]?.GetValue<string>() == "Active" && v["commands"]![0]!["receipt"] is not null, "START_RECEIPT");
         if (capture.Starts != 1) throw new Exception("Repeated capture");
         await Screen(Command("STOP", view));
-        view = await Wait(v => v["status"]?["state"]?.GetValue<string>() == "Stopped" && v["reports"]!.AsArray().Count == 1);
+        view = await Wait(v => v["status"]?["state"]?.GetValue<string>() == "Stopped" && v["reports"]!.AsArray().Count == 1, "STOP_REPORT");
         var management = await admin(path + "/noise", "0.6", null);
         if (management["reports"]!.AsArray().Count != 1 || !capture.Disposed) throw new Exception("Missing report or microphone release");
         if (view["reports"]![0]!["summary"]!["sampledSeconds"]!.GetValue<double>() <= 0) throw new Exception("No sampled data");

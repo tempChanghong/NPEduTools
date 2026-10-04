@@ -7,7 +7,7 @@ using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Host;
 
 /// <summary>Statistics-only outbox and command journal. Never stores PCM or browser credentials.</summary>
-public sealed class NoiseTransport : INpepNoise
+public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNoiseDisplay
 {
     private readonly NoiseService _noise;
     private readonly string _path;
@@ -16,6 +16,21 @@ public sealed class NoiseTransport : INpepNoise
     private string? _error;
     private long _checkpointAt;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    internal Func<Guid?, JsonObject?>? ManagementWindow { get; set; }
+    internal NoiseDisplayService? Display { get; set; }
+    public void BindDisplay(string? scope) => Display?.BindDisplay(scope);
+    public JsonObject? ObserveDisplay() => Display?.ObserveDisplay();
+    public JsonObject? PendingDisplayReturn() => Display?.PendingDisplayReturn();
+    public void ConfirmDisplay(JsonObject request, JsonObject reply, double elapsedSeconds) => Display?.ConfirmDisplay(request, reply, elapsedSeconds);
+    public void DisplayFailed(string code) => Display?.DisplayFailed(code);
+    public JsonObject ObserveProtection()
+    {
+        var (s, p) = _noise.ManagementSnapshot();
+        return new() { ["instanceId"] = s.InstanceId.ToString("D"), ["revision"] = s.Revision,
+            ["sessionId"] = s.SessionId?.ToString("D"), ["protected"] = p.Protected,
+            ["window"] = p.Protected ? ManagementWindow?.Invoke(s.SessionId) : null };
+    }
+    public bool RequiresManagement(JsonObject c) => c["action"]?.GetValue<string>() == "STOP" && _noise.Protection().Protected;
 
     public NoiseTransport(NoiseService noise, string directory)
     {
@@ -147,7 +162,9 @@ public sealed class NoiseTransport : INpepNoise
             if (changed) Save();
         }
     }
-    public void Execute(JsonObject command, Action authorize)
+    public void Execute(JsonObject command, Action authorize) => ExecuteCore(command, authorize, false);
+    public void ExecuteManaged(JsonObject command, Action authorize) => ExecuteCore(command, authorize, true);
+    private void ExecuteCore(JsonObject command, Action authorize, bool managed)
     {
         NpepNoiseProtocol.Validate("command", command);
         lock (_sync)
@@ -163,8 +180,11 @@ public sealed class NoiseTransport : INpepNoise
             var entry = new JsonObject { ["commandId"] = id, ["receipt"] = receipt, ["acked"] = false };
             commands.Add(entry); while (commands.Count > 64) commands.RemoveAt(0); Save();
             authorize();
-            var result = _noise.RemoteCommand(Guid.Parse(id), command["action"]!.GetValue<string>(), Guid.Parse(command["instanceId"]!.GetValue<string>()),
-                command["revision"]!.GetValue<long>(), command["sessionId"] is null ? null : Guid.Parse(command["sessionId"]!.GetValue<string>()), command["durationSeconds"]!.GetValue<int>());
+            var result = managed
+                ? _noise.RemoteAuthorizedCommand(Guid.Parse(id), command["action"]!.GetValue<string>(), Guid.Parse(command["instanceId"]!.GetValue<string>()),
+                    command["revision"]!.GetValue<long>(), command["sessionId"] is null ? null : Guid.Parse(command["sessionId"]!.GetValue<string>()), command["durationSeconds"]!.GetValue<int>())
+                : _noise.RemoteCommand(Guid.Parse(id), command["action"]!.GetValue<string>(), Guid.Parse(command["instanceId"]!.GetValue<string>()),
+                    command["revision"]!.GetValue<long>(), command["sessionId"] is null ? null : Guid.Parse(command["sessionId"]!.GetValue<string>()), command["durationSeconds"]!.GetValue<int>());
             receipt["outcome"] = result.Outcome == "Accepted" ? "ACCEPTED" : "REJECTED";
             receipt["reason"] = result.ErrorCode; Save();
         }

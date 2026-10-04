@@ -30,8 +30,13 @@ public partial class MainWindow
         RefreshLoginStartup();
     }
 
-    public void Start(bool atLogin)
+    public void Start(bool atLogin, bool guardRecovery = false)
     {
+        if (guardRecovery) _startupTouchPending = false;
+        try { EnsureHostStarted(); }
+        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException or UnauthorizedAccessException)
+        { HomeMessage.Text = "后台未启动：" + e.Message; }
+        StartGuard();
         // Initialize the edge and services without ever showing the main window on a quiet login.
         _quick = new QuickAccessWindow(_pipe, () => TouchPowerClicked(this, new RoutedEventArgs()),
             () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings,
@@ -52,13 +57,14 @@ public partial class MainWindow
         DockLeft.IsChecked = _quick.LeftSide;
         DockRight.IsChecked = !_quick.LeftSide;
         RefreshQuick();
-        if (!atLogin || !_startupPreferences.EdgeOnlyAtLogin) Show();
+        if (!guardRecovery && (!atLogin || !_startupPreferences.EdgeOnlyAtLogin)) Show();
         _watch = WatchAsync(_lifetime.Token);
         _management = ManagementLoopAsync(_lifetime.Token);
         _ = NpepPollAsync();
         _ = NotificationPollAsync();
+        _ = NoiseDisplayPollAsync();
         _touchPoll = TouchPollAsync(_lifetime.Token);
-        StartOnboarding(atLogin);
+        if (!guardRecovery) StartOnboarding(atLogin);
     }
 
     private void ShowStartupPreferences()

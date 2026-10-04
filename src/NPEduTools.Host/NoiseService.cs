@@ -13,7 +13,7 @@ public interface INoiseCapture : IDisposable
 
 /// <summary>One explicitly started session. No raw audio, disk storage, cloud traffic or recording dependency.</summary>
 public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadOnlyList<NoiseDevice>> devices,
-    TimeProvider? time = null, string? directory = null) : IAsyncDisposable
+    TimeProvider? time = null, string? directory = null, NoiseManagementStore? management = null) : IAsyncDisposable
 {
     private readonly object _sync = new();
     private readonly TimeProvider _time = time ?? TimeProvider.System;
@@ -26,7 +26,79 @@ public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadO
     public event Action<NoiseState>? Completed;
     // Called before an accepted user STOP, under the capture lock. The callback only
     // journals the intent; it must never call back into the scheduler or capture.
-    internal Action<Guid>? ManualStopping { get; set; }
+    internal Func<Guid, bool>? ManualStopping { get; set; }
+    private (Guid Request, Guid? Ticket, long At)? _exitReservation;
+    private bool _shuttingDown;
+    private bool ScheduledLive => management is not null && _state is "Starting" or "Active" or "Stopping" && _session is { Scheduled: true, Work.IsCompleted: false };
+    private bool ExitPending => _exitReservation is { } r && _time.GetElapsedTime(r.At).TotalSeconds < 60;
+
+    public NoiseProtectionState Protection()
+    {
+        lock (_sync) return new(ScheduledLive, management?.Configured == true, _instance, _session?.Id, management?.Error);
+    }
+    internal (NoiseState Noise, NoiseProtectionState Protection) ManagementSnapshot()
+    { lock (_sync) return (Snapshot(), Protection()); }
+    private HostResponse ManagementReply(HostRequest r, string? error = null, Guid? ticket = null) =>
+        new(Protocol.Version, r.RequestId, error is null ? "Succeeded" : "Rejected", error, error switch
+        {
+            "MANAGEMENT_NOT_CONFIGURED" => "请先在无定时监测时设置本机管理口令；本次可由大屏网页验证学校 PIN 后结束监测。",
+            "MANAGEMENT_SECRET_INVALID" => "管理口令不正确。",
+            "MANAGEMENT_RATE_LIMITED" => "尝试过于频繁，请一分钟后重试。",
+            "MANAGEMENT_STORE_UNAVAILABLE" => "管理口令文件不可用，原文件已保留；请联系管理员。",
+            "MANAGEMENT_REQUIRED" => "学校定时监测受到保护；停止或退出需管理验证，关闭窗口不会停止采集。",
+            "SCHEDULE_STORE_UNAVAILABLE" => "未能保存本时段跳过记录，未受理正常停止；请检查存储状态。",
+            "NoiseStateChanged" => "当前监测会话已变化，请重新核实后验证。",
+            null => "管理验证已完成。",
+            _ => "管理验证未通过。"
+        }, Noise: Snapshot(), NoiseProtection: Protection() with { Ticket = ticket });
+
+    public HostResponse ManagementHandle(HostRequest r)
+    {
+        lock (_sync)
+        {
+            if (Protocol.Validate(r) is { } invalid) return ManagementReply(r, invalid);
+            if (r.Capability == "noise.management.status") return ManagementReply(r, management?.Error);
+            if (r.Capability == "noise.management.prepare-exit")
+            {
+                if (ExitPending && _exitReservation!.Value.Request == r.RequestId && _exitReservation.Value.Ticket == r.NoiseAuthorization)
+                    return ManagementReply(r);
+                if (AuthorizeInterruption(r) is { } denied) return denied;
+                _exitReservation = (r.RequestId, r.NoiseAuthorization, _time.GetTimestamp());
+                return ManagementReply(r);
+            }
+            if (management is null) return ManagementReply(r, "MANAGEMENT_UNSUPPORTED");
+            var c = r.NoiseManagement!;
+            if (c.Action == "configure") return ManagementReply(r, management.Configure(c.Secret, c.NewSecret!, ScheduledLive));
+            if (!ScheduledLive || _session is null) return ManagementReply(r, "NoiseStateChanged");
+            var grant = management.Issue(c, _instance, _session.Id);
+            return ManagementReply(r, grant.Error, grant.Ticket);
+        }
+    }
+
+    /// <summary>Checked under the same lock as scheduled start. UI claims cannot bypass this boundary.</summary>
+    public HostResponse? AuthorizeInterruption(HostRequest r)
+    {
+        lock (_sync)
+        {
+            if (!Protocol.NoiseInterruption(r)) return null;
+            if (r.Capability == "host.stop" && ExitPending)
+            {
+                if (_exitReservation!.Value.Request != r.RequestId || _exitReservation.Value.Ticket != r.NoiseAuthorization)
+                    return ManagementReply(r, "MANAGEMENT_REQUIRED");
+                _shuttingDown = true; return null;
+            }
+            if (ScheduledLive && _session is { } s)
+            {
+                if (management!.Consume(r.NoiseAuthorization, _instance, s.Id, Protocol.NoisePurpose(r), r.RequestId) != true)
+                    return ManagementReply(r, "MANAGEMENT_REQUIRED");
+                if (ManualStopping?.Invoke(s.Id) == false) return ManagementReply(r, "SCHEDULE_STORE_UNAVAILABLE");
+                _revision++; _state = "Stopping"; _message = "管理授权已确认，正在停止本时段监测…"; s.Stop.Cancel();
+            }
+            if (r.Capability == "host.stop") _shuttingDown = true;
+            return null;
+        }
+    }
+    internal void AbortShutdown() { lock (_sync) _shuttingDown = false; }
     private static string? LoadSelection(string? path)
     {
         try { return path is null ? null : System.Text.Json.JsonSerializer.Deserialize<string>(File.ReadAllText(Path.Combine(path, "noise-microphone.json"))); }
@@ -64,8 +136,8 @@ public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadO
         public Task Watch = Task.CompletedTask;
     }
 
-    public HostResponse Handle(HostRequest request) => Handle(request, null, 10800);
-    private HostResponse Handle(HostRequest request, Guid? sessionId, double limit)
+    public HostResponse Handle(HostRequest request) => Handle(request, null, 10800, false);
+    private HostResponse Handle(HostRequest request, Guid? sessionId, double limit, bool trustedStop)
     {
         if (request.Capability == "noise.devices")
         {
@@ -84,7 +156,9 @@ public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadO
             {
                 if (_session is { } current && !current.Work.IsCompleted)
                 {
-                    ManualStopping?.Invoke(current.Id);
+                    if (ScheduledLive && !trustedStop && management!.Consume(request.NoiseAuthorization, _instance, current.Id, "stop", request.RequestId) != true)
+                        return ManagementReply(request, "MANAGEMENT_REQUIRED");
+                    if (ManualStopping?.Invoke(current.Id) == false) return ManagementReply(request, "SCHEDULE_STORE_UNAVAILABLE");
                     _revision++; _state = "Stopping"; _message = "正在停止并释放麦克风…";
                     current.Stop.Cancel();
                 }
@@ -108,6 +182,10 @@ public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadO
     }
 
     public HostResponse RemoteCommand(Guid commandId, string action, Guid instanceId, long revision, Guid? sessionId, int duration)
+        => RemoteCommandCore(commandId, action, instanceId, revision, sessionId, duration, false);
+    internal HostResponse RemoteAuthorizedCommand(Guid commandId, string action, Guid instanceId, long revision, Guid? sessionId, int duration)
+        => RemoteCommandCore(commandId, action, instanceId, revision, sessionId, duration, true);
+    private HostResponse RemoteCommandCore(Guid commandId, string action, Guid instanceId, long revision, Guid? sessionId, int duration, bool trustedStop)
     {
         lock (_sync)
         {
@@ -116,7 +194,7 @@ public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadO
                 return Reply(request, "Rejected", "NoiseStateChanged", "监测会话已变化。");
             if (action == "START" && string.IsNullOrWhiteSpace(_selected))
                 return Reply(request, "Rejected", "MicrophoneNotConfigured", "请先在本机保存麦克风。");
-            return Handle(request with { Noise = new(action == "START" ? "start" : "stop", instanceId, revision, action == "START" ? _selected : null) }, commandId, Math.Clamp(duration, 60, 10800));
+            return Handle(request with { Noise = new(action == "START" ? "start" : "stop", instanceId, revision, action == "START" ? _selected : null) }, commandId, Math.Clamp(duration, 60, 10800), trustedStop);
         }
     }
 
@@ -124,9 +202,10 @@ public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadO
     {
         lock (_sync)
         {
+            if (_shuttingDown || ExitPending) return new(Protocol.Version, id, "Rejected", "NoiseBusy", "后台维护退出中，暂不启动定时监测。");
             var s = Snapshot();
             var result = Handle(new(Protocol.Version, id, "noise.command", Noise:
-                new("start", s.InstanceId, s.Revision, _selected)), id, 10800);
+                new("start", s.InstanceId, s.Revision, _selected)), id, 10800, false);
             if (result.Outcome == "Accepted" && _session is { } current) current.Scheduled = true;
             return result;
         }

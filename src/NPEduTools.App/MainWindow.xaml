@@ -54,8 +54,19 @@
     </Style>
     <Style x:Key="HomeTool" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="Background" Value="White" /><Setter Property="BorderBrush" Value="#E5EBE7" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="MinHeight" Value="102" />
-      <Setter Property="Padding" Value="16" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="MinHeight" Value="112" /><Setter Property="Padding" Value="16" /><Setter Property="Margin" Value="0,0,10,10" />
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border x:Name="ToolSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="{TemplateBinding Padding}">
+          <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True" />
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ToolSurface" Property="Background" Value="#F0F7F3" /><Setter TargetName="ToolSurface" Property="BorderBrush" Value="#B4D4C5" /></Trigger>
+          <Trigger Property="IsPressed" Value="True"><Setter TargetName="ToolSurface" Property="Background" Value="#E2F0E9" /></Trigger>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ToolSurface" Property="BorderBrush" Value="#147D68" /></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ToolSurface" Property="Opacity" Value="0.4" /></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="HomeSection" TargetType="TextBlock">
       <Setter Property="FontSize" Value="14" /><Setter Property="FontWeight" Value="SemiBold" />
@@ -84,13 +95,16 @@
           <Button Content="录制微课" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingClicked" AutomationProperties.AutomationId="RecordingNav" />
           <Button Content="自动录课计划" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="OpenRecordingPlan" />
           <Button Content="考试看板" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
-          <Button Content="课堂点名 · SecRandom" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
+          <Button Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
           <Button Content="噪音监测" Style="{StaticResource SidebarNavigation}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="OpenNoise" />
           <Button Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
         </StackPanel></ScrollViewer>
         <StackPanel Grid.Row="2">
           <Button x:Name="SettingsNav" Style="{StaticResource SidebarNavigation}" Click="SettingsNavClicked" AutomationProperties.AutomationId="SettingsTab">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设置" /></StackPanel>
+          </Button>
+          <Button x:Name="AboutNav" Style="{StaticResource SidebarNavigation}" Click="AboutNavClicked" AutomationProperties.AutomationId="AboutTab">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="关于" /></StackPanel>
           </Button>
           <Button Content="展开侧边栏  ↗" Style="{StaticResource SidebarNavigation}" Click="OpenQuickClicked" AutomationProperties.AutomationId="OpenQuick" />
           <Border Height="1" Background="#DCE5DE" Margin="12,10" />
@@ -111,10 +125,10 @@
       </Grid>
       <Grid x:Name="Pages" Grid.Row="1" Margin="28,12,28,22">
         <ScrollViewer x:Name="HomePage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
-          <StackPanel>
+          <StackPanel SizeChanged="HomeLayoutSizeChanged">
             <Grid Margin="0,0,0,18">
               <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <StackPanel><TextBlock Text="课堂工作台" FontSize="26" FontWeight="SemiBold" /><TextBlock Text="常用工具与课堂状态，一眼找到。" Foreground="#74847B" FontSize="12" Margin="0,6,0,0" /></StackPanel>
+              <StackPanel><TextBlock Text="课堂工作台" FontSize="26" FontWeight="SemiBold" /><TextBlock Text="先打开常用入口，再查看课堂状态。" Foreground="#74847B" FontSize="12" Margin="0,6,0,0" /></StackPanel>
               <TextBlock x:Name="TodayText" Grid.Column="1" ToolTip="本机日期；自动录课仍使用 ClassIsland 校准后的时间。" Foreground="#78887F" FontSize="12" VerticalAlignment="Center" Margin="16,0,0,0" />
             </Grid>
             <Border x:Name="ClassroomModeCard" Style="{StaticResource Surface}" Padding="16,14" Margin="0,0,0,18" Background="#EAF6F2" BorderBrush="#C8E4D9">
@@ -130,39 +144,89 @@
             <TextBlock x:Name="HomeMessage" Foreground="#7D602B" Background="#FFF5E6" Padding="12,10" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" AutomationProperties.AutomationId="HomeMessage">
               <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
             </TextBlock>
-            <TextBlock Text="常用工具" Style="{StaticResource HomeSection}" />
-            <Grid Margin="0,0,0,18">
-              <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="12" /><ColumnDefinition /></Grid.ColumnDefinitions>
-              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="12" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <DockPanel Margin="0,0,0,10">
+              <Button DockPanel.Dock="Right" Content="查看全部 / 管理" Style="{StaticResource Quiet}" Click="ShortcutNavClicked" Padding="10,6" MinHeight="36" AutomationProperties.AutomationId="ManageHomeShortcuts" />
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="我的快捷" Style="{StaticResource HomeSection}" Margin="0" /><TextBlock x:Name="HomeShortcutCount" Foreground="#8A9891" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center" /></StackPanel>
+            </DockPanel>
+            <Border x:Name="HomeShortcutEmpty" Style="{StaticResource Surface}" Padding="16">
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Content="＋ 添加快捷" Background="#EAF6F2" Foreground="#147D68" IsEnabled="{Binding IsEnabled, ElementName=AddShortcutButton}" Click="AddShortcutClicked" AutomationProperties.AutomationId="HomeAddShortcut" Margin="12,0,0,0" />
+                <StackPanel VerticalAlignment="Center"><TextBlock Text="添加常用软件、课件或网址" FontSize="14" TextWrapping="Wrap" /><TextBlock Text="保存后同步到侧边栏。" FontSize="12" Foreground="#718089" TextWrapping="Wrap" Margin="0,5,0,0" /></StackPanel>
+              </DockPanel>
+            </Border>
+            <ItemsControl x:Name="HomeShortcutItems" Margin="0,0,-10,0">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" Loaded="HomeShortcutsLoaded" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate><DataTemplate>
+                <Button Content="{Binding}" ContentTemplate="{StaticResource ShortcutContent}" HorizontalContentAlignment="Stretch" Background="White" BorderBrush="#E5EBE7" Margin="0,0,10,10" Padding="12" MinHeight="64" ToolTip="{Binding Tip}" Click="OpenShortcutClicked" AutomationProperties.AutomationId="{Binding OpenId}" AutomationProperties.Name="{Binding Name}" />
+              </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock x:Name="HomeShortcutMessage" Margin="0,0,0,14" FontSize="12" Foreground="#718089" TextWrapping="Wrap" AutomationProperties.AutomationId="HomeShortcutMessage">
+              <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
+            </TextBlock>
+            <DockPanel Margin="0,8,0,10">
+              <TextBlock DockPanel.Dock="Right" Text="选择工具，打开独立窗口" Foreground="#8A9891" FontSize="11" VerticalAlignment="Center" Margin="16,0,0,0" />
+              <TextBlock Text="课堂工具" Style="{StaticResource HomeSection}" Margin="0" />
+            </DockPanel>
+            <UniformGrid x:Name="HomeToolsGrid" Columns="2" Margin="0,0,-10,12">
               <Button x:Name="RecordingHomeButton" Style="{StaticResource HomeTool}" Click="OpenRecordingClicked" AutomationProperties.AutomationId="OpenRecording" AutomationProperties.Name="录制微课">
-                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                  <Border Background="#EAF6F2" CornerRadius="10" Width="38" Height="38" Margin="0,0,12,0" VerticalAlignment="Top"><TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                  <StackPanel Grid.Column="1"><TextBlock Text="录制微课" FontSize="16" FontWeight="SemiBold" /><TextBlock x:Name="RecordingHomeStatus" Text="准备录制" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" AutomationProperties.AutomationId="RecordingHomeStatus" /><TextBlock x:Name="RecordingHomeAction" Text="配置与录制  →" Foreground="#147D68" FontSize="12" Margin="0,10,0,0" /></StackPanel>
-                </Grid>
+                <StackPanel>
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <TextBlock Grid.Column="1" Text="录制微课" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </Grid>
+                  <TextBlock x:Name="RecordingHomeStatus" Text="准备录制" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="RecordingHomeStatus" /><TextBlock x:Name="RecordingHomeAction" Text="配置与录制  →" Foreground="#147D68" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
               </Button>
-              <Button Grid.Column="2" Style="{StaticResource HomeTool}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="HomeRecordingPlan" AutomationProperties.Name="自动录课计划">
-                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                  <Border Background="#EAF6F2" CornerRadius="10" Width="38" Height="38" Margin="0,0,12,0" VerticalAlignment="Top"><TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                  <StackPanel Grid.Column="1"><TextBlock Text="自动录课计划" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="周期计划与指定日期" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" /><TextBlock Text="管理计划  →" Foreground="#147D68" FontSize="12" Margin="0,10,0,0" /></StackPanel>
-                </Grid>
+              <Button Style="{StaticResource HomeTool}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="HomeRecordingPlan" AutomationProperties.Name="自动录课计划">
+                <StackPanel>
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <TextBlock Grid.Column="1" Text="自动录课计划" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </Grid>
+                  <TextBlock Text="按课表、周期或日期安排录制" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                </StackPanel>
               </Button>
-              <Button Grid.Row="2" Style="{StaticResource HomeTool}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="HomeOpenNoise" AutomationProperties.Name="噪音监测">
-                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                  <Border Background="#EAF6F2" CornerRadius="10" Width="38" Height="38" Margin="0,0,12,0" VerticalAlignment="Top"><TextBlock Text="&#xE720;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                  <StackPanel Grid.Column="1"><TextBlock Text="噪音监测" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="信号电平与监测状态" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" /><TextBlock Text="打开监测  →" Foreground="#147D68" FontSize="12" Margin="0,10,0,0" /></StackPanel>
-                </Grid>
+              <Button Style="{StaticResource HomeTool}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="HomeOpenSecRandom" AutomationProperties.Name="课堂点名">
+                <StackPanel>
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE8D4;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <TextBlock Grid.Column="1" Text="课堂点名" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </Grid>
+                  <TextBlock Text="SecRandom 连接与闪抽" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                </StackPanel>
               </Button>
-              <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource HomeTool}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="HomeOpenExamAware" AutomationProperties.Name="考试看板">
-                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                  <Border Background="#EAF6F2" CornerRadius="10" Width="38" Height="38" Margin="0,0,12,0" VerticalAlignment="Top"><TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                  <StackPanel Grid.Column="1"><TextBlock Text="考试看板" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="ExamAware2 连接与管理" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" /><TextBlock Text="打开管理  →" Foreground="#147D68" FontSize="12" Margin="0,10,0,0" /></StackPanel>
-                </Grid>
+              <Button Style="{StaticResource HomeTool}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="HomeOpenNoise" AutomationProperties.Name="噪音监测">
+                <StackPanel>
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE720;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <TextBlock Grid.Column="1" Text="噪音监测" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </Grid>
+                  <TextBlock Text="查看信号电平与统计报告" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                </StackPanel>
               </Button>
-            </Grid>
-            <TextBlock Text="运行状态" Style="{StaticResource HomeSection}" />
+              <Button Style="{StaticResource HomeTool}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="HomeOpenExamAware" AutomationProperties.Name="考试看板">
+                <StackPanel>
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <TextBlock Grid.Column="1" Text="考试看板" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </Grid>
+                  <TextBlock Text="ExamAware2 连接与管理" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                </StackPanel>
+              </Button>
+              <Button Style="{StaticResource HomeTool}" Click="HomeSchoolConnectionClicked" AutomationProperties.AutomationId="HomeSchoolConnection" AutomationProperties.Name="学校互联">
+                <StackPanel>
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <TextBlock Grid.Column="1" Text="学校互联" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </Grid>
+                  <TextBlock Text="NPEP 配对、通知与远程安排" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                </StackPanel>
+              </Button>
+            </UniformGrid>
+            <TextBlock Text="课堂辅助状态" Style="{StaticResource HomeSection}" />
             <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="12" /><ColumnDefinition /></Grid.ColumnDefinitions>
-              <Border Style="{StaticResource Surface}" Padding="16" Margin="0,0,0,18">
+              <Border Style="{StaticResource Surface}" Padding="16" Margin="0,0,0,12">
                 <StackPanel>
                   <TextBlock Text="ClassIsland" FontFamily="Segoe UI" FontSize="16" FontWeight="SemiBold" />
                   <TextBlock Foreground="#526A60" FontSize="13" Margin="0,10,0,4" TextWrapping="Wrap"><Run Text="{Binding Subject, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding State, Mode=OneWay}" /></TextBlock>
@@ -170,7 +234,7 @@
                   <WrapPanel><Button x:Name="StartButton" Content="启动" Padding="14,8" Click="StartClicked" AutomationProperties.AutomationId="StartClassIsland" Margin="0,0,6,0" /><Button Content="连接设置" Style="{StaticResource Quiet}" Click="ConnectionsSettingsClicked" AutomationProperties.AutomationId="OpenConnectionSettings" Padding="10,8" /></WrapPanel>
                 </StackPanel>
               </Border>
-              <Border Grid.Column="2" Style="{StaticResource Surface}" Padding="16" Margin="0,0,0,18">
+              <Border Grid.Column="2" Style="{StaticResource Surface}" Padding="16" Margin="0,0,0,12">
                 <StackPanel>
                   <TextBlock Text="触摸翻页" FontSize="16" FontWeight="SemiBold" />
                   <TextBlock Text="PowerPoint 动画与幻灯片" Foreground="#718089" FontSize="12" Margin="0,10,0,4" TextWrapping="Wrap" />
@@ -182,23 +246,6 @@
                 </StackPanel>
               </Border>
             </Grid>
-            <DockPanel Margin="0,0,0,10">
-              <Button DockPanel.Dock="Right" Content="管理快捷" Style="{StaticResource Quiet}" Click="ShortcutNavClicked" Padding="10,6" AutomationProperties.AutomationId="ManageHomeShortcuts" />
-              <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="我的快捷" Style="{StaticResource HomeSection}" Margin="0" /><TextBlock x:Name="HomeShortcutCount" Foreground="#8A9891" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center" /></StackPanel>
-            </DockPanel>
-            <Border x:Name="HomeShortcutEmpty" Style="{StaticResource Surface}" Padding="16">
-              <DockPanel>
-                <Button DockPanel.Dock="Right" Content="＋ 添加快捷" Background="#EAF6F2" Foreground="#147D68" IsEnabled="{Binding IsEnabled, ElementName=AddShortcutButton}" Click="AddShortcutClicked" AutomationProperties.AutomationId="HomeAddShortcut" Margin="12,0,0,0" />
-                <StackPanel VerticalAlignment="Center"><TextBlock Text="添加常用软件、课件或网址" FontSize="14" TextWrapping="Wrap" /><TextBlock Text="保存后同步到侧边栏。" FontSize="12" Foreground="#718089" TextWrapping="Wrap" Margin="0,5,0,0" /></StackPanel>
-              </DockPanel>
-            </Border>
-            <ItemsControl x:Name="HomeShortcutItems">
-              <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate><DataTemplate>
-                <Button Content="{Binding}" ContentTemplate="{StaticResource ShortcutTileContent}" HorizontalContentAlignment="Stretch" Background="White" BorderBrush="#E5EBE7" Margin="0,0,8,8" Padding="12,12" MinHeight="100" ToolTip="{Binding Tip}" Click="OpenShortcutClicked" AutomationProperties.AutomationId="{Binding OpenId}" AutomationProperties.Name="{Binding Name}" />
-              </DataTemplate></ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <TextBlock x:Name="HomeShortcutMessage" FontSize="12" Foreground="#718089" TextWrapping="Wrap" AutomationProperties.AutomationId="HomeShortcutMessage" />
           </StackPanel>
         </ScrollViewer>
         <ScrollViewer x:Name="ShortcutPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
@@ -426,6 +473,7 @@
           </ScrollViewer>
                 <TextBlock Grid.Row="3" x:Name="StartupPreferencesMessage" Foreground="#147D68" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0" AutomationProperties.AutomationId="StartupPreferencesMessage" />
         </Grid>
+        <local:AboutPage x:Name="AboutPageView" Visibility="Collapsed" />
       </Grid>
     </Grid>
   </Grid>

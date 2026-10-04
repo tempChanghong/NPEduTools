@@ -26,9 +26,16 @@ public partial class NoiseWindow : Window
     public void Shutdown() { _closing = true; Close(); }
     private async Task<HostResponse> RequestAsync(string capability, NoiseCommand? command = null)
     {
+        var request = new HostRequest(Protocol.Version, Guid.NewGuid(), capability, Noise: command);
+        if (command?.Action == "stop")
+        {
+            var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, request);
+            if (authorized is null) return new(Protocol.Version, request.RequestId, "Rejected", "MANAGEMENT_CANCELLED", "未验证，监测继续。", Noise: _state);
+            request = authorized;
+        }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(4));
-        return await HostClient.RequestAsync(_pipe, new HostRequest(Protocol.Version, Guid.NewGuid(), capability, Noise: command), deadline.Token);
+        return await HostClient.RequestAsync(_pipe, request, deadline.Token);
     }
     private async Task PollAsync()
     {
@@ -36,6 +43,10 @@ public partial class NoiseWindow : Window
         while (!_lifetime.IsCancellationRequested)
         {
             long operation = _uiOperation;
+            var guard = GuardFiles.ForPipe(_pipe).Read<GuardStatus>("status.json");
+            var age = guard is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - guard.UpdatedAt;
+            GuardStatusText.Text = guard is not null && age >= TimeSpan.Zero && age < TimeSpan.FromSeconds(5)
+                ? $"{guard.Message} 恢复次数：{guard.Restarts}/3。" : "守护未连接或状态已陈旧；不会据此判断监测已停止。";
             try
             {
                 if (!_busy && (IsVisible || !loadedDevices))
@@ -44,6 +55,9 @@ public partial class NoiseWindow : Window
                     if (_lifetime.IsCancellationRequested || operation != _uiOperation) continue;
                     if (response.NoiseDevices is not null) { _state = response.Noise; SetDevices(response.NoiseDevices); loadedDevices = true; }
                     Render(response.Noise);
+                    DisplayStatusText.Text = response.NoiseDisplay is { } display
+                        ? display.Message + (display.ErrorCode is { } code ? $"（{code}）" : "")
+                        : "当前后台不支持原生备用展示，请更新并重启后台。";
                     if (response.Outcome == "Rejected") MessageText.Text = response.Message;
                 }
             }
@@ -74,6 +88,7 @@ public partial class NoiseWindow : Window
         if (state is null)
         {
             StateText.Text = "后台连接中断，当前监测状态未知。";
+            DisplayStatusText.Text = "网页与备用展示状态未知，等待后台重新连接。";
             LevelText.Text = "—"; LevelBar.Value = -100; QualityText.Text = "未知";
             LevelHintText.Text = "";
             MessageText.Text = "旧读数不代表当前状态。恢复连接后可查询或停止，请勿重复启动。";
@@ -149,5 +164,11 @@ public partial class NoiseWindow : Window
     private async void StopClicked(object sender, RoutedEventArgs e)
     {
         if (_state is { } state) await RunAsync("noise.command", new("stop", state.InstanceId, state.Revision));
+    }
+    private async void ManagementClicked(object sender, RoutedEventArgs e)
+    {
+        try { await NoiseManagementDialog.ConfigureAsync(this, _pipe); }
+        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        { MessageText.Text = "无法读取后台管理设置，请重试。"; }
     }
 }

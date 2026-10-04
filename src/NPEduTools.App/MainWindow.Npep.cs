@@ -6,7 +6,8 @@ public partial class MainWindow
 {
     private NpepConnectionSession? _schoolConnection;
     private NpepConnectionSession SchoolConnectionSession => _schoolConnection ??= new(
-        (request, token) => HostClient.RequestAsync(_pipe, request, token), _lifetime.Token);
+        (request, token) => HostClient.RequestAsync(_pipe, request, token), _lifetime.Token,
+        request => NoiseManagementDialog.AuthorizeAsync(this, _pipe, request));
     private void InitializeNpepConnection() => SettingsSchoolConnection.Bind(SchoolConnectionSession);
     private Task RefreshNpepAsync() => SchoolConnectionSession.RefreshAsync();
     private async Task NpepPollAsync()

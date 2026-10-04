@@ -38,6 +38,7 @@ try {
     $components = @(
         @{Project='NPEduTools.App';Directory=$app},
         @{Project='NPEduTools.Host';Directory=(Join-Path $app 'Host')},
+        @{Project='NPEduTools.Guard';Directory=(Join-Path $app 'Guard')},
         @{Project='NPEduTools.ClassIsland.Admin';Directory=(Join-Path $app 'Admin')},
         @{Project='NPEduTools.Recorder';Directory=(Join-Path $work 'recorder')})
     foreach ($component in $components) {

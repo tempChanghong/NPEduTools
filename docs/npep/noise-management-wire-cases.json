@@ -1,0 +1,556 @@
+[
+  {
+    "name": "scheduled-status",
+    "definition": "status",
+    "expected": true,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T19:00:00.000",
+          "end": "2026-10-04T20:00:00.000"
+        },
+        "protected": true
+      }
+    }
+  },
+  {
+    "name": "idle-status",
+    "definition": "status",
+    "expected": true,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": null,
+        "window": null,
+        "protected": false
+      }
+    }
+  },
+  {
+    "name": "authorize-stop",
+    "definition": "authorize",
+    "expected": true,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000009"
+    }
+  },
+  {
+    "name": "extra-ui-authority",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000009",
+      "isAdmin": true
+    }
+  },
+  {
+    "name": "missing-context",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000009"
+    }
+  },
+  {
+    "name": "wrong-purpose-field",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000009",
+      "purpose": "maintenance"
+    }
+  },
+  {
+    "name": "generation-zero",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 0
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000009"
+    }
+  },
+  {
+    "name": "revision-overflow",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 9007199254740992,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T19:00:00.000",
+          "end": "2026-10-04T20:00:00.000"
+        },
+        "protected": true
+      }
+    }
+  },
+  {
+    "name": "revision-negative",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": -1,
+      "sessionId": "00000000-0000-4000-8000-000000000009"
+    }
+  },
+  {
+    "name": "calendar-impossible",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-02-30T19:00:00.000",
+          "end": "2026-02-30T20:00:00.000"
+        },
+        "protected": true
+      }
+    }
+  },
+  {
+    "name": "calendar-out-of-range",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "1999-12-31T19:00:00.000",
+          "end": "1999-12-31T20:00:00.000"
+        },
+        "protected": true
+      }
+    }
+  },
+  {
+    "name": "reversed-window",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T20:00:00.000",
+          "end": "2026-10-04T19:00:00.000"
+        },
+        "protected": true
+      }
+    }
+  },
+  {
+    "name": "extra-protection-field",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T19:00:00.000",
+          "end": "2026-10-04T20:00:00.000"
+        },
+        "protected": true,
+        "isAdmin": true
+      }
+    }
+  },
+  {
+    "name": "string-protected",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T19:00:00.000",
+          "end": "2026-10-04T20:00:00.000"
+        },
+        "protected": "true"
+      }
+    }
+  },
+  {
+    "name": "string-revision",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": "1",
+      "sessionId": "00000000-0000-4000-8000-000000000009"
+    }
+  },
+  {
+    "name": "extra-identity",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1,
+          "schoolPin": "123456"
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": 1,
+      "sessionId": "00000000-0000-4000-8000-000000000009"
+    }
+  },
+  {
+    "name": "null-stop-session",
+    "definition": "authorize",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "commandId": "00000000-0000-4000-8000-000000000010",
+      "instanceId": "00000000-0000-4000-8000-000000000008",
+      "revision": 1,
+      "sessionId": null
+    }
+  },
+  {
+    "name": "calendar-timezone-forbidden",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T19:00:00.000Z",
+          "end": "2026-10-04T20:00:00.000Z"
+        },
+        "protected": true
+      }
+    }
+  },
+  {
+    "name": "actual-noise-empty-control-epoch",
+    "definition": "status",
+    "expected": true,
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-0000-0000-000000000000"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T19:00:00.000",
+          "end": "2026-10-04T20:00:00.000"
+        },
+        "protected": true
+      }
+    }
+  },
+  {
+    "name": "non-v4-request-id",
+    "definition": "status",
+    "expected": false,
+    "value": {
+      "requestId": "00000000-0000-1000-8000-000000000007",
+      "context": {
+        "identity": {
+          "serverInstanceId": "00000000-0000-4000-8000-000000000001",
+          "deploymentEpoch": "00000000-0000-4000-8000-000000000002",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "bindingRevision": 1,
+          "credentialGeneration": 1
+        },
+        "runId": "00000000-0000-4000-8000-000000000004",
+        "sessionId": "00000000-0000-4000-8000-000000000005",
+        "statusEpoch": 1,
+        "controlEpoch": "00000000-0000-4000-8000-000000000006"
+      },
+      "protection": {
+        "instanceId": "00000000-0000-4000-8000-000000000008",
+        "revision": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000009",
+        "window": {
+          "start": "2026-10-04T19:00:00.000",
+          "end": "2026-10-04T20:00:00.000"
+        },
+        "protected": true
+      }
+    }
+  }
+]

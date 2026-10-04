@@ -73,12 +73,13 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
         }
         catch (Exception e) when (StorageError(e)) { _storeError = "SCHEDULE_STORE_UNAVAILABLE"; }
     }
-    private void Skip(Guid id)
+    private bool Skip(Guid id)
     {
         lock (_journalLock)
         {
-            if (_journal.OwnedId != id || _journal.OwnedWindow is not { } w) return;
+            if (_journal.OwnedId != id || _journal.OwnedWindow is not { } w) return true;
             _journal.Blocks.Add(new(w, "Skipped")); Trim(); Save();
+            return _storeError is null;
         }
     }
     private void Trim()
@@ -197,6 +198,9 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
         DateTimeOffset.Parse(w["start"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal),
         DateTimeOffset.Parse(w["end"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal));
     private static JsonObject? Window(SchoolNoiseWindow? w) => w is null ? null : new() { ["start"] = Stamp(w.Start), ["end"] = Stamp(w.End) };
+    // Called independently of the scheduler lock; capture -> journal is the established lock order for STOP.
+    internal JsonObject? ProtectionWindow(Guid? session)
+    { lock (_journalLock) return session is not null && _journal.OwnedId == session ? Window(_journal.OwnedWindow) : null; }
     public JsonObject Observe()
     {
         lock (_sync)
