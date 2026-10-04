@@ -63,7 +63,7 @@ function Save-Window([string]$title, [string]$filename) {
     finally { $bitmap.Dispose() }
 }
 
-$planTitle = '自动录课 · 计划与预演'
+$planTitle = '自动录课 · NPEduTools'
 $peerExe = Join-Path $projectRoot "tests/NPEduTools.ClassIsland.TestPeer/bin/$Configuration/net10.0/NPEduTools.ClassIsland.TestPeer.exe"
 $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($pipe))).Substring(0,24)
 $bookPath = Join-Path $env:LOCALAPPDATA "NPEduTools/ui/$hash.recording-plans.json"

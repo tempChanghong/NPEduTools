@@ -12,7 +12,7 @@ public partial class MainWindow
     private void ShowRecordingPlan()
     {
         _quick?.Collapse(false);
-        _autoRecordingWindow ??= new AutoRecordingWindow(_pipe, _recording);
+        _autoRecordingWindow ??= new AutoRecordingWindow(_pipe, _recording, ShowRecording);
         _autoRecordingWindow.Show();
         if (_autoRecordingWindow.WindowState == WindowState.Minimized) _autoRecordingWindow.WindowState = WindowState.Normal;
         _autoRecordingWindow.Activate();
