@@ -56,6 +56,12 @@
       <Button Content="{Binding PauseLabel}" Click="PauseClicked" Visibility="{Binding ShowActive, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{Binding CanPause}" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepPause" />
       <Button Content="{Binding UnpairLabel}" Click="UnpairClicked" Visibility="{Binding ShowUnpair, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{Binding CanUnpair}" Style="{StaticResource Quiet}" Margin="0,0,0,8" AutomationProperties.AutomationId="NpepUnpair" />
     </WrapPanel>
+    <Expander Header="故障排查" Margin="0,10,0,0">
+      <StackPanel Margin="0,8,0,0">
+        <TextBlock Text="导出互联状态与已有本机缓存，后台不可用时也能记录缺失项。包含服务地址和归属编号，不含配对码、凭据、姓名、路径或录音；分享前请核对文件。此操作不会重新探测课程接口或控制软件。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
+        <Button Content="导出诊断摘要…" Click="ExportDiagnosticsClicked" IsEnabled="{Binding CanRefresh}" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Margin="0,8,0,0" AutomationProperties.AutomationId="NpepExportDiagnostics" />
+      </StackPanel>
+    </Expander>
     <TextBlock x:Name="LocalMessage" Style="{StaticResource OptionalText}" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
   </StackPanel>
 </UserControl>

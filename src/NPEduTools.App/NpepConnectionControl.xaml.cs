@@ -9,6 +9,7 @@ public partial class NpepConnectionControl : UserControl
 {
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private NpepConnectionSession? _session;
+    private bool _exporting;
     public NpepConnectionControl()
     {
         InitializeComponent();
@@ -42,5 +43,29 @@ public partial class NpepConnectionControl : UserControl
         try { Clipboard.SetText(code); LocalMessage.Text = "已复制配对码，仅提供给学校管理员。"; }
         catch (Exception error) when (error is ExternalException or InvalidOperationException)
         { LocalMessage.Text = "暂时无法复制，请手动记录配对码。"; }
+    }
+    private async void ExportDiagnosticsClicked(object sender, RoutedEventArgs e)
+    {
+        if (_exporting || _session is not { CanRefresh: true } session) return;
+        _exporting = true;
+        try
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "导出学校互联诊断摘要", Filter = "JSON 诊断摘要 (*.json)|*.json",
+                DefaultExt = ".json", AddExtension = true,
+                FileName = $"NPEduTools-NPEP-diagnostics-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json"
+            };
+            if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
+            string version = typeof(App).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "";
+            var summary = await session.CollectDiagnosticsAsync(version);
+            if (summary is null) { LocalMessage.Text = "正在处理其他操作或窗口已关闭，请稍后再导出。"; return; }
+            await System.IO.File.WriteAllTextAsync(dialog.FileName, summary.ToJsonString(new() { WriteIndented = true }), new System.Text.UTF8Encoding(false));
+            LocalMessage.Text = "诊断摘要已保存；缺失项不代表正常，请核对观测时间后再分享。文件未自动上传。";
+        }
+        catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { LocalMessage.Text = "无法保存诊断摘要，请检查目标目录权限或磁盘连接后重试。"; }
+        finally { _exporting = false; }
     }
 }
