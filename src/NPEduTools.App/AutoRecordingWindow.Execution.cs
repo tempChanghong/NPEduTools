@@ -10,8 +10,10 @@ public partial class AutoRecordingWindow
     private void AutomaticChanged(AutomaticRecordingState state)
     {
         RealStatus.Text = _automaticError ?? state.Message + (state.Error is null ? "" : " · " + state.Error);
-        ToggleReal.Content = state.Enabled ? "停用自动录制" : state.SuspendedByMode ? "启用（仍由课堂模式暂停）" : "启用自动录制";
+        ToggleReal.Content = state.Enabled ? "关闭自动录课" : "开启自动录课";
+        ToggleReal.ToolTip = state.SuspendedByMode ? "课堂模式暂停仍然有效；开启总开关不会解除暂停。" : "使用已保存的录制设置，按计划和学校时间执行。";
         ToggleReal.IsEnabled = !_automaticChanging;
+        RealEventsEmpty.Visibility = state.Recent.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         RealSkipDay.Content = state.SkipDate is not null && state.SkipDate == _today ? "恢复今日自动录制" : "今天不再录制";
         RealEvents.ItemsSource = state.Recent.Select(e => $"{e.Date:yyyy-MM-dd} {e.Start:HH:mm} · {e.Subject} · {PhaseLabel(e.Phase)}\n{e.Reason}" +
             (e.OutputFile is null ? e.RecoveryDirectory is null ? "" : "\n保留片段：" + e.RecoveryDirectory : "\n视频：" + e.OutputFile)).ToArray();

@@ -12,11 +12,12 @@ namespace NPEduTools.App;
 public partial class AutoRecordingWindow : Window
 {
     private sealed record SubjectOption(Guid Id, string Name);
-    private sealed record PlanRow(string Key, int Number, string Subject, string ClassTime, string CaptureTime, string Status);
+    private sealed record PlanRow(string Key, int Number, string Subject, string ClassTime, string CaptureTime, string Status, string SimulationStatus);
     private readonly string _pipe;
     private readonly RecordingPreviewStore _store;
     private readonly RecordingPreview _preview;
     private readonly RecordingClient _realRecording;
+    private readonly Action _openRecordingSettings;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly CancellationTokenSource _lifetime = new();
     private DaySchedule? _source;
@@ -26,10 +27,11 @@ public partial class AutoRecordingWindow : Window
     private DateTimeOffset? EventTime => _clock.Read(Elapsed) is { Fresh: true } reading ? reading.Now : null;
     private bool _querying, _shutdown, _writable = true;
     private PreviewState? _saved;
-    internal AutoRecordingWindow(string pipe, RecordingClient realRecording)
+    internal AutoRecordingWindow(string pipe, RecordingClient realRecording, Action openRecordingSettings)
     {
         _pipe = pipe;
         _realRecording = realRecording;
+        _openRecordingSettings = openRecordingSettings;
         _store = new(StartupPreferencesStore.PathFor(pipe).Replace(".startup.json", ".recording-preview.json", StringComparison.Ordinal));
         bool hadLegacy = File.Exists(StartupPreferencesStore.PathFor(pipe).Replace(".startup.json", ".recording-preview.json", StringComparison.Ordinal));
         InitializeComponent();
@@ -37,8 +39,8 @@ public partial class AutoRecordingWindow : Window
         AutomaticChanged(_realRecording.Automatic);
         try { _preview = new(_store.Read()); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
-        { _preview = new(); _writable = false; ErrorText.Text = "配置或预演记录无法读取，原文件已保留；仍可查看今日课表。"; }
-        if (_store.Migrated) ErrorText.Text = "已保留原系统时间预演记录的备份，并迁移规则；请按学校日期重新确认预演。";
+        { _preview = new(); _writable = false; ErrorText.Text = "配置或试运行记录无法读取，原文件已保留；仍可查看今日课表。"; }
+        if (_store.Migrated) ErrorText.Text = "已备份原系统时间的模拟记录并迁移规则；请按学校日期重新确认计划。";
         var rules = _preview.State.Rules;
         LeadMinutes.ItemsSource = TailMinutes.ItemsSource = Enumerable.Range(0, 6).ToArray();
         LeadMinutes.SelectedItem = rules.BeforeMinutes; TailMinutes.SelectedItem = rules.AfterMinutes;
@@ -77,7 +79,7 @@ public partial class AutoRecordingWindow : Window
             if (_shutdown) return;
             _clock.Unavailable("电脑经历休眠或唤醒，请重新确认学校时间", Elapsed);
             _preview.SetEnabled(false, null); Save(); Render();
-            ErrorText.Text = "休眠或唤醒后已停止预演；请核对学校时间后重新启动。";
+            ErrorText.Text = "休眠或唤醒后已停止试运行；请核对学校时间后重新启动试运行。";
         });
     }
     private async Task ReadAsync()
@@ -135,32 +137,42 @@ public partial class AutoRecordingWindow : Window
         {
             _writable = false; _preview.SetEnabled(false, EventTime);
             ApplyRules.IsEnabled = TogglePreview.IsEnabled = SkipDay.IsEnabled = false;
-            ErrorText.Text = "记录无法保存，预演已停止。请检查文件夹权限及剩余空间。";
+            ErrorText.Text = "记录无法保存，试运行已停止。请检查文件夹权限及剩余空间。";
         }
     }
     private void Render(bool rows = true)
     {
-        PreviewStatus.Text = _preview.Status;
+        PreviewStatus.Text = TrialStatus(_preview.Status);
         var clock = _clock.Read(Elapsed);
         ClockStatus.Text = clock.Now is { } now ?
             $"ClassIsland 时间：{now:yyyy-MM-dd HH:mm:ss}（{(clock.Fresh ? "学校时间样本" : "最后收到，已失效")}） · {clock.Message}" : clock.Message;
-        TogglePreview.Content = _preview.Enabled ? "停止预演" : "启动预演";
+        TogglePreview.Content = _preview.Enabled ? "停止试运行" : "启动试运行";
         SkipDay.IsEnabled = _writable && clock.CanStart;
-        SkipDay.Content = clock.Now is { } date && _preview.State.SkipDate == DateOnly.FromDateTime(date.Date) ? "恢复今日预演" : "今天不再预演";
+        SkipDay.Content = clock.Now is { } date && _preview.State.SkipDate == DateOnly.FromDateTime(date.Date) ? "恢复今日试运行" : "今天不再试运行";
         TodayButton.IsEnabled = TomorrowButton.IsEnabled = AfterTomorrowButton.IsEnabled = clock.CanStart;
         SkipLesson.IsEnabled = _writable && _viewDate == _today;
         OnlyExplicit.IsEnabled = _writable && ViewSource is { ProfileId: var profile } && profile != Guid.Empty;
         OnlyExplicit.IsChecked = _book.Days.Any(d => d.Date == _viewDate && d.ProfileId == ViewSource?.ProfileId && d.OnlyExplicit);
         if (!rows) return;
-        DateStatus.Text = _viewDate is { } selectedDate ? $"{selectedDate:yyyy-MM-dd} · {(_viewDate == _today ? "当天生效安排（按实时学校时钟预演）" : _forecast is null ? "预计课表未加载；可编辑固定时段" : "预计课表，到当天重新核对")}" : "等待学校日期；也可选明确日期编辑草稿";
+        DateStatus.Text = _viewDate is { } selectedDate ? $"{selectedDate:yyyy-MM-dd} · {(_viewDate == _today ? "当天生效安排（按 ClassIsland 学校时间执行）" : _forecast is null ? "预计课表未加载；可编辑固定时段" : "预计课表，到当天重新核对")}" : "等待学校日期；也可选明确日期编辑草稿";
         string? selected = (Plans.SelectedItem as PlanRow)?.Key;
         var items = ViewPlans.Select(p => new PlanRow(p.Key, p.Lesson.Number, p.Lesson.Subject,
             $"{p.Lesson.Start:HH:mm}–{p.Lesson.End:HH:mm}", $"{p.Start:HH:mm}–{p.End:HH:mm}",
-            _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _preview.IsMarked(ViewSource?.ProfileId ?? Guid.Empty, p) ? "已预演 / 已跳过" : (string.IsNullOrEmpty(p.Sources) ? "" : p.Sources + " · ") + p.Reason)).ToArray();
+            (string.IsNullOrEmpty(p.Sources) ? "" : p.Sources + " · ") + p.Reason,
+            _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _preview.IsMarked(ViewSource?.ProfileId ?? Guid.Empty, p) ? "已试运行 / 已模拟跳过" : "未模拟")).ToArray();
         Plans.ItemsSource = items;
         if (selected is not null) Plans.SelectedItem = items.FirstOrDefault(i => i.Key == selected);
-        Events.ItemsSource = _preview.State.Events.Reverse().Select(e => $"{(e.At is { } at ? at.ToString("MM-dd HH:mm:ss") + " 学校时间" : "学校时间未知")}  {e.Action} · {e.Subject}｜{e.Message}").ToArray();
+        Events.ItemsSource = _preview.State.Events.Reverse().Select(e => $"{(e.At is { } at ? at.ToString("MM-dd HH:mm:ss") + " 学校时间" : "学校时间未知")}  {e.Action} · {e.Subject}｜{e.Message.Replace("预演", "试运行", StringComparison.Ordinal)}").ToArray();
     }
+    // Translate known rehearsal status labels only; preserve user-provided course names.
+    private static string TrialStatus(string status) => status
+        .Replace("预演未启动；实际录制由下方自动录制开关控制", "试运行未启动；实际录制由上方总开关控制", StringComparison.Ordinal)
+        .Replace("预演已停止；实际录制由下方自动录制开关控制", "试运行已停止；实际录制由上方总开关控制", StringComparison.Ordinal)
+        .Replace("预演已启动，等待新鲜日程", "试运行已启动，等待最新课表", StringComparison.Ordinal)
+        .Replace("今天已暂停预演", "今天已暂停试运行", StringComparison.Ordinal)
+        .Replace("课表未启用，暂不预演", "课表未启用，暂不试运行", StringComparison.Ordinal)
+        .Replace("本日没有待开始的预演任务", "本日没有待开始的试运行任务", StringComparison.Ordinal)
+        .Replace("下次预演：", "下次试运行：", StringComparison.Ordinal);
     private void ApplyClicked(object sender, RoutedEventArgs e) => SaveRecurringRule();
     private void ToggleClicked(object sender, RoutedEventArgs e)
     {
@@ -186,4 +198,5 @@ public partial class AutoRecordingWindow : Window
     private void SubjectsChanged(object sender, RoutedEventArgs e) { if (Subjects is not null) Subjects.IsEnabled = AllSubjects.IsChecked != true; }
     private async void RefreshClicked(object sender, RoutedEventArgs e) { await ReadAsync(); await ReadCalendarAsync(true); }
     private void HideClicked(object sender, RoutedEventArgs e) => Hide();
+    private void RecordingSettingsClicked(object sender, RoutedEventArgs e) => _openRecordingSettings();
 }

@@ -1,0 +1,187 @@
+# 历史 README 与开发记录
+
+归档日期：2026-10-03。以下内容原为仓库首页，混合了多个阶段的实现、命令和验收记录，作为历史资料保留。部分说明已经过时（例如权限、安装包、功能是否已实现），不能据此判断当前行为或验收状态。
+
+日常使用请从[项目首页](../../README.md)开始，开发入口见[开发指南](../DEVELOPMENT.md)。下文命令中的相对路径均以仓库根目录为工作目录。
+
+---
+
+# NPEduTools
+
+**下一版本正在准备内置录制组件。** 新打包流程内置自行构建的 FFmpeg／ffprobe，并附精确源码与构建材料；已发布的 InDev 20261002 附件保持不变。见[下一版草稿](../releases/NEXT-FFMPEG.md)和[本轮任务卡](../iterations/NEXT-20261002.md)。
+
+**当前版本：[InDev 20261002（Pre，无代号）](https://github.com/tempChanghong/NPEduTools/releases/tag/InDev-20261002)。** [发版说明](../releases/InDev-20261002.md)介绍学校互联、通知、考试模式与原生噪音监测，配套 NPClassworks／KV v1.2.0。Windows 发行附件、固定源码与检查结果见[发布收尾](../releases/DELIVERY-20261002.md)；真实班级大屏及学校排程现场验收仍未完成。此前三仓功能源码已合并 main，[合并与检查记录](../releases/Pre-20261001-MERGE-RESULT.md)保留当时的 PR、提交、CI 与部署边界。下文保留各阶段记录，当前 NPEP 行为以[交付索引](../npep/README.md)及新说明为准；历史 InDev ZIP 不包含本版新增功能。
+
+新增 [可选即时切换与全局模式显示](../CLASSROOM-RUNTIME-SWITCH.md)：勾选“同时切换当前运行的软件”后，考试模式准备好 ExamAware2 再正常退出 ClassIsland；日常模式确认考试内容已保存后正常退出考试看板，并通过管理员任务启动 ClassIsland。退出受阻或目标未就绪时显示原因并提供重试；主窗口与展开／收起侧边栏显示当前模式和自动录课暂停状态。开关默认关闭，正式软件完整联动仍待实机验收。
+
+新增 [日常／考试课堂模式](../CLASSROOM-MODES.md)：主窗口“课堂模式”联动 ClassIsland 管理员登录任务、ExamAware2 登录自启动与自动录课。考试暂停自动录课并保留计划，日常恢复按原配置判断；切换失败保留恢复入口。需先配置管理员任务与 ExamAware 桥接。当前更新在开发构建中，真实 UAC 与重新登录联动仍待实机验收，既有 P4 ZIP 未更新。
+
+面向 Windows 教室大屏的本地软件集成与控制层。主程序提供常驻桌面侧边栏与“概览／快捷启动／设置”管理窗口，已集成 PowerPoint 触摸翻页。侧边栏默认位于右侧偏下，可拖动顶部品牌图标调整高度；课堂工具、我的快捷和设置各有独立入口，展开后可开启、暂停或停止辅助。运行 `./scripts/start-app.ps1` 查看实际窗口，界面与生命周期见 [主界面设计](../MAIN-WINDOW-DESIGN.md)。
+
+已接入正式图标：程序、窗口与托盘使用多尺寸 ICO，主页面与侧边栏使用矢量标识。资源来源、更新方法和实际截图见 [图标接入说明](../BRANDING.md)。
+
+新增 [ExamAware2 E4 登录自启动设置](../EXAMAWARE2-STAGE4.md)：主窗口「考试看板」管理程序位置、配对、状态、正常退出和确认后开启/关闭登录自启动，侧栏可直接打开软件。适配 Windows 1.5.2，桥接 0.3.0 使用官方 API V2，设置后独立读回登记状态。需同时更新 NPEduTools 和插件；现有 v2 配对文件可继续使用。构建入口为 `./scripts/build-examaware-bridge.ps1`。**退出前请先保存并关闭考试编辑器**，上游限制见 [E3](../EXAMAWARE2-STAGE3.md)。E4 通过隔离原生启动接口的源码宿主联调，真实 Windows 登记/登录与官方发行版 EXE 验收仍待完成。当前内容在开发构建中，既有 P4 ZIP 未更新。历史：[E1](../EXAMAWARE2-STAGE1.md)、[E2](../EXAMAWARE2-REAL-HOST-VALIDATION.md)。
+
+新增 [首次使用引导（OOBE）](../FIRST-RUN-EXPERIENCE.md)：按用途显示偏好、ClassIsland 学校时间和录制准备，可跳过、续做或从主窗口“初始设置”重开。已有用户保留配置，登录自启动仅在侧栏提示；完成引导不会自动开启录制。当前更新位于开发构建，先前生成的 P4 ZIP 尚未重新打包。
+
+新增 [自定义快捷启动](../CUSTOM-SHORTCUTS.md)：在主窗口“快捷启动”添加应用、文件和网址，支持编辑、排序、移除与撤销。主页及贴边面板“我的快捷”同步显示入口；路径失效时可直接进入编辑器重新选择。
+
+新增 [独立微课录制](../MICROLESSON-RECORDING.md)：主窗口配置屏幕与音源，侧边栏暂停、继续和停止；支持系统声音与麦克风混录，8/15 fps、720p/1080p 上限，保存本地 MP4。借鉴 C30 的低帧率和进程隔离设计，使用独立采集实现。开发机录制与片段恢复已验证，目标大屏整课稳定性仍待现场测试。
+
+新增 [自动录课：周期与指定日期计划](../AUTO-RECORDING-PLANS.md)：支持每周跟随课表或固定时段、指定日期的课程覆盖及单次时段，默认排除约定的 17 项科目。今天、明天、后天与所有窗口采用 ClassIsland 学校时间；可查询今天起 31 天的预计课表，课表型任务默认课前 2 分钟至课后 5 分钟。主窗口或侧边栏“自动录课计划”进入；预演只模拟，点击“启用自动录制”后才按计划采集。
+
+按本地 ClassIsland Docs 和源码核对的 [分阶段规划](../CLASSISLAND-RECORDING-BRIDGE-PLAN.md)，已完成 [P0 桥接验证](../CLASSISLAND-RECORDING-BRIDGE-P0.md)、[学校时钟预演](../CLASSISLAND-SCHOOL-CLOCK-PREVIEW.md)、未来日期与多类计划，以及 [P3 真实录制](../AUTO-RECORDING-EXECUTION.md)。Host 统一协调手动/自动录制，执行记录独立保存，暂停和时间回拨不延长截止，失联后录制器自行结束。先在微课窗口“保存设置”，再启用自动录制；重启后开关默认关闭。
+
+已生成 [P4 配套试用包及验证报告](../PORTABLE-RELEASE-VALIDATION.md)：包含 Windows x64 自包含主程序、后台、录制器与 0.2.0.0 桥接 `.cipx`。完整解压后双击 `Start-NPEduTools.cmd`；[安装与回退说明](../PORTABLE-CLASSROOM-GUIDE.md)随包提供。新解压包与真实 ClassIsland 已完成自动短录及 29 项联调检查；目标大屏整课、音频与休眠结果仍按 [现场验收表](../CLASSROOM-ACCEPTANCE.md) 待填。上述为 P4 阶段记录；当前开发者打包必须明确指定新版本号，步骤见[本轮任务卡](../iterations/NEXT-20261002.md)。
+
+新增可运行的 [PowerPoint 触摸翻页工具](../POWERPOINT-TOUCH-ASSIST.md)：按参考项目 PowerPoint-Touch-Assist 的效果，轻点放映画面后补发空格，推进动画或下一页，提供暂停和退出。运行 `./scripts/start-powerpoint-assist.ps1`；便携包完整解压即可运行，无需安装 .NET。默认只响应触摸标记，鼠标保持原行为。开发机真实 PowerPoint 的模拟触摸链路已通过，目标 Office 2024 大屏的物理触摸仍需现场试用。
+
+另保留独立的 [PowerPoint 触摸诊断工具](../POWERPOINT-DIAGNOSTICS.md)：可读取真实放映及动画状态，观察目标窗口的兼容鼠标输入并导出记录。运行 `./scripts/start-powerpoint-diagnostics.ps1`；此入口只读，不触发翻页。
+
+诊断结束会自动生成中文报告；也可用 `./scripts/start-powerpoint-diagnostics.ps1 -Analyze <日志路径>` 分析旧日志。新版记录包含有限页面交互清单，测试包附五页动画/链接/触发器/书写测试文稿，详见上述说明。
+
+另有显式单次推进实验：`./scripts/step-powerpoint-experiment.ps1` 会尝试推进当前 PowerPoint 的一个简单动画步骤或换页，并回读结果。仅支持已验证的简单文稿，未连接触摸监听；默认诊断模式仍只读。
+
+当前已实现 WPF 窗口与 CLI → Named Pipe Host → 隔离工作进程 → ClassIsland IPC 的课程状态闭环，支持持续监听、自动重连和完整状态同步。WPF 还支持配置 ClassIsland 路径、启动本体、验证就绪并查看保存的启动结果。
+
+窗口会按需启动 Host。标题栏关闭、最小化或“快捷面板”隐藏主窗口，屏幕侧边入口、触摸辅助与后台继续运行；托盘和再次打开程序也可唤回同一窗口。主窗口“退出 NPEduTools”或托盘“停止后台并退出”释放触摸监听与探测进程后完整退出，不关闭 ClassIsland、PowerPoint 或文稿。设置支持 [NPEduTools 登录启动、静默贴边入口和自动开启触摸辅助](../APP-STARTUP.md)。场景执行尚未实现；ClassIsland 管理员重启与自启动由独立管理区显式操作。
+
+## 打开桌面窗口
+
+首页和贴边面板现已共用 [ClassIsland 统一启动](../CLASSISLAND-UNIFIED-LAUNCH.md)：优先使用匹配且启用的管理员任务，否则普通启动；已运行时复用实例，需要切换权限时明确提供“管理员重启”。进程与课程接口分别验证，避免连接等待导致重复启动。
+
+新增 [ClassIsland 管理员自启动管理](../CLASSISLAND-ADMIN-STARTUP.md)：首页 ClassIsland 的“自启动”进入管理区，可查询、创建／更新、删除 StartUpAsAdmin 使用的同名任务，以及请求管理员启动／重启。提权由 Windows UAC 授权，NPEduTools 主窗口保持普通权限。用户已实测授权后创建任务成功，并确认普通／管理员状态显示大体正常；删除、重新登录自启动及完整重启链路等剩余验收见说明。
+
+完成下述构建验证后，从仓库根目录运行：
+
+```powershell
+./scripts/start-app.ps1
+```
+
+首页提供触摸翻页开关、暂停／继续及 ClassIsland 启动入口。首次运行默认关闭触摸辅助，可在设置中选择启动时自动开启。登录自启动默认关闭；启用后默认仅显示贴边入口，手动打开仍显示主窗口。后台断开时会清除可用状态并重新连接，不自动重新启用已因后台退出而停止的辅助。独立辅助版和主程序共用互斥检查，不能同时运行两套监听。
+
+“设置”中可切换快捷入口的左／右侧、选择触摸兼容模式、配置 ClassIsland 程序位置，并展开课程、课表和连接详情。入口位置会在重启后保留。ClassIsland 未运行不影响触摸辅助；目标大屏现场试用暂缓。
+
+首次使用：点击“选择文件…”选择 `ClassIsland.exe` 或 `ClassIsland.Desktop.exe`，点击“保存路径”，再点击“启动 ClassIsland”。已有对应实例时只验证接口，不重复启动；只有读到课程状态后才记录“已就绪”。首次运行的许可、隐私同意等向导需要用户在 ClassIsland 中完成；接口未就绪时会记录超时，稍后可以再次点击启动以验证已有进程。
+
+路径和最近启动结果会在窗口、Host 重启后保留。默认保存位置为 `%LocalAppData%/NPEduTools/config/classisland.json`，使用版本化 JSON、原子替换及备份。损坏记录不会被静默重置或自动重放，详情见 [启动与持久化记录](../M1-LAUNCH-VALIDATION.md)。
+
+也可以直接打开 `src/NPEduTools.App/bin/Release/net10.0-windows/NPEduTools.App.exe`，请保留旁边的 `Host` 和 `Recorder` 子目录。桌面窗口需要 .NET 10 Desktop Runtime。当前交付为构建目录，尚未制作安装包或验证 `dotnet publish` 分发。
+
+实现细节、验收证据与剩余范围见 [M1 只读桌面验收记录](../M1-READONLY-VALIDATION.md)和 [M1 启动验收记录](../M1-LAUNCH-VALIDATION.md)。
+
+## 开发环境
+
+- Windows x64；本次验证环境为 Windows build 26200。
+- .NET SDK `10.0.400`，由 `global.json` 固定；后台目标为 `net10.0`，WPF 为 `net10.0-windows`。
+- PowerShell，初次还原依赖时需要连接 NuGet。
+
+当前开发机已安装系统 SDK 8.0.424、9.0.317 和 10.0.400。NPEduTools 使用 10.0.400，旁边的 ClassIsland 源码使用 9.0.317。可以直接使用 `dotnet`，或通过包装脚本完成验证：
+
+```powershell
+./scripts/bootstrap-recorder.ps1 # 首次准备微课录制组件，校验固定版本及哈希
+./scripts/verify.ps1
+```
+
+`scripts/dotnet.ps1` 优先使用能满足本项目 `global.json` 的系统 SDK，必要时回退到已有的项目内 SDK；测试子进程沿用同一个 dotnet 主机。CLI 数据和 NuGet 缓存仍位于 `.tools`。`.tools`、`.artifacts` 和构建输出均不提交到 Git。
+
+没有匹配 SDK 的机器可选用 `./scripts/bootstrap-sdk.ps1` 下载独立 SDK；脚本会校验官方 SHA-512。当前开发机无需执行此安装步骤。
+
+ClassIsland 本地开发环境与文档索引见 [本地联调环境](../LOCAL-DEVELOPMENT.md)。
+
+## 查询真实 ClassIsland
+
+先完成构建，在普通用户会话中启动 ClassIsland。当前适配目标为 `ClassIsland.Shared.IPC 2.1.0.1`，默认管道为 `ClassIsland.IPC.v2.Server`。本地 2.1.0.1 Debug 本体的真实状态、事件和重启联调已通过；正式发行包及教室环境尚待验收。
+
+终端一启动 Host：
+
+```powershell
+./scripts/dotnet.ps1 run --project src/NPEduTools.Host --configuration Release --no-build --no-restore
+```
+
+终端二查询：
+
+```powershell
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' ping
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' status
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' status --timeout-ms 5000 --observe-ms 1000
+```
+
+通过 PowerShell 包装脚本调用 `dotnet run` 时，请保留示例中 `'--'` 的引号，否则 PowerShell 会移除该参数分隔符。
+
+Host 默认管道按用户 SID 和会话区分，仅接受同一用户、同一会话的客户端。启动失败或权限不一致会明确报错，不自动提权。
+
+`--timeout-ms` 范围为 250–15000，包含探测进程启动、连接、观察及读取时间。`--observe-ms` 范围为 0–5000，必须小于超时时间。课程事件仅统计本次连接观察到的事件，零次事件不代表连接前没有发生事件。
+
+Host 用 Ctrl+C 停止；CLI 可以独立退出并重新查询。CLI 退出不会关闭 Host；已受理的查询继续执行至完成或期限结束。查询超时最多额外需要 2 秒清理探测进程。Host 意外退出时，孤立探测进程最多存活约 20 秒。
+
+### 持续监听
+
+```powershell
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' watch
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' stop
+```
+
+`watch` 持续输出每行一条 JSON，Ctrl+C 结束客户端监听。Host 共享一条常驻上游连接，事件触发状态读取，并定期补充同步；界面和 CLI 最多同时占用两个订阅槽位。目标断线后使用有上限的退避重连，失败快照的 `status` 为 `null`。
+
+每帧都是完整快照：`streamId` 区分 Host 监听实例，`sequence` 标识状态更新，`connectionId` 区分上游连接；事件计数仅对同一个 `connectionId` 累加有效。心跳可以重复序号，跳号无需补增量。断线期间的历史事件无法补发，重连以完整课程状态为准。CLI 的 Host 连接断开时会退出，桌面窗口会自动重连。
+
+`stop` 仅停止 NPEduTools Host 及其工作进程，不关闭 ClassIsland。窗口的停止按钮还会等待后台结束；CLI 响应表示请求已受理。已连接窗口收到主动停止通知后不会自动重启 Host，重新打开窗口可以再次启动。
+
+### 输出与错误
+
+CLI 在标准输出返回 JSON，在标准错误输出连接问题。失败结果的 `status` 为 `null`，不会用空科目或默认枚举伪装成成功。
+
+| 退出码 | 含义 |
+| --- | --- |
+| 0 | 查询成功 |
+| 2 | 参数错误 |
+| 3 | Host 不可达、协议/响应错误 |
+| 4 | Host 已响应，但查询失败、不可用、超时或资源忙 |
+| 130 | 用户通过 Ctrl+C 取消客户端等待 |
+
+ClassIsland 未运行时可能返回 `ClassIslandDeadlineExceeded`，它仅说明没有在期限内完成查询，不能据此判断软件未安装。权限拒绝、已连接接口超时和连接断开分别使用不同错误码。
+
+Host 诊断日志写入标准错误，仅记录请求标识、结果、耗时及脱敏错误类别，不记录科目正文。启动操作另外保存执行记录与 RequestId 去重信息；课程查询不保存历史。单次查询不自动重试，常驻只读监听自动重连。文件日志轮转和诊断导出仍未实现。
+
+## 无 ClassIsland 时的演示
+
+测试服务端使用官方 IPC 契约，通过私有测试管道返回模拟课程，不占用真实 ClassIsland 管道。
+
+终端一：
+
+```powershell
+./scripts/dotnet.ps1 run --project tests/NPEduTools.ClassIsland.TestPeer --configuration Release --no-build --no-restore '--' NPEduTools.Test.demo healthy
+```
+
+终端二：
+
+```powershell
+./scripts/dotnet.ps1 run --project src/NPEduTools.Host --configuration Release --no-build --no-restore '--' --pipe NPEduTools.Test.host --classisland-pipe NPEduTools.Test.demo
+```
+
+终端三：
+
+```powershell
+./scripts/dotnet.ps1 run --project src/NPEduTools.Cli --configuration Release --no-build --no-restore '--' status --pipe NPEduTools.Test.host --timeout-ms 5000 --observe-ms 1000
+```
+
+模拟服务端约 60 秒后自动退出，也可用 Ctrl+C 提前结束。其他测试模式为 `empty`、`hang`、`drop` 和 `error`，分别模拟无课表、接口阻塞、查询中退出和服务异常。
+
+## 验证记录
+
+[M0 兼容性与验证记录](../M0-VALIDATION.md) 记录固定依赖、源码发现、自动化测试结果及尚未完成的实机验证。
+
+[真实 ClassIsland 联调记录](../CLASSISLAND-LIVE-VALIDATION.md) 提供本体测试证据。已构建 ClassIsland Debug 本体时，可以运行：
+
+```powershell
+./scripts/test-classisland-live.ps1
+./scripts/test-classisland-live.ps1 -Watch
+./scripts/test-app-smoke.ps1
+```
+
+脚本会复制构建产物、生成临时课表并启动真实本体，观察自然事件，再关闭并重启本次创建的实例。已有 ClassIsland 正在运行时会拒绝启动；整个过程约一分钟，结果保存在 `.artifacts/classisland-live/`。
+
+`-Watch` 通过同一订阅观察课程变化及本体重启；窗口验收脚本使用私有模拟服务端，通过实际 WPF 控件验证自动启动、窗口重开和恢复，保存结果与截图到 `.artifacts/app-smoke/`。这些 IPC 测试需要普通用户权限下的本机命名管道访问，受限开发沙箱可能拒绝第三方管道连接。
+
+根目录 [LICENSE](../../LICENSE) 为 GPL v3。第三方依赖的许可与固定版本见 [依赖说明](../DEPENDENCIES.md)。

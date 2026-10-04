@@ -2,10 +2,18 @@ param(
     [string]$OutputRoot = '.artifacts/releases',
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*$')][string]$ReleaseVersion,
     [string]$RecordingToolsDirectory = '.tools/recording-bundled',
-    [string]$ReleaseNotesPath
+    [string]$ReleaseNotesPath,
+    [switch]$Installer,
+    [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')][string]$InstallerVersion,
+    [string]$IsccPath
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+if ($Installer) {
+    if (-not $InstallerVersion) { throw 'Specify -InstallerVersion (four numeric components) when building an installer.' }
+    foreach ($part in $InstallerVersion.Split('.')) { if ([long]$part -gt 65535) { throw 'Each installer version component must be 0..65535.' } }
+    $IsccPath = & (Join-Path $PSScriptRoot 'resolve-inno-setup.ps1') -IsccPath $IsccPath
+}
 if (-not $ReleaseVersion) { throw 'Specify -ReleaseVersion for the next version; no published version is selected by default.' }
 $publishedVersions = Get-Content (Join-Path $PSScriptRoot 'published-desktop-versions.json') -Raw | ConvertFrom-Json
 if ($ReleaseVersion -in $publishedVersions) { throw "Published version is frozen: $ReleaseVersion. Use a new version; published packages remain unchanged." }
@@ -74,6 +82,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PORTABLE-CLASSROOM-GUIDE.md') -Destination (Join-Path $package 'README.md')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/CLASSROOM-ACCEPTANCE.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/DEPENDENCIES.md') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/INSTALLER.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot $ReleaseNotesPath) -Destination (Join-Path $package 'RELEASE-NOTES.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-portable-package.ps1') -Destination $package
     @'
@@ -87,6 +96,10 @@ start "" "%~dp0app\NPEduTools.App.exe"
         if ((Get-FileHash (Join-Path $projectRoot ('third-party/' + $item.file))).Hash -ne $item.sha256) { throw "License hash mismatch: $($item.file)" }
     }
     Copy-Item -Path (Join-Path $projectRoot 'third-party/*') -Destination $notices -Recurse -Force
+    $installerNotices = Join-Path $notices 'inno-setup'
+    New-Item -ItemType Directory -Path $installerNotices -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'installer/Languages/INNO-LICENSE.txt') -Destination (Join-Path $installerNotices 'LICENSE.txt')
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'installer/Languages/README.md') -Destination $installerNotices
     $mediaNotices = Join-Path $notices 'ffmpeg'
     New-Item -ItemType Directory -Path $mediaNotices -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $recordingRuntime $recordingManifest.sourceBundle.name) -Destination $mediaNotices
@@ -129,7 +142,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
     $sourceZip = Join-Path $package 'NPEduTools-source.zip'
     $archive = [IO.Compression.ZipFile]::Open($sourceZip,[IO.Compression.ZipArchiveMode]::Create)
     try {
-        $files = @(git -c core.quotepath=false ls-files --cached --others --exclude-standard -- src plugins scripts tests tools images third-party '*.sln' '*.props' global.json NuGet.Config LICENSE .gitignore .gitattributes .editorconfig README.md 'docs/*.md') | Sort-Object -Unique
+        $files = @(git -c core.quotepath=false ls-files --cached --others --exclude-standard -- src plugins scripts tests tools images third-party installer '*.sln' '*.props' global.json NuGet.Config LICENSE .gitignore .gitattributes .editorconfig README.md 'docs/*.md') | Sort-Object -Unique
         foreach ($file in $files) {
             if ((Test-Path -LiteralPath $file -PathType Leaf) -and $file -notmatch '(^|/)(bin|obj|cipx)/') {
                 $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,(Join-Path $projectRoot $file),$file,[IO.Compression.CompressionLevel]::Optimal)
@@ -137,7 +150,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
         }
     } finally { $archive.Dispose() }
     Copy-Item -LiteralPath $locks -Destination (Join-Path $package 'build-locks') -Recurse
-    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel= $(if ($ReleaseVersion.StartsWith('Pre-')) { 'pre' } else { 'indev' });rid='win-x64';selfContained=$true;recordingToolsBundled=$true;createdAt=[DateTimeOffset]::Now;
+    $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel= $(if ($ReleaseVersion -match '^v\d+\.\d+\.\d+$') { 'stable' } elseif ($ReleaseVersion.StartsWith('Pre-')) { 'pre' } else { 'indev' });rid='win-x64';selfContained=$true;recordingToolsBundled=$true;createdAt=[DateTimeOffset]::Now;
         sourceCommit=(git rev-parse HEAD);workingTreeDirty=([bool](git status --porcelain));sourceArchiveSha256=(Get-FileHash $sourceZip).Hash;
         sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';examAwareValidated='1.5.2 local build';examAwareBridgeVersion=$examManifest.version;files=@()}
     $manifest.files = @(Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName | ForEach-Object {
@@ -150,6 +163,16 @@ start "" "%~dp0app\NPEduTools.App.exe"
     [IO.Compression.ZipFile]::CreateFromDirectory($package,$zip,[IO.Compression.CompressionLevel]::Optimal,$true)
     $sha = (Get-FileHash -LiteralPath $zip).Hash
     "$sha  $([IO.Path]::GetFileName($zip))" | Set-Content -LiteralPath ($zip + '.sha256') -Encoding ascii
-    @{packageRoot=$package;zip=$zip;sha256=$sha} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'result.json') -Encoding utf8
+    $result = @{packageRoot=$package;zip=$zip;sha256=$sha;installerRequested=[bool]$Installer;installer=$null;status='ZIP_READY'}
+    $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'result.json') -Encoding utf8
+    if ($Installer) {
+        $installerOutput = @(& (Join-Path $PSScriptRoot 'package-installer.ps1') -PackageRoot $package -InstallerVersion $InstallerVersion -IsccPath $IsccPath -OutputRoot $output)
+        $installerLine = @($installerOutput | Where-Object { $_ -is [string] -and $_.StartsWith('INSTALLER_RESULT: ') })
+        if ($installerLine.Count -ne 1) { throw 'Installer result was not returned.' }
+        $result.installer = $installerLine[0].Substring('INSTALLER_RESULT: '.Length)
+        $result.installerSha256 = (Get-FileHash -LiteralPath $result.installer).Hash
+    }
+    $result.status = 'PACKAGED'
+    $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'result.json') -Encoding utf8
     Write-Output "PACKAGE_RESULT: $(Join-Path $work 'result.json')"
 } finally { Pop-Location }

@@ -136,11 +136,11 @@ try {
     $null = Wait-Control 'OobeReview' '录制准备：已跳过'
     Save-Window 'review.png'
     Click 'OobeNext'
-    $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · 计划与预演'
+    $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · NPEduTools'
     $saved = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     if (-not $saved.Completed -or 'recording' -notin $saved.Skipped) { throw 'Completion or explicit skip not saved.' }
     $checks.Add('Back/skip/review/completion opens plans without enabling recording')
-    Click 'AutoHide' '自动录课 · 计划与预演'; Stop-App
+    Click 'AutoHide' '自动录课 · NPEduTools'; Stop-App
 
     $app = Start-App
     $null = Wait-Control 'SettingsTab' '' 'NPEduTools'
@@ -184,8 +184,8 @@ try {
     Click 'OobeSkip'; Click 'OobeSkip'
     $null = Wait-Control 'OobeReview' '连接学校时间：已跳过'
     Save-Window 'unavailable-skipped.png'
-    Click 'OobeNext'; $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · 计划与预演'
-    Click 'AutoHide' '自动录课 · 计划与预演'; Stop-App
+    Click 'OobeNext'; $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · NPEduTools'
+    Click 'AutoHide' '自动录课 · NPEduTools'; Stop-App
     $checks.Add('Unavailable school time blocks confirmation but explicit skips can finish without enabling capture')
 
     Set-Content -LiteralPath $statePath -Value '{"Version":999}' -Encoding utf8

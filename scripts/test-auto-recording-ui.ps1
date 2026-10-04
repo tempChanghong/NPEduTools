@@ -21,7 +21,7 @@ $pipe = 'NPEduTools.Test.auto-ui.' + [Guid]::NewGuid().ToString('N')
 & (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $upstream = $pipe + '.peer'
 $owned = [Collections.Generic.List[Diagnostics.Process]]::new()
-$windowTitle = '自动录课 · 计划与预演'
+$windowTitle = '自动录课 · NPEduTools'
 $statePath = Join-Path $env:LOCALAPPDATA ('NPEduTools/ui/' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($pipe))).Substring(0,24) + '.recording-preview.json')
 function Start-App {
     $start = [Diagnostics.ProcessStartInfo]::new($appExe); $start.UseShellExecute = $false
@@ -37,6 +37,21 @@ function Window([string]$title) {
 function Control([string]$id, [string]$title = $windowTitle) {
     $root = Window $title
     if (-not $root) { return $null }
+    if ($title -eq $windowTitle) {
+        $tabId = if ($id -in @('AutoTogglePreview','AutoSkipDay','AutoSkipLesson','AutoPreviewStatus','AutoEvents','AutoTrialPlans')) { 'AutoTrialTab' }
+            elseif ($id -in @('AutoRealEvents')) { 'AutoRecordsTab' }
+            elseif ($id -match '^Auto(Rule|Lesson|Apply|Plans|PlanDate|Today|Tomorrow|AfterTomorrow|Dated|NewRule|DeleteRule|AllSubjects|Subjects|Include|Exclude|Inherit|SaveDated|UseExclusions|Lead|Tail|OnlyExplicit)') { 'AutoPlanTab' }
+        if ($tabId) {
+            $tab = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+                [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty,$tabId))
+            if ($tab) { $tab.GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select() }
+        }
+        if ($id -match '^Auto(Dated|SaveDated)') {
+            $editor = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+                [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty,'AutoDatedEditor'))
+            if ($editor) { $editor.GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand() }
+        }
+    }
     return $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
         [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty,$id))
 }
@@ -91,7 +106,7 @@ try {
     $null = Wait-Control 'AutoPreviewStatus' '模拟录制中：预演数学'
     $null = Wait-Control 'AutoClockStatus' '2031-04-07.*使用 ClassIsland 学校时间'
     Click 'AutoSkipDay'
-    $null = Wait-Control 'AutoPreviewStatus' '今天已暂停预演'
+    $null = Wait-Control 'AutoPreviewStatus' '今天已暂停试运行'
     $schoolState = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     if ($schoolState.SkipDate -ne '2031-04-07') { throw 'Skip-today used the Windows date.' }
     Click 'AutoSkipDay'

@@ -38,7 +38,7 @@ public partial class AutoRecordingWindow
             }
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
-        { _writable = false; ErrorText.Text = "录课计划无法读取，原文件已保留；修改及预演已停用。"; }
+        { _writable = false; ErrorText.Text = "录课计划无法读取，原文件已保留；修改及试运行已停用。"; }
         if (_writable && _bookStore.Migrated) ErrorText.Text = "旧规则已备份并作为停用草稿迁入。新规则默认排除 17 项科目，旧草稿保留原筛选，请核对后启用。";
         ExcludedNames.Text = string.Join(Environment.NewLine, _book.ExcludedNames);
         PauseThrough.SelectedDate = _book.PauseThrough?.ToDateTime(TimeOnly.MinValue);

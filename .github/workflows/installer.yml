@@ -1,0 +1,43 @@
+name: Windows installer checks
+
+on:
+  pull_request:
+    paths: ['installer/**', 'scripts/*installer*.ps1', 'scripts/*inno-setup.ps1', 'scripts/*desktop-delivery.ps1', 'scripts/package-npedutools.ps1', 'scripts/verify-portable-package.ps1', '.github/workflows/installer.yml']
+  push:
+    branches: [main, 'codex/**']
+    paths: ['installer/**', 'scripts/*installer*.ps1', 'scripts/*inno-setup.ps1', 'scripts/*desktop-delivery.ps1', 'scripts/package-npedutools.ps1', 'scripts/verify-portable-package.ps1', '.github/workflows/installer.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the pinned compiler tool
+        run: ./scripts/bootstrap-inno-setup.ps1
+      - name: Verify package inputs and compile the production installer script
+        run: ./scripts/test-installer-package.ps1 -IsccPath .tools/inno-setup7/ISCC.exe
+      - name: Exercise isolated installation, upgrade, downgrade and uninstall
+        shell: powershell
+        run: ./scripts/test-installer.ps1 -IsccPath .tools/inno-setup7/ISCC.exe
+      - name: Preserve diagnostic records only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-check-results
+          path: |
+            .artifacts/installer-tests/**/result.json
+            .artifacts/installer-tests/**/*.log
+            .artifacts/installer-package-tests/**/result.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
