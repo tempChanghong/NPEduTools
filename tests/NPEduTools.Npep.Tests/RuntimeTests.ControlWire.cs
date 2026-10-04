@@ -44,8 +44,9 @@ public sealed partial class RuntimeTests
     private sealed class ControlWire(FakeServer server)
     {
         public JsonObject? Policy, Operation, Received;
-        public bool LoseStartReply;
-        public int StatusReports;
+        public bool LoseStartReply, LoseEventReply;
+        public int StatusReports, EventRequests;
+        public JsonObject? FirstReceived;
         public NpepApi Api(string origin) => new(origin, new Handler(Send));
         private async Task<HttpResponseMessage> Send(HttpRequestMessage request)
         {
@@ -92,6 +93,8 @@ public sealed partial class RuntimeTests
                 NpepRuntimeProtocol.Validate("eventsRequest", body!); Received = ((JsonObject)body!["events"]![0]!).Copy();
                 Operation!["state"] = Received["state"]!.DeepClone(); Operation["lastEventSequence"] = Received["sequence"]!.DeepClone();
                 if (Received.Text("state") == "SUCCEEDED") Operation["resolvedAt"] = NpepRuntimeProtocol.UtcNow();
+                FirstReceived ??= Received.Copy(); EventRequests++;
+                if (LoseEventReply) { LoseEventReply = false; throw new HttpRequestException("lost committed event reply"); }
                 data = new() { ["results"] = new JsonArray(new JsonObject { ["eventId"] = Received["eventId"]!.DeepClone(), ["status"] = "ACCEPTED", ["code"] = null, ["acceptedSequence"] = Received["sequence"]!.DeepClone() }) };
             }
             else throw new InvalidOperationException(path);
@@ -120,5 +123,31 @@ public sealed partial class RuntimeTests
         await using var restarted = new NpepRuntime(() => new(dir.Path, wire.Api), "test", Sample, restartedEffects);
         await Until(() => wire.StatusReports > reports);
         Assert.Equal(0, restartedEffects.Executions); Assert.Equal(0, restartedEffects.Recoveries);
+    }
+
+    [Fact]
+    public async Task N3LostCommittedReceiptIsRetriedUnchangedAfterRestartWithoutExecutingAgain()
+    {
+        using var dir = new TestDirectory(); var server = new FakeServer();
+        var wire = new ControlWire(server) { LoseEventReply = true };
+        var effects = new ControlEffects();
+        await using (var runtime = new NpepRuntime(() => new(dir.Path, wire.Api), "test", Sample, effects))
+        {
+            await Command(runtime, "inspect"); await Command(runtime, "pair", server);
+            await Command(runtime, "poll"); await Command(runtime, "confirm", server);
+            await Until(() => wire.EventRequests == 1);
+            Assert.Equal(1, effects.Executions);
+            Assert.Equal("SUCCEEDED", wire.FirstReceived!.Text("state"));
+            Assert.NotNull(wire.Operation!["resolvedAt"]);
+        }
+        // The server no longer polls the resolved operation, while the durable client outbox
+        // still owns its unacknowledged receipt. A new Host must upload exactly that receipt.
+        server.SessionRequest = null;
+        var restartedEffects = new ControlEffects();
+        await using var restarted = new NpepRuntime(() => new(dir.Path, wire.Api), "test", Sample, restartedEffects);
+        await Until(() => wire.EventRequests == 2);
+        Assert.True(JsonNode.DeepEquals(wire.FirstReceived, wire.Received));
+        Assert.Equal(0, restartedEffects.Executions);
+        Assert.Equal(0, restartedEffects.Recoveries);
     }
 }

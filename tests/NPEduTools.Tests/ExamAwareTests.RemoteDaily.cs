@@ -89,5 +89,16 @@ public sealed partial class ExamAwareTests
         Assert.False(restarted.State.AutomaticPaused);
         Assert.Equal("Daily", new ClassroomModeStore(_directory).State.Mode);
         Assert.Equal(result, await f.Executor.RunAsync(result.Intent, f.Authorization));
+        // A delayed duplicate of the preceding Exam must remain historical after Daily,
+        // including when a new Host reconstructs its pause ledger.
+        var restartedExecutor = new RemoteExamExecutor(restarted, new(),
+            new RemoteExamActions(f.Launch, f.Exam, f.Recording, f.Classroom, f.Platform));
+        var writes = f.ModeEffects.Writes.Count;
+        Assert.Equal(examEntry, await restartedExecutor.RunAsync(examEntry.Intent, f.Authorization));
+        Assert.False(restarted.State.AutomaticPaused);
+        Assert.Equal("Daily", f.Classroom.Snapshot.Mode);
+        Assert.Equal(writes, f.ModeEffects.Writes.Count);
+        Assert.Equal(1, f.ModeEffects.DailyStarts);
+        Assert.Equal(0, f.Target.Starts);
     }
 }

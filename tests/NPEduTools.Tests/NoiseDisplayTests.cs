@@ -146,6 +146,19 @@ public sealed class NoiseDisplayTests
         f.Service.ConfirmDisplay(old, reply, 0); Assert.True(f.Service.Snapshot().Fallback);
     }
     [Fact]
+    public void Delayed_presence_and_return_response_consumes_network_time_instead_of_renewing_deadlines()
+    {
+        using var f = new Fixture(); f.Confirm(); f.Clock.Advance(21);
+        var body = f.Service.ObserveDisplay()!;
+        var reply = new JsonObject { ["supported"] = true, ["serverNow"] = "2026-10-04T11:00:21.000Z", ["returnMinutes"] = 1,
+            ["presence"] = new JsonObject { ["state"] = "DISPLAY_VISIBLE", ["ageMs"] = 10000 },
+            ["activeReturn"] = new JsonObject { ["requestId"] = Guid.NewGuid().ToString("D"), ["window"] = body["window"]!.DeepClone(),
+                ["startedAt"] = "2026-10-04T10:59:25.000Z", ["expiresAt"] = "2026-10-04T11:00:25.000Z", ["returnMinutes"] = 1, ["remainingSeconds"] = 4 } };
+        f.Clock.Advance(11); f.Service.ConfirmDisplay(body, reply, 11);
+        Assert.Equal(0, f.Service.Snapshot().ReturnRemainingSeconds);
+        Assert.Equal("FALLBACK", f.Service.Snapshot().Phase);
+    }
+    [Fact]
     public void Null_journal_written_during_scope_changes_is_readable_on_restart()
     {
         using var f = new Fixture(); f.Confirm(); f.Service.Handle(f.Return()); f.Service.Bind(null);
