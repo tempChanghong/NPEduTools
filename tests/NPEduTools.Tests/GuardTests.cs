@@ -46,6 +46,26 @@ public sealed class GuardTests : IDisposable
         Assert.Empty(_processes.Launches);
     }
     [Fact]
+    public void Disarmed_lease_cancels_pending_recovery_and_late_armed_heartbeat_cannot_revive_it()
+    {
+        Lease(true, 10); _supervisor.Tick(0, true); _processes.Alive.Remove(_registration.App);
+        _supervisor.Tick(1, true); // Recovery is due at second 3.
+        Lease(false, 11); _supervisor.Tick(2, true);
+        Lease(true, 10); _supervisor.Tick(3, true); _supervisor.Tick(20, true);
+        Assert.Empty(_processes.Launches); Assert.Equal("Watching", Status.Phase);
+    }
+    [Fact]
+    public void Late_lease_from_dead_previous_host_cannot_rearm_the_replacement()
+    {
+        Lease(true); _supervisor.Tick(0, true); _processes.Alive.Remove(new(20, 200));
+        _supervisor.Tick(1, true); _supervisor.Tick(3, true);
+        var replacement = _processes.Last;
+        Lease(false, host: replacement); _supervisor.Tick(4, true);
+        Lease(true, 999, new(20, 200)); _supervisor.Tick(5, true);
+        _processes.Alive.Remove(replacement); _supervisor.Tick(6, true); _supervisor.Tick(20, true);
+        Assert.Single(_processes.Launches); Assert.Equal("Watching", Status.Phase);
+    }
+    [Fact]
     public void Suspend_discards_permission_and_requires_new_host_lease()
     {
         Lease(true); _supervisor.Tick(0, true); _supervisor.Suspend();

@@ -75,4 +75,80 @@ public sealed class NoiseTransportTests
         Assert.Equal("NOISE_STORE_UNAVAILABLE", transport.Observe()["uploadError"]!.GetValue<string>());
         transport.Execute(Command(restarted), () => {}); Assert.Equal(0, capture.Starts);
     }
+
+    [Fact]
+    public async Task Crash_checkpoint_becomes_one_interrupted_report_and_never_restarts_capture()
+    {
+        string original = DirectoryName(), crashed = DirectoryName();
+        Directory.CreateDirectory(crashed);
+        try
+        {
+            Guid? session;
+            await using (var service = new NoiseService(_ => new Capture(), () => []))
+            {
+                Select(service); var transport = new NoiseTransport(service, original); transport.Bind("class-A");
+                transport.Execute(Command(service), () => {});
+                await Until(() => service.Snapshot().State == "Active"); session = service.Snapshot().SessionId;
+                transport.Observe();
+                File.Copy(Path.Combine(original, "noise-outbox.json"), Path.Combine(crashed, "noise-outbox.json"));
+            }
+            int captures = 0;
+            await using var restarted = new NoiseService(_ => { captures++; return new Capture(); }, () => []);
+            var recovered = new NoiseTransport(restarted, crashed); recovered.Bind("class-A");
+            var report = Assert.IsType<JsonObject>(Assert.Single(recovered.Reports()));
+            Assert.Equal(session!.Value.ToString("D"), report["sessionId"]!.GetValue<string>());
+            Assert.Equal("Interrupted", report["outcome"]!.GetValue<string>());
+            Assert.Equal(1, report["summary"]!["frames"]!.GetValue<long>());
+            var loadedAgain = new NoiseTransport(restarted, crashed);
+            Assert.True(JsonNode.DeepEquals(report, Assert.Single(loadedAgain.Reports())));
+            Assert.Equal(0, captures); Assert.Equal("Idle", restarted.Snapshot().State);
+        }
+        finally { if (Directory.Exists(original)) Directory.Delete(original, true); Directory.Delete(crashed, true); }
+    }
+
+    [Fact]
+    public async Task Lost_report_ack_survives_restart_and_duplicate_ack_does_not_remove_a_later_report()
+    {
+        string directory = DirectoryName();
+        try
+        {
+            JsonObject first;
+            await using (var service = new NoiseService(_ => new Capture(), () => []))
+            {
+                Select(service); var transport = new NoiseTransport(service, directory); transport.Bind("class-A");
+                transport.Execute(Command(service), () => {}); await Until(() => service.Snapshot().State == "Active");
+                transport.Execute(Command(service, "STOP"), () => {}); await Until(() => transport.Reports().Count == 1);
+                first = transport.Reports()[0]!.AsObject(); // Server acceptance with a lost response leaves the durable outbox unchanged.
+            }
+            await using var restarted = new NoiseService(_ => new Capture(), () => []);
+            Select(restarted); var recovered = new NoiseTransport(restarted, directory); recovered.Bind("class-A");
+            Assert.True(JsonNode.DeepEquals(first, Assert.Single(recovered.Reports())));
+            recovered.Execute(Command(restarted), () => {}); await Until(() => restarted.Snapshot().State == "Active");
+            recovered.Execute(Command(restarted, "STOP"), () => {}); await Until(() => recovered.Reports().Count == 2);
+            var acknowledgement = new JsonObject { ["acceptedReports"] = new JsonArray(first["sessionId"]!.DeepClone()), ["acceptedReceipts"] = new JsonArray() };
+            recovered.Acknowledge(acknowledgement); recovered.Acknowledge(acknowledgement);
+            Assert.NotEqual(first["sessionId"]!.GetValue<string>(), Assert.Single(recovered.Reports())!["sessionId"]!.GetValue<string>());
+            Assert.Single(new NoiseTransport(restarted, directory).Reports());
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task Crash_after_command_intent_persistence_keeps_unknown_receipt_without_replaying_start()
+    {
+        string directory = DirectoryName();
+        try
+        {
+            await using var service = new NoiseService(_ => throw new InvalidOperationException("Capture must not start"), () => []);
+            Select(service); var transport = new NoiseTransport(service, directory); transport.Bind("class-A");
+            var command = Command(service); int checks = 0;
+            Assert.Throws<NpepException>(() => transport.Execute(command, () => { if (++checks == 2) throw new NpepException("CONTROL_OFFLINE"); }));
+            await using var restarted = new NoiseService(_ => throw new InvalidOperationException("Capture must not restart"), () => []);
+            var recovered = new NoiseTransport(restarted, directory); recovered.Bind("class-A");
+            recovered.Execute(command, () => throw new InvalidOperationException("Consumed intent must not execute"));
+            Assert.Equal("UNKNOWN", Assert.Single(recovered.Receipts())!["outcome"]!.GetValue<string>());
+            Assert.Equal("Idle", restarted.Snapshot().State);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
 }

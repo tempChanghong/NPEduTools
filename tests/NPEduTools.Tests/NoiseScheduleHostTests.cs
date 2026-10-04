@@ -225,6 +225,31 @@ public sealed class NoiseScheduleHostTests
         Assert.Equal("ACCEPTED",f.Scheduler.Observe()["receipt"]!["outcome"]!.GetValue<string>());
     }
     [Fact]
+    public async Task Delayed_resume_after_original_window_end_cannot_clear_skip_or_restart_capture()
+    {
+        await using var f = new Fixture(); await f.Start(); f.Noise.Handle(f.Command("stop"));
+        await Until(() => f.Noise.Snapshot().State == "Stopped"); f.Tick();
+        var reply = f.Policy(); reply["command"] = new JsonObject { ["commandId"] = Guid.NewGuid().ToString("D"),
+            ["version"] = new string('a', 64), ["window"] = f.Scheduler.Observe()["window"]!.DeepClone() };
+        f.Time.Ms = 3600000; f.Tick(); f.Tick(); f.Tick();
+        f.Scheduler.Confirm(reply); f.Tick();
+        Assert.Equal("REJECTED", f.Scheduler.Observe()["receipt"]!["outcome"]!.GetValue<string>());
+        Assert.Equal("OUTSIDE_WINDOW", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        Assert.Single(f.Captures); Assert.Equal("Stopped", f.Noise.Snapshot().State);
+    }
+
+    [Fact]
+    public async Task Revocation_rejects_late_policy_and_resume_reply_without_starting_capture()
+    {
+        await using var f = new Fixture(); await f.Start();
+        var reply = f.Policy(); reply["command"] = new JsonObject { ["commandId"] = Guid.NewGuid().ToString("D"),
+            ["version"] = new string('a', 64), ["window"] = f.Scheduler.Observe()["window"]!.DeepClone() };
+        f.Scheduler.Bind(null, false); await Until(() => f.Noise.Snapshot().State == "Stopped");
+        f.Scheduler.Confirm(reply); f.Tick(); f.Tick(); f.Tick();
+        Assert.Equal("NOT_ELIGIBLE", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        Assert.Null(f.Scheduler.Observe()["version"]); Assert.Single(f.Captures);
+    }
+    [Fact]
     public async Task Exam_stop_does_not_skip_and_return_resumes_current_window()
     {
         await using var f=new Fixture(); await f.Start(); f.Exam=true; f.Tick();
