@@ -5,6 +5,7 @@ $runId = [Guid]::NewGuid().ToString('N')
 $runRoot = Join-Path $projectRoot ".artifacts/shortcuts-ui/$runId"
 New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
 $pipe = "NPEduTools.Test.shortcuts.$runId"
+& (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $appExe = Join-Path $projectRoot "src/NPEduTools.App/bin/$Configuration/net10.0-windows/NPEduTools.App.exe"
 $hostExe = Join-Path (Split-Path $appExe -Parent) 'Host/NPEduTools.Host.exe'
 $settingsFile = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('NPEduTools/ui/' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($pipe))).Substring(0,24) + '.shortcuts.json')

@@ -49,4 +49,9 @@ public partial class AboutPage : UserControl
         try { Clipboard.SetText(BuildInformation.Text); ActionMessage.Text = "已复制版本信息，可粘贴到问题反馈中。"; }
         catch (ExternalException) { ActionMessage.Text = "剪贴板暂时被占用，请稍后重试。"; }
     }
+    private void AgreementsClicked(object sender, RoutedEventArgs e)
+    {
+        if (Window.GetWindow(this) is not MainWindow owner) return;
+        new AgreementsWindow(owner.PipeName, false) { Owner = owner }.ShowDialog();
+    }
 }

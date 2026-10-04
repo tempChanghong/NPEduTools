@@ -8,7 +8,7 @@ using NPEduTools.Core;
 namespace NPEduTools.App;
 
 internal sealed record OnboardingActions(Action Preferences, Action ClassIsland, Action Recording, Action Shortcuts,
-    Action Classroom, Action ExamAware, Action School, Action Noise);
+    Action Classroom, Action ExamAware, Action School, Action Noise, Action SecRandom);
 
 public partial class OnboardingWindow : Window
 {
@@ -46,6 +46,7 @@ public partial class OnboardingWindow : Window
         UseClassroom.IsChecked = state.Features.HasFlag(OnboardingFeatures.Classroom);
         UseSchool.IsChecked = state.Features.HasFlag(OnboardingFeatures.School);
         UseNoise.IsChecked = state.Features.HasFlag(OnboardingFeatures.Noise);
+        UseSecRandom.IsChecked = state.Features.HasFlag(OnboardingFeatures.SecRandom);
         ConfirmClock.Checked += (_, _) =>
         {
             _confirmedDate = _clock.Read(_elapsed.Elapsed).Now is { } now ? DateOnly.FromDateTime(now.Date) : null;
@@ -56,7 +57,7 @@ public partial class OnboardingWindow : Window
         Activated += (_, _) =>
         {
             if (_state.Step == "preferences") RefreshPreferences();
-            if (_state.Step is "classroom" or "noise") _ = RefreshPreparationAsync();
+            if (_state.Step is "classroom" or "noise" or "secrandom") _ = RefreshPreparationAsync();
             if (_state.Step == "school") _ = _schoolConnection.RefreshAsync();
         };
         Closing += (_, e) =>
@@ -84,7 +85,8 @@ public partial class OnboardingWindow : Window
             (UseAutomatic.IsChecked == true ? OnboardingFeatures.Automatic : 0) |
             (UseClassroom.IsChecked == true ? OnboardingFeatures.Classroom : 0) |
             (UseSchool.IsChecked == true ? OnboardingFeatures.School : 0) |
-            (UseNoise.IsChecked == true ? OnboardingFeatures.Noise : 0);
+            (UseNoise.IsChecked == true ? OnboardingFeatures.Noise : 0) |
+            (UseSecRandom.IsChecked == true ? OnboardingFeatures.SecRandom : 0);
         return features == _state.Features ? _state : _state.Select(features);
     }
 
@@ -97,7 +99,7 @@ public partial class OnboardingWindow : Window
 
     private static string Label(string step) => step switch
     {
-        "welcome" => "选择用途", "preferences" => "使用偏好", "classisland" => "连接学校时间",
+        "welcome" => "选择用途", "preferences" => "使用偏好", "secrandom" => "配置课堂点名", "classisland" => "连接学校时间",
         "recording" => "录制准备", "classroom" => "准备考试环境", "school" => "连接学校（NPEP）",
         "noise" => "准备噪音监测", _ => "准备好开始了"
     };
@@ -127,6 +129,7 @@ public partial class OnboardingWindow : Window
             "preferences" => "已查看，使用现有设置",
             "school" => "本步已处理；配对与在线状态以学校互联页为准",
             "classroom" or "noise" => "已查看准备说明；配置以管理页实时状态为准",
+            "secrandom" => "已保存程序位置；接口和名单请在点名页检查",
             _ => "本次已检查（非持续状态）"
         };
     }
@@ -135,7 +138,7 @@ public partial class OnboardingWindow : Window
     {
         foreach (var (panel, step) in new[] { (WelcomePage, "welcome"), (PreferencesPage, "preferences"),
             (ClassIslandPage, "classisland"), (RecordingPage, "recording"), (ClassroomPage, "classroom"),
-            (SchoolPage, "school"), (NoisePage, "noise"), (ReviewPage, "review") })
+            (SchoolPage, "school"), (NoisePage, "noise"), (SecRandomPage, "secrandom"), (ReviewPage, "review") })
             panel.Visibility = _state.Step == step ? Visibility.Visible : Visibility.Collapsed;
         StepTitle.Text = Label(_state.Step);
         RefreshProgress(_state);
@@ -148,7 +151,7 @@ public partial class OnboardingWindow : Window
         };
         ShortcutHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Shortcuts) ? Visibility.Visible : Visibility.Collapsed;
         TouchHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Touch) ? Visibility.Visible : Visibility.Collapsed;
-        if (_state.Step is "classroom" or "noise") _ = RefreshPreparationAsync();
+        if (_state.Step is "classroom" or "noise" or "secrandom") _ = RefreshPreparationAsync();
         if (_state.Step == "school") _ = _schoolConnection.RefreshAsync();
         if (_state.Step == "preferences") RefreshPreferences();
         if (_state.Step == "classisland")
@@ -164,7 +167,7 @@ public partial class OnboardingWindow : Window
             ReviewText.Text = string.Join("\n", _state.Steps.Where(s => s is not ("welcome" or "review")).Select(s =>
                 $"{Label(s)}：{ReviewStatus(s)}"));
             FinishHint.Text = _state.Features.HasFlag(OnboardingFeatures.Automatic)
-                ? "下一步打开自动录课计划。请核对周期规则、单日计划和预演结果，再主动启用自动录制。完成引导本身不会开启录制。"
+                ? "下一步打开自动录课计划。安排每周或指定日期的录课，核对学校时间后再开启自动录课；试运行只作模拟。完成引导本身不会开启录制。"
                 : "完成后保留主窗口，可从课堂工作台打开常用工具，或展开侧边栏。尚未配置的功能可以稍后继续。";
         }
     }
@@ -185,6 +188,10 @@ public partial class OnboardingWindow : Window
     {
         if (_schoolAdvanceBusy || _lifetime.IsCancellationRequested) return;
         ErrorText.Text = "";
+        if (_state.Step == "secrandom")
+        {
+            if (!await CheckSecRandomPreparationAsync()) return;
+        }
         if (_state.Step == "preferences")
         {
             RefreshPreferences();

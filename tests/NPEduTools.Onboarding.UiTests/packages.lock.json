@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "npedutools.app": {
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.ClassIsland.Admin": "[1.0.0, )",
+          "NPEduTools.Contracts": "[1.0.0, )",
+          "NPEduTools.Core": "[1.0.0, )"
+        }
+      },
+      "npedutools.classisland.admin": {
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.Contracts": "[1.0.0, )",
+          "NPEduTools.Core": "[1.0.0, )"
+        }
+      },
+      "npedutools.contracts": {
+        "type": "Project"
+      },
+      "npedutools.core": {
+        "type": "Project",
+        "dependencies": {
+          "NPEduTools.Contracts": "[1.0.0, )"
+        }
+      }
+    }
+  }
+}

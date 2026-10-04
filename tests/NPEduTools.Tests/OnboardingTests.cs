@@ -15,6 +15,8 @@ public sealed class OnboardingTests : IDisposable
     [InlineData(OnboardingFeatures.Classroom, 4)]
     [InlineData(OnboardingFeatures.School | OnboardingFeatures.Noise, 5)]
     [InlineData((OnboardingFeatures)127, 8)]
+    [InlineData(OnboardingFeatures.SecRandom, 4)]
+    [InlineData((OnboardingFeatures)255, 9)]
     public void OnlyRelevantStepsAreShown(OnboardingFeatures features, int count)
     {
         var state = new OnboardingState(Features: features);
@@ -66,7 +68,8 @@ public sealed class OnboardingTests : IDisposable
     [Theory]
     [InlineData("{\"Version\":999}")]
     [InlineData("{\"Version\":1,\"Features\":32}")]
-    [InlineData("{\"Features\":128}")]
+    [InlineData("{\"Features\":256}")]
+    [InlineData("{\"Version\":2,\"Features\":128}")]
     [InlineData("{\"Step\":\"classisland\"}")]
     [InlineData("{\"Completed\":true}")]
     [InlineData("{\"Reviewed\":[\"preferences\"],\"Skipped\":[\"preferences\"]}")]
@@ -127,14 +130,14 @@ public sealed class OnboardingTests : IDisposable
         File.WriteAllText(PathFor, original);
         var store = new OnboardingStore(PathFor);
         var state = store.Read()!;
-        Assert.Equal(2, state.Version);
+        Assert.Equal(3, state.Version);
         Assert.Equal(step, state.Step);
         Assert.Equal(completed, state.Completed);
         Assert.True(state.Deferred);
         Assert.False(state.ShouldShow(false));
         Assert.Equal(original, File.ReadAllText(PathFor));
         store.Save(state);
-        Assert.Equal(2, System.Text.Json.JsonDocument.Parse(File.ReadAllText(PathFor)).RootElement.GetProperty("Version").GetInt32());
+        Assert.Equal(3, System.Text.Json.JsonDocument.Parse(File.ReadAllText(PathFor)).RootElement.GetProperty("Version").GetInt32());
     }
 
     [Fact]

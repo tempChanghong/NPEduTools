@@ -18,6 +18,7 @@ New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
 $appExe = Join-Path $projectRoot "src/NPEduTools.App/bin/$Configuration/net10.0-windows/NPEduTools.App.exe"
 $peerDll = Join-Path $projectRoot "tests/NPEduTools.ClassIsland.TestPeer/bin/$Configuration/net10.0/NPEduTools.ClassIsland.TestPeer.dll"
 $pipe = 'NPEduTools.Test.auto-ui.' + [Guid]::NewGuid().ToString('N')
+& (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $upstream = $pipe + '.peer'
 $owned = [Collections.Generic.List[Diagnostics.Process]]::new()
 $windowTitle = '自动录课 · 计划与预演'
