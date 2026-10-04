@@ -8,6 +8,61 @@ namespace NPEduTools.Tests;
 [SupportedOSPlatform("windows")]
 public sealed class NoisePipeTests
 {
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Normal_exit_requires_guard_marker_before_accepting_shutdown(bool stored)
+    {
+        string name = "NPEduTools.Test.Guard.Stop." + Guid.NewGuid().ToString("N");
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        int prepared = 0, stopped = 0;
+        var server = new PipeServer(name, new ForbiddenReader(), _ => { }, stop: () => { stopped++; lifetime.Cancel(); },
+            prepareStop: () => { prepared++; return stored; });
+        var running = server.RunAsync(lifetime.Token);
+        try
+        {
+            Assert.Equal("Succeeded", (await HostClient.RequestAsync(name, "host.ping", lifetime.Token)).Outcome);
+            Assert.Equal(0, prepared);
+            var result = await HostClient.RequestAsync(name, "host.stop", lifetime.Token);
+            Assert.Equal(stored ? "Succeeded" : "Rejected", result.Outcome);
+            if (!stored) { Assert.Equal("GUARD_STOP_STORE_UNAVAILABLE", result.ErrorCode); Assert.Equal(0, stopped); }
+            Assert.Equal(1, prepared);
+        }
+        finally { await lifetime.CancelAsync(); try { await running; } catch (OperationCanceledException) { } }
+    }
+    [Fact]
+    public async Task Direct_pipe_cannot_bypass_schedule_protection_and_authorized_stop_is_verified_by_host()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "noise-pipe-protection-" + Guid.NewGuid());
+        var store = new NoiseManagementStore(directory); Assert.Null(store.Configure(null, "local-teacher-2026", false));
+        await using var noise = new NoiseService(_ => new Capture(), () => [], management: store);
+        var initial = noise.Snapshot(); noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("select", initial.InstanceId, initial.Revision, "mic")));
+        noise.StartScheduled(Guid.NewGuid());
+        string name = "NPEduTools.Test.Noise.Protected." + Guid.NewGuid().ToString("N");
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(12)); int exits = 0, prepared = 0;
+        var server = new PipeServer(name, new ForbiddenReader(), _ => { }, stop: () => exits++, noise: noise, prepareStop: () => { prepared++; return true; });
+        var running = server.RunAsync(lifetime.Token);
+        try
+        {
+            var status = await HostClient.RequestAsync(name, "noise.management.status", lifetime.Token);
+            Assert.True(status.NoiseProtection!.Protected);
+            Assert.Equal("MANAGEMENT_REQUIRED", (await HostClient.RequestAsync(name, "host.stop", lifetime.Token)).ErrorCode); Assert.Equal(0, exits);
+            Assert.Equal(0, prepared); // Rejected maintenance must not disarm the guard.
+            var s = (await HostClient.RequestAsync(name, "noise.status", lifetime.Token)).Noise!;
+            var stop = new HostRequest(1, Guid.NewGuid(), "noise.command", Noise: new("stop", s.InstanceId, s.Revision));
+            Assert.Equal("MANAGEMENT_REQUIRED", (await HostClient.RequestAsync(name, stop, lifetime.Token)).ErrorCode);
+            var auth = new HostRequest(1, Guid.NewGuid(), "noise.management.command", NoiseManagement:
+                new("authorize", "local-teacher-2026", Purpose: "stop", TargetRequestId: stop.RequestId, InstanceId: s.InstanceId, SessionId: s.SessionId));
+            var grant = await HostClient.RequestAsync(name, auth, lifetime.Token);
+            Assert.Equal("Succeeded", grant.Outcome);
+            var stopped = await HostClient.RequestAsync(name, stop with { NoiseAuthorization = grant.NoiseProtection!.Ticket }, lifetime.Token);
+            Assert.Equal("Accepted", stopped.Outcome); Assert.Equal(0, exits);
+        }
+        finally
+        {
+            await lifetime.CancelAsync(); try { await running; } catch (OperationCanceledException) { }
+            Directory.Delete(directory, true);
+        }
+    }
     [Fact]
     public async Task Real_local_pipe_supports_read_start_stop_without_recording_or_lesson_probe()
     {

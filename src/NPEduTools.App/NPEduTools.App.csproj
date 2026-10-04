@@ -18,12 +18,23 @@
     <ProjectReference Include="../NPEduTools.ClassIsland.Admin/NPEduTools.ClassIsland.Admin.csproj" />
     <!-- Host builds Recorder with its explicit Windows target before either bundle is copied. -->
     <ProjectReference Include="../NPEduTools.Host/NPEduTools.Host.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../NPEduTools.Guard/NPEduTools.Guard.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <Target Name="CopyHostBundle" AfterTargets="Build">
+    <MSBuild Projects="../NPEduTools.Host/NPEduTools.Host.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);TargetFramework=net10.0">
+      <Output TaskParameter="TargetOutputs" ItemName="HostTarget" />
+    </MSBuild>
     <ItemGroup>
-      <HostBundle Include="../NPEduTools.Host/bin/$(Configuration)/net10.0/**/*" />
+      <HostBundle Include="$([System.IO.Path]::GetDirectoryName('%(HostTarget.Identity)'))/**/*" />
     </ItemGroup>
     <Copy SourceFiles="@(HostBundle)" DestinationFiles="@(HostBundle->'$(OutDir)Host/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyGuardBundle" AfterTargets="Build">
+    <MSBuild Projects="../NPEduTools.Guard/NPEduTools.Guard.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);TargetFramework=net10.0-windows">
+      <Output TaskParameter="TargetOutputs" ItemName="GuardTarget" />
+    </MSBuild>
+    <ItemGroup><GuardBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardTarget.Identity)'))/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(GuardBundle)" DestinationFiles="@(GuardBundle->'$(OutDir)Guard/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="CopyAdminBundle" AfterTargets="Build">
     <ItemGroup><AdminBundle Include="../NPEduTools.ClassIsland.Admin/bin/$(Configuration)/net10.0/**/*" /></ItemGroup>

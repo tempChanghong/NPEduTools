@@ -23,7 +23,10 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RemoteExamCommand? RemoteExam = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExamAwarePlanInput? ExamPlan = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCommand? Noise = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomCommand? SecRandom = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomCommand? SecRandom = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseManagementCommand? NoiseManagement = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? NoiseAuthorization = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseDisplayCommand? NoiseDisplay = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -58,7 +61,9 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RemoteExamStatus? RemoteExam = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseState? Noise = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<NoiseDevice>? NoiseDevices = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomState? SecRandom = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomState? SecRandom = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseProtectionState? NoiseProtection = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseDisplayState? NoiseDisplay = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -98,6 +103,11 @@ public static class Protocol
     public static string? Validate(HostRequest request)
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
+        if (request.Capability == "noise.display.return" ? request.NoiseDisplay is null || !NoiseDisplayContract.Valid(request.NoiseDisplay) : request.NoiseDisplay is not null)
+            return "InvalidNoiseDisplayCommand";
+        if (request.Capability == "noise.management.command" ? request.NoiseManagement is null || !NoiseManagementContract.Valid(request.NoiseManagement) : request.NoiseManagement is not null)
+            return "InvalidNoiseManagementCommand";
+        if (request.NoiseAuthorization is { } grant && (grant == Guid.Empty || !NoiseInterruption(request))) return "UnexpectedParameters";
         if (request.Capability == "secrandom.command" ? request.SecRandom is null || !SecRandomContract.Valid(request.SecRandom) : request.SecRandom is not null)
             return "InvalidSecRandomCommand";
         if (request.Capability.StartsWith("secrandom.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
@@ -110,7 +120,7 @@ public static class Protocol
         if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
             "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
-            "noise.status" or "noise.devices" or "noise.command" or "recording.status" or "recording.command" or "recording.automatic" or
+            "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
@@ -169,4 +179,13 @@ public static class Protocol
         if (request.Capability.StartsWith("examaware.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         return null;
     }
+
+    public static bool NoiseInterruption(HostRequest r) => r.Capability is "host.stop" or "noise.management.prepare-exit" ||
+        r.Capability == "noise.command" && r.Noise?.Action == "stop" ||
+        r.Capability == "npep.command" && r.Npep?.Action is "pause" or "unpair" ||
+        r.Capability is "classroom.set" or "classroom.retry" or "classroom.restore" ||
+        r.Capability is "classisland.config.set" or "examaware.quit";
+
+    public static string NoisePurpose(HostRequest r) => r.Capability is "host.stop" or "noise.management.prepare-exit" ? "maintenance" :
+        r.Capability == "noise.command" ? "stop" : "change-environment";
 }

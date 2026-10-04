@@ -8,7 +8,7 @@ namespace NPEduTools.App;
 
 /// <summary>Shared settings/OOBE session. Host remains the sole owner of pairing and credentials.</summary>
 public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, Task<HostResponse>> request,
-    CancellationToken lifetime = default) : INotifyPropertyChanged
+    CancellationToken lifetime = default, Func<HostRequest, Task<HostRequest?>>? authorize = null) : INotifyPropertyChanged
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private NpepState? _state;
@@ -132,9 +132,16 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         _working = true; _mutating = command is not null; Changed();
         try
         {
+            var pending = new HostRequest(Protocol.Version, Guid.NewGuid(), command is null ? "npep.status" : "npep.command", Npep: command);
+            if (authorize is not null && Protocol.NoiseInterruption(pending))
+            {
+                var authorized = await authorize(pending);
+                if (authorized is null) { _feedback = "未验证，定时监测和学校连接继续。"; return false; }
+                pending = authorized;
+            }
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
             deadline.CancelAfter(TimeSpan.FromSeconds(5));
-            var response = await request(new(Protocol.Version, Guid.NewGuid(), command is null ? "npep.status" : "npep.command", Npep: command), deadline.Token);
+            var response = await request(pending, deadline.Token);
             Apply(response);
             return response.Outcome is "Succeeded" or "Accepted";
         }

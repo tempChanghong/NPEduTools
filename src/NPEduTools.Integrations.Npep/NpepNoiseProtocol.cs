@@ -24,3 +24,11 @@ public interface INpepNoise
     void Acknowledge(JsonObject response);
     void Execute(JsonObject command, Action authorize);
 }
+
+/// <summary>Negotiated management boundary, separate from the unchanged 0.6 statistics wire contract.</summary>
+public interface INpepNoiseManagement
+{
+    JsonObject ObserveProtection();
+    bool RequiresManagement(JsonObject command);
+    void ExecuteManaged(JsonObject command, Action authorize);
+}

@@ -1,5 +1,6 @@
 using System.Windows;
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 
 namespace NPEduTools.App;
 
@@ -8,6 +9,7 @@ public partial class App : Application
     private Mutex? _instance;
     private EventWaitHandle? _activation;
     private RegisteredWaitHandle? _activationWait;
+    private bool _sessionEndRequested;
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -39,12 +41,40 @@ public partial class App : Application
         MainWindow = new MainWindow(pipe, options.Upstream);
         _activationWait = ThreadPool.RegisterWaitForSingleObject(_activation, (_, _) =>
             Dispatcher.BeginInvoke(() => ((MainWindow)MainWindow).RestoreWindow()), null, Timeout.Infinite, false);
-        ((MainWindow)MainWindow).Start(options.AtLogin);
+        ((MainWindow)MainWindow).Start(options.AtLogin, options.GuardRecovery);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // WPF can exit during QUERYENDSESSION, before Windows has made its final decision.
+        if (!_sessionEndRequested && _instance is not null && MainWindow is MainWindow window) MarkGuardExit(window.PipeName, "AppNormalExit");
         _activationWait?.Unregister(null); _activation?.Dispose(); _instance?.Dispose();
         base.OnExit(e);
+    }
+
+    private static void MarkGuardExit(string pipe, string reason)
+    {
+        var files = GuardFiles.ForPipe(pipe);
+        try
+        {
+            if (files.Read<GuardRegistration>("registration.json") is { } r && r.App == GuardProcess.Current()) files.Stop(r.Generation, reason);
+        }
+        catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException) { }
+    }
+
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        _sessionEndRequested = true;
+        if (MainWindow is MainWindow window)
+        {
+            var files = GuardFiles.ForPipe(window.PipeName);
+            try
+            {
+                if (files.Read<GuardRegistration>("registration.json") is { } r && r.App == GuardProcess.Current()) files.SessionQuery(r.Generation, true);
+            }
+            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException) { }
+        }
+        base.OnSessionEnding(e);
+        if (e.Cancel) _sessionEndRequested = false;
     }
 }

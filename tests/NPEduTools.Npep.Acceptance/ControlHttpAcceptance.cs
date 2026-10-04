@@ -47,7 +47,7 @@ internal static class ControlHttpAcceptance
             HostResponse Sample() => new(1, Guid.NewGuid(), "Succeeded", null, "test", ClassroomMode: new(0, "Daily"), Recording: new("Idle", "test"));
             if (plans) return await ExamPlanHttpAcceptance.RunAsync(directory, path, Admin, Sample);
             if (noise) return await NoiseHttpAcceptance.RunAsync(directory, origin, fixture.Text("screenToken"), path, Admin, Sample);
-            if (schedules) return await NoiseScheduleHttpAcceptance.RunAsync(directory, origin, fixture.Text("screenToken"), path, Admin, Sample);
+            if (schedules) return await NoiseScheduleHttpAcceptance.RunAsync(directory, origin, fixture.Text("screenToken"), fixture.Text("screenPin"), path, Admin, Sample);
             async Task Wait(Func<Task<bool>> condition)
             {
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));

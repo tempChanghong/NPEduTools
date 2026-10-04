@@ -4,6 +4,8 @@
   <ItemGroup>
     <ProjectReference Include="../../src/NPEduTools.Core/NPEduTools.Core.csproj" />
     <Compile Include="../../src/NPEduTools.Host/NoiseService.cs" Link="NoiseService.cs" />
+    <Compile Include="../../src/NPEduTools.Host/NoiseManagementStore.cs" Link="NoiseManagementStore.cs" />
+    <Compile Include="../../src/NPEduTools.Host/NoiseDisplayService.cs" Link="NoiseDisplayService.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseTransport.cs" Link="NoiseTransport.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseScheduleService.cs" Link="NoiseScheduleService.cs" />
   </ItemGroup>

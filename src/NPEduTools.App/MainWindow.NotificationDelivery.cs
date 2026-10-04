@@ -104,6 +104,7 @@ public partial class MainWindow
             var window = new SchoolNotificationWindow(new(string.IsNullOrWhiteSpace(notice.Title) ? "学校通知" : notice.Title,
                 string.IsNullOrWhiteSpace(notice.Content) ? "（此通知没有正文）" : notice.Content,
                 string.IsNullOrWhiteSpace(notice.Source) ? "学校通知" : notice.Source, notice.PublishAt, priority));
+            _scheduledNoiseWindow?.Hide();
             _schoolNotification = window; _shownNotice = notice; _shownScope = scope;
             async Task<bool> Mark(string action)
             {

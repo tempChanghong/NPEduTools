@@ -19,6 +19,7 @@ public partial class MainWindow
             if (reservation is null)
             { NotificationInboxMessage.Text = "正在切换运行环境，请在完成后预览通知。"; return; }
             var preview = new SchoolNotificationWindow(SchoolNotification.Preview(priority));
+            _scheduledNoiseWindow?.Hide();
             _notificationPreview = preview;
             var visibleReservation = reservation;
             preview.Closed += (_, _) => { _notificationPreview = null; visibleReservation.Dispose(); };

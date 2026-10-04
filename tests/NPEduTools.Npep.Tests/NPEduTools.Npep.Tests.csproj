@@ -8,5 +8,7 @@
     <Using Include="Xunit" />
     <None Include="../../docs/npep/n1-examples.json" Link="n1-examples.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../docs/npep/n3-examples.json" Link="n3-examples.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/npep/noise-management-wire-cases.json" Link="noise-management-wire-cases.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/npep/noise-display-presence-wire-cases.json" Link="noise-display-presence-wire-cases.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

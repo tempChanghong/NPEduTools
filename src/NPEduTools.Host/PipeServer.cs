@@ -14,7 +14,8 @@ namespace NPEduTools.Host;
 public sealed partial class PipeServer(string pipeName, ILessonStatusReader reader, Action<string> log,
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
     SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
-    RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null)
+    RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
+    Func<bool>? prepareStop = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -59,8 +60,16 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
                 else if (request.Capability.StartsWith("secrandom.", StringComparison.Ordinal))
                     response = secRandom?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "SecRandomUnavailable", "请重启新版后台以使用 SecRandom。");
+                else if (request.Capability.StartsWith("noise.management.", StringComparison.Ordinal))
+                    response = noise?.ManagementHandle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台。");
+                else if (request.Capability.StartsWith("noise.display.", StringComparison.Ordinal))
+                    response = noiseDisplay?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "DISPLAY_UNSUPPORTED", "请重启新版后台。");
+                else if (request.Capability is not ("noise.command" or "host.stop") && Protocol.NoiseInterruption(request) &&
+                    noise?.AuthorizeInterruption(request) is { } noiseDenied)
+                    response = noiseDenied;
                 else if (request.Capability.StartsWith("noise.", StringComparison.Ordinal))
-                    response = noise?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台以使用噪音监测。");
+                    response = (noise?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台以使用噪音监测。"))
+                        with { NoiseDisplay = noiseDisplay?.Snapshot() };
                 else if (request.Capability is "remoteexam.preflight" or "remoteexam.inspect")
                     response = await RemoteExamPreflightAsync(request, token);
                 else if (request.Capability is "remoteexam.status" or "remoteexam.command")
@@ -73,19 +82,32 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                         Automatic: recording?.Automatic, ExamAware: examAware?.Snapshot(), ClassroomMode: classroom?.Snapshot);
                 else if (request.Capability == "host.stop" && runtimeGate is not null && shutdownReservation is null)
                     response = new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy", "正在切换运行环境，后台暂不能停止。");
+                else if (request.Capability == "host.stop" && noise?.AuthorizeInterruption(request) is { } exitDenied)
+                    response = exitDenied;
                 else if (request.Capability == "host.stop" && classroom is not null && !classroom.BeginShutdown())
+                {
+                    noise?.AbortShutdown();
                     response = new(Protocol.Version, request.RequestId, "Rejected", "ClassroomBusy", "课堂模式正在切换，请等待完成或恢复提示后再停止后台。");
+                }
                 else if (request.Capability.StartsWith("classroom.", StringComparison.Ordinal))
                     response = classroom?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "ClassroomUnavailable", "请更新并重启后台以使用课堂模式。");
                 else if (request.Capability == "host.stop")
                 {
-                    if (stop is not null && recording is not null) await recording.StopAsync();
-                    if (stop is not null && touch is not null) await touch.StopAsync();
-                    if (stop is not null && launch is not null) await launch.StopAsync();
-                    if (stop is not null && monitor is not null) await monitor.StopAsync();
-                    if (stop is not null && schoolClock is not null) await schoolClock.StopAsync();
-                    response = new(Protocol.Version, request.RequestId, stop is null ? "Rejected" : "Succeeded",
-                        stop is null ? "StopUnavailable" : null, "停止后台请求已受理。");
+                    if (prepareStop is not null && !prepareStop())
+                    {
+                        noise?.AbortShutdown(); classroom?.AbortShutdown();
+                        response = new(Protocol.Version, request.RequestId, "Rejected", "GUARD_STOP_STORE_UNAVAILABLE", "未能保存正常退出标记，后台未退出；请检查配置目录。");
+                    }
+                    else
+                    {
+                        if (stop is not null && recording is not null) await recording.StopAsync();
+                        if (stop is not null && touch is not null) await touch.StopAsync();
+                        if (stop is not null && launch is not null) await launch.StopAsync();
+                        if (stop is not null && monitor is not null) await monitor.StopAsync();
+                        if (stop is not null && schoolClock is not null) await schoolClock.StopAsync();
+                        response = new(Protocol.Version, request.RequestId, stop is null ? "Rejected" : "Succeeded",
+                            stop is null ? "StopUnavailable" : null, "停止后台请求已受理。");
+                    }
                 }
                 else if (request.Capability == "classisland.school-clock")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "学校时间状态",

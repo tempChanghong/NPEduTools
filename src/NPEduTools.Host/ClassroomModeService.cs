@@ -165,6 +165,7 @@ public sealed partial class ClassroomModeService(ClassroomModeStore store, IClas
     {
         lock (_gate) { if (!_operation.IsCompleted) return false; _stopping = true; return true; }
     }
+    internal void AbortShutdown() { lock (_gate) _stopping = false; }
     public async ValueTask DisposeAsync()
     {
         Task pending;

@@ -294,4 +294,36 @@ public sealed class NoiseScheduleHostTests
         f.Noise.Handle(f.Command("start","synthetic"));await Until(()=>f.Noise.Snapshot().State=="Active");f.Tick();
         Assert.Equal("Active",f.Noise.Snapshot().State);Assert.Equal("MANUAL_ACTIVE",f.Scheduler.Observe()["reason"]!.GetValue<string>());
     }
+    [Fact]
+    public async Task Hard_host_recovery_requires_new_policy_school_clock_and_clear_exam_gate()
+    {
+        string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "noise-guard-recovery-" + Guid.NewGuid());
+        Directory.CreateDirectory(directory);
+        Guid? oldSession; JsonObject policy; string scope;
+        try
+        {
+            await using (var original = new Fixture())
+            {
+                await original.Start(); oldSession = original.Noise.Snapshot().SessionId;
+                policy = original.Policy(); scope = original.Scope;
+                File.Copy(System.IO.Path.Combine(original.Path, "noise-schedule-state.json"), System.IO.Path.Combine(directory, "noise-schedule-state.json"));
+            }
+            var time = new Clock(); int captures = 0; bool clockReady = false, exam = true; long sequence = 0;
+            Guid connection = Guid.NewGuid(), bridge = Guid.NewGuid();
+            var start = new DateTimeOffset(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
+            await using var noise = new NoiseService(_ => { captures++; return new Capture(); }, () => [], time);
+            var s = noise.Snapshot(); noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("select", s.InstanceId, s.Revision, "synthetic")));
+            await using var schedule = new NoiseScheduleService(noise,
+                () => clockReady ? new(connection, bridge, ++sequence, 0, start.AddMilliseconds(time.Ms), 0, "Advancing", "synthetic") : SchoolClockFrame.Unavailable("test"),
+                () => exam, directory, time, false, statisticsReady: () => true);
+            schedule.Bind(scope, true);
+            void Tick() { time.Ms += 500; schedule.Tick(); }
+            Tick(); Tick(); Tick(); Assert.Equal(0, captures);
+            schedule.Confirm(policy); Tick(); Tick(); Assert.Equal(0, captures);
+            clockReady = true; Tick(); Tick(); Tick(); Assert.Equal(0, captures);
+            exam = false; Tick(); await Until(() => noise.Snapshot().State == "Active");
+            Assert.Equal(1, captures); Assert.NotEqual(oldSession, noise.Snapshot().SessionId);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
 }
