@@ -40,12 +40,13 @@ public partial class MainWindow
 
     private void PopulateShortcuts(Guid? selection = null)
     {
-        HomeShortcutItems.ItemsSource = _shortcuts;
+        HomeShortcutItems.ItemsSource = _shortcuts.Take(6).ToArray();
         ShortcutList.ItemsSource = _shortcuts;
         ShortcutList.SelectedItem = _shortcuts.FirstOrDefault(item => item.Id == selection);
         ShortcutEmpty.Visibility = _shortcuts.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         HomeShortcutEmpty.Visibility = ShortcutEmpty.Visibility;
-        HomeShortcutCount.Text = _shortcutsReadable ? $"{_shortcuts.Length} 项" : "暂不可用";
+        HomeShortcutCount.Text = !_shortcutsReadable ? "暂不可用"
+            : _shortcuts.Length > 6 ? $"{_shortcuts.Length} 项 · 显示前 6 项" : $"{_shortcuts.Length} 项";
         ShortcutCount.Text = $"{_shortcuts.Length} / {ShortcutCatalog.MaximumItems} 项 · 顺序同步到贴边面板";
         _quick?.SetShortcuts(_shortcuts);
         RefreshShortcutControls();

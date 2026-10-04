@@ -171,6 +171,8 @@ public partial class MainWindow : Window
     private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
     private void SelectPage(bool settings)
     {
+        AboutPageView.Visibility = Visibility.Collapsed;
+        AboutNav.Tag = null;
         PageBreadcrumb.Text = settings ? "设置" : "概览";
         ShortcutPage.Visibility = Visibility.Collapsed;
         ShortcutNav.Tag = null;
