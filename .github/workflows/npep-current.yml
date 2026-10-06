@@ -1,0 +1,174 @@
+name: NPEP current three-repository acceptance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      desktop_sha:
+        description: Optional full NPEduTools SHA for replay
+        type: string
+        default: ''
+      web_sha:
+        description: Optional full NPClassworks SHA for replay
+        type: string
+        default: ''
+      backend_sha:
+        description: Optional full NPClassworksKV SHA for replay
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      desktop_sha:
+        type: string
+        default: ''
+      web_sha:
+        type: string
+        default: ''
+      backend_sha:
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npep-current-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CALLER_REPOSITORY: ${{ github.repository }}
+      CALLER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      CALLER_EVENT: ${{ github.event_name }}
+      DESKTOP_OVERRIDE: ${{ inputs.desktop_sha }}
+      WEB_OVERRIDE: ${{ inputs.web_sha }}
+      BACKEND_OVERRIDE: ${{ inputs.backend_sha }}
+      E2E_WEB_PORT: '14180'
+      E2E_API_PORT: '14181'
+    steps:
+      # The driver stays separate from tested sources, so manual replay can test
+      # old source SHAs without requiring this new entry point at those SHAs.
+      - name: Checkout acceptance driver
+        uses: actions/checkout@v4
+        with:
+          repository: tempChanghong/NPEduTools
+          ref: ${{ github.repository == 'tempChanghong/NPEduTools' && (github.event.pull_request.head.sha || github.sha) || 'main' }}
+          path: ci-driver
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve all source commits once
+        id: sources
+        run: |
+          $arguments = @('ci-driver/scripts/resolve-npep-current-ci.mjs',
+            '--caller-repository', $env:CALLER_REPOSITORY, '--caller-commit', $env:CALLER_COMMIT,
+            '--event', $env:CALLER_EVENT, '--output', 'ci-driver/.artifacts/npep-current/resolved-sources.json')
+          foreach ($entry in @(@('--desktop-sha', $env:DESKTOP_OVERRIDE), @('--web-sha', $env:WEB_OVERRIDE), @('--backend-sha', $env:BACKEND_OVERRIDE))) {
+            if ($entry[1]) { $arguments += @($entry[0], $entry[1]) }
+          }
+          node @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Source resolution failed; no fallback combination is permitted.' }
+      - uses: actions/checkout@v4
+        with:
+          repository: tempChanghong/NPEduTools
+          ref: ${{ steps.sources.outputs.desktop_sha }}
+          path: NPEduTools
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: tempChanghong/NPClassworks
+          ref: ${{ steps.sources.outputs.web_sha }}
+          path: NPClassworks
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: tempChanghong/NPClassworksKV
+          ref: ${{ steps.sources.outputs.backend_sha }}
+          path: NPClassworksKV
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: NPEduTools/global.json
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+        working-directory: NPClassworks
+      - run: pnpm install --frozen-lockfile
+        working-directory: NPClassworksKV
+      - run: pnpm exec playwright install chromium
+        working-directory: NPClassworks
+      - name: Locate native PostgreSQL tools
+        run: |
+          $candidates = @(Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory -ErrorAction SilentlyContinue | Sort-Object { [int]$_.Name } -Descending)
+          if (-not $candidates.Count) {
+            choco install postgresql17 --yes --no-progress --params '/Password:isolated-ci-only /Port:55439'
+            if ($LASTEXITCODE -ne 0) { throw 'Native PostgreSQL installation failed.' }
+            $candidates = @(Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory)
+          }
+          $bin = $candidates | ForEach-Object { Join-Path $_.FullName 'bin' } | Where-Object {
+            (Test-Path (Join-Path $_ 'initdb.exe')) -and (Test-Path (Join-Path $_ 'pg_ctl.exe')) -and
+            (Test-Path (Join-Path $_ 'pg_dump.exe')) -and (Test-Path (Join-Path $_ 'pg_restore.exe'))
+          } | Select-Object -First 1
+          if (-not $bin) { throw 'Complete native PostgreSQL tools were not found.' }
+          "NPEP_TEST_PG_BIN=$bin" >> $env:GITHUB_ENV
+      - name: Test exact current source combination
+        run: |
+          ./ci-driver/scripts/test-npep-current.ps1 -Browser -Database -RequireClean `
+            -DesktopRoot (Resolve-Path 'NPEduTools').Path -WebRoot (Resolve-Path 'NPClassworks').Path -BackendRoot (Resolve-Path 'NPClassworksKV').Path `
+            -DesktopCommit '${{ steps.sources.outputs.desktop_sha }}' -WebCommit '${{ steps.sources.outputs.web_sha }}' -BackendCommit '${{ steps.sources.outputs.backend_sha }}' `
+            -SourceManifest 'ci-driver/.artifacts/npep-current/resolved-sources.json'
+      - name: Summarize source identity and scope
+        if: always()
+        run: |
+          '## NPEP current combination' >> $env:GITHUB_STEP_SUMMARY
+          $manifest = 'ci-driver/.artifacts/npep-current/resolved-sources.json'
+          if (Test-Path $manifest) {
+            $resolved = Get-Content $manifest -Raw | ConvertFrom-Json
+            foreach ($key in @('desktop', 'web', 'backend')) {
+              "- $key`: $($resolved.sources.$key.commit) ($($resolved.sources.$key.selection))" >> $env:GITHUB_STEP_SUMMARY
+            }
+          } else { 'Source resolution did not complete.' >> $env:GITHUB_STEP_SUMMARY }
+          $results = @(Get-ChildItem 'ci-driver/.artifacts/npep-current/runs/*/result.json' -ErrorAction SilentlyContinue)
+          foreach ($file in $results) {
+            $result = Get-Content $file.FullName -Raw | ConvertFrom-Json
+            "Status: $($result.status); scope: $($result.scope); immutable: $($result.sources.immutable)" >> $env:GITHUB_STEP_SUMMARY
+            "Driver commit: $($result.driverCommit)" >> $env:GITHUB_STEP_SUMMARY
+          }
+          if (-not $results.Count) { 'Acceptance did not start; this run is not a passed combination.' >> $env:GITHUB_STEP_SUMMARY }
+          'Real microphone, classroom screen and production deployment acceptance: NOT RUN.' >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npep-current-acceptance
+          path: |
+            ci-driver/.artifacts/npep-current/resolved-sources.json
+            ci-driver/.artifacts/npep-current/runs/**/result.json
+            ci-driver/.artifacts/npep-current/runs/**/sources*.json
+            ci-driver/.artifacts/npep-current/runs/**/*.log
+            ci-driver/.artifacts/npep-current/runs/**/*.trx
+            NPEduTools/.artifacts/noise-schedule-tests/**/result.json
+            NPEduTools/.artifacts/noise-schedule-tests/**/suite-*.log
+            NPEduTools/.artifacts/noise-schedule-tests/display-*/**/*.json
+            NPEduTools/.artifacts/noise-schedule-tests/management-*/**/*.json
+            NPEduTools/.artifacts/noise-schedule-tests/presence-*/**/*.json
+            NPClassworks/.artifacts/pairing-browser/**/*.png
+            NPClassworks/.artifacts/pairing-browser/**/result.json
+            NPClassworks/.artifacts/native-noise/*.png
+            NPClassworks/.artifacts/noise-schedules/*.png
+            NPClassworks/.artifacts/noise-schedules/failure.json
+            NPClassworks/test-results/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

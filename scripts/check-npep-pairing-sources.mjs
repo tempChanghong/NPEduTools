@@ -18,7 +18,14 @@ export async function inspectPairingSources(roots, expected = {}, requireClean =
   for(const key of ['desktop','web','backend']) {
     const root=actualRoots[key];
     if(await realpath(git(root,['rev-parse','--show-toplevel']))!==root)throw new Error(`${key} must point to the repository root.`);
-    const commit=git(root,['rev-parse','HEAD']), dirty=!!git(root,['status','--porcelain','--untracked-files=normal']);
+    const commit=git(root,['rev-parse','HEAD']);
+    // Windows autocrlf may mark regenerated LF files as modified although their
+    // canonical Git content is identical. Check content AND the index, plus all
+    // non-ignored untracked files; a staged change cannot hide behind an undo in
+    // the working tree. No reset/refresh or source writes are performed here.
+    const dirty=!!git(root,['diff','--no-ext-diff','--no-textconv','HEAD','--name-only','--']) ||
+      !!git(root,['diff','--no-ext-diff','--no-textconv','--cached','HEAD','--name-only','--']) ||
+      !!git(root,['ls-files','--others','--exclude-standard']);
     if(expected[key] && !/^[0-9a-f]{40}$/i.test(expected[key]))throw new Error(`${key} expected commit must be a full SHA.`);
     if(requireClean && !expected[key])throw new Error(`${key} requires an explicit commit in CI.`);
     if(expected[key] && expected[key].toLowerCase()!==commit.toLowerCase())throw new Error(`${key} source commit mismatch.`);
