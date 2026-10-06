@@ -89,3 +89,11 @@
 主结果：`.artifacts/npep-current/runs/9b9e8b96296b43e489b9c5a6331ab2a0/result.json`。来源回归 8 项、桌面传输 182 项、考试／引导 184 项、数据库升级 6 项和 HTTP／数据库 45 项均通过；浏览器与定时保护阶段通过，无跳过，临时数据库已清理。
 
 网页独立测试修正 [NPClassworks PR #9](https://github.com/tempChanghong/NPClassworks/pull/9) 的 Frontend tests（单元／Lint、浏览器、契约／数据库）及 PWA Store Build 均通过后合并，主分支提交为 `8133ac98b1f1b6c9a260a84a446afa5010b457ac`。可选 Claude review 按已有配置跳过，不计作测试通过。后续桌面入口将在 GitHub 使用这个网页 main 与 KV main 验证准确的干净源码组合。
+
+### main 验收发现的控制轮询等待问题
+
+三份 CI 入口 PR 均通过实际 GitHub 检查并合并后，KV main 的 CURRENT run `37414778190` 首次运行在桌面传输测试失败：TRX 指向 `N3GrantAndPersistentReceiptNeverReplayAfterRestartOrLostStartReply` 等待回执的 `Until` 超时。考试通道按 10 秒轮询，测试的通用等待只有 8 秒；首次轮询若发生在配对完成前，正常的下一轮便超出等待预算。
+
+新增“初次轮询期间仍未配对”的延迟配对场景，本机在修正前得到 1 项失败、原有 2 项通过，复现相同等待超时。修正只为该文件的考试通道回执／重启上报等待提供 25 秒预算（两轮轮询加调度余量），通用等待仍为 8 秒。原有 UNKNOWN／成功回执、执行／恢复次数与重启不重放断言不变；产品代码、轮询频率和授权语义不变。失败 TRX 与后续准确提交的 CI 结果分别保留，不把重跑混称为原组合的首次通过。
+
+本机修正后桌面完整传输套件 183 项通过，无跳过，包含新增延迟配对回归。修正前后 TRX 分别在 `.artifacts/npep-current/timeout-repro/before.trx` 与 `.artifacts/npep-current/timeout-fixed/after.trx`；修正提交仍需通过 GitHub PR 检查。

@@ -15,9 +15,9 @@ public sealed partial class RuntimeTests
         }
     }
     private static HostResponse Sample() => new(1, Guid.NewGuid(), "Succeeded", null, "", ClassroomMode: new(3, "Daily"), Recording: new("Idle", ""));
-    private static async Task Until(Func<bool> test)
+    private static async Task Until(Func<bool> test, TimeSpan? timeout = null)
     {
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        using var deadline = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(8));
         while (!test()) await Task.Delay(30, deadline.Token);
     }
     private static async Task<NpepState> Command(NpepRuntime runtime, string action, FakeServer? server = null)
