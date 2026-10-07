@@ -46,6 +46,7 @@
     <EmbeddedResource Include="../../docs/legal/*-AGREEMENT.md" LogicalName="NPEduTools.Legal.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../LICENSE" LogicalName="NPEduTools.Legal.GPL-3.0.txt" />
     <Compile Include="../../src/NPEduTools.App/NpepConnectionSession.cs" Link="App/NpepConnectionSession.cs" />
+    <Compile Include="../../src/NPEduTools.App/NpepConnectionPresentation.cs" Link="App/NpepConnectionPresentation.cs" />
     <Compile Include="../../src/NPEduTools.App/LoginStartup.cs" Link="App/LoginStartup.cs" />
     <Compile Include="../../src/NPEduTools.App/AppLaunchOptions.cs" Link="App/AppLaunchOptions.cs" />
     <Compile Include="../../src/NPEduTools.App/ShortcutCatalog.cs" Link="App/ShortcutCatalog.cs" />
