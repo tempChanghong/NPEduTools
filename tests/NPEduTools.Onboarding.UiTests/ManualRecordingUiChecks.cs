@@ -105,6 +105,7 @@ internal static partial class Program
             ((IAsyncDisposable)client).DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
         RunRecordingRequestOrderingCheck();
+        RunRecordingPollRecoveryChecks();
     }
 
     private static void RunRecordingRequestOrderingCheck()

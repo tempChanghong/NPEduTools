@@ -59,7 +59,7 @@ internal sealed class RecordingClient : IAsyncDisposable
                         await RequestAsync("recording.automatic", automatic: new("lease", _client)); leased = Stopwatch.GetTimestamp();
                     }
                 }
-                catch (Exception error) when (error is IOException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
+                catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
                 {
                     if (!_closing) await _dispatcher.InvokeAsync(() =>
                     {
