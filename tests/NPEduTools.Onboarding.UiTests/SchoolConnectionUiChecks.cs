@@ -12,11 +12,13 @@ internal static partial class Program
         NpepState state = new(1, "ACTIVE", "OFFLINE", "证书恢复后将自动连接。", Error: "TLS_VALIDATION_FAILED",
             Origin: "https://school.example", LastReceivedAt: "2026-10-07T01:00:00Z");
         bool unavailable = false;
+        bool invalidProtocol = false;
         var requests = new List<HostRequest>();
         var session = new NpepConnectionSession((request, _) =>
         {
             requests.Add(request);
             if (unavailable) throw new IOException("isolated Host unavailable");
+            if (invalidProtocol) throw new InvalidDataException("isolated invalid Host receipt");
             return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "隔离状态", Npep: state));
         });
         session.RefreshAsync().GetAwaiter().GetResult();
@@ -69,11 +71,34 @@ internal static partial class Program
             Assert(!((TextBlock)Find(onboarding, "NpepError")).IsVisible, "recovered error still visible");
             Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "rendering or refreshing sent a mutation");
             Checks.Add("Shared bindings refresh pause/suspension/Host loss/recovery; existing buttons remain consistent; reads never create commands");
+
+            session.DeviceName = "隔离设备草稿";
+            invalidProtocol = true;
+            Assert(!session.RefreshAsync().GetAwaiter().GetResult(), "invalid protocol was treated as a successful refresh");
+            window.UpdateLayout();
+            foreach (var view in new[] { settings, onboarding })
+            {
+                Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("未确认"), "invalid protocol retained the online title");
+                Assert(!((Button)Find(view, "NpepPause")).IsEnabled && !((Button)Find(view, "NpepUnpair")).IsEnabled,
+                    "invalid protocol retained school mutation controls");
+                Assert(((Button)Find(view, "NpepRefresh")).IsEnabled, "invalid protocol blocked refresh");
+            }
+            Assert(!session.CanFinish && !session.IsWorking && session.DeviceName == "隔离设备草稿",
+                "unknown school state completes onboarding, holds the gate or loses the local draft");
+            Snapshot(window, "school-protocol-unconfirmed.png");
+            invalidProtocol = false; state = state with { Revision = 2, ReportingPaused = true };
+            Assert(session.RefreshAsync().GetAwaiter().GetResult(), "fresh school state did not recover"); window.UpdateLayout();
+            foreach (var view in new[] { settings, onboarding })
+                Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("互联已暂停") &&
+                    ((Button)Find(view, "NpepPause")).Content.ToString() == "恢复互联" &&
+                    ((Button)Find(view, "NpepPause")).IsEnabled, "valid recovery did not refresh both shared controls");
+            Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "protocol recovery sent a mutation");
+            Checks.Add("Invalid protocol clears both shared online views and completion eligibility; read-only refresh restores the latest paused state without losing the device draft");
             window.Close();
         });
 
         // Also verify the actual wizard at its minimum supported size, with the same isolated session.
-        state = state with { State = "ACTIVE", Connection = "OFFLINE", Error = "TLS_VALIDATION_FAILED" };
+        state = state with { State = "ACTIVE", Connection = "OFFLINE", ReportingPaused = false, Error = "TLS_VALIDATION_FAILED" };
         session.RefreshAsync().GetAwaiter().GetResult();
         var actionsType = typeof(OnboardingWindow).Assembly.GetType("NPEduTools.App.OnboardingActions")!;
         Action nothing = () => { };

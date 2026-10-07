@@ -146,7 +146,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             Apply(response);
             return response.Outcome is "Succeeded" or "Accepted";
         }
-        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
         {
             // A lost mutation response is ambiguous. Disable mutations until a fresh Host snapshot resolves it.
             _state = null; _serverConfirmed = _bindingConfirmed = false;
