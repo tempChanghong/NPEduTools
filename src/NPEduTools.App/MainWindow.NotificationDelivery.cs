@@ -52,7 +52,7 @@ public partial class MainWindow
                     }
                     else
                     {
-                        _lastNotificationRead = Stopwatch.GetTimestamp(); _inboxScope = inbox.Scope;
+                        _inboxScope = inbox.Scope;
                         NotificationInboxMessage.Text = inbox.Message + $"（当前有效通知 {inbox.Total} 条）";
                         NotificationInboxItems.ItemsSource = inbox.Items; _inboxNext = inbox.NextOffset;
                         NotificationNext.IsEnabled = _inboxNext is not null; NotificationPrevious.IsEnabled = _inboxOffset > 0;
@@ -65,6 +65,8 @@ public partial class MainWindow
                         }
                         else if (_schoolNotification is null && inbox.CanPresent && inbox.Current is { } candidate && NotificationDesktopAvailable())
                             await ShowSchoolNotificationAsync(inbox.Scope!, candidate);
+                        // A readable list alone does not verify the body of an already displayed notice.
+                        _lastNotificationRead = Stopwatch.GetTimestamp();
                     }
                 }
                 catch (Exception error) when (IsManagementError(error))

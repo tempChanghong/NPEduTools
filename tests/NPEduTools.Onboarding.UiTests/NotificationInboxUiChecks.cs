@@ -14,6 +14,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            RunNotificationValidityChecks();
             var failures = new List<Exception>();
             foreach (string invalid in new[] { "request-id", "version", "zero-length", "empty-message", "disconnected", "missing-inbox" })
             foreach (bool empty in new[] { false, true })
