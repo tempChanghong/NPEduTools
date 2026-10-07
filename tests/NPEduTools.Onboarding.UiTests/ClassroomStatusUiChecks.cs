@@ -32,7 +32,7 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunClassroomOrderingCheck(); RunClassroomLateSetupCheck(); RunClassroomDisconnectedCheck(); RunClassroomMissingSnapshotCheck(); RunClassroomSetupSupersededCheck(); }
+        try { RunClassroomHomePollChecks(); RunClassroomOrderingCheck(); RunClassroomLateSetupCheck(); RunClassroomDisconnectedCheck(); RunClassroomMissingSnapshotCheck(); RunClassroomSetupSupersededCheck(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static void RunClassroomDisconnectedCheck()
