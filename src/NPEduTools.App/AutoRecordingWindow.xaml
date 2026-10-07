@@ -16,6 +16,7 @@
         <StackPanel Margin="0,0,16,0">
           <TextBlock Text="实际录制状态" FontSize="12" Foreground="#61786B" />
           <TextBlock x:Name="RealStatus" Text="自动录制未启用" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,0,8" AutomationProperties.AutomationId="AutoRealStatus" />
+          <TextBlock x:Name="AutomaticFeedbackText" TextWrapping="Wrap" FontSize="12" Foreground="#AA5337" Margin="0,0,0,8" Visibility="Collapsed" AutomationProperties.AutomationId="AutoOperationFeedback" />
           <TextBlock x:Name="SourceStatus" Text="正在读取 ClassIsland 课表…" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoSourceStatus" />
           <TextBlock x:Name="ClockStatus" Text="等待学校时间" FontSize="12" Foreground="#61786B" Margin="0,4,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoClockStatus" />
         </StackPanel>
