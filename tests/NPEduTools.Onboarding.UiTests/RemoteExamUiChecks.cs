@@ -6,9 +6,10 @@ using NPEduTools.Contracts;
 
 internal static partial class Program
 {
-    // Real WPF templates and bindings, isolated from MainWindow, Host and any actual switch.
+    // Real WPF templates and handlers; no production Host or actual switch.
     private static void RunRemoteExamChecks()
     {
+        RunRemoteExamRecoveryChecks();
         var view = new RemoteExamHistoryView();
         Guid id = Guid.NewGuid();
         var history = new[]

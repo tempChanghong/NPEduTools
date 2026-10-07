@@ -23,6 +23,7 @@
 | 定时监测返回回执 | [旧会话隔离与新会话返回](SCHEDULED-DISPLAY-RETURN-20261007.md) |
 | 定时监测返回协议恢复 | [无效回执与显式重试](SCHEDULED-RETURN-PROTOCOL-RECOVERY-20261007.md) |
 | 学校互联协议恢复 | [共享未知状态与只读恢复](SCHOOL-CONNECTION-PROTOCOL-RECOVERY-20261007.md) |
+| 远程考试检查恢复 | [失败后未知状态与重新核实](REMOTE-EXAM-INSPECTION-RECOVERY-20261007.md) |
 | 初始设置查询恢复 | [重新进入准备页时读取新状态](OOBE-PREPARATION-RECOVERY-20261007.md) |
 | 触摸辅助状态恢复 | [操作顺序与丢失回执](TOUCH-STATE-RECOVERY-20261007.md) |
 | ClassIsland 管理状态 | [未知状态、路径变更与取消授权](CLASSISLAND-ADMIN-STATE-20261007.md) |

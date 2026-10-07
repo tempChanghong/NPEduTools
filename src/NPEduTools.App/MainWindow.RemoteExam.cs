@@ -109,8 +109,11 @@ public partial class MainWindow
                 inspecting ? RemoteExamLocalAction.InspectCurrent : RemoteExamLocalAction.CheckEnvironment));
         }
         catch (Exception error) when (IsManagementError(error))
-        { ShowRemoteExamFeedback(new("检查结果未读取", "未能读取检查结果，不能认定检查通过。",
-            "核对后台连接后重新检查；没有请求执行软件切换。", "")); }
+        {
+            ApplyRemoteExam(null);
+            ShowRemoteExamFeedback(new("检查结果未读取", "未能读取检查结果，不能认定检查通过。",
+                "核对后台连接后重新检查；没有请求执行软件切换。", ""));
+        }
         finally { _remoteExamBusy = false; UpdateRemoteExamControls(); }
     }
 }
