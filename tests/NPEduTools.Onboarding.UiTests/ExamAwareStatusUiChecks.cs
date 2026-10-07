@@ -21,7 +21,7 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunExamAwareOrderingCheck(); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
+        try { RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static void RunExamAwareLostReplyCheck()
