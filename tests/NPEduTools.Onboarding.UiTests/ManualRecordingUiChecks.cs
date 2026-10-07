@@ -1,9 +1,7 @@
-using System.Diagnostics;
 using System.IO.Pipes;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using NPEduTools.App;
 using NPEduTools.Contracts;
 
@@ -25,13 +23,13 @@ internal static partial class Program
         try
         {
             apply.Invoke(client, [new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null, "隔离快照", Recording: active)]);
-            PumpRecordingUntil(() => offline, "nonexistent pipe did not produce a disconnected notification");
+            PumpUntil(() => offline, "nonexistent pipe did not produce a disconnected notification");
             Assert(latest?.Message.Contains("状态未知") == true, "manual recording still reports its old active state after the actual pipe poll failed");
             Assert(!Available() && latest?.Control == active.Control, "disconnect discarded the last known session or still claims a fresh state");
             Checks.Add("Real poll against a nonexistent test pipe notifies manual recording that its current state is unknown");
             type.GetMethod("Detach")!.Invoke(client, null);
             var poll = (Task)type.GetField("_poll", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(client)!;
-            PumpRecordingUntil(() => poll.IsCompleted, "poll remained active during rendering tests");
+            PumpUntil(() => poll.IsCompleted, "poll remained active during rendering tests");
 
             var idle = new RecordingState("Idle", "准备录制");
             void Show(RecordingState state) => apply.Invoke(client,
@@ -103,7 +101,7 @@ internal static partial class Program
         {
             type.GetMethod("Detach")!.Invoke(client, null);
             var poll = (Task)type.GetField("_poll", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(client)!;
-            PumpRecordingUntil(() => poll.IsCompleted, "isolated client did not stop");
+            PumpUntil(() => poll.IsCompleted, "isolated client did not stop");
             ((IAsyncDisposable)client).DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
         RunRecordingRequestOrderingCheck();
@@ -129,7 +127,7 @@ internal static partial class Program
         try
         {
             var oldRead = Read(oldStatus);
-            PumpRecordingUntil(() => oldRead.IsCompleted, "initial status request did not reach the isolated pipe");
+            PumpUntil(() => oldRead.IsCompleted, "initial status request did not reach the isolated pipe");
             Assert(oldRead.GetAwaiter().GetResult().Capability == "recording.status", "unexpected initial request");
             var active = new RecordingState("Recording", "隔离录制", Control: new("Manual", Guid.NewGuid(), "", 0, 0));
             type.GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(client,
@@ -144,7 +142,7 @@ internal static partial class Program
             }
             var reply = RespondToPause();
             var command = (Task)type.GetMethod("SendAsync")!.Invoke(client, ["pause", null])!;
-            PumpRecordingUntil(() => command.IsCompleted && reply.IsCompleted, "isolated pause did not finish");
+            PumpUntil(() => command.IsCompleted && reply.IsCompleted, "isolated pause did not finish");
             command.GetAwaiter().GetResult(); reply.GetAwaiter().GetResult();
             Assert(Available() && changes[^1].Phase == "Paused", "pause response did not confirm the new state");
             changes.Clear();
@@ -152,7 +150,7 @@ internal static partial class Program
             commandServer.Dispose();
             using var freshStatus = Server();
             var freshRead = Read(freshStatus);
-            PumpRecordingUntil(() => freshRead.IsCompleted, "poll did not continue after the old request failed");
+            PumpUntil(() => freshRead.IsCompleted, "poll did not continue after the old request failed");
             var freshRequest = freshRead.GetAwaiter().GetResult();
             Assert(Available() && changes.All(state => !state.Message.Contains("状态未知")), "obsolete query failure overwrote a newer command result");
 
@@ -162,9 +160,9 @@ internal static partial class Program
             Assert(blocked.IsCompleted && generation == (long)type.GetField("_generation", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(client)!, "unknown state submitted a new recording command");
             var recoveredReply = Protocol.WriteAsync(freshStatus, new HostResponse(Protocol.Version, freshRequest.RequestId,
                 "Succeeded", null, "隔离恢复", Recording: new("Idle", "恢复后准备录制")), timeout.Token);
-            PumpRecordingUntil(() => recoveredReply.IsCompleted, "isolated status reply did not finish");
+            PumpUntil(() => recoveredReply.IsCompleted, "isolated status reply did not finish");
             recoveredReply.GetAwaiter().GetResult();
-            PumpRecordingUntil(() => Available() && changes[^1].Phase == "Idle", "fresh polling response did not recover unknown state");
+            PumpUntil(() => Available() && changes[^1].Phase == "Idle", "fresh polling response did not recover unknown state");
             Checks.Add("Isolated real pipe requests: keep expected session fencing; an old query failure cannot mask a later pause result; unknown blocks new start; fresh poll recovers");
 
             using var lostCommand = Server();
@@ -187,7 +185,7 @@ internal static partial class Program
             var lostReply = LoseStartResponse();
             var start = (Task)type.GetMethod("SendAsync")!.Invoke(client,
                 ["start", new RecordingOptions("fixture", System.IO.Path.GetTempPath())])!;
-            PumpRecordingUntil(() => start.IsCompleted && lostReply.IsCompleted, "lost command response did not settle");
+            PumpUntil(() => start.IsCompleted && lostReply.IsCompleted, "lost command response did not settle");
             start.GetAwaiter().GetResult(); lostReply.GetAwaiter().GetResult();
             Assert(!Available() && changes[^1].Phase == "Idle" && changes[^1].Message.Contains("状态未知"), "lost start response leaves an optimistic starting phase or claims a known result");
             Checks.Add("A dropped start-command response retains the previously confirmed idle state for reconciliation and marks current status unknown");
@@ -196,20 +194,9 @@ internal static partial class Program
         {
             type.GetMethod("Detach")!.Invoke(client, null);
             var poll = (Task)type.GetField("_poll", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(client)!;
-            PumpRecordingUntil(() => poll.IsCompleted, "request-order fixture did not stop");
+            PumpUntil(() => poll.IsCompleted, "request-order fixture did not stop");
             ((IAsyncDisposable)client).DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
 
-    private static void PumpRecordingUntil(Func<bool> condition, string failure)
-    {
-        var elapsed = Stopwatch.StartNew();
-        var frame = new DispatcherFrame();
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
-        timer.Tick += (_, _) => { if (condition() || elapsed.Elapsed > TimeSpan.FromSeconds(5)) frame.Continue = false; };
-        timer.Start();
-        try { Dispatcher.PushFrame(frame); }
-        finally { timer.Stop(); }
-        Assert(condition(), failure);
-    }
 }

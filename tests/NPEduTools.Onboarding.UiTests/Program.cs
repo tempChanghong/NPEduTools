@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -6,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Xml.Linq;
 using NPEduTools.App;
 using NPEduTools.Contracts;
@@ -22,7 +24,8 @@ internal static partial class Program
         bool noiseOnly = args.Length == 2 && args[1] == "--noise-status";
         bool recordingOnly = args.Length == 2 && args[1] == "--automatic-recording";
         bool manualOnly = args.Length == 2 && args[1] == "--manual-recording";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording]");
+        bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -60,6 +63,11 @@ internal static partial class Program
             if (manualOnly)
             {
                 RunManualRecordingChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (secRandomOnly)
+            {
+                RunSecRandomStatusChecks();
                 WriteResult("PASSED", null); return 0;
             }
             Exercise(new AgreementsWindow(pipe), window =>
@@ -162,6 +170,17 @@ internal static partial class Program
         throw new InvalidOperationException("Control missing: " + id);
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    private static void PumpUntil(Func<bool> condition, string failure)
+    {
+        var elapsed = Stopwatch.StartNew();
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+        timer.Tick += (_, _) => { if (condition() || elapsed.Elapsed > TimeSpan.FromSeconds(5)) frame.Continue = false; };
+        timer.Start();
+        try { Dispatcher.PushFrame(frame); }
+        finally { timer.Stop(); }
+        Assert(condition(), failure);
+    }
     private static void Snapshot(Window window, string file)
     {
         window.UpdateLayout();
