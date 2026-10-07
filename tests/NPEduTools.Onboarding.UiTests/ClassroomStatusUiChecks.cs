@@ -32,7 +32,7 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunClassroomHomePollChecks(); RunClassroomOrderingCheck(); RunClassroomLateSetupCheck(); RunClassroomDisconnectedCheck(); RunClassroomMissingSnapshotCheck(); RunClassroomSetupSupersededCheck(); }
+        try { RunClassroomProtocolChecks(); RunClassroomHomePollChecks(); RunClassroomOrderingCheck(); RunClassroomOrderingCheck(true); RunClassroomLateSetupCheck(); RunClassroomDisconnectedCheck(); RunClassroomMissingSnapshotCheck(); RunClassroomSetupSupersededCheck(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static void RunClassroomDisconnectedCheck()
@@ -198,7 +198,7 @@ internal static partial class Program
         }
         finally { window.Shutdown(); }
     }
-    private static void RunClassroomOrderingCheck()
+    private static void RunClassroomOrderingCheck(bool invalidOld = false)
     {
         string pipe = "NPEduTools.Test.classroom-order." + Guid.NewGuid().ToString("N");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -237,7 +237,7 @@ internal static partial class Program
                 PumpUntil(() => command.IsCompleted && reply.IsCompleted, "read-only refresh did not finish");
                 command.GetAwaiter().GetResult(); reply.GetAwaiter().GetResult();
                 Assert(Title().Contains("日常模式"), "fresh read-only result did not render");
-                var oldReply = Protocol.WriteAsync(oldStatus, new HostResponse(Protocol.Version, oldRequest.RequestId,
+                var oldReply = Protocol.WriteAsync(oldStatus, new HostResponse(Protocol.Version, invalidOld ? Guid.NewGuid() : oldRequest.RequestId,
                     "Succeeded", null, "较早的隔离状态", ClassroomMode: ClassroomExam()), timeout.Token);
                 PumpUntil(() => oldReply.IsCompleted, "old mode reply did not finish");
                 oldReply.GetAwaiter().GetResult(); commandServer.Dispose();
@@ -245,7 +245,7 @@ internal static partial class Program
                 var freshRead = Read(freshStatus);
                 PumpUntil(() => freshRead.IsCompleted || Title().Contains("考试模式"), "mode poll did not continue after the older reply");
                 oldStatus.Dispose();
-                Snapshot(owner, "classroom-after-old-query.png");
+                Snapshot(owner, invalidOld ? "classroom-after-old-invalid-query.png" : "classroom-after-old-query.png");
                 Assert(Title().Contains("日常模式"), "an older poll overwrote the latest confirmed classroom mode after read-only verification");
                 var freshRequest = freshRead.GetAwaiter().GetResult();
                 var response = Protocol.WriteAsync(freshStatus, new HostResponse(Protocol.Version, freshRequest.RequestId,
@@ -255,7 +255,7 @@ internal static partial class Program
                 PumpUntil(() => Title().Contains("切换未完成"), "fresh incomplete state did not render");
                 Assert(Button(owner, "RestoreButton").IsEnabled && !Button(owner, "DailyButton").IsEnabled,
                     "fresh recovery state does not offer restoration or allows a new switch");
-                Checks.Add("Real read-only verification outranks an older query; a new incomplete snapshot still offers restoration and blocks a new mode switch");
+                Checks.Add((invalidOld ? "Old invalid query: " : "") + "Real read-only verification outranks an older query; a new incomplete snapshot still offers restoration and blocks a new mode switch");
                 window.Shutdown();
             });
         }

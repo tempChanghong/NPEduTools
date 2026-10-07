@@ -74,7 +74,7 @@ public partial class ClassroomModeWindow : Window
                     if (_closing || _sending || generation != _generation) continue;
                     if (response.ClassroomMode is { } state) Render(state); else Disconnected(response.Message);
                 }
-                catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)
+                catch (Exception ex) when (ex is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
                 {
                     if (!_closing && !_sending && generation == _generation)
                         Disconnected("暂时无法连接后台。请求可能已被受理，重新连接后请核实结果。");
@@ -119,7 +119,7 @@ public partial class ClassroomModeWindow : Window
                 _ => response.Message
             };
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
         {
             _sending = false;
             if (!_closing) Disconnected("未收到后台结果。请等待重新连接并核实状态，不要重复切换。");

@@ -24,6 +24,7 @@
 | 考试看板协议恢复 | [协议与隔离管理页检查](iterations/EXAMAWARE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效状态／操作／配对回执、旧查询错误及只读恢复；不启动真实软件或写入真实配对 |
 | 本机课堂模式恢复 | [课堂模式专项与隔离 WPF 检查](iterations/CLASSROOM-STATE-RECOVERY-20261007.md#验证) | 断连、新旧查询顺序与过期配置检查；只读模拟请求，不切换真实软件或自启动 |
 | 主页课堂模式轮询 | [模拟协议与隔离主页检查](iterations/CLASSROOM-HOME-POLL-RECOVERY-20261007.md#验证) | 无效回执、旧模式失效和同一轮询恢复；不执行真实切换 |
+| 课堂模式协议恢复 | [协议与隔离管理页检查](iterations/CLASSROOM-PROTOCOL-RECOVERY-20261007.md#验证) | 无效查询／核实回执、旧查询错误与状态恢复；只读模拟请求，不执行真实切换 |
 | 定时监测返回回执 | [展示专项与隔离 WPF 检查](iterations/SCHEDULED-DISPLAY-RETURN-20261007.md#验证) | 原生备用页面的新旧会话、返回回执与失败重试；不启动采集或连接学校 |
 | 初始设置查询恢复 | [引导专项与隔离 WPF 检查](iterations/OOBE-PREPARATION-RECOVERY-20261007.md#验证) | 准备页导航、旧查询与新查询、协议及引导记录；不执行真实配置或采集 |
 | 触摸辅助状态恢复 | [合成手势与隔离主窗口检查](iterations/TOUCH-STATE-RECOVERY-20261007.md#验证) | 查询时序、丢失操作回执和状态恢复；不启动输入钩子或 PowerPoint |
