@@ -26,7 +26,8 @@ internal static partial class Program
         bool manualOnly = args.Length == 2 && args[1] == "--manual-recording";
         bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
         bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status]");
+        bool classroomOnly = args.Length == 2 && args[1] == "--classroom-status";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -74,6 +75,11 @@ internal static partial class Program
             if (examAwareOnly)
             {
                 RunExamAwareStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (classroomOnly)
+            {
+                RunClassroomStatusChecks();
                 WriteResult("PASSED", null); return 0;
             }
             Exercise(new AgreementsWindow(pipe), window =>

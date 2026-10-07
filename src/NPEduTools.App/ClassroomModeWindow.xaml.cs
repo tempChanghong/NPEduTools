@@ -14,15 +14,19 @@ public partial class ClassroomModeWindow : Window
     private readonly Action _configureClassIsland, _configureAdmin, _configureExamAware;
     private readonly ClassroomSetupCheck _setupCheck;
     private bool _sending, _closing, _setupBusy;
+    private long _generation;
     public ClassroomModeWindow(string pipe, Action configureClassIsland, Action configureAdmin, Action configureExamAware)
+        : this(pipe, configureClassIsland, configureAdmin, configureExamAware, null) { }
+    internal ClassroomModeWindow(string pipe, Action configureClassIsland, Action configureAdmin, Action configureExamAware, ClassroomSetupCheck? setupCheck)
     {
         _pipe = pipe; InitializeComponent();
         _configureClassIsland = configureClassIsland; _configureAdmin = configureAdmin; _configureExamAware = configureExamAware;
-        _setupCheck = new(ReadSetupAsync, path => AdminClient.RunAsync(
+        _setupCheck = setupCheck ?? new(ReadSetupAsync, path => AdminClient.RunAsync(
             Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"), "status", path), File.Exists);
         IsVisibleChanged += async (_, _) => { if (IsVisible) await CheckSetupAsync(); };
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
+        Disconnected("后台状态尚未确认，连接后自动读取。");
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
@@ -63,35 +67,50 @@ public partial class ClassroomModeWindow : Window
         {
             if (IsVisible && !_sending)
             {
+                long generation = _generation;
                 try
                 {
                     var response = await RequestAsync("classroom.status");
+                    if (_closing || _sending || generation != _generation) continue;
                     if (response.ClassroomMode is { } state) Render(state); else Disconnected(response.Message);
                 }
                 catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)
-                { Disconnected("暂时无法连接后台。请求可能已被受理，重新连接后请核实结果。"); }
+                {
+                    if (!_closing && !_sending && generation == _generation)
+                        Disconnected("暂时无法连接后台。请求可能已被受理，重新连接后请核实结果。");
+                }
             }
             try { await Task.Delay(1000, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
     }
     private void Disconnected(string message)
     {
+        _generation++;
         _state = null;
+        var presentation = ClassroomModePresentation.From(null);
+        ModeTitle.Text = presentation.Title;
+        PauseText.Text = presentation.Detail;
+        RecoveryText.Text = "恢复记录状态未知，连接恢复后重新读取。";
         SetupSummary.Text = "后台未连接，配置检查结果已失效；连接恢复后请重新检查。";
         SetupItems.ItemsSource = null;
         DailyButton.IsEnabled = ExamButton.IsEnabled = RestoreButton.IsEnabled = RefreshButton.IsEnabled = RetryButton.IsEnabled = SwitchRunning.IsEnabled = false;
+        SetupRefresh.IsEnabled = !_sending && !_setupBusy;
         StatusText.Text = message; ActualText.Text = "后台未连接，实际状态未知。";
     }
     private async Task SendAsync(string capability, string? target = null, long? confirmedRevision = null, bool running = false)
     {
-        if (_sending || _state is null) return;
+        if (_closing || _sending || _state is null) return;
         long revision = confirmedRevision ?? _state.Revision;
+        _generation++;
         _sending = true; Render(_state);
         try
         {
             var response = await RequestAsync(capability, target, capability == "classroom.refresh" ? null : revision, running);
             _sending = false;
+            if (_closing) return;
             if (response.ClassroomMode is { } state) Render(state);
+            else if (response.ErrorCode == "MANAGEMENT_CANCELLED" && _state is not null) Render(_state);
+            else Disconnected(response.Message);
             if (response.Outcome != "Accepted") StatusText.Text = response.ErrorCode switch
             {
                 "RevisionConflict" => "状态已改变，请核对当前显示后再操作。",
@@ -101,7 +120,10 @@ public partial class ClassroomModeWindow : Window
             };
         }
         catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)
-        { Disconnected("未收到后台结果。请等待重新连接并核实状态，不要重复切换。"); }
+        {
+            _sending = false;
+            if (!_closing) Disconnected("未收到后台结果。请等待重新连接并核实状态，不要重复切换。");
+        }
         finally { _sending = false; }
     }
     private async void DailyClicked(object sender, RoutedEventArgs e) => await SwitchAsync("Daily");
@@ -142,6 +164,7 @@ public partial class ClassroomModeWindow : Window
     private async Task<bool> CheckSetupAsync()
     {
         if (_setupBusy || _sending || _closing || _state?.Busy == true) return false;
+        long generation = _generation;
         _setupBusy = true; SetupRefresh.IsEnabled = false;
         DailyButton.IsEnabled = ExamButton.IsEnabled = SwitchRunning.IsEnabled = false;
         SetupItems.ItemsSource = null;
@@ -150,6 +173,11 @@ public partial class ClassroomModeWindow : Window
         {
             var report = await _setupCheck.RunAsync(_lifetime.Token);
             if (_closing) return false;
+            if (generation != _generation)
+            {
+                if (_state is not null) SetupSummary.Text = "检查期间状态已改变，请重新检查配置。";
+                return false;
+            }
             SetupItems.ItemsSource = report.Items;
             SetupSummary.Text = (report.AllReady ? "四项已就绪。" : report.CanProceed ? "程序与任务已就绪，桥接仍需连接确认。" : "还有配置需要处理，请按下列提示完成设置。") +
                 $" 检查于 {report.CheckedAt:HH:mm:ss}。";
@@ -159,7 +187,16 @@ public partial class ClassroomModeWindow : Window
         finally
         {
             _setupBusy = false;
-            if (!_closing) { SetupRefresh.IsEnabled = true; if (_state is not null) Render(_state); }
+            if (!_closing)
+            {
+                SetupRefresh.IsEnabled = true;
+                if (_state is not null)
+                {
+                    string feedback = StatusText.Text;
+                    Render(_state);
+                    StatusText.Text = feedback;
+                }
+            }
         }
     }
     private async void SetupRefreshClicked(object sender, RoutedEventArgs e) => await CheckSetupAsync();
