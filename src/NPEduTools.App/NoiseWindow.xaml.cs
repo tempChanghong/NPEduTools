@@ -62,7 +62,7 @@ public partial class NoiseWindow : Window
                     if (response.Outcome == "Rejected") MessageText.Text = response.Message;
                 }
             }
-            catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+            catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
             { if (!_lifetime.IsCancellationRequested && operation == _uiOperation) Render(null); }
             try { await Task.Delay(500, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
@@ -160,7 +160,7 @@ public partial class NoiseWindow : Window
             else MessageText.Text = response.Message;
             Render(response.Noise);
         }
-        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
         { Render(null); }
         finally { _busy = false; UpdateButtons(); }
     }

@@ -8,6 +8,7 @@ internal static partial class Program
 {
     private static void RunNoiseStatusChecks()
     {
+        RunNoiseProtocolChecks();
         // A unique nonexistent pipe cannot reach the user's Host. Synchronous rendering
         // checks finish before the first request completes; Shutdown cancels that request.
         var window = new NoiseWindow("NPEduTools.Test.noise-ui." + Guid.NewGuid().ToString("N"));

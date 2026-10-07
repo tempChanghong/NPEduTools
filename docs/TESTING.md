@@ -11,6 +11,7 @@
 | 三端整体回归 | `./scripts/test-npep-current.ps1 -Browser -Database` | 当前三仓组合、协议、桌面、网页、临时数据库与 HTTP 检查 |
 | 定时监测与保护 | `./scripts/test-npep-noise-schedules.ps1 -Guard -Display -Protection -Presence` | 定时监测、显示、管理验证、在线状态和守护的专项自动检查；可加 `-Browser -Database` |
 | 噪音状态界面 | [构建并运行隔离 WPF 检查](iterations/NOISE-STATUS-PRESENTATION-20261007.md#验证) | 当前／历史统计、断连与恢复、最小尺寸布局；不启动真实采集 |
+| 噪音监测协议恢复 | [协议与隔离监测页检查](iterations/NOISE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效设备／状态／操作回执、旧数据失效和轮询恢复；只用合成麦克风 |
 | 自动录课状态界面 | [构建并运行隔离 WPF 检查](iterations/AUTOMATIC-RECORDING-STATUS-20261007.md#验证) | 设置验证、实际状态与操作反馈、记录和最小尺寸布局；不执行真实录课命令 |
 | 录课计划保存反馈 | [文件锁与隔离 WPF 检查](iterations/RECORDING-PLAN-SAVE-FEEDBACK-20261007.md#验证) | 计划写入失败、试运行记录写入失败及重开恢复；不启动真实录制 |
 | 自动录课命令恢复 | [模拟管道与隔离 WPF 控件检查](iterations/AUTOMATIC-RECORDING-RECEIPT-RECOVERY-20261007.md#验证) | 丢失／无效回执、明确拒绝及轮询恢复；不启动真实录制 |
