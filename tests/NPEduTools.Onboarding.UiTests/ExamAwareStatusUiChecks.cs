@@ -21,7 +21,7 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
+        try { RunExamAwareProtocolChecks(); RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareOrderingCheck(true); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static void RunExamAwareLostReplyCheck()
@@ -87,7 +87,7 @@ internal static partial class Program
         }
         finally { window.Shutdown(); }
     }
-    private static void RunExamAwareOrderingCheck()
+    private static void RunExamAwareOrderingCheck(bool invalidOld = false)
     {
         string pipe = "NPEduTools.Test.examaware-order." + Guid.NewGuid().ToString("N");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -127,7 +127,7 @@ internal static partial class Program
                 PumpUntil(() => command.IsCompleted && reply.IsCompleted, "isolated plan response did not finish");
                 command.GetAwaiter().GetResult(); reply.GetAwaiter().GetResult();
                 Assert(Summary().Contains("隔离新方案"), "new preparation receipt did not render");
-                var oldReply = Protocol.WriteAsync(oldStatus, new HostResponse(Protocol.Version, oldRequest.RequestId,
+                var oldReply = Protocol.WriteAsync(oldStatus, new HostResponse(Protocol.Version, invalidOld ? Guid.NewGuid() : oldRequest.RequestId,
                     "Succeeded", null, "较早的隔离状态", ExamAware: original), timeout.Token);
                 PumpUntil(() => oldReply.IsCompleted, "old examination status reply did not finish");
                 oldReply.GetAwaiter().GetResult(); commandServer.Dispose();
@@ -135,7 +135,7 @@ internal static partial class Program
                 var freshRead = Read(freshStatus);
                 PumpUntil(() => freshRead.IsCompleted || Summary().Contains("隔离旧方案"), "poll did not continue after the old reply");
                 oldStatus.Dispose();
-                Snapshot(owner, "examaware-after-old-query.png");
+                Snapshot(owner, invalidOld ? "examaware-after-old-invalid-query.png" : "examaware-after-old-query.png");
                 Assert(Summary().Contains("隔离新方案") && !Summary().Contains("隔离旧方案"), "an older poll restored the previous exam plan after a new preparation receipt");
                 var playing = prepared with { Player = new(true, [new("fixture-session", "ready", "隔离已放映")]) };
                 var freshRequest = freshRead.GetAwaiter().GetResult();
@@ -145,7 +145,7 @@ internal static partial class Program
                 freshReply.GetAwaiter().GetResult();
                 PumpUntil(() => ((TextBlock)owner.FindName("PlayerStateText")).Text.Contains("隔离已放映"), "current player snapshot did not render");
                 Assert(!Button(owner, "PresentPlanButton").IsEnabled, "an active presentation permits a second presentation");
-                Checks.Add("Real status/plan request ordering retains revision checking and the new prepared summary; fresh active-player status blocks duplicate presentation");
+                Checks.Add((invalidOld ? "Old invalid query: " : "") + "Real status/plan request ordering retains revision checking and the new prepared summary; fresh active-player status blocks duplicate presentation");
                 using var brokenStatus = Server();
                 async Task DropStatus()
                 {

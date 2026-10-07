@@ -74,7 +74,7 @@ public partial class ExamAwareWindow : Window
                     var response = await RequestAsync("examaware.status");
                     if (!_closing && !_busy && generation == _generation) Render(response.ExamAware);
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
                 { if (!_closing && !_busy && generation == _generation) Render(null); }
             }
             try { await Task.Delay(1500, _lifetime.Token); } catch (OperationCanceledException) { break; }
@@ -92,7 +92,7 @@ public partial class ExamAwareWindow : Window
             if (plan?.Action == "prepare") _allowPreparedPlan = response.Outcome == "Accepted";
             Render(response.ExamAware); Message.Text = response.Message;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         { Render(null); Message.Text = "未收到后台结果，请先检查软件窗口及连接状态，再决定是否重试。"; }
         finally { _busy = false; Render(_state); }
     }
@@ -153,7 +153,7 @@ public partial class ExamAwareWindow : Window
             await File.WriteAllTextAsync(fileName, JsonSerializer.Serialize(pairing, Protocol.Json), _lifetime.Token);
             Message.Text = "已导出。请在 ExamAware 中导入；配对文件含连接凭据，导入后可删除。";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
             if (!received) Render(null);
             Message.Text = "未能导出，请检查后台连接与保存位置。";
