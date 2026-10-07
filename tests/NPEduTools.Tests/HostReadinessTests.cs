@@ -11,6 +11,33 @@ public sealed class HostReadinessTests
 {
     private static string UniquePipe() => "NPEduTools.Test." + Guid.NewGuid().ToString("N");
 
+    [Theory]
+    [InlineData("examaware.json", "{}", "examaware.status")]
+    [InlineData("classroom-mode.json", "{\"mode\":\"invalid\"}", "classroom.status")]
+    public async Task InvalidModuleStoreDoesNotPreventHostStartup(string file, string content, string capability)
+    {
+        var directory = Directory.CreateTempSubdirectory("NPEduTools.Test.StoreRecovery.");
+        string path = Path.Combine(directory.FullName, file);
+        await File.WriteAllTextAsync(path, content);
+        try
+        {
+            string host = UniquePipe();
+            await using var server = await TestProcess.StartAsync("NPEduTools.Host", false,
+                "--pipe", host, "--classisland-pipe", UniquePipe(), "--data-dir", directory.FullName);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            Assert.Equal("Succeeded", (await HostClient.RequestAsync(host, "host.ping", deadline.Token)).Outcome);
+            var response = await HostClient.RequestAsync(host, capability, deadline.Token);
+            if (file == "examaware.json") Assert.Equal("Unavailable", response.ExamAware!.BridgeState);
+            else
+            {
+                Assert.Equal("Unavailable", response.ClassroomMode!.Phase);
+                Assert.True(response.ClassroomMode.AutomaticPaused);
+            }
+            Assert.Equal(content, await File.ReadAllTextAsync(path));
+        }
+        finally { directory.Delete(true); }
+    }
+
     [Fact]
     public async Task FailedPipeBindingDoesNotAnnounceReadiness()
     {

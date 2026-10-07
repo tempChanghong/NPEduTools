@@ -63,7 +63,7 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
             await process.WaitForExitAsync();
             if (State.Active) Fail("录制进程意外退出；已写入的片段保留。");
         }
-        catch (Exception error) when (error is IOException or JsonException or InvalidOperationException)
+        catch (Exception error) when (error is IOException or InvalidDataException or JsonException or InvalidOperationException)
         { Fail("录制状态连接中断，录制器将按截止或租约结束。"); }
         finally { _hello.TrySetResult(); }
     }

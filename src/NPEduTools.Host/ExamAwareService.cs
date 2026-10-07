@@ -71,7 +71,7 @@ public sealed partial class ExamAwareService : IAsyncDisposable
                 Save(_saved with { Port = ((IPEndPoint)_listener.LocalEndpoint).Port, Key = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant() });
             _loops = Enumerable.Range(0, 2).Select(_ => ListenAsync(_lifetime.Token)).ToArray();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or SocketException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or SocketException or ArgumentException)
         {
             _listener?.Stop();
             _failure = "连接服务不可用：配置无法读取、目录被占用或配对端口被占用。原配置已保留。";

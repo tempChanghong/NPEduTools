@@ -170,16 +170,20 @@ public sealed partial class ExamAwareTests : IDisposable
         await using var recovered = new ExamAwareService(_directory, new Target());
         Assert.Equal(pairing, await Pairing(recovered));
     }
-    [Fact]
-    public async Task CorruptStoreIsPreservedAndDoesNotReplaceCredentials()
+    [Theory]
+    [InlineData("broken")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("{\"version\":2,\"port\":17000,\"key\":\"invalid\",\"receipts\":[]}")]
+    public async Task CorruptStoreIsPreservedAndDoesNotReplaceCredentials(string content)
     {
         Directory.CreateDirectory(_directory);
         string path = Path.Combine(_directory, "examaware.json");
-        await File.WriteAllTextAsync(path, "broken");
+        await File.WriteAllTextAsync(path, content);
         await using var service = new ExamAwareService(_directory, new Target());
         Assert.Equal("Unavailable", service.Snapshot().BridgeState);
         Assert.Equal("Rejected", (await service.HandleAsync(Request("examaware.pairing.get"))).Outcome);
-        Assert.Equal("broken", await File.ReadAllTextAsync(path));
+        Assert.Equal(content, await File.ReadAllTextAsync(path));
     }
     [Fact]
     public void AutoStartRequiresExplicitBooleanAndRejectsParametersOnOtherCommands()
