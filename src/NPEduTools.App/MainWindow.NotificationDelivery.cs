@@ -55,8 +55,8 @@ public partial class MainWindow
                         _inboxScope = inbox.Scope;
                         NotificationInboxMessage.Text = inbox.Message + $"（当前有效通知 {inbox.Total} 条）";
                         NotificationInboxItems.ItemsSource = inbox.Items; _inboxNext = inbox.NextOffset;
-                        NotificationNext.IsEnabled = _inboxNext is not null; NotificationPrevious.IsEnabled = _inboxOffset > 0;
                         if (_inboxOffset >= inbox.Total && _inboxOffset != 0) _inboxOffset = 0;
+                        NotificationNext.IsEnabled = _inboxNext is not null; NotificationPrevious.IsEnabled = _inboxOffset > 0;
                         if (_schoolNotification is { Invalidated: false } && _shownNotice is { } shown)
                         {
                             var current = await NotificationRequestAsync(new("get", _shownScope, shown.PublicationId, shown.Revision));
