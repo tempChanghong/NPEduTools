@@ -19,7 +19,8 @@ internal static partial class Program
     {
         bool examOnly = args.Length == 2 && args[1] == "--remote-exam";
         bool connectionOnly = args.Length == 2 && args[1] == "--school-connection";
-        if (args.Length != 1 && !examOnly && !connectionOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection]");
+        bool noiseOnly = args.Length == 2 && args[1] == "--noise-status";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -42,6 +43,11 @@ internal static partial class Program
             if (connectionOnly)
             {
                 RunSchoolConnectionChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (noiseOnly)
+            {
+                RunNoiseStatusChecks();
                 WriteResult("PASSED", null); return 0;
             }
             Exercise(new AgreementsWindow(pipe), window =>
