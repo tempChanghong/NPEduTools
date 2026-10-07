@@ -19,6 +19,7 @@
 | 触摸辅助状态恢复 | [操作顺序与丢失回执](TOUCH-STATE-RECOVERY-20261007.md) |
 | ClassIsland 管理状态 | [未知状态、路径变更与取消授权](CLASSISLAND-ADMIN-STATE-20261007.md) |
 | ClassIsland 配置恢复 | [请求顺序与保存结果重新核对](CLASSISLAND-CONFIGURATION-RECOVERY-20261007.md) |
+| ClassIsland 启动恢复 | [未知回执、停止后回执与课程验证](CLASSISLAND-LAUNCH-RECOVERY-20261007.md) |
 | 三端 CURRENT CI | [当前组合与来源检查](NPEP-CURRENT-CI-20261005.md) |
 | 学校配对 | [预授权](NPEP-PREAUTHORIZED-PAIRING-20261002.md)、[配对自动检查](NPEP-PAIRING-AUTOMATION-20261002.md) |
 | 定时监测页面 | [显示方案](SCHEDULED-NOISE-DISPLAY-PLAN-20261004.md) |

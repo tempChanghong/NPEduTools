@@ -21,6 +21,7 @@
 | 触摸辅助状态恢复 | [合成手势与隔离主窗口检查](iterations/TOUCH-STATE-RECOVERY-20261007.md#验证) | 查询时序、丢失操作回执和状态恢复；不启动输入钩子或 PowerPoint |
 | ClassIsland 管理状态 | [任务策略与隔离主窗口检查](iterations/CLASSISLAND-ADMIN-STATE-20261007.md#验证) | 检查失败、丢失回执与路径变更；不调用真实管理员工具或计划任务 |
 | ClassIsland 配置恢复 | [启动服务与隔离主窗口检查](iterations/CLASSISLAND-CONFIGURATION-RECOVERY-20261007.md#验证) | 读取与保存顺序、旧查询错误及丢失回执恢复；只连接唯一模拟管道 |
+| ClassIsland 启动恢复 | [启动策略与隔离主窗口检查](iterations/CLASSISLAND-LAUNCH-RECOVERY-20261007.md#验证) | 启动未知、取消授权、生命周期停止与课程验证结果恢复；不启动真实软件或管理员工具 |
 | 桌面交付 | `./scripts/test-desktop-delivery.ps1 -PackageResultPath '<打包返回的 result.json>'` | 同次完整候选的 EXE／ZIP／载荷一致性、隔离安装生命周期和合成媒体 |
 
 入口依赖和可选参数以对应脚本为准。上表的 CURRENT、定时监测与交付入口支持 Windows PowerShell 5.1；打包及其他专项脚本可能另有版本要求。文档检查需要 Node.js。
