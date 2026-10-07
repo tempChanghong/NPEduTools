@@ -36,6 +36,7 @@
 | 学校通知分页恢复 | [分页边界与隔离 WPF 检查](iterations/NOTIFICATION-PAGINATION-RECOVERY-20261007.md#验证) | 越界页重置、即时按钮状态及下轮第一页恢复；只轮询模拟列表 |
 | 学校通知翻页时序 | [挂起查询与隔离按钮检查](iterations/NOTIFICATION-PAGE-ORDERING-20261007.md#验证) | 旧页结果／错误隔离、新页恢复及正文核验；不显示弹窗或发送回执 |
 | 手动打开通知时序 | [并行列表与隔离打开检查](iterations/NOTIFICATION-OPEN-ORDERING-20261007.md#验证) | 旧正文错误、新页及新归属提示；禁止真实通知展示 |
+| 通知窗口核验时序 | [窗口替换与隔离字段检查](iterations/NOTIFICATION-WINDOW-ORDERING-20261007.md#验证) | 旧窗口回执隔离、新窗口核验期限与继续查询；不显示弹窗或发送回执 |
 | 初始设置查询恢复 | [引导专项与隔离 WPF 检查](iterations/OOBE-PREPARATION-RECOVERY-20261007.md#验证) | 准备页导航、旧查询与新查询、协议及引导记录；不执行真实配置或采集 |
 | 触摸辅助状态恢复 | [合成手势与隔离主窗口检查](iterations/TOUCH-STATE-RECOVERY-20261007.md#验证) | 查询时序、丢失操作回执和状态恢复；不启动输入钩子或 PowerPoint |
 | ClassIsland 管理状态 | [任务策略与隔离主窗口检查](iterations/CLASSISLAND-ADMIN-STATE-20261007.md#验证) | 检查失败、丢失回执与路径变更；不调用真实管理员工具或计划任务 |

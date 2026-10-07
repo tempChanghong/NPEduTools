@@ -65,16 +65,15 @@ public partial class MainWindow
                             if (_inboxOffset >= inbox.Total && _inboxOffset != 0) _inboxOffset = 0;
                             NotificationNext.IsEnabled = _inboxNext is not null; NotificationPrevious.IsEnabled = _inboxOffset > 0;
                         }
-                        if (_schoolNotification is { Invalidated: false } && _shownNotice is { } shown)
+                        bool bodyVerified = true;
+                        if (_schoolNotification is { Invalidated: false } notification && _shownNotice is { } shown)
                         {
-                            var current = await NotificationRequestAsync(new("get", _shownScope, shown.PublicationId, shown.Revision));
-                            if (current.Inbox is not { CanPresent: true, Current: not null } || current.Inbox.Scope != _shownScope)
-                                _schoolNotification?.InvalidateNotice("通知已撤回、更新、过期，或学校互联已停用。请关闭此窗口。新通知会继续按顺序显示。");
+                            bodyVerified = await VerifySchoolNotificationAsync(notification, _shownScope, shown);
                         }
                         else if (_schoolNotification is null && inbox.CanPresent && inbox.Current is { } candidate && NotificationDesktopAvailable())
                             await ShowSchoolNotificationAsync(inbox.Scope!, candidate);
                         // A readable list alone does not verify the body of an already displayed notice.
-                        _lastNotificationRead = Stopwatch.GetTimestamp();
+                        if (bodyVerified) _lastNotificationRead = Stopwatch.GetTimestamp();
                     }
                 }
                 catch (Exception error) when (IsManagementError(error))
@@ -88,6 +87,25 @@ public partial class MainWindow
             try { await Task.Delay(1000, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
         _schoolNotification?.InvalidateNotice("学校互联后台已停止。请关闭此窗口，重新启动 NPEduTools 后再核对通知。");
+    }
+
+    private async Task<bool> VerifySchoolNotificationAsync(SchoolNotificationWindow window, string? scope, NpepNotice notice)
+    {
+        bool StillCurrent() => ReferenceEquals(_schoolNotification, window) &&
+            ReferenceEquals(_shownNotice, notice) && _shownScope == scope;
+        try
+        {
+            var current = await NotificationRequestAsync(new("get", scope, notice.PublicationId, notice.Revision));
+            if (!StillCurrent()) return false;
+            if (current.Inbox is not { CanPresent: true, Current: not null } || current.Inbox.Scope != scope)
+                window.InvalidateNotice("通知已撤回、更新、过期，或学校互联已停用。请关闭此窗口。新通知会继续按顺序显示。");
+            return true;
+        }
+        catch (Exception error) when (IsManagementError(error) && !StillCurrent())
+        {
+            // A closed window's reply cannot invalidate its replacement or renew its deadline.
+            return false;
+        }
     }
 
     private void InvalidateUnverifiedNotification(bool clearInbox = true)

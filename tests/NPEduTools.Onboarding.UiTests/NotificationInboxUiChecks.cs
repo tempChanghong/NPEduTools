@@ -14,6 +14,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            RunNotificationWindowOrderingChecks();
             RunNotificationOpenOrderingChecks();
             RunNotificationPageOrderingChecks();
             RunNotificationPaginationChecks();
