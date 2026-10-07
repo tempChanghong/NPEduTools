@@ -121,9 +121,21 @@ internal sealed class RecordingClient : IAsyncDisposable
     public async Task SetAutomaticAsync(string action, RecordingOptions? options = null)
     {
         _generation++;
-        var response = await RequestAsync("recording.automatic", automatic: new(action, _client, options));
-        Apply(response);
-        if (response.Outcome != "Succeeded") throw new InvalidOperationException(response.Message);
+        try
+        {
+            var response = await RequestAsync("recording.automatic", automatic: new(action, _client, options));
+            if (response.Automatic is null)
+                throw new InvalidDataException("后台未返回自动录课状态；" + response.Message);
+            Apply(response);
+            if (response.Outcome != "Succeeded") throw new InvalidOperationException(response.Message);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
+        {
+            string message = "自动录课操作未确认；" + error.Message;
+            if (!_closing) MarkUnavailable(error: message);
+            // The Host may have applied the command. Reconcile through polling, never replay it here.
+            throw new IOException(message, error);
+        }
     }
     public async Task<bool> StopAndSaveAsync()
     {

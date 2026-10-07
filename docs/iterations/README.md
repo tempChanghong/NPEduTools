@@ -21,6 +21,7 @@
 | ClassIsland 配置恢复 | [请求顺序与保存结果重新核对](CLASSISLAND-CONFIGURATION-RECOVERY-20261007.md) |
 | ClassIsland 启动恢复 | [未知回执、停止后回执与课程验证](CLASSISLAND-LAUNCH-RECOVERY-20261007.md) |
 | 录课计划保存反馈 | [计划与试运行记录的不同保存结果](RECORDING-PLAN-SAVE-FEEDBACK-20261007.md) |
+| 自动录课命令恢复 | [丢失回执、明确拒绝与轮询核对](AUTOMATIC-RECORDING-RECEIPT-RECOVERY-20261007.md) |
 | 三端 CURRENT CI | [当前组合与来源检查](NPEP-CURRENT-CI-20261005.md) |
 | 学校配对 | [预授权](NPEP-PREAUTHORIZED-PAIRING-20261002.md)、[配对自动检查](NPEP-PAIRING-AUTOMATION-20261002.md) |
 | 定时监测页面 | [显示方案](SCHEDULED-NOISE-DISPLAY-PLAN-20261004.md) |
