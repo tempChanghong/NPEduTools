@@ -16,7 +16,9 @@ internal sealed class RecordingClient : IAsyncDisposable
     private readonly Guid _client = Guid.NewGuid();
     private string? _pending;
     private bool _closing, _sending;
+    private long _generation;
     public RecordingState State { get; private set; } = new("Idle", "准备录制");
+    public bool StateAvailable { get; private set; }
     public AutomaticRecordingState Automatic { get; private set; } = new(false, Guid.Empty, "自动录制未启用", null, []);
     public event Action<RecordingState>? Changed;
     public event Action<AutomaticRecordingState>? AutomaticChanged;
@@ -46,10 +48,11 @@ internal sealed class RecordingClient : IAsyncDisposable
         {
             while (!_lifetime.IsCancellationRequested)
             {
+                long generation = _generation;
                 try
                 {
                     var response = await RequestAsync("recording.status");
-                    await _dispatcher.InvokeAsync(() => { if (!_closing && !_sending) Apply(response); });
+                    await _dispatcher.InvokeAsync(() => { if (!_closing && !_sending && generation == _generation) Apply(response); });
                     // UI synchronization context: a frozen/dead App cannot renew control indefinitely.
                     if (Stopwatch.GetElapsedTime(leased) >= TimeSpan.FromSeconds(2))
                     {
@@ -59,12 +62,23 @@ internal sealed class RecordingClient : IAsyncDisposable
                 catch (Exception error) when (error is IOException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
                 {
                     if (!_closing) await _dispatcher.InvokeAsync(() =>
-                        AutomaticChanged?.Invoke(Automatic with { Message = "录制后台连接中断；等待重新连接", Error = "失联期间录制器仍受截止及租约保护。" }));
+                    {
+                        if (!_closing && !_sending && generation == _generation) MarkUnavailable();
+                    });
                 }
                 await Task.Delay(500, _lifetime.Token);
             }
         }
         catch (OperationCanceledException) { }
+    }
+    private void MarkUnavailable(RecordingState? previous = null, string? error = null)
+    {
+        StateAvailable = false;
+        // Preserve the last control/session for reconciliation; do not invent a
+        // stopped/failed recorder or use an optimistic command phase as evidence.
+        State = (previous ?? State) with { Message = "录制后台连接中断，当前状态未知。", Error = error };
+        Changed?.Invoke(State);
+        AutomaticChanged?.Invoke(Automatic with { Message = "录制后台连接中断；等待重新连接", Error = "失联期间录制器仍受截止及租约保护。" });
     }
     private void Apply(HostResponse response)
     {
@@ -78,12 +92,14 @@ internal sealed class RecordingClient : IAsyncDisposable
             _ => true
         };
         if (!expected) return;
-        _pending = null; State = state; Changed?.Invoke(state);
+        _pending = null; StateAvailable = true; State = state; Changed?.Invoke(state);
     }
     public async Task SendAsync(string action, RecordingOptions? options = null)
     {
-        if (_closing || _sending || _pending is not null || State.Busy && action != "stop") return;
+        if (_closing || !StateAvailable || _sending || _pending is not null || State.Busy && action != "stop") return;
         var expected = State.Control;
+        var previous = State;
+        _generation++;
         _sending = true; _pending = action;
         State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
         Changed?.Invoke(State);
@@ -94,11 +110,17 @@ internal sealed class RecordingClient : IAsyncDisposable
             Apply(response);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
-        { _pending = null; State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }
+        {
+            _pending = null;
+            if (error is IOException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
+                MarkUnavailable(previous, "本次操作未确认；" + error.Message);
+            else { State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }
+        }
         finally { _sending = false; }
     }
     public async Task SetAutomaticAsync(string action, RecordingOptions? options = null)
     {
+        _generation++;
         var response = await RequestAsync("recording.automatic", automatic: new(action, _client, options));
         Apply(response);
         if (response.Outcome != "Succeeded") throw new InvalidOperationException(response.Message);

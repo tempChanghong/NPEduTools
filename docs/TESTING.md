@@ -12,6 +12,7 @@
 | 定时监测与保护 | `./scripts/test-npep-noise-schedules.ps1 -Guard -Display -Protection -Presence` | 定时监测、显示、管理验证、在线状态和守护的专项自动检查；可加 `-Browser -Database` |
 | 噪音状态界面 | [构建并运行隔离 WPF 检查](iterations/NOISE-STATUS-PRESENTATION-20261007.md#验证) | 当前／历史统计、断连与恢复、最小尺寸布局；不启动真实采集 |
 | 自动录课状态界面 | [构建并运行隔离 WPF 检查](iterations/AUTOMATIC-RECORDING-STATUS-20261007.md#验证) | 设置验证、实际状态与操作反馈、记录和最小尺寸布局；不执行真实录课命令 |
+| 手动录课恢复 | [客户端与隔离 WPF 检查](iterations/MANUAL-RECORDING-RECOVERY-20261007.md#验证) | 断连、重新确认、旧查询时序与回执丢失；使用唯一模拟管道，不启动真实录制 |
 | 桌面交付 | `./scripts/test-desktop-delivery.ps1 -PackageResultPath '<打包返回的 result.json>'` | 同次完整候选的 EXE／ZIP／载荷一致性、隔离安装生命周期和合成媒体 |
 
 入口依赖和可选参数以对应脚本为准。上表的 CURRENT、定时监测与交付入口支持 Windows PowerShell 5.1；打包及其他专项脚本可能另有版本要求。文档检查需要 Node.js。
