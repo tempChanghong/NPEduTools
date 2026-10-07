@@ -14,6 +14,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            RunNotificationPageOrderingChecks();
             RunNotificationPaginationChecks();
             RunNotificationValidityChecks();
             var failures = new List<Exception>();

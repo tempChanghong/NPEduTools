@@ -27,6 +27,7 @@
 | 学校通知列表恢复 | [未确认列表失效与第一页恢复](NOTIFICATION-INBOX-RECOVERY-20261007.md) |
 | 学校通知正文有效性 | [核对失败不延长保留期限](NOTIFICATION-VALIDITY-RECOVERY-20261007.md) |
 | 学校通知分页恢复 | [列表缩减与页码边界](NOTIFICATION-PAGINATION-RECOVERY-20261007.md) |
+| 学校通知翻页时序 | [旧页回执与新页选择](NOTIFICATION-PAGE-ORDERING-20261007.md) |
 | 初始设置查询恢复 | [重新进入准备页时读取新状态](OOBE-PREPARATION-RECOVERY-20261007.md) |
 | 触摸辅助状态恢复 | [操作顺序与丢失回执](TOUCH-STATE-RECOVERY-20261007.md) |
 | ClassIsland 管理状态 | [未知状态、路径变更与取消授权](CLASSISLAND-ADMIN-STATE-20261007.md) |
