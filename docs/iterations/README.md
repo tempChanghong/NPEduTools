@@ -14,6 +14,7 @@
 | 点名回执恢复 | [未知状态、历史回执与操作顺序](SECRANDOM-STATE-RECOVERY-20261007.md) |
 | 考试看板恢复 | [连接、方案与操作回执](EXAMAWARE-STATE-RECOVERY-20261007.md) |
 | 本机课堂模式恢复 | [未知状态、查询时序与配置检查](CLASSROOM-STATE-RECOVERY-20261007.md) |
+| 定时监测返回回执 | [旧会话隔离与新会话返回](SCHEDULED-DISPLAY-RETURN-20261007.md) |
 | 三端 CURRENT CI | [当前组合与来源检查](NPEP-CURRENT-CI-20261005.md) |
 | 学校配对 | [预授权](NPEP-PREAUTHORIZED-PAIRING-20261002.md)、[配对自动检查](NPEP-PAIRING-AUTOMATION-20261002.md) |
 | 定时监测页面 | [显示方案](SCHEDULED-NOISE-DISPLAY-PLAN-20261004.md) |

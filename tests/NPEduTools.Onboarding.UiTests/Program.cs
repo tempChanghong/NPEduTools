@@ -27,7 +27,8 @@ internal static partial class Program
         bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
         bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
         bool classroomOnly = args.Length == 2 && args[1] == "--classroom-status";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status]");
+        bool scheduledDisplayOnly = args.Length == 2 && args[1] == "--scheduled-display";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -80,6 +81,11 @@ internal static partial class Program
             if (classroomOnly)
             {
                 RunClassroomStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (scheduledDisplayOnly)
+            {
+                RunScheduledDisplayChecks();
                 WriteResult("PASSED", null); return 0;
             }
             Exercise(new AgreementsWindow(pipe), window =>
