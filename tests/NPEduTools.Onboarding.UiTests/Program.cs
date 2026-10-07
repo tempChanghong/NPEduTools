@@ -25,7 +25,8 @@ internal static partial class Program
         bool recordingOnly = args.Length == 2 && args[1] == "--automatic-recording";
         bool manualOnly = args.Length == 2 && args[1] == "--manual-recording";
         bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status]");
+        bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -68,6 +69,11 @@ internal static partial class Program
             if (secRandomOnly)
             {
                 RunSecRandomStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (examAwareOnly)
+            {
+                RunExamAwareStatusChecks();
                 WriteResult("PASSED", null); return 0;
             }
             Exercise(new AgreementsWindow(pipe), window =>
