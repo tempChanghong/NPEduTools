@@ -140,7 +140,6 @@ await using var touch = new TouchAssistService(() =>
     start.ArgumentList.Add("--powerpoint-worker");
     return start;
 });
-Console.WriteLine($"Host ready: {pipeName}");
 var classroomStore = new ClassroomModeStore(dataDirectory);
 // Load the independent N3 protection before the scheduler. No remote execute entry is exposed yet.
 var remoteExamStore = new RemoteExamStore(dataDirectory);
@@ -184,8 +183,11 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
     new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules);
 try
 {
-    await new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
+    var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
         runtimeGate, remoteExam, noise, secRandom, noiseDisplay, guard.ExpectedStop).RunAsync(shutdown.Token);
+    // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
+    if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
+    await serving;
     return 0;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

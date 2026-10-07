@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -6,18 +7,37 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Xml.Linq;
 using NPEduTools.App;
 using NPEduTools.Contracts;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly List<string> Checks = [];
     private static string _output = "";
     [STAThread]
     private static int Main(string[] args)
     {
-        _output = Path.GetFullPath(args.Single()); Directory.CreateDirectory(_output);
+        bool examOnly = args.Length == 2 && args[1] == "--remote-exam";
+        bool connectionOnly = args.Length == 2 && args[1] == "--school-connection";
+        bool noiseOnly = args.Length == 2 && args[1] == "--noise-status";
+        bool recordingOnly = args.Length == 2 && args[1] == "--automatic-recording";
+        bool manualOnly = args.Length == 2 && args[1] == "--manual-recording";
+        bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
+        bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
+        bool classroomOnly = args.Length == 2 && args[1] == "--classroom-status";
+        bool scheduledDisplayOnly = args.Length == 2 && args[1] == "--scheduled-display";
+        bool preparationOnly = args.Length == 2 && args[1] == "--onboarding-preparation";
+        bool touchOnly = args.Length == 2 && args[1] == "--touch-status";
+        bool adminOnly = args.Length == 2 && args[1] == "--admin-status";
+        bool launchConfigOnly = args.Length == 2 && args[1] == "--launch-configuration";
+        bool launchOnly = args.Length == 2 && args[1] == "--classisland-launch";
+        bool planSaveOnly = args.Length == 2 && args[1] == "--recording-plan-save";
+        bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
+        bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox]");
+        _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
         XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -31,6 +51,91 @@ internal static class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (inboxOnly)
+            {
+                RunNotificationInboxChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (automaticRecoveryOnly)
+            {
+                RunAutomaticRecoveryChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (planSaveOnly)
+            {
+                RunRecordingPlanSaveChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (examOnly)
+            {
+                RunRemoteExamChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (connectionOnly)
+            {
+                RunSchoolConnectionChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (noiseOnly)
+            {
+                RunNoiseStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (recordingOnly)
+            {
+                RunAutomaticRecordingChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (manualOnly)
+            {
+                RunManualRecordingChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (secRandomOnly)
+            {
+                RunSecRandomStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (examAwareOnly)
+            {
+                RunExamAwareStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (classroomOnly)
+            {
+                RunClassroomStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (scheduledDisplayOnly)
+            {
+                RunScheduledDisplayChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (preparationOnly)
+            {
+                RunOnboardingPreparationChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (touchOnly)
+            {
+                RunTouchStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (adminOnly)
+            {
+                RunAdminStatusChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (launchConfigOnly)
+            {
+                RunLaunchConfigurationChecks();
+                WriteResult("PASSED", null); return 0;
+            }
+            if (launchOnly)
+            {
+                RunClassIslandLaunchChecks();
+                WriteResult("PASSED", null); return 0;
+            }
             Exercise(new AgreementsWindow(pipe), window =>
             {
                 Assert(!Check(window, "AcceptApp").IsChecked.GetValueOrDefault(), "first consent preselected");
@@ -131,6 +236,17 @@ internal static class Program
         throw new InvalidOperationException("Control missing: " + id);
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    private static void PumpUntil(Func<bool> condition, string failure)
+    {
+        var elapsed = Stopwatch.StartNew();
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+        timer.Tick += (_, _) => { if (condition() || elapsed.Elapsed > TimeSpan.FromSeconds(5)) frame.Continue = false; };
+        timer.Start();
+        try { Dispatcher.PushFrame(frame); }
+        finally { timer.Stop(); }
+        Assert(condition(), failure);
+    }
     private static void Snapshot(Window window, string file)
     {
         window.UpdateLayout();

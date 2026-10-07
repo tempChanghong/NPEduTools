@@ -336,12 +336,19 @@
                 <TextBlock Text="学校也可远程返回日常：恢复日常自启动，正常退出 ExamAware2，等待 ClassIsland 就绪后解除远程录课暂停。放映或编辑器阻止退出时保留暂停并报告原因。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,0,0,8" />
                 <TextBlock x:Name="RemoteExamPolicyMessage" Text="正在读取 N3 通道状态…" TextWrapping="Wrap" Foreground="#64776D" />
                 <TextBlock x:Name="RemoteExamRuntimeMessage" Text="正在读取本地考试状态…" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,12,0,0" />
+                <TextBlock Text="此项仅表示当前远程录课暂停，不代表 ExamAware2 或 ClassIsland 的运行状态；历史回执另列在下方。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,6,0,0" />
+                <Expander x:Name="RemoteExamRuntimeDetailsPanel" Header="当前暂停详情" Visibility="Collapsed" Margin="0,8,0,0">
+                  <TextBox x:Name="RemoteExamRuntimeDetails" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" FontSize="12" Padding="0,6" AutomationProperties.AutomationId="RemoteExamRuntimeDetails" />
+                </Expander>
                 <TextBlock Text="检查后台权限、程序位置、录制状态和软件连接。仅检查当前环境，不会启动或退出软件，也不会修改 Windows 自启动。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,12" />
                 <Button x:Name="RemoteExamCheckButton" Content="检查考试环境" Click="RemoteExamCheckClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="RemoteExamPreflight" />
                 <TextBlock x:Name="RemoteExamCheckMessage" Text="本机检查不代表已授权学校远程控制。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,10,0,0" />
+                <Expander x:Name="RemoteExamCheckDetailsPanel" Header="技术详情（请求编号与后台说明）" Visibility="Collapsed" Margin="0,8,0,0">
+                  <TextBox x:Name="RemoteExamCheckDetails" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" FontSize="12" Padding="0,6" AutomationProperties.AutomationId="RemoteExamCheckDetails" />
+                </Expander>
                 <Button x:Name="RemoteExamEndButton" Content="解除本次远程录课暂停" Click="RemoteExamEndClicked" IsEnabled="False" HorizontalAlignment="Left" Margin="0,12,0,0" AutomationProperties.AutomationId="RemoteExamEndLocal" />
                 <TextBlock Text="考试结束后，先在“课堂模式”返回日常（可同时切换软件）；失败时先恢复切换前设置。再在此核实并解除远程录课暂停，当前课时可能按原计划开始录制。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,0" />
-                <Expander Header="最近操作记录" Margin="0,12,0,0"><TextBlock x:Name="RemoteExamHistoryText" Text="暂无记录。" TextWrapping="Wrap" Foreground="#526A60" /></Expander>
+                <Expander Header="最近操作记录（历史回执）" Margin="0,12,0,0"><local:RemoteExamHistoryView x:Name="RemoteExamHistory" /></Expander>
               </StackPanel></Border>
               <Border Style="{StaticResource Surface}"><StackPanel>
                 <TextBlock Text="学校通知" FontSize="17" FontWeight="SemiBold" />

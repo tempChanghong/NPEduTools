@@ -20,13 +20,18 @@ public partial class RecordingWindow : Window
         return settings.Options;
     }
     private readonly RecordingClient _client;
+    private readonly Func<Task<RecordingEnvironment>> _probe;
     private readonly string _preferencesPath;
     private bool _shutdown, _readable = true, _probing;
+    private string? _stateError;
     private RecordingEnvironment? _environment;
     private RecordingOptions? _saved;
     internal RecordingWindow(RecordingClient client, string endpoint)
+        : this(client, endpoint, RecordingClient.ProbeAsync) { }
+    internal RecordingWindow(RecordingClient client, string endpoint, Func<Task<RecordingEnvironment>> probe)
     {
         _client = client;
+        _probe = probe;
         _preferencesPath = StartupPreferencesStore.PathFor(endpoint).Replace(".startup.json", ".recording.json", StringComparison.Ordinal);
         InitializeComponent();
         OutputDirectory.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "NPEduTools");
@@ -43,7 +48,7 @@ public partial class RecordingWindow : Window
                 FpsChoice.SelectedIndex = _saved.FramesPerSecond == 8 ? 0 : 1; QualityChoice.SelectedIndex = _saved.MaximumHeight == 1080 ? 0 : 1;
             }
         }
-        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
         { _readable = false; RecordingError.Text = "保存的录制偏好无法读取，原文件已保留。本次仍可选择设置并录制。"; }
         _client.Changed += Apply;
         Loaded += async (_, _) => { await ProbeAsync(); Apply(_client.State); };
@@ -60,7 +65,7 @@ public partial class RecordingWindow : Window
             string? display = DisplayChoice.SelectedValue as string ?? _saved?.Display;
             string speaker = SpeakerChoice.SelectedValue as string ?? _saved?.SpeakerId ?? "default";
             string microphone = MicrophoneChoice.SelectedValue as string ?? _saved?.MicrophoneId ?? "default";
-            _environment = await RecordingClient.ProbeAsync();
+            _environment = await _probe();
             DisplayChoice.ItemsSource = _environment.Displays;
             DisplayChoice.SelectedValue = _environment.Displays.FirstOrDefault(d => d.Id == display)?.Id ?? _environment.Displays.FirstOrDefault(d => d.Primary)?.Id;
             SpeakerChoice.ItemsSource = new[] { new RecordingDevice("default", "系统默认输出设备") }.Concat(_environment.Speakers).ToArray();
@@ -100,7 +105,7 @@ public partial class RecordingWindow : Window
     }
     private RecordingOptions? OptionsFromForm()
     {
-        if (_client.State.Active || _probing || _environment?.Ready != true) return null;
+        if (!_client.StateAvailable || _client.State.Active || _probing || _environment?.Ready != true) return null;
         var options = new RecordingOptions(DisplayChoice.SelectedValue as string ?? "", OutputDirectory.Text.Trim(), Fps, MaximumHeight,
             SystemSound.IsChecked == true, MicrophoneSound.IsChecked == true, SpeakerChoice.SelectedValue as string ?? "default", MicrophoneChoice.SelectedValue as string ?? "default");
         if (RecordingContract.Validate(options) is { } error) { RecordingError.Text = error; return null; }
@@ -128,18 +133,23 @@ public partial class RecordingWindow : Window
     private async void StopClicked(object sender, RoutedEventArgs e) => await _client.SendAsync("stop");
     private void Apply(RecordingState state)
     {
-        RecordingClock.Text = TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss");
-        RecordingPhase.Text = state.Phase switch { "Starting" => "准备中", "Recording" => "录制中", "Paused" => "已暂停", "Pausing" => "暂停中", "Saving" => "保存中", "Saved" => "已保存", "Failed" => "未完成", _ => "准备录制" };
-        RecordingMessage.Text = state.Message;
+        bool available = _client.StateAvailable;
+        RecordingClock.Text = available ? TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss") : "—";
+        RecordingPhase.Text = available ? state.Phase switch { "Starting" => "准备中", "Recording" => "录制中", "Paused" => "已暂停", "Pausing" => "暂停中", "Saving" => "保存中", "Saved" => "已保存", "Failed" => "未完成", _ => "准备录制" } : "状态未知";
+        RecordingMessage.Text = available ? state.Message : "录制后台未确认当前状态，等待重新连接；不能据此判断录制已经停止。";
         if (state.Error is not null) RecordingError.Text = state.Error;
-        else if (state.Active || state.Phase == "Saved") RecordingError.Text = "";
-        if (state.Phase != "Idle") RecordingMetrics.Text = $"{state.Frames:N0} 帧 · {state.Bytes / 1048576.0:F1} MB · 丢帧 {state.DroppedFrames} · 音频缓冲异常 {state.AudioOverruns}";
-        RecordingSettings.IsEnabled = !state.Active && !_probing;
+        else if (state.Active || state.Phase == "Saved" || _stateError is not null && RecordingError.Text == _stateError) RecordingError.Text = "";
+        // A fresh state clears its old error without hiding unrelated form/device feedback.
+        _stateError = state.Error;
+        RecordingMetrics.Text = !available ? "旧时长和统计不代表当前状态；恢复连接后重新读取。" : state.Phase == "Idle"
+            ? "低帧率适合课件与讲解，快速视频和动画会不够流畅。"
+            : $"{state.Frames:N0} 帧 · {state.Bytes / 1048576.0:F1} MB · 丢帧 {state.DroppedFrames} · 音频缓冲异常 {state.AudioOverruns}";
+        RecordingSettings.IsEnabled = available && !state.Active && !_probing;
         RecordStart.Visibility = state.Active ? Visibility.Collapsed : Visibility.Visible;
-        RecordStart.IsEnabled = !state.Active && !_probing && _environment?.Ready == true;
+        RecordStart.IsEnabled = available && !state.Active && !_probing && _environment?.Ready == true;
         SaveSettings.IsEnabled = RecordStart.IsEnabled;
         RecordPause.Visibility = RecordStop.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
-        RecordPause.IsEnabled = RecordStop.IsEnabled = !state.Busy;
+        RecordPause.IsEnabled = RecordStop.IsEnabled = available && !state.Busy;
         RecordPause.Content = state.Phase == "Paused" ? "继续录制" : "暂停";
         OpenVideo.Visibility = state.OutputFile is null ? Visibility.Collapsed : Visibility.Visible;
         OpenFolder.Visibility = Visibility.Visible;

@@ -64,7 +64,7 @@ internal sealed class NoiseManagementDialog : Window
             if (reply.Outcome != "Succeeded") { _message.Text = reply.Message; return; }
             Ticket = reply.NoiseProtection?.Ticket; DialogResult = true;
         }
-        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
         { _message.Text = "无法确认管理验证，未继续操作。请核实后台连接后重试。"; }
         finally { _submit.IsEnabled = true; }
     }

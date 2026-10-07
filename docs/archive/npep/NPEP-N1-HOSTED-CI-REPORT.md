@@ -1,0 +1,94 @@
+# NPEP N1 GitHub 托管检查记录
+
+> 归档记录：正文保留当时的范围、决定与验证结果，不代表当前功能、发布或部署状态。[历史资料索引](../README.md)。
+
+日期：2026-09-21。承接 [Docker 与 CI 接入记录](NPEP-N1-DEPLOYMENT-CI-REPORT.md)，本轮推送三个功能分支，并运行不含部署步骤的 GitHub Actions。没有合并 main、修改线上配置或进行学校配对。
+
+## 2026-09-21 晚：含图标的最终候选复核
+
+最终前端为 `37a3f1b01585fd8cfc751c921668a84d5c41264f`，后端为 `e660876c8a22004e14a053a70985d5b350e42d0d`，均已推送各自 N1 功能分支。以下运行均为纯测试，结论 success，已读取 job 日志，固定组合还下载产物核对实际提交：
+
+| 运行 | 结果 |
+| --- | --- |
+| [前端 tests 35608546438](https://github.com/tempChanghong/NPClassworks/actions/runs/35608546438) | 前端最终 SHA 的 513 单元、全量 lint、150 浏览器均通过，零失败；该次联调使用修复前后端 `3db912d...`，故联调证据以下一行的新组合为准 |
+| [最终固定组合 contracts 35609940329](https://github.com/tempChanghong/NPClassworks/actions/runs/35609940329) | 3 契约通过；通用全链路 37 pass / 1 预期 skip；随后强制 N1 1/1；两次会话前置检查各 1/1 |
+| [最终 KV quality 35609934460](https://github.com/tempChanghong/NPClassworksKV/actions/runs/35609934460) | 默认单元 187 pass / 17 数据库预期 skip；独立 PostgreSQL 113/113 零跳过；生产 Docker 门槛通过 |
+
+最终固定组合产物的 `fullstack-metadata/versions.json` 和 `npep-metadata/versions.json` 均为上述前后端完整 SHA，均 dirty=false；N1 JSON 为 expected=1、skipped=0、unexpected=0、flaky=0。单元命令中的跳过不计为数据库验收，独立运行已实际覆盖。前端未改动，故未重复其独立单元和浏览器运行。
+
+保留失败记录：[初轮 KV quality 35608552240](https://github.com/tempChanghong/NPClassworksKV/actions/runs/35608552240) 的 shared 恢复测试因同秒同 label 备份重名失败，不能以重跑覆盖事实。`b9f12c0` 将备份改为 mktemp 原子唯一名、同目录硬链接原子发布且禁止覆盖，并用固定时钟测试两模式同秒连续备份及真实恢复；原子保存需要备份文件系统支持硬链接。随后本地发现 Docker 时钟比宿主慢至少约 1.4 秒，使维护测试基于宿主构造的“一秒前”在数据库看来尚未过期，`e660876c` 仅将该夹具改为数据库自身时间并断言，生产清理逻辑未改。最终本地 C 盘隔离 PG 113/113 和上方 GitHub 复核均通过，未跳过断言或添加等待规避。
+
+两个 main 再查仍是前端 `19756f654f94006084d1d954b8be4171db7c9a18`、后端 `f731f3227a7c59585aff940f78354585d3b016b7`；没有触发生产或镜像发布工作流，也未操作 PM2 或开启 NPEP。后续受控发布和现场备份结果见 [发布方案](NPEP-N1-RELEASE-PLAN.md)。下方保留初轮三端检查记录。
+
+## 受测提交与运行
+
+| 仓库 | 功能分支 | 受测完整提交 | 托管运行 |
+| --- | --- | --- | --- |
+| NPEduTools | `codex/npep-n1-ci` | `0d9719cda0cf7d0c4fd7249bc0530b50ece451ab` | [最终 Windows N1 检查](https://github.com/tempChanghong/NPEduTools/actions/runs/35562762663) |
+| NPClassworks | `codex/npep-n1-admin-ui` | `e354bbd172190a8a201120d1da8356abfc9e7a33` | [固定前后端组合检查](https://github.com/tempChanghong/NPClassworks/actions/runs/35561798752) |
+| NPClassworksKV | `codex/npep-n1-server` | `88134b175e7f95055aacdb525b8b10dee1e6bc35` | [Quality 与 PostgreSQL 集成](https://github.com/tempChanghong/NPClassworksKV/actions/runs/35561797164) |
+
+网页 `contracts.yml` 通过手动触发，`frontend_ref` 与 `backend_ref` 分别固定为表中完整 SHA。没有采用仍缺少 N1 的另一端 main 作为测试对象。后端仅触发 `quality.yml`；设备端由功能分支推送触发。未调用生产部署 workflow 或部署代理。
+
+## 实际结果
+
+表中三个运行均已完成，结论均为 **success**。已读取各 job 日志并下载 Windows 与网页产物核对，而非仅依据绿色状态。
+
+| 检查 | GitHub runner 实际结果 |
+| --- | --- |
+| Windows 结构示例 | 41/41 |
+| Windows Release 构建 | App、NpepProbe、Npep.Acceptance 三个入口通过，各 0 警告、0 错误 |
+| Windows NPEP 专项 | 86/86，零跳过；TRX 逐项门槛通过 |
+| Windows 原有回归 | 352/352，零跳过；TRX 逐项门槛通过 |
+| 前后端契约 | 3/3，零跳过 |
+| 通用生产 PWA 全链路 | 37 通过、1 跳过；被跳过的是需要显式启用隔离开关的 N1 用例，随后单独强制运行 |
+| N1 真实浏览器与 PostgreSQL | 1/1；`skipped=0`、`unexpected=0`、`flaky=0`、`retry=0`，涵盖管理员批准配对、设备确认和撤销 |
+| 全链路数据库会话前置检查 | 两次运行各 1/1，零跳过 |
+| KV 默认单元命令 | 187 通过、17 个数据库用例在此命令中跳过 |
+| KV 独立 PostgreSQL 集成 | 113/113，零跳过 |
+| KV 生产 Docker 门槛 | 实际 Compose、镜像用户、持久化目录、原子写入和拒绝错误配置检查通过 |
+
+默认命令中的跳过不计为数据库或 N1 验收通过。本轮没有另行运行前端 `tests.yml` 的单元/lint 工作流，因此先前本机的 513 项单元结果不冒充本轮托管结果。
+
+Windows 产物仅含两份 TRX 与 `run.json`：提交与上表一致，`dirty=false`、`completed=true`，PowerShell 7.6.6；SDK 安装日志为 10.0.400。网页两份版本记录均对应上表前后端 SHA，且 `dirty=false`；N1 JSON 报告确认实际执行成功。Windows 产物保存 14 天，网页产物保存 7 天，过期后应查对应运行日志或重新取得报告。
+
+| 托管产物 | 下载 ZIP 的 SHA-256 |
+| --- | --- |
+| [最终 Windows 结果](https://github.com/tempChanghong/NPEduTools/actions/runs/35562762663/artifacts/10622588263) | `822989ab9b96080c9ba374aaeee48540a1cdca1e8d31b6a3d783acc5b01a1b50` |
+| [网页全链路结果](https://github.com/tempChanghong/NPClassworks/actions/runs/35561798752/artifacts/10622841010) | `986a1d6854b090cf5835ed14a7a6477bc0150aa6086f93dbc8d8b150cc8fa858` |
+
+## 托管环境发现并修复的问题
+
+首次设备运行 [35561755497](https://github.com/tempChanghong/NPEduTools/actions/runs/35561755497) 在 checkout 收尾阶段失败，测试尚未开始。仓库包含三个参考文档 gitlink，却没有 `.gitmodules` 映射；`persist-credentials: false` 的凭据清理执行 `git submodule foreach` 时出现 `No url found for submodule path 'docs/ExamAware-docs' in .gitmodules`。
+
+提交 `96c2dad` 根据本机已有参考仓库的实际 remote 补齐 ExamAware-docs、PowerPoint-Touch-Assist、classisland-docs-next 三个映射，没有改变 gitlink 指向的提交。相同本地 foreach 命令修复后正常结束。重跑已完成检出、全部测试及产物上传。
+
+同时补上结果上传的 `include-hidden-files: true`，使 `.artifacts` 下明确列出的 TRX 与 `run.json` 可以保留。上传范围仍仅为这两类测试结果，不包含凭据目录或整个 `.artifacts`。
+
+### 文档推送后发现的并行构建竞争
+
+文档提交 `e1c6cbf` 自动触发的 [Windows 复跑](https://github.com/tempChanghong/NPEduTools/actions/runs/35562268584) 暴露了另一处间歇性问题：Recorder 的 `obj/Release/net10.0-windows/NPEduTools.Recorder.dll` 在编译写入时被占用（CS2012），同一时刻另一路 Recorder 构建成功。此前 `96c2dad` 的 [首次成功结果](https://github.com/tempChanghong/NPEduTools/actions/runs/35561890557) 不用于掩盖后续失败；上表现已更新为全部修复后的成功提交。
+
+App 同时直接引用 Recorder、又通过 Host 引用 Recorder；Host 路径显式设置 Windows TargetFramework，两个构建上下文写入同一输出目录。已移除 App 冗余的直接构建引用，保留 `App → Host → Recorder` 顺序及原有两处打包复制。没有通过忽略错误、重试编译或关闭测试处理。
+
+本机显式四节点 Release Rebuild 通过（0 警告、0 错误）；App/Recorder 与 App/Host/Recorder 两份 DLL 的哈希均与刚构建的 Recorder 一致。修复随后推送同一功能分支，由 Windows workflow 再执行完整锁定还原、构建与回归；其运行入口见 [分支 Windows 检查历史](https://github.com/tempChanghong/NPEduTools/actions/workflows/npep-n1.yml?query=branch%3Acodex%2Fnpep-n1-ci)。该修复之后的托管状态应查看相应提交的运行，不能沿用上表旧提交的绿灯。
+
+### 真实进程测试的并发安排
+
+提交 `b7471ac` 的 [后续运行](https://github.com/tempChanghong/NPEduTools/actions/runs/35562437783) 三个构建入口与 86 项 NPEP 测试通过；352 项原有回归中 349 通过、3 项 Host 管道用例发生 `EndOfStreamException`。这些用例同时启动多组 Host/子进程，生产管道读写有 2 秒时限；受限 runner 上的并行资源争抢是排查方向，日志本身不足以断言每次关闭的具体原因。
+
+七组启动真实进程的测试改为同一非并行 xUnit collection，以免独立测试进程树互相抢占短时限。每项用例内部的多客户端并发、资源槽、超时、恢复与重启验证保留，生产超时和断言未放宽，测试没有禁用或自动重试。本地 352/352 通过、零跳过；最终提交 `0d9719c` 的完整 Windows workflow 也通过，构建、86 项专项与 352 项回归均成功，详见上表运行和产物。
+
+## 发布边界与下一步
+
+托管检查结束后，通过 `git ls-remote` 复核 main 与本轮操作前一致：
+
+| 仓库 | 未改变的 main SHA |
+| --- | --- |
+| NPEduTools | `2d25809eabf26d360337b1517dac7c0c735b21f6` |
+| NPClassworks | `19756f654f94006084d1d954b8be4171db7c9a18` |
+| NPClassworksKV | `f731f3227a7c59585aff940f78354585d3b016b7` |
+
+main 的生产部署行为保持原样；本轮仅完成分支测试，不代表线上已经支持 NPEP。后续发布仍需审核三端提交和前后端成对发布方式。当前部署代理会解析另一端 main，本次固定 SHA 的 CI 不能证明将来的代理自动使用同一个组合。本文是受测代码之后的文档记录，受测提交以表中不可变 SHA 为准。
+
+发布后保持 NPEP 外部配置关闭，核对迁移、卷和恢复入口，再单独进行初始化、启用与真实大屏试点。现场按 [验收表](NPEP-N1-FIELD-ACCEPTANCE.md) 填写；开发电脑和托管 runner 均不替代真实大屏验收。N1 仍只开放 `device.status`，未加入通知、远程考试模式切换或录制控制。

@@ -16,6 +16,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private string _userCode = "";
     public string UserCode { get => _userCode; set { _userCode = value; Changed(); } }
     private string? _serverSeen, _approvalSeen, _feedback;
+    private string? _feedbackCode;
+    private Guid? _feedbackRequestId;
     private bool _working, _mutating, _originEdited, _serverConfirmed, _bindingConfirmed;
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Changed() => PropertyChanged?.Invoke(this, new(""));
@@ -74,16 +76,11 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         "APPROVED" or "CONFIRMING" => "3 / 4 · 核对归属并确认", "ACTIVE" => "4 / 4 · 已完成配对",
         _ => "连接学校 · 等待检查"
     };
-    public string Title => _state is null ? "后台未连接" : _state.Error == "PAIRING_EXPIRED" ? "配对码已过期" : _state.State switch
-    {
-        "UNPAIRED" => "尚未配对", "CREATING" => "配对申请待恢复", "PENDING" => _state.PairingSource == "SCREEN" ? "正在读取学校预授权" : "等待管理员批准",
-        "APPROVED" => "请在本机确认连接", "CONFIRMING" => "正在确认配对结果",
-        "ACTIVE" => _state.ReportingPaused ? "已配对 · 互联已暂停" : _state.Connection == "ONLINE" ? "已配对 · 当前在线"
-            : _state.Connection == "STOPPED" ? "已配对 · 连接已停止" : "已配对 · 当前未在线",
-        "SUSPENDED" => "连接已停用", "UNPAIRING" => "解绑尚未完成", _ => "互联暂不可用"
-    };
+    public string Title => NpepConnectionPresentation.Title(_state);
     public string Message => _feedback ?? _state?.Message ?? "无法读取后台状态。恢复后重新检查；旧状态不代表当前连接。";
-    public string Error => _state?.Error is { } code ? "错误：" + code : "";
+    public string Error => NpepConnectionPresentation.Cause(_feedbackCode ?? _state?.Error);
+    public string NextAction => NpepConnectionPresentation.NextAction(_state, _feedbackCode);
+    public string TechnicalDetails => NpepConnectionPresentation.Details(_state, _feedbackCode, _feedbackRequestId, _feedback);
     public string Receipt => DateTimeOffset.TryParse(_state?.LastReceivedAt, out var value)
         ? "学校服务最近接收：" + value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "（本机时区）" : "";
     public string ServerIdentity => _state?.Server is null ? "" : $"地址：{_state.Origin}\n实例：{Text(_state.Server, "serverInstanceId")}\n部署标识：{Text(_state.Server, "deploymentEpoch")}";
@@ -103,6 +100,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         if (approval != _approvalSeen) { _approvalSeen = approval; _bindingConfirmed = false; }
         if (!_originEdited && _state?.Origin is { } saved) _origin = saved;
         _feedback = response.Outcome == "Rejected" || response.Npep is null ? response.Message : null;
+        _feedbackCode = _feedback is null ? null : response.ErrorCode;
+        _feedbackRequestId = _feedbackCode is null ? null : response.RequestId;
         Changed();
     }
 
@@ -121,6 +120,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         if (!CanUnpair || confirmedRevision != _state!.Revision)
         {
             _feedback = "连接状态已变化，请重新核对后再取消申请或解绑。";
+            _feedbackCode = "NpepStateChanged"; _feedbackRequestId = null;
             Changed(); return Task.FromResult(false);
         }
         return RunAsync(new("unpair", confirmedRevision));
@@ -136,7 +136,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             if (authorize is not null && Protocol.NoiseInterruption(pending))
             {
                 var authorized = await authorize(pending);
-                if (authorized is null) { _feedback = "未验证，定时监测和学校连接继续。"; return false; }
+                if (authorized is null)
+                { _feedback = "未验证，定时监测和学校连接继续。"; _feedbackCode = null; _feedbackRequestId = null; return false; }
                 pending = authorized;
             }
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
@@ -145,11 +146,12 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             Apply(response);
             return response.Outcome is "Succeeded" or "Accepted";
         }
-        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
         {
             // A lost mutation response is ambiguous. Disable mutations until a fresh Host snapshot resolves it.
             _state = null; _serverConfirmed = _bindingConfirmed = false;
             _feedback = command is null ? "后台暂不可用，请重新检查。" : "未收到后台确认。操作可能已受理，请刷新状态后继续，勿重复创建申请。";
+            _feedbackCode = "HOST_UNAVAILABLE"; _feedbackRequestId = null;
             Changed(); return false;
         }
         finally { _working = _mutating = false; _gate.Release(); Changed(); }

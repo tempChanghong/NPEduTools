@@ -11,6 +11,8 @@ public partial class ExamAwareWindow : Window
     private readonly string _pipe;
     private readonly CancellationTokenSource _lifetime = new();
     private long _revision;
+    private long _generation;
+    private ExamAwareStatus? _state;
     private string? _savedExecutablePath;
     private bool _loadedPath, _busy, _closing;
     public ExamAwareWindow(string pipe)
@@ -19,6 +21,7 @@ public partial class ExamAwareWindow : Window
         InitializeComponent();
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
+        Render(null);
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
@@ -32,6 +35,8 @@ public partial class ExamAwareWindow : Window
     }
     private void Render(ExamAwareStatus? state)
     {
+        _state = state;
+        Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = !_busy && state is not null;
         bool ready = !_busy && state?.BridgeState == "Connected" && state.ExecutablePath is not null &&
             state.Quit?.State is not ("Sending" or "AwaitingExit") && state.AutoStartChange?.State != "Sending" && state.PlanOperation?.State != "Sending";
         RenderPlan(state, ready);
@@ -42,7 +47,14 @@ public partial class ExamAwareWindow : Window
             (change.State == "Sending" ? change.Message : "上次设置结果：" + change.Message) :
             (state?.BridgeState == "Connected" && !state.CanSetAutoStart ? "修改自启动需要桥接 0.3.0 或兼容版本，并授权设置权限。" : "连接桥接并保存程序位置后，可设置当前程序的登录自启动。");
         QuitStatus.Text = state?.Quit?.Message ?? "连接桥接并保存程序位置后可用。";
-        if (state is null) { Connection.Text = "后台尚不支持 ExamAware，请重启 NPEduTools 后重试。"; AutoStartText.Text = "登录自启动登记：未知"; VersionText.Text = "版本：未知"; return; }
+        if (state is null)
+        {
+            Connection.Text = "后台连接未确认，等待重新连接。";
+            AutoStartText.Text = "登录自启动登记：未知"; VersionText.Text = "版本：未知";
+            AutoStartMessage.Text = "当前设置结果未知，恢复连接后重新读取。";
+            QuitStatus.Text = "当前退出状态未知，不能据此判断软件已经退出。";
+            return;
+        }
         _revision = state.Revision;
         _savedExecutablePath = state.ExecutablePath;
         if (!_loadedPath) { Executable.Text = state.ExecutablePath ?? ""; _loadedPath = true; }
@@ -56,26 +68,33 @@ public partial class ExamAwareWindow : Window
         {
             if (IsVisible && !_busy)
             {
-                try { Render((await RequestAsync("examaware.status")).ExamAware); }
-                catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)
-                { RenderPlan(null, false); QuitButton.IsEnabled = EnableAutoStartButton.IsEnabled = DisableAutoStartButton.IsEnabled = false; Connection.Text = "暂时无法连接 NPEduTools 后台。"; VersionText.Text = "版本：未知"; AutoStartText.Text = "登录自启动登记：未知"; }
+                long generation = _generation;
+                try
+                {
+                    var response = await RequestAsync("examaware.status");
+                    if (!_closing && !_busy && generation == _generation) Render(response.ExamAware);
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
+                { if (!_closing && !_busy && generation == _generation) Render(null); }
             }
             try { await Task.Delay(1500, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
     }
     private async Task RunAsync(string capability, bool save = false, bool? autoStartEnabled = null, long? expectedRevision = null, ExamAwarePlanInput? plan = null)
     {
-        if (_busy) return;
-        _busy = true; Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = QuitButton.IsEnabled = false;
+        if (_closing || _busy || _state is null) return;
+        _generation++;
+        _busy = true; Render(_state);
+        Message.Text = "正在等待后台确认…";
         try
         {
             var response = await RequestAsync(capability, save, autoStartEnabled, expectedRevision, plan);
             if (plan?.Action == "prepare") _allowPreparedPlan = response.Outcome == "Accepted";
             Render(response.ExamAware); Message.Text = response.Message;
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException)
-        { Message.Text = "未收到后台结果，请先检查软件窗口及连接状态，再决定是否重试。"; }
-        finally { _busy = false; Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = true; }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
+        { Render(null); Message.Text = "未收到后台结果，请先检查软件窗口及连接状态，再决定是否重试。"; }
+        finally { _busy = false; Render(_state); }
     }
     private void BrowseClicked(object sender, RoutedEventArgs e)
     {
@@ -113,19 +132,32 @@ public partial class ExamAwareWindow : Window
     }
     private async void ExportClicked(object sender, RoutedEventArgs e)
     {
-        if (_busy) return;
+        if (_closing || _busy || _state is null) return;
         var dialog = new SaveFileDialog { Title = "导出本机配对文件", FileName = "NPEduTools-ExamAware-pairing.json", Filter = "配对文件|*.json" };
         if (dialog.ShowDialog(this) != true) return;
-        _busy = true; Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = QuitButton.IsEnabled = false;
+        await ExportPairingAsync(dialog.FileName);
+    }
+    private async Task ExportPairingAsync(string fileName)
+    {
+        if (_closing || _busy || _state is null) return;
+        _generation++;
+        _busy = true; Render(_state);
+        Message.Text = "正在等待后台并导出配对文件…";
+        bool received = false;
         try
         {
             var response = await RequestAsync("examaware.pairing.get");
+            received = true;
+            Render(response.ExamAware);
             if (response.ExamAwarePairing is not { } pairing) { Message.Text = response.Message; return; }
-            await File.WriteAllTextAsync(dialog.FileName, JsonSerializer.Serialize(pairing, Protocol.Json), _lifetime.Token);
+            await File.WriteAllTextAsync(fileName, JsonSerializer.Serialize(pairing, Protocol.Json), _lifetime.Token);
             Message.Text = "已导出。请在 ExamAware 中导入；配对文件含连接凭据，导入后可删除。";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
-        { Message.Text = "未能导出，请检查后台连接与保存位置。"; }
-        finally { _busy = false; Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = true; }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
+        {
+            if (!received) Render(null);
+            Message.Text = "未能导出，请检查后台连接与保存位置。";
+        }
+        finally { _busy = false; Render(_state); }
     }
 }

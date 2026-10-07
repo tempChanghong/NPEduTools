@@ -21,7 +21,7 @@ NPEduTools「考试看板 → 考试方案 · 本机放映」选择 UTF-8 JSON�
 
 沿用桥接单次激活最多 64 条命令的重放缓存限制；反复调试达到上限时会明确提示，请停用再启用桥接，并重新校验方案。不会为继续请求而自动重启 ExamAware。
 
-步骤、简图与源码入口见 [`docs/npep/EXAMAWARE-PLAN-LOCAL.md`](../../docs/npep/EXAMAWARE-PLAN-LOCAL.md)。关闭播放须使用 ExamAware 放映页面自己的退出入口。
+步骤、简图与源码入口见 [`docs/archive/npep/EXAMAWARE-PLAN-LOCAL.md`](../../docs/archive/npep/EXAMAWARE-PLAN-LOCAL.md)。关闭播放须使用 ExamAware 放映页面自己的退出入口。
 
 ## 正常退出与已知限制
 
@@ -71,4 +71,4 @@ SDK npm 包包含 `workspace:*` 依赖，overrides 固定 core 1.1.1 / rpc 0.3.0
 
 验证覆盖 19 项插件回归及 27 项官方 1.5.2 源码宿主场景，其中包括上游编辑器退出缺陷的保守结果断言。E4 联调使用真实官方 SDK，Windows 登录启动接口处替换为隔离的文件登记适配器，因此**未验证真实注册表、任务管理器禁用和注销登录**。官方打包 EXE 的生产路径启动与退出也仍待验收；未放宽产品路径校验。
 
-当前结果、协议边界和复现方法见仓库 `docs/EXAMAWARE2-STAGE4.md`；退出限制见 `docs/EXAMAWARE2-STAGE3.md`；早期 E2 记录见 `docs/EXAMAWARE2-REAL-HOST-VALIDATION.md`。
+当前结果、协议边界和复现方法见仓库 `docs/archive/classroom/EXAMAWARE2-STAGE4.md`；退出限制见 `docs/archive/classroom/EXAMAWARE2-STAGE3.md`；早期 E2 记录见 `docs/archive/classroom/EXAMAWARE2-REAL-HOST-VALIDATION.md`。

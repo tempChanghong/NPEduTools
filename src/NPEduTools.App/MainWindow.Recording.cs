@@ -36,9 +36,9 @@ public partial class MainWindow
     private void RefreshRecording(RecordingState state)
     {
         string clock = TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss");
-        RecordingHomeStatus.Text = state.Active ? $"{state.Message} · {clock}" : state.Message;
-        RecordingHomeAction.Text = state.Active ? "录制控制  →" : "配置与录制  →";
-        _quick?.UpdateRecording(state);
+        RecordingHomeStatus.Text = !_recording.StateAvailable ? "录制后台未确认当前状态，等待重新连接。" : state.Active ? $"{state.Message} · {clock}" : state.Message;
+        RecordingHomeAction.Text = !_recording.StateAvailable ? "检查录制状态  →" : state.Active ? "录制控制  →" : "配置与录制  →";
+        _quick?.UpdateRecording(state, _recording.StateAvailable);
     }
     private async void SkipAutomaticToday()
     {

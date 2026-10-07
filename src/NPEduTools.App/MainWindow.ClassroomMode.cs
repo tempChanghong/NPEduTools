@@ -34,7 +34,7 @@ public partial class MainWindow
                 deadline.CancelAfter(TimeSpan.FromSeconds(3));
                 state = (await HostClient.RequestAsync(_pipe, "classroom.status", deadline.Token)).ClassroomMode;
             }
-            catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or JsonException) { }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException) { }
             // A late reply must never restore a stale mode after the Host stopped.
             ShowClassroomModeState(_lifetime.IsCancellationRequested ? null : state);
             try { await Task.Delay(1500, _lifetime.Token); } catch (OperationCanceledException) { break; }

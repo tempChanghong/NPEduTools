@@ -34,6 +34,6 @@
 
 测试结果：`.artifacts/classroom-setup/classroom-setup.trx`；配置页面：`.artifacts/classroom-ui/22996b2e30af419d98301a5202c8430e/summary.json`；未完成切换：`.artifacts/classroom-runtime-ui/805a99e9b05d421f91d6e8495683d639/summary.json`。
 
-界面测试使用独立配置目录，没有替本机创建管理员任务或配置两款软件。完整真实模式往返仍受 [实机验收报告](CLASSROOM-LIVE-ACCEPTANCE.md) 中的环境缺项影响，本次不将其标为通过。
+界面测试使用独立配置目录，没有替本机创建管理员任务或配置两款软件。完整真实模式往返仍受 [实机验收报告](archive/classroom/CLASSROOM-LIVE-ACCEPTANCE.md) 中的环境缺项影响，本次不将其标为通过。
 
 修改与验证在 C 盘恢复工作区进行，按文件校验回写 D 盘源文件及 Release 程序。

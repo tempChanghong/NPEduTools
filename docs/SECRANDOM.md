@@ -1,6 +1,6 @@
 # 课堂点名：SecRandom V3
 
-本功能已接入仓库中的下一版本。InDev 20261002 已发布附件不包含它。
+本功能已包含在 v1.0.0 中。InDev 20261002 已发布附件不包含它；具体文件与限制见[版本说明](releases/README.md)。
 
 ## 怎么用
 
@@ -23,8 +23,11 @@
 | 已完成 | 收到了对应业务成功回执；收到请求不等于抽取完成 |
 | 未完成 | 请求没有发送，或 SecRandom 明确拒绝；按提示处理名单、首次设置或授权 |
 | 结果待核实 | 请求可能已执行但没有可靠回执；先查看 SecRandom 窗口及历史，再点击“已核实，解除待核实状态” |
+| 后台连接未确认 | 当前状态未知，暂不能点名；等待后台连接恢复，再根据新回执核对 |
 
 解除待核实状态只允许后续新操作，**不会重发旧请求**。自动重试仅用于冷启动期间的只读探针；闪抽和窗口操作不自动重发。
+
+连接中断时，已有结果会标为“上次回执”，供核对使用；它不代表本次请求已成功，也不表示尚未执行。恢复后若仍提示待核实，请先核对 SecRandom 的实际历史。
 
 ## 数据与范围
 
@@ -40,4 +43,4 @@ SecRandom 若要求密码、课程许可或完整性确认，请在其界面正�
 
 从仓库根目录执行 `./scripts/test-secrandom.ps1`，兼容 Windows PowerShell 5.1；测试使用临时目录和模拟 SecRandom，不启动真实软件、不修改真实名单。完整 Host 回归由既有 `scripts/test-npep-ci.ps1` 包含，后者另有 PowerShell 版本要求。
 
-本次实现与验证证据见[任务卡](iterations/SECRANDOM-LOCAL-INTEGRATION-20261003.md)，协议依据见[研究报告](SECRANDOM-V3-INTEGRATION-RESEARCH.md)。
+本次实现与验证证据见[任务卡](iterations/SECRANDOM-LOCAL-INTEGRATION-20261003.md)，协议依据见[研究报告](archive/research/SECRANDOM-V3-INTEGRATION-RESEARCH.md)。

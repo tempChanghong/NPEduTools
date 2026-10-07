@@ -37,19 +37,20 @@ public partial class ScheduledNoiseWindow : Window
     }
     private async Task ReturnAsync()
     {
-        if (_returning || _display is not { InstanceId: { } instance, SessionId: { } session }) return;
+        if (_closing || _returning || _display is not { InstanceId: { } instance, SessionId: { } session }) return;
+        bool StillCurrent() => !_closing && _display?.InstanceId == instance && _display.SessionId == session;
         _returning = true; ReturnButton.IsEnabled = false;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var response = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.display.return",
                 NoiseDisplay: new("return", instance, session)), timeout.Token);
-            if (_closing) return;
+            if (!StillCurrent()) return;
             if (response.Outcome == "Succeeded") Hide();
             else MessageText.Text = response.Message;
         }
-        catch (Exception e) when (e is IOException or TimeoutException or OperationCanceledException or JsonException or UnauthorizedAccessException)
-        { if (!_closing) MessageText.Text = "后台暂未确认返回期限，请等待连接恢复。没有停止监测。"; }
+        catch (Exception e) when (e is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException or UnauthorizedAccessException)
+        { if (StillCurrent()) MessageText.Text = "后台暂未确认返回期限，请等待连接恢复。没有停止监测。"; }
         finally { _returning = false; if (!_closing) ReturnButton.IsEnabled = true; }
     }
     private async void ReturnClicked(object sender, RoutedEventArgs e) => await ReturnAsync();

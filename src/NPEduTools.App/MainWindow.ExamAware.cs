@@ -25,7 +25,7 @@ public partial class MainWindow
             var result = await HostClient.RequestAsync(_pipe, "examaware.start", deadline.Token);
             if (result.Outcome != "Accepted") ShowExamAware();
         }
-        catch (Exception ex) when (ex is System.IO.IOException or TimeoutException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is System.IO.IOException or System.IO.InvalidDataException or TimeoutException or OperationCanceledException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) ShowExamAware(); }
     }
 }

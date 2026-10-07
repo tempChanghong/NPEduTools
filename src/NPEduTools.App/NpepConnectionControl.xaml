@@ -12,6 +12,10 @@
     <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,0" AutomationProperties.AutomationId="NpepMessage" />
     <TextBlock Text="{Binding Receipt}" Style="{StaticResource OptionalText}" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,4,0,0" />
     <TextBlock Text="{Binding Error}" Style="{StaticResource OptionalText}" TextWrapping="Wrap" Foreground="#A14334" FontSize="12" Margin="0,4,0,0" AutomationProperties.AutomationId="NpepError" />
+    <TextBlock Text="{Binding NextAction}" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,0" AutomationProperties.AutomationId="NpepNextAction" />
+    <Expander Header="技术详情（状态与错误码）" Margin="0,8,0,0" AutomationProperties.AutomationId="NpepTechnicalDetailsPanel">
+      <TextBox Text="{Binding TechnicalDetails, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" FontSize="12" Padding="0,6" AutomationProperties.AutomationId="NpepTechnicalDetails" />
+    </Expander>
     <StackPanel Margin="0,14,0,0">
       <TextBlock Text="服务提供商 · 学校服务地址" FontWeight="SemiBold" />
       <TextBlock Text="请向管理员索取服务地址，网页地址不一定是服务地址。支持 HTTP / HTTPS；HTTP 不加密，正式使用优先选择 HTTPS。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" Margin="0,4,0,8" />

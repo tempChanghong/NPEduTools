@@ -27,6 +27,7 @@ public partial class MainWindow
 
     private void RefreshAdminControls()
     {
+        if (_adminStatus is not null && !string.Equals(_adminPath, _savedPath, StringComparison.OrdinalIgnoreCase)) ClearAdminStatus();
         bool configured = !string.IsNullOrWhiteSpace(_savedPath) && string.Equals(_savedPath, ExecutablePathBox.Text.Trim(), StringComparison.OrdinalIgnoreCase);
         bool available = configured && !_adminBusy && !_actionInProgress && _pendingStartId is null && !_exitBusy;
         bool current = _adminStatus is not null && string.Equals(_adminPath, _savedPath, StringComparison.OrdinalIgnoreCase);
@@ -40,10 +41,33 @@ public partial class MainWindow
         {
             AdminTaskStatus.Text = "请先保存 ClassIsland 程序路径";
             AdminProcessStatus.Text = "保存后可检查运行权限和自启动任务。";
+            AdminPluginStatus.Text = "保存路径后可核实插件状态。";
         }
+        else if (!_adminBusy && current) DisplayAdminStatus(_adminStatus!);
+        else if (!_adminBusy) ClearAdminStatus();
     }
 
-    private async Task RunAdminAsync(string action)
+    private void ClearAdminStatus()
+    {
+        _adminStatus = null;
+        _adminPath = null;
+        AdminTaskStatus.Text = "自启动任务状态待核实";
+        AdminProcessStatus.Text = "运行权限待核实，请刷新状态或使用“管理员检查”。";
+        AdminPluginStatus.Text = "插件状态待核实。";
+    }
+
+    private void DisplayAdminStatus(AdminStatus status)
+    {
+        AdminTaskStatus.Text = status.TaskMessage;
+        AdminProcessStatus.Text = status.ProcessMessage;
+        AdminPluginStatus.Text = status.PluginInstalled ? "兼容已安装的 StartUpAsAdmin，共用同一计划任务。" : "兼容 StartUpAsAdmin；未安装插件也可管理此任务。";
+    }
+
+    private Task RunAdminAsync(string action) => RunAdminAsync(action, (command, path, fingerprint) =>
+        AdminClient.RunAsync(Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"), command, path, fingerprint));
+
+    // Allows isolated UI checks to supply results without launching a helper or requesting UAC.
+    internal async Task RunAdminAsync(string action, Func<string, string, string?, Task<AdminResult>> run)
     {
         if (_adminBusy || _actionInProgress || _pendingStartId is not null || _exitBusy) return;
         if (string.IsNullOrWhiteSpace(_savedPath) || !string.Equals(_savedPath, ExecutablePathBox.Text.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -57,9 +81,8 @@ public partial class MainWindow
         ExitButton.IsEnabled = false;
         try
         {
-            var result = await AdminClient.RunAsync(Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"),
-                action, path, _adminStatus?.Fingerprint);
-            if (_savedPath != path) { _adminStatus = null; AdminMessage.Text = "程序路径已变更，请重新检查。"; return; }
+            var result = await run(action, path, _adminStatus?.Fingerprint);
+            if (_savedPath != path) { ClearAdminStatus(); AdminMessage.Text = "程序路径已变更，请重新检查。"; return; }
             _adminPath = path;
             if (result.Status is { } status)
             {
@@ -67,16 +90,13 @@ public partial class MainWindow
             }
             else if (result.Outcome != "Cancelled")
             {
-                _adminStatus = null;
-                AdminTaskStatus.Text = "状态待核实";
-                AdminProcessStatus.Text = "权限不足时，可点击“管理员检查”。";
+                ClearAdminStatus();
             }
             AdminMessage.Text = result.Message;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            _adminStatus = null;
-            AdminTaskStatus.Text = "状态待核实";
+            ClearAdminStatus();
             AdminMessage.Text = "未能完成检查或操作，请刷新状态后重试。";
         }
         finally

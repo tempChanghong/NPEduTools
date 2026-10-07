@@ -1,97 +1,39 @@
-# NPEP 交付索引
+# NPEP 学校互联
 
-2026-10-04：[定时监测保护整体验收与维护](../iterations/SCHEDULED-NOISE-INTEGRATED-20261004.md)。当前 P1 限时返回／管理验证、P2 原生补位、P3 独立守护均已本地实现并按功能范围提交，三端隔离整体验收 17 个阶段通过；真实教室与 Windows 会话验收仍待进行。三仓均未推送或部署。此入口说明当前行为，下面日期较早的条目保留历史结果，不能当作本轮部署状态。
+[文档首页](../README.md) · [使用指南](../GETTING-STARTED.md#连接学校) · [测试与验收](../TESTING.md)
 
-2026-10-02 新增：[先授权、再由班级大屏生成配对码](../iterations/NPEP-PREAUTHORIZED-PAIRING-20261002.md)。三端本地实现及隔离跨端验收通过，旧审批与绑定保留；下一版本交付，未推送或部署。统一测试入口支持 PowerShell 5.1。
+NPClassworks 负责作业板、学校管理和操作入口；NPClassworksKV 负责身份、权限、设备请求与报告存储；NPEduTools 负责大屏本机的软件、通知、录课和麦克风能力。大屏网页经服务端与桌面协作，不直接控制本机管道，也不重复采集已交由桌面负责的麦克风。
 
-**Pre 20261001 已完成三仓 main 合并（2026-10-02 收尾）。** [发版说明](../releases/Pre-20261001.md) · [PR、提交、最终 CI 与部署状态](../releases/Pre-20261001-MERGE-RESULT.md)。暮至长虹批准在真实大屏与排程现场验收未完成时先发布源码预览版；未测项目继续保留。网页 152 项浏览器检查及独立真实数据库配对门槛已通过，Claude 自动审查默认跳过。尚未提供新版桌面 ZIP，生产升级与现场结果不冒充通过。以下各阶段的“未推送／未部署”等描述保留其当轮含义，当前交付状态以合并记录为准。
+## 功能入口
 
-**2026-10-01 最新补测：[N4 网页生产构建检查](N4-PRODUCTION-BUILD-CHECK-20261001.md) 通过。** 真实生产构建／静态 PWA 校验、全网页 ESLint、网页 654 项及后端发布配置 21 项通过。修复了生成缓存污染代码检查的问题，部署配置补上 PWA 校验；仅本地修改，尚未推送或部署，真实排程继续待验收。
+| 功能 | 当前阅读入口 | 实施依据 |
+| --- | --- | --- |
+| 连接与配对 | [填写服务地址、完成学校连接](../GETTING-STARTED.md#连接学校)；分离部署填写 API 根地址 | [预授权配对](../iterations/NPEP-PREAUTHORIZED-PAIRING-20261002.md) |
+| 学校通知 | [使用指南](../GETTING-STARTED.md#连接学校)；配对后由桌面显示通知，网页控制投递 | [投递](../archive/npep/NPEP-N2-DELIVERY-REPORT.md)、[自定义窗口](../archive/npep/NPEP-N2-CUSTOM-NOTIFICATION-UI.md) |
+| 考试与返回日常 | [考试用例与操作入口](EXAM-MODE-OVERVIEW.md) | [考试优先级](../archive/npep/EXAM-PRIORITY-20260928.md)、[方案投递](../archive/npep/EXAMAWARE-PLAN-REMOTE.md) |
+| 原生噪音监测 | [使用指南：噪音监测](../GETTING-STARTED.md#噪音监测)；本机分析，只上传统计 | [网页与桌面边界](../archive/npep/N4.2-NOISE-TAKEOVER.md) |
+| 学校定时监测与保护 | 网页安排学校时段，桌面执行；返回作业板不停止采集 | [显示与保护](../iterations/SCHEDULED-NOISE-INTEGRATED-20261004.md)、[Guard](../iterations/SCHEDULED-NOISE-GUARD-20261004.md) |
 
-**2026-10-01 最新审核：[N4 发布候选审核](../releases/NPEP-NOISE-20261001-REVIEW.md) 已整理。** 已核对三仓基线、实际版本、三项迁移、协议兼容及升级／恢复边界。当前为含未提交改动的工作区候选；现场排程、最终提交与发布检查仍待完成。未构建发行包、推送或部署。
+配对授权、麦克风和远程控制的告知与职责见[服务及隐私协议](../legal/README.md)。功能是否包含在下载包中，以[对应版本](../releases/README.md)为准。
 
-**2026-10-01 最新收尾：[N4 统一验收与结果清单](N4-UNIFIED-ACCEPTANCE-20261001.md) 已完成。** PowerShell 5.1 入口汇总手动、排程与来源验证，七阶段通过：778 项代码测试、28 项临时数据库验收及两套隔离浏览器流程。真实设备／生产验收仍待做，未推送或部署。旧的局部测试入口继续保留。
+OOBE 和设置页共用学校连接控件：已配对不代表当前在线；等待自动重试、主动暂停、连接停止、学校停用及后台未确认分别提示。按当前建议等待、恢复或联系管理员；原始状态与错误码可展开技术详情复制。实现与本机验证范围见[连接提示任务卡](../iterations/SCHOOL-CONNECTION-PRESENTATION-20261007.md)。
 
-**2026-10-01：[报告来源对照](N4-REPORT-SOURCES-20261001.md) 已完成。** 大屏网页与学校后台共用来源标签，按会话核对自动排程及当时时段；未关联的报告不猜测为手动监测。统一排程测试增至 430 项，两种隔离浏览器流程通过。用户不在，N4.3d 真实来源联调继续待验收；未推送或部署。
+## 协议与源码
 
-**2026-10-01：[N4.3c 排程下发与自动执行](N4.3c-SCHEDULE-EXECUTION-20261001.md) 已接入。** 当轮统一测试 424 项、隔离 HTTP／SQL 验收 28 项及浏览器流程通过。N4.3b 人工联调按用户要求跳过；N4.3d 核对真实学校时间和麦克风仍待做。尚未部署。
+协议文件保持稳定路径，供应用嵌入和三端契约测试使用。编号区分通道与历史阶段，不应仅凭 N1／N3／N4 文件名推断当前产品只支持哪些功能。
 
-[N4.3a 共享规则](N4.3a-SCHEDULE-RULES-20261001.md)、[N4.3b 学校管理](N4.3b-SCHEDULE-MANAGEMENT-20261001.md) 为已有基础；[整体排程方案](N4.3-SCHOOL-SCHEDULE-PLAN.md) 的 0.7 下发和桌面执行已接入。N4.2 自动验收及开发电脑基本人工联调通过，见 [人工记录](N4.2-MANUAL-ACCEPTANCE-20261001.md)。[低电平修复](N4.2-LOW-SIGNAL-20261001.md) 的人工复测按用户要求跳过；班级大屏、生产和补充故障验收待完成。本轮未推送或部署；网页旧定时监测仍停用，新学校排程在桌面执行。
-
-**当前入口（2026-09-28）：[考试互联一页用例与验收](EXAM-MODE-OVERVIEW.md) · [发布候选审核](../releases/NPEP-EXAM-20260928-REVIEW.md)。** 用户已回报完整单设备流程通过；新版未推送、未部署。当前采用配对授权、包含自启动的完整考试／日常模式切换和显式方案放映。下面旧记录保留各阶段原貌，不作为当前授权规则或未完成项清单。
-
-## 历史进度记录
-
-2026-09-28 新增：[远程结束考试／返回日常](REMOTE-DAILY-20260928.md)——网页完整返回日常，自启动、运行软件与录课暂停一并核实；本地实现，未部署。
-
-2026-09-28 当前规则：[配对授权与远程考试优先级一页说明](EXAM-PRIORITY-20260928.md)。学校配对即授权现有考试功能；远程请求正常保存录制、暂让通知、复用当前状态并允许补完重试。下面旧记录中的独立许可与“已有暂停阻止再次切换”规则已被替代。本地实现及自动测试完成，未推送、未部署；真实桌面验收待完成。
-
-2026-09-27：[学校投递考试方案一页流程](EXAMAWARE-PLAN-REMOTE.md)——网页校验摘要、明确开始放映、实际会话读回；本地三端已接入，尚未部署。
-
-考试模式先读：[一页用例图与操作入口](EXAM-MODE-OVERVIEW.md)。2026-09-27 已在本地接入完整考试模式：修改两款软件的登录自启动、立即切换软件并保存本地 Exam 模式。N3 协议为 0.4 / EXAM_MODE，旧许可不继承新增权限，升级后需现场重新开启。以下“不修改自启动”条目为历史；未部署新版。
-
-2026-09-27 架构导读：[考试模式与 N3 远程考试环境：架构、执行链及源码导读](EXAM-MODE-ARCHITECTURE-20260927.md)。按当前三仓工作区代码说明本地模式与 N3 的区别、状态所有权、HTTP 授权、软件控制、锁、录课暂停、持久化和已知限制；不代表已部署版本。
-
-2026-09-26 收尾状态优先见 [N3 本地闭环与验收记录](NPEP-N3-COMPLETION-20260926.md)。数据库验收已切换为原生 PostgreSQL，统一入口不再需要 Docker；新增真实 .NET／HTTP／SQL 联调及开发电脑的网页请求、设备成功回执和现场结束证据。下面同日的早期条目保留为历史。
-
-2026-09-26 地址策略更新：按用户要求，学校互联始终接受 HTTP 和 HTTPS origin，适用于 Debug／Release、回环／局域网／其他主机，不需要额外开关。HTTP 为明文传输；HTTPS 继续严格验证证书，不自动降级。以下旧记录中“仅 HTTPS”的客户端限制已由本条替代。服务端仍需启用 NPEP，允许 HTTP 不等于自动完成服务端初始化。
-
-2026-09-26 最新：[N3 网页、后端及桌面投递已在本地接通](NPEP-N3-WEB-DELIVERY-20260926.md)，统一验收入口 `scripts/test-npep-n3.ps1 -Database` 已通过 194 项测试及共享契约检查。新增后端数据库迁移；尚未提交、推送、部署或完成真实大屏远程切换验收。以下记录反映各阶段当时状态。
-
-2026-09-26 补充：[N3 本机首次许可与现场结束入口](NPEP-N3-LOCAL-CONSENT-20260926.md)。用户已回报本机检查通过；源码已加入绑定隔离的许可开关、独立暂停状态及本地结束入口。尚未构建或执行新测试，远程投递和服务端授权通道仍未接通。以下记录按其原日期阅读。
-
-2026-09-26 补充：[启动提权与 TLS 自动恢复](NPEP-STARTUP-AND-TLS-20260926.md)。主程序初始化前立即请求管理员权限；TLS 验证失败持续退避重试，每次仍严格校验证书。本轮未构建或运行测试。
-
-2026-09-26：已接入 [N3 本机软件适配与协调](NPEP-N3-LOCAL-ADAPTER-20260926.md)，提供设置页只读检查，加入跨进程互斥和通知延后展示。执行仍未开放；本轮按用户要求未构建或运行测试，权限交接、首次许可和服务端通道尚待完成。以下记录按其原日期阅读。
-
-2026-09-25 N3 产品范围已定稿，见 [单设备远程切入考试运行环境](NPEP-N3-RUNTIME-CONTROL-PLAN.md)：只启动 ExamAware2、正常退出 ClassIsland 并暂停自动录课，**不修改 Windows 自启动**；大屏首次开启一次远程控制，之后不逐次弹产品确认，UAC 仍按需现场处理。旧本地“考试模式”包含自启动设置，不可直接作为 N3 入口。现已开始实现 [独立执行内核与录制保留权](NPEP-N3-KERNEL-IMPLEMENTATION-20260925.md)，尚未开放远程入口或部署；生产适配器与 0.3 契约仍待接入/冻结。以下 N1/N2 记录保留其原日期含义。
-
-最新现场状态（2026-09-24）：NPEP 已首次激活；用户回报测试设备已连接生产环境，基础上报及五项网页检查通过，设备恢复类项目暂缓，详见[试点进度](NPEP-N1-PILOT-PROGRESS-20260924.md)。N1 能力仍仅 device.status。N2 已按用户决定开始实现[自定义置顶通知窗口](NPEP-N2-CUSTOM-NOTIFICATION-UI.md)，暂不接 ClassIsland；桌面源码已接入 HTTP 轮询、持久化收件箱和回执，具体结果见 [N2 投递记录](NPEP-N2-DELIVERY-REPORT.md)；现有生产服务器和旧 N1 客户端仍需配套升级。下方旧发布记录保留为历史，不要据此重新初始化或激活。
-
-本目录用于 NPEduTools 与 NPClassworks / NPClassworksKV 双端协作。N1 仅包含配对、撤销与只读状态，唯一能力为 `device.status`；通知和考试模式属于后续阶段。
-
-2026-09-21：已完成 [Docker 与 N1 CI 接入](NPEP-N1-DEPLOYMENT-CI-REPORT.md)、三端及含图标最终组合的 [GitHub 托管检查](NPEP-N1-HOSTED-CI-REPORT.md) 和 [首次发布方案审查](NPEP-N1-RELEASE-PLAN.md)。河豚豚已完成生产存档、数据库隔离恢复（31 张用户表）和异地备份，并暂停 PM2 部署代理。三个 GitHub 发布入口已暂停，两仓 main 已受控快进至受测前端 `37a3f1b...` / 后端 `e660876...`，等待河豚豚按 [操作记录](NPEP-N1-CONTROLLED-RELEASE.md) 执行升级。NPEP 未启用；关闭状态业务验收后再进入 [真实大屏现场验收](NPEP-N1-FIELD-ACCEPTANCE.md)。
-
-2026-09-20 双端交叉审阅完成：已提出的契约阻塞均闭环，可以作为隔离环境实现基线。服务端审阅记录的正文快照 SHA-256 为 `1afd58c435e6616a6dcd5091c0432f700b2e3325fdad2b997e089dc361490d07`；随后仅将主文档首段状态由“正在审阅”更新为“审阅通过”，未变更协议内容。
-
-| 文件 | 用途 |
+| 通道 | 本仓库定义 |
 | --- | --- |
-| [NPEP-N1-CONTRACT.md](NPEP-N1-CONTRACT.md) | 流程、身份、HTTP 路由、代际、错误码、事务和验收要求；业务语义的主文档 |
-| [n1-wire.schema.json](n1-wire.schema.json) | JSON Schema Draft-07 定义库；按 `#/definitions/<名称>` 选择请求体或响应定义，根本身不是单一路由校验器 |
-| [n1-examples.json](n1-examples.json) | 21 个有效结构与 20 个无效结构，全部为假数据 |
-| [Test-N1Examples.ps1](Test-N1Examples.ps1) | 对全部示例检查预期通过/拒绝，不启动服务、不访问数据库 |
-| [NPEP-N1-DEVICE-GUIDE.md](NPEP-N1-DEVICE-GUIDE.md) | 设备适配器、独立 CLI、凭据与故障恢复、隔离联调方法 |
-| [NPEP-N1-IMPLEMENTATION-REPORT.md](NPEP-N1-IMPLEMENTATION-REPORT.md) | 实现范围、实际测试结果和下一阶段限制 |
-| [NPEP-N1-UI-REPORT.md](NPEP-N1-UI-REPORT.md) | 设置页、Host 常驻连接与双端 UI 阶段的验收及限制 |
-| [NPEP-N1-RESILIENCE-REPORT.md](NPEP-N1-RESILIENCE-REPORT.md) | 真实服务断线、丢回执、独立进程正常退出及突然终止恢复 |
-| [NPEP-N1-FIELD-ACCEPTANCE.md](NPEP-N1-FIELD-ACCEPTANCE.md) | 已知域名、main 自动发布边界、上线前置条件及现场待填表 |
-| [NPEP-N1-DEPLOYMENT-CI-REPORT.md](NPEP-N1-DEPLOYMENT-CI-REPORT.md) | Windows 检查、Docker/恢复接入、跨端 CI 门槛及未发布边界 |
-| [NPEP-N1-HOSTED-CI-REPORT.md](NPEP-N1-HOSTED-CI-REPORT.md) | 三端 GitHub 实际结果、固定提交组合、checkout 修复与测试产物 |
-| [NPEP-N1-RELEASE-PLAN.md](NPEP-N1-RELEASE-PLAN.md) | 首次配套发布顺序、当前准入缺口、服务器操作者职责与用户回来后的待办 |
-| [NPEP-N1-OPERATOR-HANDOFF.md](NPEP-N1-OPERATOR-HANDOFF.md) | 河豚豚的服务器侦察手册：查看命令、直白说明和维护信息回传模板 |
-| [NPEP-N1-FIRST-BACKUP.md](NPEP-N1-FIRST-BACKUP.md) | 首次生产数据库、配置及现用镜像存档步骤与已完成结果 |
-| [NPEP-N1-RESTORE-DRILL.md](NPEP-N1-RESTORE-DRILL.md) | 隔离 PostgreSQL 恢复验证步骤、31 张用户表结果与未覆盖范围 |
-| [NPEP-N1-CONTROLLED-RELEASE.md](NPEP-N1-CONTROLLED-RELEASE.md) | 三条 GitHub 发布入口暂停结果、PM2 交接、固定版本升级与失败处理草案 |
-| [NPEP-N1-FIRST-DEPLOY-INCIDENT.md](NPEP-N1-FIRST-DEPLOY-INCIDENT.md) | 首次新后端未就绪、自动回退证据和只读现场诊断 |
-| [服务端审阅记录](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md) | 对配对响应丢失、并发撤销、绑定生命周期、状态乱序及恢复流程的交叉审查 |
+| 配对、设备身份与状态 | [N1 基础契约](NPEP-N1-CONTRACT.md)、[Schema](n1-wire.schema.json)、[示例](n1-examples.json) |
+| 远程考试／日常模式 | [Schema](n3-wire.schema.json)、[示例](n3-examples.json) |
+| 考试方案 | [Schema](n4-exam-plan.schema.json) |
+| 噪音状态与报告 | [Schema](noise.schema.json) |
+| 排程规则与下发 | [规则](noise-schedule-policy.schema.json)、[下发](noise-schedule-wire.schema.json) |
+| 定时监测管理 | [共享示例](noise-management-wire-cases.json)；服务端校验见 [KV 实现](https://github.com/tempChanghong/NPClassworksKV/blob/main/domain/npep/noiseManagement.js) |
+| 定时页面在线状态 | [共享示例](noise-display-presence-wire-cases.json)；服务端校验见 [KV 实现](https://github.com/tempChanghong/NPClassworksKV/blob/main/domain/npep/noiseDisplayPresence.js) |
 
-## 验证方式
+网络会话从 [NPEP 集成模块](../../src/NPEduTools.Integrations.Npep)读起；本机服务组合见 [Host](../../src/NPEduTools.Host/Program.cs)，进程分工见[当前架构](../ARCHITECTURE.md)。三端检查使用 [CURRENT 入口](../TESTING.md#三端当前组合)，专项任务卡在[迭代索引](../iterations/README.md)。
 
-在 PowerShell 7.5 或更新版本执行：
+## 历史记录
 
-```powershell
-./docs/npep/Test-N1Examples.ps1
-```
-
-2026-09-20 本地结果：**41/41 符合预期**。其中包括未来控制能力、额外执行字段、秘密泄漏到响应、缺失部署标识、序号越界/错误类型、陈旧采样年龄、隐私字段、错误枚举、协议版本、时间格式等反例。
-
-验证器保留 JSON 时间字符串，避免 PowerShell 自动转换日期后丢失协议要求的毫秒格式。该脚本不替代两端的真实请求解析器；重复 JSON 键、身份鉴别、速率限制、数据库锁、幂等执行、DPAPI 和 TLS 等行为需要在 N1 实现后单独验证。
-
-## 实现分工与顺序
-
-1. KV 负责人：从主契约建立独立 NPEP 数据模型、学校/账号/绑定生命周期锁定与迁移设计，先在隔离数据库实现 info / pairing / confirm / me / session / status / revoke；网页只开放学校管理员的只读设备登记流程。
-2. NPEduTools 负责人：核实最新主分支与发布修订后，在独立开发分支实现协议模型、受保护凭据存储、单实例会话及只读状态适配；首先用假服务端做网络/丢回执测试，不操作真实模式、录制或 ClassIsland 提醒。
-3. 两端联调：使用测试学校、两个学校的账号、测试 screen binding 和独立本地配置；先验证“配对成功—报告状态—撤销失效”，再执行主文档第8节竞态/恢复用例。
-4. 现场配对界面与学校管理页完成后，才交付一个可用的 N1 试点。不把当前结构检查结果标为服务端或大屏安全验收通过。
-
-2026-09-20 已进入隔离实现阶段：设备端原型和首个真实 HTTPS/PostgreSQL 闭环已完成；KV 的迁移、生命周期与部署 epoch 门禁由服务端分支实现并单独验收。不得沿用旧版本“无迁移”结论，也不得直接改线上服务试验。遇到契约变更，先更新主文档、Schema、正反例和双端审查，再一起实现；不得由任一端悄悄扩大能力。
+本页只维护阅读入口。旧进度汇报完整保存在[2026-09-20 至 2026-10-04 进度快照](../archive/npep/PROGRESS-20260920-20261004.md)；各阶段设计、现场、备份和部署报告在 [NPEP 归档](../archive/npep/README.md)。旧文中的“未实现／未推送／未部署”描述只属于原日期，不是当前待办。

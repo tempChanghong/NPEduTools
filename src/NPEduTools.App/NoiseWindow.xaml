@@ -23,6 +23,7 @@
           <Button x:Name="StopButton" Content="停止监测" Click="StopClicked" IsEnabled="False" AutomationProperties.AutomationId="NoiseStop" />
         </WrapPanel>
         <TextBlock x:Name="StateText" Text="正在连接后台…" TextWrapping="Wrap" Margin="0,16,0,0" />
+        <TextBlock x:Name="StateHintText" TextWrapping="Wrap" Foreground="#64776D" Margin="0,6,0,0" Visibility="Collapsed" />
         <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="#64776D" Margin="0,6,0,0" />
       </StackPanel></Border>
       <Border Style="{StaticResource NoiseCard}"><StackPanel>
@@ -43,8 +44,9 @@
         <TextBlock Text="最近一分钟 · 固定刻度 −100 至 0 dBFS；缺样和无效区间留空" Foreground="#64776D" FontSize="12" TextWrapping="Wrap" />
       </StackPanel></Border>
       <Border Style="{StaticResource NoiseCard}"><StackPanel>
-        <TextBlock Text="本次统计" FontSize="17" FontWeight="SemiBold" />
+        <TextBlock x:Name="SummaryTitle" Text="监测统计" FontSize="17" FontWeight="SemiBold" />
         <TextBlock x:Name="SummaryText" Text="开始后显示有效采样、覆盖率与能量平均电平。" TextWrapping="Wrap" Margin="0,12,0,0" LineHeight="27" />
+        <TextBlock x:Name="SummaryHint" Text="这里只展示本机统计，不代表报告已上传。学校端是否收到，请到 NPClassworks 核对。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,12,0,0" />
       </StackPanel></Border>
       <Border Style="{StaticResource NoiseCard}"><StackPanel>
         <TextBlock Text="定时监测保护" FontSize="17" FontWeight="SemiBold" />

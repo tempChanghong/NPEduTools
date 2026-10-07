@@ -6,10 +6,9 @@ namespace NPEduTools.App;
 public partial class AutoRecordingWindow
 {
     private bool _automaticChanging;
-    private string? _automaticError;
     private void AutomaticChanged(AutomaticRecordingState state)
     {
-        RealStatus.Text = _automaticError ?? state.Message + (state.Error is null ? "" : " · " + state.Error);
+        RealStatus.Text = state.Message + (state.Error is null ? "" : " · " + state.Error);
         ToggleReal.Content = state.Enabled ? "关闭自动录课" : "开启自动录课";
         ToggleReal.ToolTip = state.SuspendedByMode ? "课堂模式暂停仍然有效；开启总开关不会解除暂停。" : "使用已保存的录制设置，按计划和学校时间执行。";
         ToggleReal.IsEnabled = !_automaticChanging;
@@ -23,12 +22,17 @@ public partial class AutoRecordingWindow
         "Starting" => "准备录制", "Recording" => "录制中", "Paused" => "已暂停", "Finalizing" => "正在保存",
         "Recorded" => "已保存", "Skipped" => "已跳过", "Missed" => "已错过", "Conflict" => "计划冲突", "Interrupted" => "中断待检查", _ => "未完成"
     };
+    private void SetAutomaticFeedback(string? message, bool pending = false)
+    {
+        AutomaticFeedbackText.Text = message is null ? "" : (pending ? "本次操作：" : "上次操作提示：") + message;
+        AutomaticFeedbackText.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+    }
     private async Task AutomaticActionAsync(string action, RecordingOptions? options = null)
     {
         if (_automaticChanging) return;
-        _automaticChanging = true; _automaticError = null; ToggleReal.IsEnabled = false;
-        try { await _realRecording.SetAutomaticAsync(action, options); }
-        catch (Exception error) when (error is not OutOfMemoryException) { RealStatus.Text = _automaticError = error.Message; }
+        _automaticChanging = true; SetAutomaticFeedback("正在等待后台确认…", pending: true); ToggleReal.IsEnabled = false;
+        try { await _realRecording.SetAutomaticAsync(action, options); SetAutomaticFeedback(null); }
+        catch (Exception error) when (error is not OutOfMemoryException) { SetAutomaticFeedback(error.Message); }
         finally { _automaticChanging = false; ToggleReal.IsEnabled = true; }
     }
     private async void ToggleRealClicked(object sender, RoutedEventArgs e)
@@ -37,10 +41,10 @@ public partial class AutoRecordingWindow
         try
         {
             var options = RecordingWindow.ReadSavedOptions(_pipe);
-            if (options is null) { RealStatus.Text = _automaticError = "请先到“微课录制”配置屏幕、音源和目录，点击“保存设置”。"; return; }
+            if (options is null) { SetAutomaticFeedback("请先到“微课录制”配置屏幕、音源和目录，点击“保存设置”。"); return; }
             await AutomaticActionAsync("enable", options);
         }
-        catch (Exception error) when (error is not OutOfMemoryException) { RealStatus.Text = _automaticError = "录制设置无法读取：" + error.Message; }
+        catch (Exception error) when (error is not OutOfMemoryException) { SetAutomaticFeedback("录制设置无法读取：" + error.Message); }
     }
     private async void RealSkipClicked(object sender, RoutedEventArgs e) => await AutomaticActionAsync("skip-next");
     private async void RealSkipDayClicked(object sender, RoutedEventArgs e) => await AutomaticActionAsync(_realRecording.Automatic.SkipDate is not null && _realRecording.Automatic.SkipDate == _today ? "resume-day" : "skip-day");

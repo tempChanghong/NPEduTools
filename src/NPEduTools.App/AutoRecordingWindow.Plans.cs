@@ -82,7 +82,10 @@ public partial class AutoRecordingWindow
             if (CalendarRecordingPlanner.Validate(next) is { } error) throw new InvalidDataException(error);
             // Commit configuration before exposing it to the rehearsal engine.
             _bookStore.Save(next); _book = next; _savedBook = next;
-            RebuildPlans(); _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed); Save(); Render(); ErrorText.Text = message;
+            RebuildPlans(); _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed); Save(); Render();
+            // The plan has committed even if saving the resulting trial history fails.
+            ErrorText.Text = _writable ? message :
+                "录课计划已保存，但试运行记录无法保存，试运行已停止。请检查文件夹权限及剩余空间。";
             return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or FormatException or OverflowException)

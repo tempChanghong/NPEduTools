@@ -11,12 +11,15 @@ public partial class SecRandomWindow : Window
     private readonly string _pipe;
     private readonly CancellationTokenSource _lifetime = new();
     private SecRandomState? _state;
+    private SecRandomState? _lastKnownState;
+    private long _generation;
     private bool _loaded, _busy, _closing;
     public SecRandomWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent();
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
+        Render(null);
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
@@ -33,7 +36,8 @@ public partial class SecRandomWindow : Window
     }
     public async Task<string> QuickDrawFromSidebarAsync()
     {
-        if (_busy) return ShowGuidance("正在处理 SecRandom 操作，请稍候再闪抽。");
+        if (_closing || _busy) return ShowGuidance("正在处理 SecRandom 操作，请稍候再闪抽。");
+        _generation++;
         _busy = true; Render(_state);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(45));
@@ -62,19 +66,23 @@ public partial class SecRandomWindow : Window
             return result.Winner is { } winner ? $"SecRandom 闪抽一人 · 上次抽中：{winner.Name}" : "SecRandom 闪抽一人 · 上次已完成";
         }
         catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException)
-        { return ShowGuidance("未收到可靠回执。请核实 SecRandom 窗口及历史，勿立即重复抽取。"); }
+        { Render(null); return ShowGuidance("未收到可靠回执。请核实 SecRandom 窗口及历史，勿立即重复抽取。"); }
         finally { _busy = false; Render(_state); }
     }
     private void Render(SecRandomState? state)
     {
         _state = state;
+        if (state is not null) _lastKnownState = state;
         if (!_loaded && state is not null) { Executable.Text = state.ExecutablePath ?? ""; _loaded = true; }
         Connection.Text = state?.Error ?? state?.Connection switch
         {
             "Ready" => "上次检查：SecRandom 接口已就绪", "Unavailable" => "上次检查：接口未就绪，请查看执行结果",
-            _ => state is null ? "暂时无法连接 NPEduTools 后台" : "尚未检查 SecRandom 接口"
+            _ => state is null ? "后台连接未确认，等待重新连接。" : "尚未检查 SecRandom 接口"
         };
-        CheckedAt.Text = state?.CheckedAt is { } at ? $"{at.ToLocalTime():MM-dd HH:mm:ss} · 此状态不是实时订阅" : "点击“打开点名页”启动软件，或在软件已运行时检查接口。";
+        var display = state ?? _lastKnownState;
+        CheckedAt.Text = state is null
+            ? display?.CheckedAt is { } last ? $"上次接口检查：{last.ToLocalTime():MM-dd HH:mm:ss} · 当前后台状态未知" : "收到后台状态后恢复操作。"
+            : state.CheckedAt is { } at ? $"{at.ToLocalTime():MM-dd HH:mm:ss} · 此状态不是实时订阅" : "点击“打开点名页”启动软件，或在软件已运行时检查接口。";
         bool running = state?.Operation?.State == "Running", uncertain = state?.Operation?.State == "Unknown";
         ConfigActions.IsEnabled = !_busy && !running && !uncertain && state is { Error: null };
         bool available = !_busy && !running && !uncertain && state is { ExecutablePath: not null, Error: null };
@@ -83,9 +91,12 @@ public partial class SecRandomWindow : Window
         CheckButton.IsEnabled = !_busy && !running && state is { ExecutablePath: not null, Error: null };
         AcknowledgeButton.Visibility = uncertain ? Visibility.Visible : Visibility.Collapsed;
         AcknowledgeButton.IsEnabled = !_busy && !running && state?.Error is null;
-        OperationText.Text = state?.Operation is { } op ? $"{op.UpdatedAt.ToLocalTime():MM-dd HH:mm:ss} · {StateName(op.State)}\n{op.Message}" +
-            (op.ErrorCode is null ? "" : $"（{op.ErrorCode}）") : "尚未执行操作。";
-        WinnerText.Text = state?.Operation?.Winner is { } winner ? $"{winner.Name} · {winner.Id}" : "";
+        OperationText.Text = display?.Operation is { } op
+            ? (state is null ? "上次已确认的回执（仅供核对，不代表本次结果）：\n" : "") +
+                $"{op.UpdatedAt.ToLocalTime():MM-dd HH:mm:ss} · {StateName(op.State)}\n{op.Message}" +
+                (op.ErrorCode is null ? "" : $"（{op.ErrorCode}）")
+            : state is null ? "当前执行结果未知，请等待连接恢复。" : "尚未执行操作。";
+        WinnerText.Text = display?.Operation?.Winner is { } winner ? (state is null ? "上次回执：" : "") + $"{winner.Name} · {winner.Id}" : "";
     }
     private static string StateName(string state) => state switch
     { "Running" => "正在执行", "Succeeded" => "已完成", "Failed" => "未完成", "Unknown" => "结果待核实", "Acknowledged" => "已核实", _ => "未知" };
@@ -101,15 +112,23 @@ public partial class SecRandomWindow : Window
         while (!_lifetime.IsCancellationRequested)
         {
             if (IsVisible && !_busy)
-                try { Render((await RequestAsync("secrandom.status")).SecRandom); }
+            {
+                long generation = _generation;
+                try
+                {
+                    var response = await RequestAsync("secrandom.status");
+                    if (!_closing && !_busy && generation == _generation) Render(response.SecRandom);
+                }
                 catch (Exception e) when (e is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException)
-                { Render(null); }
+                { if (!_closing && !_busy && generation == _generation) Render(null); }
+            }
             try { await Task.Delay(800, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
     }
     private async Task RunAsync(string? action = null, bool save = false, Guid? acknowledge = null)
     {
-        if (_busy) return;
+        if (_closing || _busy || _state is null) return;
+        _generation++;
         _busy = true; Render(_state);
         try
         {
@@ -118,7 +137,7 @@ public partial class SecRandomWindow : Window
             Render(response.SecRandom); Message.Text = response.Message;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException)
-        { Message.Text = "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。"; }
+        { Render(null); Message.Text = "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。"; }
         finally { _busy = false; Render(_state); }
     }
     private void BrowseClicked(object sender, RoutedEventArgs e)
