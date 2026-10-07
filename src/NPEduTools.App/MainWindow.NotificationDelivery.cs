@@ -160,17 +160,27 @@ public partial class MainWindow
         finally { reservation?.Dispose(); _notificationOpening = false; }
     }
 
-    private async void OpenSchoolNotificationClicked(object sender, RoutedEventArgs e)
+    private async void OpenSchoolNotificationClicked(object sender, RoutedEventArgs e) => await OpenSchoolNotificationAsync(sender);
+
+    private async Task OpenSchoolNotificationAsync(object sender)
     {
         if (_schoolNotification is not null) { _schoolNotification.Activate(); return; }
         if (sender is not Button { Tag: NpepNoticeSummary summary } || _inboxScope is null) return;
+        var scope = _inboxScope;
+        var navigationVersion = _inboxNavigationVersion;
+        bool StillCurrent() => !_lifetime.IsCancellationRequested &&
+            navigationVersion == _inboxNavigationVersion && scope == _inboxScope;
         try
         {
-            var response = await NotificationRequestAsync(new("get", _inboxScope, summary.PublicationId, summary.Revision));
-            if (response.Inbox is { CanPresent: true, Current: not null }) await ShowSchoolNotificationAsync(_inboxScope, response.Inbox.Current);
+            var response = await NotificationRequestAsync(new("get", scope, summary.PublicationId, summary.Revision));
+            if (!StillCurrent()) return;
+            if (response.Inbox is { CanPresent: true, Current: not null }) await ShowSchoolNotificationAsync(scope, response.Inbox.Current);
             else NotificationInboxMessage.Text = "通知已变化或尚未完成在线核对，请等待刷新。";
         }
-        catch (Exception error) when (IsManagementError(error)) { NotificationInboxMessage.Text = "无法打开通知，请稍后重试。"; }
+        catch (Exception error) when (IsManagementError(error))
+        {
+            if (StillCurrent()) NotificationInboxMessage.Text = "无法打开通知，请稍后重试。";
+        }
     }
     private void NotificationPreviousClicked(object sender, RoutedEventArgs e) => SelectNotificationPage(Math.Max(0, _inboxOffset - 10));
     private void NotificationNextClicked(object sender, RoutedEventArgs e) { if (_inboxNext is { } offset) SelectNotificationPage(offset); }
