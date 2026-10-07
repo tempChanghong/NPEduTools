@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private Guid? _hostStream;
     private Task? _touchPoll;
     private TouchAssistState? _touchState;
+    private long _touchUiGeneration;
     private bool _touchBusy, _updatingTouch, _exitBusy, _exiting, _entryHint;
     private Forms.NotifyIcon? _tray;
     private System.Drawing.Icon? _trayIcon;
@@ -31,27 +32,32 @@ public partial class MainWindow : Window
     private QuickAccessWindow? _quick;
 
     public MainWindow(string pipe, string? upstream)
+        : this(pipe, upstream, initializeServices: true) { }
+    internal MainWindow(string pipe, string? upstream, bool initializeServices)
     {
         _pipe = pipe;
         _upstream = upstream;
         InitializeComponent();
         DataContext = _model;
-        InitializeNpepConnection();
-        InitializeOnboarding();
-        InitializeTray();
-        InitializeStartupPreferences();
-        InitializeShortcuts();
-        InitializeRecording();
-        Activated += (_, _) => { RefreshLoginStartup(); RefreshToday(); };
+        if (initializeServices)
+        {
+            InitializeNpepConnection();
+            InitializeOnboarding();
+            InitializeTray();
+            InitializeStartupPreferences();
+            InitializeShortcuts();
+            InitializeRecording();
+            Activated += (_, _) => { RefreshLoginStartup(); RefreshToday(); };
+        }
         RefreshToday();
         Closing += (_, e) =>
         {
-            if (_exiting) return;
+            if (_exiting || !initializeServices) return;
             e.Cancel = true;
             if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording.Detach(); };
+        Closed += (_, _) => { _lifetime.Cancel(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording?.Detach(); };
         _model.PropertyChanged += (_, _) =>
         {
             // After success, the next live snapshot owns the quick panel status again.
@@ -204,14 +210,16 @@ public partial class MainWindow : Window
         {
             if (!_touchBusy)
             {
+                long generation = _touchUiGeneration;
                 try
                 {
                     var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch.status"));
-                    if (!_touchBusy) ApplyTouch(response);
+                    if (!_touchBusy && !token.IsCancellationRequested && generation == _touchUiGeneration) ApplyTouch(response);
                 }
                 catch (Exception ex) when (IsManagementError(ex))
                 {
-                    if (!_touchBusy) { _touchState = null; TouchStatusText.Text = "后台未连接，正在重连…"; RefreshTouchControls(); }
+                    if (!_touchBusy && !token.IsCancellationRequested && generation == _touchUiGeneration)
+                    { _touchState = null; TouchStatusText.Text = "后台未连接，正在重连…"; RefreshTouchControls(); }
                 }
             }
             await TryStartupTouchAsync();
@@ -255,12 +263,20 @@ public partial class MainWindow : Window
     private async Task ChangeTouchAsync(string action)
     {
         if (_touchBusy || _exitBusy || _lifetime.IsCancellationRequested) return;
+        _touchUiGeneration++;
         _touchBusy = true; RefreshTouchControls();
         TouchStatusText.Text = action == "disable" ? "正在停止辅助…" : "正在应用操作…";
         RefreshQuick();
-        try { ApplyTouch(await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch." + action))); }
+        try
+        {
+            var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch." + action));
+            if (!_lifetime.IsCancellationRequested) ApplyTouch(response);
+        }
         catch (Exception ex) when (IsManagementError(ex))
-        { _touchState = null; TouchStatusText.Text = "暂未确认结果，正在重新读取状态…"; }
+        {
+            if (!_lifetime.IsCancellationRequested)
+            { _touchState = null; TouchStatusText.Text = "暂未确认结果，正在重新读取状态…"; }
+        }
         finally { _touchBusy = false; RefreshTouchControls(); }
     }
 
