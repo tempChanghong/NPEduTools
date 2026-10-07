@@ -1,6 +1,6 @@
 # Windows 安装包
 
-自 v1.0.0 起提供 Windows x64 安装 EXE，同时保留 ZIP。已发布的 InDev 20261002 附件保持原样；候选包在 GitHub Release 草稿审核后才公开提供。
+自 v1.0.0 起提供 Windows x64 安装 EXE，同时保留 ZIP。下载与文件用途以[对应版本说明](releases/README.md)为准；源码更新不会替换旧版附件。
 
 ## 使用与升级规则
 

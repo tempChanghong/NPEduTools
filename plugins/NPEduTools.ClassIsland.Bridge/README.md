@@ -14,6 +14,6 @@ NPEduTools 已用这些数据进行周期/指定日期计划预演及实际自�
 
 通过 ClassIsland Debug 本体的 `-epp <插件输出目录>` 加载。请优先使用仓库中的隔离联调脚本，避免占用用户本体。
 
-参考：ClassIsland Docs 的插件入口、依赖注入、事件、IPC 和程序集隔离章节。完整设计见仓库 `docs/CLASSISLAND-RECORDING-BRIDGE-PLAN.md`，本次实现与证据见 `docs/AUTO-RECORDING-PLANS.md`。
+参考：ClassIsland Docs 的插件入口、依赖注入、事件、IPC 和程序集隔离章节。完整设计见仓库 `docs/archive/recording/CLASSISLAND-RECORDING-BRIDGE-PLAN.md`，本次实现与证据见 `docs/archive/recording/AUTO-RECORDING-PLANS.md`。
 
 代码随 NPEduTools 使用 GPL-3.0；ClassIsland SDK 等依赖遵循各自许可。

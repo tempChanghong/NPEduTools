@@ -192,7 +192,7 @@ N1 没有 `/commands`、`/notices`、`/claim`；不要因为老草案提及这�
 
 ## 9. 参考与协作
 
-- [总体规划](../NPEP-FOUNDATION-PLAN.md)；[服务端发现](../../../NPClassworksKV/docs/NPEP-SERVER-DISCOVERY.md)；[服务端 N1 审阅](../../../NPClassworksKV/docs/NPEP-N1-CONTRACT-REVIEW.md)。
+- [总体规划](../archive/research/NPEP-FOUNDATION-PLAN.md)；[服务端发现](https://github.com/tempChanghong/NPClassworksKV/blob/main/docs/NPEP-SERVER-DISCOVERY.md)；[服务端 N1 审阅](https://github.com/tempChanghong/NPClassworksKV/blob/main/docs/NPEP-N1-CONTRACT-REVIEW.md)。
 - [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) 的设备码交互和防猜测原则用于设计参考。本文是独立 NPEP 注册协议，增加现场二次确认与客户端预生成凭据，不宣称兼容 OAuth Device Grant。
 - [Microsoft ProtectedData](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.protecteddata?view=windowsdesktop-10.0) 用于核对 Windows DPAPI 能力；本项目的秘密保存、原子写入和恢复仍需实现与测试。
 

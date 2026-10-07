@@ -1,6 +1,6 @@
 # 课堂点名：SecRandom V3
 
-本功能已接入仓库中的下一版本。InDev 20261002 已发布附件不包含它。
+本功能已包含在 v1.0.0 中。InDev 20261002 已发布附件不包含它；具体文件与限制见[版本说明](releases/README.md)。
 
 ## 怎么用
 
@@ -40,4 +40,4 @@ SecRandom 若要求密码、课程许可或完整性确认，请在其界面正�
 
 从仓库根目录执行 `./scripts/test-secrandom.ps1`，兼容 Windows PowerShell 5.1；测试使用临时目录和模拟 SecRandom，不启动真实软件、不修改真实名单。完整 Host 回归由既有 `scripts/test-npep-ci.ps1` 包含，后者另有 PowerShell 版本要求。
 
-本次实现与验证证据见[任务卡](iterations/SECRANDOM-LOCAL-INTEGRATION-20261003.md)，协议依据见[研究报告](SECRANDOM-V3-INTEGRATION-RESEARCH.md)。
+本次实现与验证证据见[任务卡](iterations/SECRANDOM-LOCAL-INTEGRATION-20261003.md)，协议依据见[研究报告](archive/research/SECRANDOM-V3-INTEGRATION-RESEARCH.md)。

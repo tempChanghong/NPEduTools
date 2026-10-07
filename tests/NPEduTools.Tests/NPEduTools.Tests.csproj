@@ -39,6 +39,7 @@
   <ItemGroup>
     <Compile Include="../../src/NPEduTools.App/StartupPreferences.cs" Link="App/StartupPreferences.cs" />
     <Compile Include="../../src/NPEduTools.App/ClassroomModePresentation.cs" Link="App/ClassroomModePresentation.cs" />
+    <Compile Include="../../src/NPEduTools.App/RemoteExamPresentation.cs" Link="App/RemoteExamPresentation.cs" />
     <Compile Include="../../src/NPEduTools.App/ClassroomSetupCheck.cs" Link="App/ClassroomSetupCheck.cs" />
     <Compile Include="../../src/NPEduTools.App/OnboardingState.cs" Link="App/OnboardingState.cs" />
     <Compile Include="../../src/NPEduTools.App/AgreementAcceptance.cs" Link="App/AgreementAcceptance.cs" />

@@ -60,5 +60,5 @@ P1／P2 的 KV 迁移 `20261004010000_noise_display_return`、`20261004020000_no
 - [P1：限时返回与管理验证](SCHEDULED-NOISE-PROTECTION-PLAN-20261004.md)
 - [P2：网页心跳与原生补位](SCHEDULED-NOISE-FALLBACK-20261004.md)
 - [P3：独立守护与异常恢复](SCHEDULED-NOISE-GUARD-20261004.md)
-- [网页页面与导航](../../../NPClassworks/docs/ui-screen-scheduled-noise-display-20261004.md)
-- [KV 0.9 展示状态契约](../../../NPClassworksKV/docs/npep-noise-display-presence-0.9.md)
+- [网页页面与导航](https://github.com/tempChanghong/NPClassworks/blob/main/docs/ui-screen-scheduled-noise-display-20261004.md)
+- [KV 0.9 展示状态契约](https://github.com/tempChanghong/NPClassworksKV/blob/main/docs/npep-noise-display-presence-0.9.md)

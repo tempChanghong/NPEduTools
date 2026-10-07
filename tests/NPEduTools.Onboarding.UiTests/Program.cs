@@ -10,14 +10,16 @@ using System.Xml.Linq;
 using NPEduTools.App;
 using NPEduTools.Contracts;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly List<string> Checks = [];
     private static string _output = "";
     [STAThread]
     private static int Main(string[] args)
     {
-        _output = Path.GetFullPath(args.Single()); Directory.CreateDirectory(_output);
+        bool examOnly = args.Length == 2 && args[1] == "--remote-exam";
+        if (args.Length != 1 && !examOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam]");
+        _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
         XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -31,6 +33,11 @@ internal static class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (examOnly)
+            {
+                RunRemoteExamChecks();
+                WriteResult("PASSED", null); return 0;
+            }
             Exercise(new AgreementsWindow(pipe), window =>
             {
                 Assert(!Check(window, "AcceptApp").IsChecked.GetValueOrDefault(), "first consent preselected");
