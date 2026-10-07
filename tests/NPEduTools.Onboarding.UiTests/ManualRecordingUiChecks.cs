@@ -9,6 +9,7 @@ internal static partial class Program
 {
     private static void RunManualRecordingChecks()
     {
+        RunRecordingPreferencesChecks();
         string pipe = "NPEduTools.Test.manual-ui." + Guid.NewGuid().ToString("N");
         var type = typeof(RecordingWindow).Assembly.GetType("NPEduTools.App.RecordingClient")!;
         var client = Activator.CreateInstance(type, [Application.Current.Dispatcher, pipe])!;

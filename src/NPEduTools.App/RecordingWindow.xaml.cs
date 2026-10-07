@@ -48,7 +48,7 @@ public partial class RecordingWindow : Window
                 FpsChoice.SelectedIndex = _saved.FramesPerSecond == 8 ? 0 : 1; QualityChoice.SelectedIndex = _saved.MaximumHeight == 1080 ? 0 : 1;
             }
         }
-        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
         { _readable = false; RecordingError.Text = "保存的录制偏好无法读取，原文件已保留。本次仍可选择设置并录制。"; }
         _client.Changed += Apply;
         Loaded += async (_, _) => { await ProbeAsync(); Apply(_client.State); };
