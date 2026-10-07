@@ -33,7 +33,8 @@ internal static partial class Program
         bool adminOnly = args.Length == 2 && args[1] == "--admin-status";
         bool launchConfigOnly = args.Length == 2 && args[1] == "--launch-configuration";
         bool launchOnly = args.Length == 2 && args[1] == "--classisland-launch";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch]");
+        bool planSaveOnly = args.Length == 2 && args[1] == "--recording-plan-save";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -48,6 +49,11 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (planSaveOnly)
+            {
+                RunRecordingPlanSaveChecks();
+                WriteResult("PASSED", null); return 0;
+            }
             if (examOnly)
             {
                 RunRemoteExamChecks();
