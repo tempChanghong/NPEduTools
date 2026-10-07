@@ -182,7 +182,7 @@ public partial class NoiseWindow : Window
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {
         try { await NoiseManagementDialog.ConfigureAsync(this, _pipe); }
-        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
         { MessageText.Text = "无法读取后台管理设置，请重试。"; }
     }
 }

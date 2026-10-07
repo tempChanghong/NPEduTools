@@ -10,6 +10,7 @@
 | 学校连接提示 | [状态、原因与恢复建议](SCHOOL-CONNECTION-PRESENTATION-20261007.md) |
 | 噪音状态展示 | [当前采样、历史摘要与断连恢复](NOISE-STATUS-PRESENTATION-20261007.md) |
 | 噪音监测协议恢复 | [无效设备／状态／操作回执与继续查询](NOISE-PROTOCOL-RECOVERY-20261007.md) |
+| 定时监测管理验证 | [无效设置／授权回执与手动重试](NOISE-MANAGEMENT-RECOVERY-20261007.md) |
 | 自动录课反馈 | [实际状态与上次操作提示](AUTOMATIC-RECORDING-STATUS-20261007.md) |
 | 手动录课恢复 | [断连提示、操作回执与重新核对](MANUAL-RECORDING-RECOVERY-20261007.md) |
 | 点名回执恢复 | [未知状态、历史回执与操作顺序](SECRANDOM-STATE-RECOVERY-20261007.md) |
