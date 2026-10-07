@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private long _configurationRevision;
     private string? _savedPath;
     private bool _configurationLoaded;
+    private long _launchUiGeneration;
     private bool _actionInProgress;
     private Guid? _pendingStartId;
     private Guid? _hostStream;
@@ -88,6 +89,7 @@ public partial class MainWindow : Window
                     if (_hostStream != snapshot.StreamId)
                     {
                         _hostStream = snapshot.StreamId;
+                        _launchUiGeneration++;
                         _configurationLoaded = false;
                     }
                     _model.Apply(snapshot);
@@ -309,21 +311,31 @@ public partial class MainWindow : Window
     {
         while (!token.IsCancellationRequested)
         {
+            long generation = _launchUiGeneration;
             try
             {
-                var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.execution.get", OperationId: _pendingStartId));
-                if (!_actionInProgress) ShowLaunchData(response);
+                if (!_actionInProgress && !_exitBusy)
+                {
+                    var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.execution.get", OperationId: _pendingStartId));
+                    if (!token.IsCancellationRequested && CurrentLaunchQuery(generation)) ShowLaunchData(response);
+                }
             }
             catch (Exception ex) when (IsManagementError(ex))
             {
-                StartButton.IsEnabled = false;
-                if (!token.IsCancellationRequested && !_actionInProgress) LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
+                if (!token.IsCancellationRequested && CurrentLaunchQuery(generation))
+                {
+                    StartButton.IsEnabled = false;
+                    LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
+                }
             }
             RefreshQuick();
             try { await Task.Delay(1000, token); }
             catch (OperationCanceledException) { break; }
         }
     }
+
+    private bool CurrentLaunchQuery(long generation) => generation == _launchUiGeneration &&
+        !_lifetime.IsCancellationRequested && !_actionInProgress && !_exitBusy;
 
     private void ShowLaunchData(HostResponse response)
     {
@@ -381,17 +393,28 @@ public partial class MainWindow : Window
         if (picker.ShowDialog(this) == true) ExecutablePathBox.Text = picker.FileName;
     }
 
-    private async void SavePathClicked(object sender, RoutedEventArgs e)
+    private async void SavePathClicked(object sender, RoutedEventArgs e) => await SavePathAsync();
+
+    private async Task SavePathAsync()
     {
         if (_actionInProgress || _adminBusy) return;
+        long generation = ++_launchUiGeneration;
         _actionInProgress = true;
         StartButton.IsEnabled = false;
+        RefreshAdminControls();
         try
         {
             var request = new HostRequest(Protocol.Version, Guid.NewGuid(), "classisland.config.set",
                 ExecutablePath: ExecutablePathBox.Text.Trim(), ExpectedRevision: _configurationRevision);
             if (Protocol.Validate(request) is not null) { ConfigurationMessage.Text = "请先选择有效的程序路径。"; return; }
             var response = await ManagementRequestAsync(request);
+            if (_lifetime.IsCancellationRequested) return;
+            if (generation != _launchUiGeneration)
+            {
+                _configurationLoaded = false;
+                ConfigurationMessage.Text = "后台连接已变化，请重新读取配置后核对保存结果。";
+                return;
+            }
             if (response.Outcome == "Succeeded")
             {
                 _configurationLoaded = false;
@@ -399,20 +422,32 @@ public partial class MainWindow : Window
             }
             ConfigurationMessage.Text = response.Message;
         }
-        catch (Exception ex) when (IsManagementError(ex)) { ConfigurationMessage.Text = "未能确认路径已保存，请重新读取配置后核对。"; }
-        finally { _actionInProgress = false; }
+        catch (Exception ex) when (IsManagementError(ex))
+        {
+            if (!_lifetime.IsCancellationRequested)
+            {
+                _configurationLoaded = false;
+                ConfigurationMessage.Text = "未能确认路径已保存，请重新读取配置后核对。";
+            }
+        }
+        finally { _actionInProgress = false; RefreshAdminControls(); }
     }
 
-    private async void ReloadClicked(object sender, RoutedEventArgs e)
+    private async void ReloadClicked(object sender, RoutedEventArgs e) => await ReloadConfigurationAsync();
+
+    private async Task ReloadConfigurationAsync()
     {
-        if (_actionInProgress) return;
+        if (_actionInProgress || _exitBusy) return;
+        long generation = ++_launchUiGeneration;
         try
         {
             var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.config.get"));
+            if (!CurrentLaunchQuery(generation)) return;
             _configurationLoaded = false;
             ShowLaunchData(response);
         }
-        catch (Exception ex) when (IsManagementError(ex)) { ConfigurationMessage.Text = "后台未连接，暂时无法读取配置。"; }
+        catch (Exception ex) when (IsManagementError(ex))
+        { if (CurrentLaunchQuery(generation)) ConfigurationMessage.Text = "后台未连接，暂时无法读取配置。"; }
     }
 
     private static bool IsManagementError(Exception ex) => ex is IOException or InvalidDataException or JsonException or

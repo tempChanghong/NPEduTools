@@ -22,6 +22,7 @@ public partial class MainWindow
         }
         string path = _savedPath;
         bool restartRequested = _restartOfferedFor == path;
+        _launchUiGeneration++;
         _actionInProgress = true;
         StartButton.IsEnabled = ExitButton.IsEnabled = false;
         RefreshAdminControls();
