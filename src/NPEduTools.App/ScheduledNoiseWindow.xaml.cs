@@ -49,7 +49,7 @@ public partial class ScheduledNoiseWindow : Window
             if (response.Outcome == "Succeeded") Hide();
             else MessageText.Text = response.Message;
         }
-        catch (Exception e) when (e is IOException or TimeoutException or OperationCanceledException or JsonException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException or UnauthorizedAccessException)
         { if (StillCurrent()) MessageText.Text = "后台暂未确认返回期限，请等待连接恢复。没有停止监测。"; }
         finally { _returning = false; if (!_closing) ReturnButton.IsEnabled = true; }
     }
