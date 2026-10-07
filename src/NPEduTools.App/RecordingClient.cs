@@ -106,13 +106,15 @@ internal sealed class RecordingClient : IAsyncDisposable
         try
         {
             var response = await RequestAsync("recording.command", new(action, options, action == "start" ? null : expected, _client));
+            if (response.Recording is null)
+                throw new InvalidDataException("后台未返回录制状态；" + response.Message);
             if (response.Outcome != "Succeeded") { _pending = null; Apply(response); throw new InvalidOperationException(response.Message); }
             Apply(response);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             _pending = null;
-            if (error is IOException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
+            if (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
                 MarkUnavailable(previous, "本次操作未确认；" + error.Message);
             else { State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }
         }

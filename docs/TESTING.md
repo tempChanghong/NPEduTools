@@ -15,6 +15,7 @@
 | 录课计划保存反馈 | [文件锁与隔离 WPF 检查](iterations/RECORDING-PLAN-SAVE-FEEDBACK-20261007.md#验证) | 计划写入失败、试运行记录写入失败及重开恢复；不启动真实录制 |
 | 自动录课命令恢复 | [模拟管道与隔离 WPF 控件检查](iterations/AUTOMATIC-RECORDING-RECEIPT-RECOVERY-20261007.md#验证) | 丢失／无效回执、明确拒绝及轮询恢复；不启动真实录制 |
 | 录制轮询协议恢复 | [协议与模拟管道检查](iterations/RECORDING-POLL-PROTOCOL-RECOVERY-20261007.md#验证) | 无效状态／租约回执、状态待核实及正常轮询恢复；不启动真实录制 |
+| 手动录制命令恢复 | [录制契约与模拟管道检查](iterations/MANUAL-RECORDING-RECEIPT-RECOVERY-20261007.md#验证) | 无效命令回执、解除等待、明确拒绝及轮询核实；不启动真实录制 |
 | 手动录课恢复 | [客户端与隔离 WPF 检查](iterations/MANUAL-RECORDING-RECOVERY-20261007.md#验证) | 断连、重新确认、旧查询时序与回执丢失；使用唯一模拟管道，不启动真实录制 |
 | 点名回执恢复 | [SecRandom 专项与隔离 WPF 检查](iterations/SECRANDOM-STATE-RECOVERY-20261007.md#验证) | 页面与侧栏失联、旧查询时序、历史回执和恢复；不执行真实抽取 |
 | 考试看板恢复 | [ExamAware 专项与隔离 WPF 检查](iterations/EXAMAWARE-STATE-RECOVERY-20261007.md#验证) | 方案与操作请求时序、失联恢复及配对导出失败；不操作真实软件或自启动 |
