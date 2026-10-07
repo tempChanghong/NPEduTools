@@ -31,6 +31,7 @@
 | 定时监测返回协议恢复 | [协议与隔离 WPF 检查](iterations/SCHEDULED-RETURN-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧会话隔离及显式重试；只发送模拟返回请求 |
 | 学校互联协议恢复 | [共享会话与隔离 WPF 检查](iterations/SCHOOL-CONNECTION-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧状态失效和只读恢复；不连接真实学校或创建真实配对 |
 | 远程考试检查恢复 | [按钮事件与隔离 WPF 检查](iterations/REMOTE-EXAM-INSPECTION-RECOVERY-20261007.md#验证) | 失败后未知状态、只读恢复与重新核实；不执行软件切换或解除暂停 |
+| 学校通知列表恢复 | [通知轮询与隔离 WPF 检查](iterations/NOTIFICATION-INBOX-RECOVERY-20261007.md#验证) | 未确认条目与分页失效、新列表及空列表恢复；只轮询模拟列表，不显示通知弹窗 |
 | 初始设置查询恢复 | [引导专项与隔离 WPF 检查](iterations/OOBE-PREPARATION-RECOVERY-20261007.md#验证) | 准备页导航、旧查询与新查询、协议及引导记录；不执行真实配置或采集 |
 | 触摸辅助状态恢复 | [合成手势与隔离主窗口检查](iterations/TOUCH-STATE-RECOVERY-20261007.md#验证) | 查询时序、丢失操作回执和状态恢复；不启动输入钩子或 PowerPoint |
 | ClassIsland 管理状态 | [任务策略与隔离主窗口检查](iterations/CLASSISLAND-ADMIN-STATE-20261007.md#验证) | 检查失败、丢失回执与路径变更；不调用真实管理员工具或计划任务 |

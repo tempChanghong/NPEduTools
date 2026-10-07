@@ -81,6 +81,9 @@ public partial class MainWindow
 
     private void InvalidateUnverifiedNotification()
     {
+        _inboxScope = null; _inboxNext = null; _inboxOffset = 0;
+        NotificationInboxItems.ItemsSource = null;
+        NotificationNext.IsEnabled = NotificationPrevious.IsEnabled = false;
         if (Stopwatch.GetElapsedTime(_lastNotificationRead).TotalSeconds > 60)
             _schoolNotification?.InvalidateNotice("无法核对通知的有效性，正文已暂时隐藏。请关闭窗口，连接恢复后会重新核对通知。");
     }
