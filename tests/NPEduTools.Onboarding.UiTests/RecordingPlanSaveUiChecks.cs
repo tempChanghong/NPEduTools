@@ -13,6 +13,7 @@ internal static partial class Program
     {
         RunRecordingCalendarChecks();
         RunRecordingDatedDeleteChecks();
+        RunRecordingDatedEditChecks();
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         string pipe = "NPEduTools.Test.plan-save." + Guid.NewGuid().ToString("N");
         string preferences = StartupPreferencesStore.PathFor(pipe);

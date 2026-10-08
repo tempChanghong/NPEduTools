@@ -17,6 +17,7 @@
 | 管理验证窗口关闭 | [挂起状态与隔离窗口检查](iterations/NOISE-MANAGEMENT-OWNER-20261008.md#验证) | 窗口关闭后的设置／授权入口及正常窗口对照；不修改真实口令或停止监测 |
 | 录课计划日期导航 | [挂起课表与隔离日期按钮检查](iterations/RECORDING-CALENDAR-NAVIGATION-20261008.md#验证) | 前后切换、返回同一天、旧断连及新日期读取；不启动实际录课 |
 | 单次录课删除恢复 | [文件锁与实际按钮检查](iterations/RECORDING-DATED-DELETE-RECOVERY-20261008.md#验证) | 删除失败后重试及继续编辑原条目；不启动实际录课 |
+| 单次录课编辑刷新 | [课表回执与隔离输入检查](iterations/RECORDING-DATED-EDIT-REFRESH-20261008.md#验证) | 冲突提示刷新、草稿保留、显式保存与切换条目；不启动实际录课 |
 | 噪音状态界面 | [构建并运行隔离 WPF 检查](iterations/NOISE-STATUS-PRESENTATION-20261007.md#验证) | 当前／历史统计、断连与恢复、最小尺寸布局；不启动真实采集 |
 | 噪音监测协议恢复 | [协议与隔离监测页检查](iterations/NOISE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效设备／状态／操作回执、旧数据失效和轮询恢复；只用合成麦克风 |
 | 定时监测管理验证 | [协议与隔离弹窗检查](iterations/NOISE-MANAGEMENT-RECOVERY-20261007.md#验证) | 无效管理回执、授权范围及显式重试；不修改真实口令或停止监测 |

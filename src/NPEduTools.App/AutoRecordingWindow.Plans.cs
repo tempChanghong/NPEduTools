@@ -224,6 +224,8 @@ public partial class AutoRecordingWindow
     {
         if (!_ready || Plans.SelectedItem is not PlanRow row) return;
         var item = _book.Dated.FirstOrDefault(d => row.Key == $"fixed/{d.Id:N}/{d.Date:yyyy-MM-dd}");
+        // Refreshing the selected row's status must not reload over an unsaved draft.
+        if (item is not null && item.Id == _editingDated) return;
         _editingDated = item?.Id;
         if (item is not null) { DatedName.Text = item.Name; DatedStart.Text = item.Start.ToString("HH:mm"); DatedEnd.Text = item.End.ToString("HH:mm"); }
     }
