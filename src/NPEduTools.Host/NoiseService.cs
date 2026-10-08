@@ -101,7 +101,16 @@ public sealed class NoiseService(Func<string, INoiseCapture> create, Func<IReadO
     internal void AbortShutdown() { lock (_sync) _shuttingDown = false; }
     private static string? LoadSelection(string? path)
     {
-        try { return path is null ? null : System.Text.Json.JsonSerializer.Deserialize<string>(File.ReadAllText(Path.Combine(path, "noise-microphone.json"))); }
+        try
+        {
+            if (path is null) return null;
+            string file = Path.Combine(path, "noise-microphone.json");
+            // A valid 2048-character ID fits even when JSON escapes every character.
+            // Leave invalid files untouched; status must remain readable so the user can select again.
+            if (new FileInfo(file).Length > 16 * 1024) return null;
+            var id = System.Text.Json.JsonSerializer.Deserialize<string>(File.ReadAllText(file));
+            return NoiseContract.ValidDeviceId(id) ? id : null;
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { return null; }
     }
     private void Select(string id)
