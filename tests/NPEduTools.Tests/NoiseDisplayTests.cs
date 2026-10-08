@@ -108,6 +108,41 @@ public sealed class NoiseDisplayTests
         f.Confirm(remaining: 600, id: Guid.NewGuid()); Assert.Equal(550, f.Service.Snapshot().ReturnRemainingSeconds);
         f.Confirm(remaining: 30, id: Guid.NewGuid()); Assert.Equal(30, f.Service.Snapshot().ReturnRemainingSeconds);
     }
+    [Theory]
+    [InlineData(false, -1200)]
+    [InlineData(false, 1200)]
+    [InlineData(true, -1200)]
+    [InlineData(true, 1200)]
+    public void Confirmed_return_remains_readable_after_wall_clock_adjustment_and_restart(bool offline, int adjustmentSeconds)
+    {
+        using var f = new Fixture();
+        f.Confirm();
+        var request = f.Return();
+        if (offline) f.Service.Handle(request);
+        else f.Confirm(remaining: 600, id: request.RequestId);
+        f.Clock.Advance(50); f.Clock.Utc = f.Clock.Utc.AddSeconds(adjustmentSeconds);
+        var body = f.Service.ObserveDisplay()!;
+        if (offline)
+        {
+            var intent = f.Service.PendingReturn()!;
+            Assert.Equal("2026-10-04T11:00:00.000Z", intent["offlineStartedAt"]!.GetValue<string>());
+            body["requestId"] = intent["requestId"]!.DeepClone();
+            body["offlineStartedAt"] = intent["offlineStartedAt"]!.DeepClone();
+        }
+        var reply = new JsonObject { ["supported"] = true, ["serverNow"] = "2026-10-04T11:00:50.000Z", ["returnMinutes"] = 10,
+            ["presence"] = new JsonObject { ["state"] = "RETURNING", ["ageMs"] = 0 },
+            ["activeReturn"] = new JsonObject { ["requestId"] = request.RequestId.ToString("D"), ["window"] = body["window"]!.DeepClone(),
+                ["startedAt"] = "2026-10-04T11:00:00.000Z", ["expiresAt"] = "2026-10-04T11:10:00.000Z", ["returnMinutes"] = 10, ["remainingSeconds"] = 550 } };
+        f.Service.ConfirmDisplay(body, reply, 0);
+        Assert.Equal(550, f.Service.Snapshot().ReturnRemainingSeconds);
+        Assert.Null(f.Service.PendingReturn());
+        f.Clock.Advance(1);
+        f.Service = f.Create(); f.Service.Bind("test-school-binding");
+        Assert.Null(f.Service.Snapshot().ErrorCode);
+        Assert.Equal(549, f.Service.Snapshot().ReturnRemainingSeconds);
+        Assert.Null(f.Service.PendingReturn());
+        Assert.Equal("Active", f.Noise.State);
+    }
     [Fact]
     public void Restart_restores_pending_original_intent_and_wall_clock_rollback_discards_it()
     {
