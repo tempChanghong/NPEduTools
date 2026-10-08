@@ -1,4 +1,4 @@
-# Host 配置与进程恢复
+# 桌面配置与进程恢复
 
 [迭代索引](README.md) · [测试入口](../TESTING.md)
 
@@ -80,3 +80,26 @@
 - 全量测试：853 项桌面测试 + 183 项 NPEP 测试，共 1036 项通过，0 失败、0 跳过；文档链接与差异检查通过。
 
 证据位于 `.artifacts/noise-outbox-marker-20261008/` 的 before、before-complete、after 和 full 报告。仅操作独立临时目录与合成采集对象；未进行真实麦克风、大屏、部署或发行验收。
+
+## 后续：快捷启动配置恢复
+
+基线 `b3c8ee9`。主窗口和编辑弹窗的快捷启动错误处理漏接 InvalidDataException：未知版本、空记录、缺项目、非法网址、重复／过多项目及超大配置会中断初始化；保存被内容校验拒绝的修改，以及在编辑弹窗保存空名称、不完整网址、非法程序或相对文件路径，也会抛出未处理异常。
+
+生产代码只在两个既有错误处理处补上该异常。无效文件显示“原文件已保留”，快捷项目不部分加载，编辑按钮停用；修复文件后可在同一窗口重新读取。被拒绝的保存显示原有失败提示，列表和文件不变；编辑弹窗显示具体校验提示，不返回已保存结果。不更改配置格式、大小限制或启动行为。
+
+- 修复前：14 组实际 WPF 控件检查中，7 个加载场景、1 个保存场景及 4 个编辑输入场景失败；坏 JSON 与无文件两个对照通过。
+- 修复后：14 组全部通过，验证初始化、原文件逐字节保留、按钮状态、重新读取、保存拒绝及编辑输入反馈。使用唯一测试端点的配置文件；不显示窗口、不启动 Host、托盘、轮询或真实快捷项目。
+- 解决方案与 WPF 测试项目 Release 构建：0 警告、0 错误。
+- 解决方案全量测试：853 项桌面测试 + 183 项 NPEP 测试，共 1036 项通过，0 失败、0 跳过；文档链接与差异检查通过。
+
+专项检查已加入隔离 WPF 默认入口，也可单独运行：
+
+```powershell
+./scripts/dotnet.ps1 build tests/NPEduTools.Onboarding.UiTests/NPEduTools.Onboarding.UiTests.csproj --no-restore -c Release '-m:1'
+$testExe = Join-Path $PWD 'tests/NPEduTools.Onboarding.UiTests/bin/Release/net10.0-windows/NPEduTools.Onboarding.UiTests.exe'
+$output = Join-Path $PWD '.artifacts/shortcut-recovery-20261008/wpf'
+$run = Start-Process -FilePath $testExe -ArgumentList @($output, '--shortcut-recovery') -WindowStyle Hidden -PassThru -Wait
+if ($run.ExitCode -ne 0) { throw '快捷启动恢复检查失败' }
+```
+
+证据位于 `.artifacts/shortcut-recovery-20261008/` 的 before-all、after-all 和 full 记录，保留早期 before、before-complete、after 与 after-final 的分阶段证据。仅验证实际初始化／重新读取／保存实现及控件状态，没有显示或截图验收；真实快捷启动、生产大屏、部署和发行未测试。

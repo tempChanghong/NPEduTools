@@ -179,6 +179,6 @@ public partial class MainWindow
         }
     }
 
-    private static bool IsShortcutError(Exception error) => error is IOException or UnauthorizedAccessException or JsonException or
+    private static bool IsShortcutError(Exception error) => error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or
         ArgumentException or NotSupportedException or InvalidOperationException or Win32Exception or System.Security.SecurityException;
 }

@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | 桌面常规开发 | `./scripts/verify.ps1` | 锁定还原、Release 构建、解决方案测试 |
 | 文档整理 | `node scripts/check-doc-links.mjs` | 本仓库 Markdown 的本地文件目标；远程 URL、标题锚点和外部资料单列 |
+| 快捷启动配置恢复 | [校验与隔离窗口检查](iterations/HOST-INVALID-DATA-RECOVERY-20261008.md) | 无效文件、保存拒绝、编辑输入提示、原文件保留和同窗重新读取；不启动真实快捷项目 |
 | 三端整体回归 | `./scripts/test-npep-current.ps1 -Browser -Database` | 当前三仓组合、协议、桌面、网页、临时数据库与 HTTP 检查 |
 | 定时监测与保护 | `./scripts/test-npep-noise-schedules.ps1 -Guard -Display -Protection -Presence` | 定时监测、显示、管理验证、在线状态和守护的专项自动检查；可加 `-Browser -Database` |
 | 噪音状态界面 | [构建并运行隔离 WPF 检查](iterations/NOISE-STATUS-PRESENTATION-20261007.md#验证) | 当前／历史统计、断连与恢复、最小尺寸布局；不启动真实采集 |
