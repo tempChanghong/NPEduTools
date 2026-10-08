@@ -20,6 +20,17 @@ public sealed partial class RuntimeTests
         using var deadline = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(8));
         while (!test()) await Task.Delay(30, deadline.Token);
     }
+    private static async Task UntilTlsRecovery(NpepRuntime runtime, Func<bool> test)
+    {
+        // The real first retry backs off for 5-6 seconds, before transport, storage and scheduling.
+        // Keep a bounded recovery budget without changing the runtime's retry policy.
+        try { await Until(test, TimeSpan.FromSeconds(25)); }
+        catch (OperationCanceledException)
+        {
+            var state = runtime.Snapshot();
+            Assert.Fail($"TLS recovery timed out: state={state.State}, connection={state.Connection}, error={state.Error}, busy={state.Busy}");
+        }
+    }
     private static async Task<NpepState> Command(NpepRuntime runtime, string action, FakeServer? server = null)
     {
         var c = new NpepCommand(action, runtime.Snapshot().Revision,
@@ -129,7 +140,7 @@ public sealed partial class RuntimeTests
         }))), "test", Sample);
         Assert.Equal("TLS_VALIDATION_FAILED", (await Command(runtime, "inspect")).Error);
         Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
-        await Until(() => Volatile.Read(ref requests) >= 2);
+        await UntilTlsRecovery(runtime, () => Volatile.Read(ref requests) >= 2);
         Assert.Equal("TLS_VALIDATION_FAILED", runtime.Snapshot().Error);
         Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
         Assert.DoesNotContain("private", runtime.Snapshot().Message);
@@ -147,7 +158,7 @@ public sealed partial class RuntimeTests
             return server.Send(request);
         }))), "test", Sample);
         await Command(runtime, "inspect");
-        await Until(() => runtime.Snapshot().Connection == "VERIFIED");
+        await UntilTlsRecovery(runtime, () => runtime.Snapshot().Connection == "VERIFIED");
         Assert.Null(runtime.Snapshot().Error);
         Assert.NotNull(runtime.Snapshot().Server);
         Assert.Equal("UNPAIRED", runtime.Snapshot().State);
@@ -169,12 +180,14 @@ public sealed partial class RuntimeTests
         Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
         Assert.Equal("ACTIVE", runtime.Snapshot().State);
         Interlocked.Exchange(ref broken, 0);
-        await Until(() => runtime.Snapshot().Connection == "ONLINE");
+        await UntilTlsRecovery(runtime, () => runtime.Snapshot().Connection == "ONLINE");
         Assert.Null(runtime.Snapshot().Error);
         Assert.NotNull(runtime.Snapshot().LastReceivedAt);
     }
-    [Fact]
-    public async Task TlsRetryResumesTheSamePairingCandidate()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    public async Task TlsRetryResumesTheSamePairingCandidate(int retryResponseDelaySeconds)
     {
         using var dir = new TestDirectory(); var server = new FakeServer(); int attempts = 0;
         await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new NpepApi(origin, new Handler(async request =>
@@ -186,11 +199,14 @@ public sealed partial class RuntimeTests
                 response.Dispose();
                 throw new HttpRequestException(HttpRequestError.SecureConnectionError, "test TLS interruption");
             }
+            if (request.RequestUri!.AbsolutePath.EndsWith("/pairings", StringComparison.Ordinal))
+                await Task.Delay(TimeSpan.FromSeconds(retryResponseDelaySeconds));
             return response;
         }))), "test", Sample);
         await Command(runtime, "inspect");
         Assert.Equal("CREATING", (await Command(runtime, "pair", server)).State);
-        await Until(() => runtime.Snapshot().State == "PENDING");
+        // Approval may already be observed if the test runner resumes after the next poll.
+        await UntilTlsRecovery(runtime, () => runtime.Snapshot().State is "PENDING" or "APPROVED");
         var creates = server.Requests.Where(r => r.Path == "pairings").ToArray();
         Assert.Equal(2, creates.Length);
         Assert.True(NpepProtocol.Equal(creates[0].Body, creates[1].Body));
