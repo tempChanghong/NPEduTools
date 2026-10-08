@@ -237,7 +237,7 @@ public partial class AutoRecordingWindow
     private void DeleteDatedClicked(object sender, RoutedEventArgs e)
     {
         if (_editingDated is not { } id) return;
-        ChangeBook(b => b with { Dated = b.Dated.Where(d => d.Id != id).ToArray() }, "单日固定时段已删除。"); _editingDated = null;
+        if (ChangeBook(b => b with { Dated = b.Dated.Where(d => d.Id != id).ToArray() }, "单日固定时段已删除。")) _editingDated = null;
     }
     private void ExclusionsClicked(object sender, RoutedEventArgs e) => ChangeBook(b => b with {
         ExcludedNames = ExcludedNames.Text.Split(['\r', '\n', ',', '，', ';', '；'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

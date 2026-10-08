@@ -42,6 +42,7 @@
 | ClassIsland 启动恢复 | [未知回执、停止后回执与课程验证](CLASSISLAND-LAUNCH-RECOVERY-20261007.md) |
 | 录课计划保存反馈 | [计划与试运行记录的不同保存结果](RECORDING-PLAN-SAVE-FEEDBACK-20261007.md) |
 | 录课计划日期导航 | [旧查询等待隔离与最新日期读取](RECORDING-CALENDAR-NAVIGATION-20261008.md) |
+| 单次录课删除恢复 | [保存失败后的删除重试与原条目编辑](RECORDING-DATED-DELETE-RECOVERY-20261008.md) |
 | 自动录课命令恢复 | [丢失回执、明确拒绝与轮询核对](AUTOMATIC-RECORDING-RECEIPT-RECOVERY-20261007.md) |
 | 录制轮询协议恢复 | [无效状态／租约回执后的继续轮询](RECORDING-POLL-PROTOCOL-RECOVERY-20261007.md) |
 | 手动录制命令恢复 | [无效回执、解除等待与状态核实](MANUAL-RECORDING-RECEIPT-RECOVERY-20261007.md) |
