@@ -73,10 +73,24 @@ internal sealed class NoiseManagementDialog : Window
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         return await HostClient.RequestAsync(pipe, request, deadline.Token);
     }
+    private static async Task<HostResponse?> ReadStateAsync(Window owner, string pipe)
+    {
+        bool closed = false;
+        void OwnerClosed(object? sender, EventArgs args) => closed = true;
+        owner.Closed += OwnerClosed;
+        try
+        {
+            var reply = await Request(pipe, new(Protocol.Version, Guid.NewGuid(), "noise.management.status"));
+            // IsLoaded can remain true until WPF processes unloading after Closed.
+            return closed ? null : reply;
+        }
+        finally { owner.Closed -= OwnerClosed; }
+    }
     internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target)
     {
         if (!Protocol.NoiseInterruption(target)) return target;
-        var reply = await Request(pipe, new(Protocol.Version, Guid.NewGuid(), "noise.management.status"));
+        var reply = await ReadStateAsync(owner, pipe);
+        if (reply is null) return null;
         if (reply.Outcome != "Succeeded" || reply.NoiseProtection is not { } state)
         { MessageBox.Show(owner, reply.Message, "无法核实定时保护"); return null; }
         if (!state.Protected) return target;
@@ -90,7 +104,8 @@ internal sealed class NoiseManagementDialog : Window
     }
     internal static async Task ConfigureAsync(Window owner, string pipe)
     {
-        var reply = await Request(pipe, new(Protocol.Version, Guid.NewGuid(), "noise.management.status"));
+        var reply = await ReadStateAsync(owner, pipe);
+        if (reply is null) return;
         if (reply.NoiseProtection is not { } state || reply.Outcome != "Succeeded")
         { MessageBox.Show(owner, reply.Message, "无法读取管理设置"); return; }
         if (state.Protected && !state.Configured)
