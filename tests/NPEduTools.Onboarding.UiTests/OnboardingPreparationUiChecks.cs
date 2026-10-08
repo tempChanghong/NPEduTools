@@ -22,8 +22,112 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunPreparationNavigationCheck("noise", false); RunPreparationNavigationCheck("noise", true); RunPreparationNavigationCheck("classroom", false); }
+        try
+        {
+            var failures = new List<Exception>();
+            foreach (int stage in Enumerable.Range(0, 3))
+                foreach (bool lostReply in new[] { false, true })
+                    try { RunClockNavigationCheck(stage, lostReply); }
+                    catch (Exception error) { failures.Add(new InvalidOperationException($"clock stage {stage}, lost reply {lostReply}: {error.Message}", error)); }
+            if (failures.Count != 0) throw new AggregateException(failures);
+            RunPreparationNavigationCheck("noise", false); RunPreparationNavigationCheck("noise", true); RunPreparationNavigationCheck("classroom", false);
+        }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
+    private static void RunClockNavigationCheck(int stage, bool lostReply)
+    {
+        string pipe = "NPEduTools.Test.onboarding-clock." + Guid.NewGuid().ToString("N");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        NamedPipeServerStream Server() => new(pipe, PipeDirection.InOut, 4, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        async Task<HostRequest> Read(NamedPipeServerStream server)
+        {
+            await server.WaitForConnectionAsync(timeout.Token);
+            return await Protocol.ReadAsync<HostRequest>(server, timeout.Token);
+        }
+        string[] capabilities = ["classisland.config.get", "classisland.status", "classisland.school-clock"];
+        HostResponse Reply(HostRequest request, string marker) => new(Protocol.Version, request.RequestId, "Succeeded", null, marker,
+            Launch: request.Capability == capabilities[0] ? new(new(1, marker), null, null) : null,
+            SchoolClock: request.Capability == capabilities[2] ? SchoolClockFrame.Unavailable(marker) : null);
+        void Send(NamedPipeServerStream server, HostRequest request, string marker)
+        {
+            var write = Protocol.WriteAsync(server, Reply(request, marker), timeout.Token);
+            PumpUntil(() => write.IsCompleted, "clock response did not finish"); write.GetAwaiter().GetResult();
+        }
+        var saves = new List<OnboardingState>();
+        string freshPath = Path.GetTempFileName(); // Existence check only; never executed.
+        using var initialServer = Server();
+        var window = PreparationWindow(pipe, new(Features: OnboardingFeatures.Automatic, Step: "classisland"), saves.Add);
+        window.Width = 900; window.Height = 680;
+        try
+        {
+            Exercise(window, owner =>
+            {
+                try
+                {
+                    // No timer fallback: navigation must refresh immediately after the stale read finishes.
+                    ((DispatcherTimer)typeof(OnboardingWindow).GetField("_timer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!).Stop();
+                    using var statusServer = stage >= 1 ? Server() : null;
+                    using var clockServer = stage >= 2 ? Server() : null;
+                    var oldRead = Read(initialServer);
+                    PumpUntil(() => oldRead.IsCompleted, "initial clock configuration read did not arrive");
+                    var oldRequest = oldRead.GetAwaiter().GetResult();
+                    NamedPipeServerStream oldServer = initialServer;
+                    for (int index = 0; index < stage; index++)
+                    {
+                        Assert(oldRequest.Capability == capabilities[index], "unexpected initial clock capability");
+                        var nextServer = index == 0 ? statusServer! : clockServer!;
+                        var nextRead = Read(nextServer);
+                        Send(oldServer, oldRequest, "old-configuration");
+                        PumpUntil(() => nextRead.IsCompleted, "next clock read did not arrive");
+                        oldServer = nextServer; oldRequest = nextRead.GetAwaiter().GetResult();
+                    }
+                    Assert(oldRequest.Capability == capabilities[stage], "wrong clock read held for navigation");
+                    Click(owner, "BackButton"); Click(owner, "SkipButton");
+                    Assert(((TextBlock)owner.FindName("StepTitle")).Text == "连接学校时间", "navigation did not return to clock preparation");
+                    string Texts() => string.Join("|", new[] { "PathText", "ConnectionText", "BridgeText", "ClockText" }
+                        .Select(name => ((TextBlock)owner.FindName(name)).Text));
+                    string before = Texts();
+                    using var freshServer = Server();
+                    var freshRead = Read(freshServer);
+                    if (lostReply) oldServer.Disconnect();
+                    else Send(oldServer, oldRequest, "obsolete-clock-result");
+                    PumpUntil(() => freshRead.IsCompleted || Texts() != before, "clock revisit did not finish or refresh");
+                    Snapshot(owner, $"onboarding-clock-{stage}-{(lostReply ? "old-error" : "old-response")}.png");
+                    Assert(Texts() == before, "a previous visit's clock result or error modified the revisited page");
+                    Assert(freshRead.IsCompleted, "clock revisit did not start a fresh configuration read");
+                    var freshRequest = freshRead.GetAwaiter().GetResult();
+                    Assert(freshRequest.Capability == capabilities[0], "revisited clock check continued the previous visit's request sequence");
+                    // Free completed servers before supplying the new visit's remaining read-only replies.
+                    initialServer.Dispose(); statusServer?.Dispose(); clockServer?.Dispose();
+                    using var freshStatusServer = Server();
+                    var freshStatusRead = Read(freshStatusServer);
+                    Send(freshServer, freshRequest, freshPath);
+                    PumpUntil(() => freshStatusRead.IsCompleted, "fresh connection read did not arrive");
+                    var freshStatusRequest = freshStatusRead.GetAwaiter().GetResult();
+                    Assert(freshStatusRequest.Capability == capabilities[1], "unexpected fresh connection capability");
+                    using var freshClockServer = Server();
+                    var freshClockRead = Read(freshClockServer);
+                    Send(freshStatusServer, freshStatusRequest, "fresh-status");
+                    PumpUntil(() => freshClockRead.IsCompleted, "fresh school clock read did not arrive");
+                    var freshClockRequest = freshClockRead.GetAwaiter().GetResult();
+                    Assert(freshClockRequest.Capability == capabilities[2], "unexpected fresh school clock capability");
+                    Send(freshClockServer, freshClockRequest, "fresh-clock");
+                    PumpUntil(() => !(bool)typeof(OnboardingWindow).GetField("_clockBusy", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!,
+                        "fresh clock check did not finish");
+                    Assert(((TextBlock)owner.FindName("ClockText")).Text.StartsWith("学校时间：暂不可用"), "unavailable fresh clock did not populate the revisited page");
+                    Assert(((TextBlock)owner.FindName("PathText")).Text.Contains(freshPath), "fresh configuration did not replace the old path");
+                    Assert(!Check(owner, "ConfirmClock").IsEnabled && Check(owner, "ConfirmClock").IsChecked != true,
+                        "unavailable synthetic clock enabled or confirmed school-time approval");
+                    Assert(saves.Count == 2 && saves[^1].Step == "classisland" && !saves[^1].Completed &&
+                        !(saves[^1].Reviewed ?? []).Contains("classisland"), "clock reads changed walkthrough completion");
+                    Checks.Add($"clock stage {stage}: previous visit's {(lostReply ? "error" : "response")} ignored; fresh three-read check without timer fallback or implicit approval");
+                }
+                finally { window.Shutdown(); }
+            });
+        }
+        finally { window.Shutdown(); File.Delete(freshPath); }
     }
     private static void RunPreparationNavigationCheck(string step, bool lostReply)
     {

@@ -255,20 +255,25 @@ public partial class OnboardingWindow : Window
 
     private async Task CheckClockAsync()
     {
-        if (_clockBusy || _lifetime.IsCancellationRequested) return;
+        var visit = _state;
+        bool CurrentVisit() => !_lifetime.IsCancellationRequested && ReferenceEquals(visit, _state);
+        if (_clockBusy || _lifetime.IsCancellationRequested || visit.Step != "classisland") return;
         _clockBusy = true;
         try
         {
             var config = await RequestAsync("classisland.config.get");
+            if (!CurrentVisit()) return;
             string? path = config.Launch?.Settings.ExecutablePath;
             PathText.Text = config.Outcome != "Succeeded" || config.Launch?.StorageWarning is not null ? "程序路径：暂时无法读取配置"
                 : string.IsNullOrWhiteSpace(path) ? "程序路径：尚未保存。若 ClassIsland 已连接，可继续；路径用于以后启动本体。"
                 : File.Exists(path) ? "程序路径：文件存在 · " + path : "程序路径：文件不存在，请重新选择";
             var connection = await RequestAsync("classisland.status");
+            if (!CurrentVisit()) return;
             _connected = connection.Outcome == "Succeeded" && connection.Status is not null;
             ConnectionText.Text = _connected ? "本体：已连接" : "本体：未连接，请从管理窗口检查并启动 ClassIsland";
             var start = _elapsed.Elapsed;
             var response = await RequestAsync("classisland.school-clock");
+            if (!CurrentVisit()) return;
             var frame = response.SchoolClock ?? SchoolClockFrame.Unavailable("尚未取得桥接时间");
             _clock.Accept(frame, _elapsed.Elapsed, (_elapsed.Elapsed - start).TotalMilliseconds);
             var reading = _clock.Read(_elapsed.Elapsed);
@@ -285,12 +290,19 @@ public partial class OnboardingWindow : Window
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
+            if (!CurrentVisit()) return;
             _connected = false; _scheduleReady = false; _clock.Unavailable("连接失败，等待重新检查", _elapsed.Elapsed);
             ConfirmClock.IsChecked = false; ConfirmClock.IsEnabled = false;
             ConnectionText.Text = "本体：暂时无法检查，请确认后台与 ClassIsland 已启动";
             BridgeText.Text = "桥接：尚未确认"; ClockText.Text = "学校时间：暂不可用";
         }
-        finally { _clockBusy = false; }
+        finally
+        {
+            _clockBusy = false;
+            // Re-entering this step requires a complete fresh check, including after an old read fails.
+            if (!_lifetime.IsCancellationRequested && !ReferenceEquals(visit, _state) && _state.Step == "classisland")
+                _ = CheckClockAsync();
+        }
     }
 
     private async void CheckRecordingClicked(object sender, RoutedEventArgs e) => await CheckRecordingAsync();

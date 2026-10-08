@@ -34,6 +34,7 @@
 | 手动打开通知时序 | [旧正文查询与新页面提示](NOTIFICATION-OPEN-ORDERING-20261007.md) |
 | 通知窗口核验时序 | [旧窗口回执与新窗口核验](NOTIFICATION-WINDOW-ORDERING-20261007.md) |
 | 初始设置查询恢复 | [重新进入准备页时读取新状态](OOBE-PREPARATION-RECOVERY-20261007.md) |
+| 初始设置学校时间 | [页面导航、旧回执隔离与完整重新检查](OOBE-CLOCK-VISIT-RECOVERY-20261008.md) |
 | 触摸辅助状态恢复 | [操作顺序与丢失回执](TOUCH-STATE-RECOVERY-20261007.md) |
 | ClassIsland 管理状态 | [未知状态、路径变更与取消授权](CLASSISLAND-ADMIN-STATE-20261007.md) |
 | ClassIsland 配置恢复 | [请求顺序与保存结果重新核对](CLASSISLAND-CONFIGURATION-RECOVERY-20261007.md) |
