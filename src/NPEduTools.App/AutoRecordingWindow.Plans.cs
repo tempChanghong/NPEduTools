@@ -188,7 +188,17 @@ public partial class AutoRecordingWindow
             if (_shutdown || generation != _calendarGeneration) return;
             _forecast = null; Render(); DateStatus.Text = $"{date:yyyy-MM-dd} · 预计课表暂不可用：{error.Message}";
         }
-        finally { _calendarReading = false; _calendarRetry = Elapsed + TimeSpan.FromSeconds(10); }
+        finally
+        {
+            _calendarReading = false;
+            if (generation == _calendarGeneration) _calendarRetry = Elapsed + TimeSpan.FromSeconds(10);
+            else
+            {
+                // A date selected during this read needs its own query, not the old date's cooldown.
+                _calendarRetry = TimeSpan.Zero;
+                if (!_shutdown) _ = ReadCalendarAsync();
+            }
+        }
     }
     private void OverrideClicked(object sender, RoutedEventArgs e)
     {

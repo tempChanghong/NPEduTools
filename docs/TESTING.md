@@ -15,6 +15,7 @@
 | 返回作业板校时恢复 | [合成时钟与重启检查](iterations/NOISE-RETURN-CLOCK-RECOVERY-20261008.md#验证) | 校时后的已确认期限、离线申请确认和缓存重读；不调整系统时间或连接学校 |
 | 初始设置学校时间 | [挂起查询与隔离 WPF 导航检查](iterations/OOBE-CLOCK-VISIT-RECOVERY-20261008.md#验证) | 路径、连接、时间三个读取阶段的旧回执／错误隔离及重新检查；不启动真实软件 |
 | 管理验证窗口关闭 | [挂起状态与隔离窗口检查](iterations/NOISE-MANAGEMENT-OWNER-20261008.md#验证) | 窗口关闭后的设置／授权入口及正常窗口对照；不修改真实口令或停止监测 |
+| 录课计划日期导航 | [挂起课表与隔离日期按钮检查](iterations/RECORDING-CALENDAR-NAVIGATION-20261008.md#验证) | 前后切换、返回同一天、旧断连及新日期读取；不启动实际录课 |
 | 噪音状态界面 | [构建并运行隔离 WPF 检查](iterations/NOISE-STATUS-PRESENTATION-20261007.md#验证) | 当前／历史统计、断连与恢复、最小尺寸布局；不启动真实采集 |
 | 噪音监测协议恢复 | [协议与隔离监测页检查](iterations/NOISE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效设备／状态／操作回执、旧数据失效和轮询恢复；只用合成麦克风 |
 | 定时监测管理验证 | [协议与隔离弹窗检查](iterations/NOISE-MANAGEMENT-RECOVERY-20261007.md#验证) | 无效管理回执、授权范围及显式重试；不修改真实口令或停止监测 |
