@@ -20,7 +20,44 @@ internal static partial class Program
             try { RunShortcutEditorCheck(scenario); }
             catch (Exception error) { failures.Add(new InvalidOperationException(scenario + ": shortcut editor failed", error)); }
         }
+        try { RunShortcutSizeCheck(); }
+        catch (Exception error) { failures.Add(new InvalidOperationException("oversized-save: shortcut save failed", error)); }
         if (failures.Count != 0) throw new AggregateException(failures);
+    }
+
+    private static void RunShortcutSizeCheck()
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        string pipe = "NPEduTools.Test.shortcut-size." + Guid.NewGuid().ToString("N");
+        string path = ShortcutCatalog.PathFor(pipe);
+        var entry = new ShortcutEntry(Guid.NewGuid(), "隔离教学平台", "url", "https://example.com/course");
+        new ShortcutCatalog(path).Save([entry]);
+        byte[] original = File.ReadAllBytes(path);
+        var window = IsolatedMainWindow(pipe);
+        try
+        {
+            typeof(MainWindow).GetMethod("InitializeShortcuts", flags)!.Invoke(window, null);
+            string target = @"C:\课堂资料\" + string.Join("\\", Enumerable.Repeat(new string('课', 120), 10)) + @"\课件.pptx";
+            var oversized = Enumerable.Range(0, ShortcutCatalog.MaximumItems)
+                .Select(index => new ShortcutEntry(Guid.NewGuid(), $"课件 {index}", "file", target)).ToArray();
+            bool Save(ShortcutEntry[] items) => (bool)typeof(MainWindow).GetMethod("SaveShortcuts", flags)!
+                .Invoke(window, [items, null])!;
+            var list = (ListBox)window.FindName("ShortcutList");
+            Assert(!Save(oversized) && list.Items.Count == 1 && Equals(list.Items[0], entry) &&
+                File.ReadAllBytes(path).SequenceEqual(original), "oversized save replaced the file or visible list");
+            Assert(((TextBlock)window.FindName("ShortcutMessage")).Text.Contains("配置过大") &&
+                ((TextBlock)window.FindName("HomeShortcutMessage")).Text.Contains("配置过大") &&
+                Button(window, "AddShortcutButton").IsEnabled, "oversized save lacks actionable feedback or disables editing");
+            var corrected = entry with { Name = "已修正课件" };
+            Assert(Save([corrected]) && Equals(list.Items[0], corrected) &&
+                new ShortcutCatalog(path).Read().Single() == corrected, "a corrected save does not recover in the same window");
+            Checks.Add("oversized-save: actual save handler preserves the readable file and visible list, explains the size limit, and accepts a corrected edit");
+        }
+        finally
+        {
+            window.Close();
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 
     private static void RunShortcutEditorCheck(string scenario)
