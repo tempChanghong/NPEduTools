@@ -176,6 +176,18 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
                 MicrophoneKey(status.SelectedDeviceId), blocks));
             _reason = _storeError ?? (!statisticsReady && _owner != "Manual" ? "STATISTICS_STORE_UNAVAILABLE" : decision.Reason);
             if (_reason == "WINDOW_ACTIVE" && status.State == "Starting") _reason = "CAPTURE_STARTING";
+            if (decision.Action == "Keep" && _owned is { } continuing && _ownedWindow != decision.Window)
+            {
+                // A continuing capture adopts the newly applied window. STOP/failure records
+                // and protection must describe that window, not the one used at startup.
+                lock (_journalLock)
+                {
+                    _journal = _journal with { OwnedWindow = decision.Window }; Save();
+                    if (_storeError is null) _ownedWindow = decision.Window;
+                }
+                if (_storeError is not null)
+                { _reason = _storeError; _noise.StopScheduled(continuing); return; }
+            }
             if (decision.Action == "Stop" && _owned is { } stopped) _noise.StopScheduled(stopped);
             if (decision.Action == "Start")
             {

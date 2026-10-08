@@ -13,8 +13,9 @@ public sealed record NoiseState(Guid InstanceId, long Revision, string State, st
 
 public static class NoiseContract
 {
+    public static bool ValidDeviceId(string? id) => !string.IsNullOrWhiteSpace(id) && id.Length <= 2048 && !id.Any(char.IsControl);
     public static bool Valid(NoiseCommand command) => command.InstanceId != Guid.Empty && command.Revision >= 0 &&
         (command.Action is "start" or "select"
-            ? !string.IsNullOrWhiteSpace(command.DeviceId) && command.DeviceId.Length <= 2048 && !command.DeviceId.Any(char.IsControl)
+            ? ValidDeviceId(command.DeviceId)
             : command.Action == "stop" && command.DeviceId is null);
 }

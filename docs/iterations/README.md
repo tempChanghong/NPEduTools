@@ -6,14 +6,19 @@
 
 | 主题 | 任务卡 |
 | --- | --- |
+| 桌面配置与进程恢复 | [配置校验、快捷启动、麦克风选择、启动握手与收尾清理](HOST-INVALID-DATA-RECOVERY-20261008.md) |
+| 定时监测规则更新 | [运行时段、保护与停止记录一致](NOISE-SCHEDULE-WINDOW-UPDATE-20261008.md) |
+| 返回作业板期限恢复 | [校时、学校确认与重启后的缓存](NOISE-RETURN-CLOCK-RECOVERY-20261008.md) |
 | 考试结果展示 | [中文原因、处理建议与历史回执](EXAM-RESULT-PRESENTATION-20261007.md) |
 | 学校连接提示 | [状态、原因与恢复建议](SCHOOL-CONNECTION-PRESENTATION-20261007.md) |
 | 噪音状态展示 | [当前采样、历史摘要与断连恢复](NOISE-STATUS-PRESENTATION-20261007.md) |
 | 噪音监测协议恢复 | [无效设备／状态／操作回执与继续查询](NOISE-PROTOCOL-RECOVERY-20261007.md) |
 | 定时监测管理验证 | [无效设置／授权回执与手动重试](NOISE-MANAGEMENT-RECOVERY-20261007.md) |
+| 管理验证窗口关闭 | [迟到状态隔离与正常入口对照](NOISE-MANAGEMENT-OWNER-20261008.md) |
 | 自动录课反馈 | [实际状态与上次操作提示](AUTOMATIC-RECORDING-STATUS-20261007.md) |
 | 手动录课恢复 | [断连提示、操作回执与重新核对](MANUAL-RECORDING-RECOVERY-20261007.md) |
 | 点名回执恢复 | [未知状态、历史回执与操作顺序](SECRANDOM-STATE-RECOVERY-20261007.md) |
+| 点名后台访问恢复 | [权限拒绝后的状态失效与重新连接](SECRANDOM-ACCESS-RECOVERY-20261008.md) |
 | 考试看板恢复 | [连接、方案与操作回执](EXAMAWARE-STATE-RECOVERY-20261007.md) |
 | 考试看板快捷入口 | [无效启动回执与管理页核实](EXAMAWARE-QUICK-RECOVERY-20261007.md) |
 | 考试看板协议恢复 | [无效查询、操作与配对回执](EXAMAWARE-PROTOCOL-RECOVERY-20261007.md) |
@@ -31,11 +36,15 @@
 | 手动打开通知时序 | [旧正文查询与新页面提示](NOTIFICATION-OPEN-ORDERING-20261007.md) |
 | 通知窗口核验时序 | [旧窗口回执与新窗口核验](NOTIFICATION-WINDOW-ORDERING-20261007.md) |
 | 初始设置查询恢复 | [重新进入准备页时读取新状态](OOBE-PREPARATION-RECOVERY-20261007.md) |
+| 初始设置学校时间 | [页面导航、旧回执隔离与完整重新检查](OOBE-CLOCK-VISIT-RECOVERY-20261008.md) |
 | 触摸辅助状态恢复 | [操作顺序与丢失回执](TOUCH-STATE-RECOVERY-20261007.md) |
 | ClassIsland 管理状态 | [未知状态、路径变更与取消授权](CLASSISLAND-ADMIN-STATE-20261007.md) |
 | ClassIsland 配置恢复 | [请求顺序与保存结果重新核对](CLASSISLAND-CONFIGURATION-RECOVERY-20261007.md) |
 | ClassIsland 启动恢复 | [未知回执、停止后回执与课程验证](CLASSISLAND-LAUNCH-RECOVERY-20261007.md) |
 | 录课计划保存反馈 | [计划与试运行记录的不同保存结果](RECORDING-PLAN-SAVE-FEEDBACK-20261007.md) |
+| 录课计划日期导航 | [旧查询等待隔离与最新日期读取](RECORDING-CALENDAR-NAVIGATION-20261008.md) |
+| 单次录课删除恢复 | [保存失败后的删除重试与原条目编辑](RECORDING-DATED-DELETE-RECOVERY-20261008.md) |
+| 单次录课编辑刷新 | [课表刷新与未保存输入保留](RECORDING-DATED-EDIT-REFRESH-20261008.md) |
 | 自动录课命令恢复 | [丢失回执、明确拒绝与轮询核对](AUTOMATIC-RECORDING-RECEIPT-RECOVERY-20261007.md) |
 | 录制轮询协议恢复 | [无效状态／租约回执后的继续轮询](RECORDING-POLL-PROTOCOL-RECOVERY-20261007.md) |
 | 手动录制命令恢复 | [无效回执、解除等待与状态核实](MANUAL-RECORDING-RECEIPT-RECOVERY-20261007.md) |

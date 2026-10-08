@@ -188,7 +188,17 @@ public partial class AutoRecordingWindow
             if (_shutdown || generation != _calendarGeneration) return;
             _forecast = null; Render(); DateStatus.Text = $"{date:yyyy-MM-dd} · 预计课表暂不可用：{error.Message}";
         }
-        finally { _calendarReading = false; _calendarRetry = Elapsed + TimeSpan.FromSeconds(10); }
+        finally
+        {
+            _calendarReading = false;
+            if (generation == _calendarGeneration) _calendarRetry = Elapsed + TimeSpan.FromSeconds(10);
+            else
+            {
+                // A date selected during this read needs its own query, not the old date's cooldown.
+                _calendarRetry = TimeSpan.Zero;
+                if (!_shutdown) _ = ReadCalendarAsync();
+            }
+        }
     }
     private void OverrideClicked(object sender, RoutedEventArgs e)
     {
@@ -214,6 +224,8 @@ public partial class AutoRecordingWindow
     {
         if (!_ready || Plans.SelectedItem is not PlanRow row) return;
         var item = _book.Dated.FirstOrDefault(d => row.Key == $"fixed/{d.Id:N}/{d.Date:yyyy-MM-dd}");
+        // Refreshing the selected row's status must not reload over an unsaved draft.
+        if (item is not null && item.Id == _editingDated) return;
         _editingDated = item?.Id;
         if (item is not null) { DatedName.Text = item.Name; DatedStart.Text = item.Start.ToString("HH:mm"); DatedEnd.Text = item.End.ToString("HH:mm"); }
     }
@@ -227,7 +239,7 @@ public partial class AutoRecordingWindow
     private void DeleteDatedClicked(object sender, RoutedEventArgs e)
     {
         if (_editingDated is not { } id) return;
-        ChangeBook(b => b with { Dated = b.Dated.Where(d => d.Id != id).ToArray() }, "单日固定时段已删除。"); _editingDated = null;
+        if (ChangeBook(b => b with { Dated = b.Dated.Where(d => d.Id != id).ToArray() }, "单日固定时段已删除。")) _editingDated = null;
     }
     private void ExclusionsClicked(object sender, RoutedEventArgs e) => ChangeBook(b => b with {
         ExcludedNames = ExcludedNames.Text.Split(['\r', '\n', ',', '，', ';', '；'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

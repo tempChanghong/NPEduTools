@@ -97,3 +97,11 @@
 新增“初次轮询期间仍未配对”的延迟配对场景，本机在修正前得到 1 项失败、原有 2 项通过，复现相同等待超时。修正只为该文件的考试通道回执／重启上报等待提供 25 秒预算（两轮轮询加调度余量），通用等待仍为 8 秒。原有 UNKNOWN／成功回执、执行／恢复次数与重启不重放断言不变；产品代码、轮询频率和授权语义不变。失败 TRX 与后续准确提交的 CI 结果分别保留，不把重跑混称为原组合的首次通过。
 
 本机修正后桌面完整传输套件 183 项通过，无跳过，包含新增延迟配对回归。修正前后 TRX 分别在 `.artifacts/npep-current/timeout-repro/before.trx` 与 `.artifacts/npep-current/timeout-fixed/after.trx`；修正提交仍需通过 GitHub PR 检查。
+
+### 2026-10-08 配对 CI 的 TLS 恢复等待
+
+[桌面 PR #13](https://github.com/tempChanghong/NPEduTools/pull/13) 的基线 `123afa1` 在 pairing run `37783585766` 失败：`TlsRetryResumesTheSamePairingCandidate` 等待 `PENDING` 超过通用 8 秒上限，TRX 记录该项耗时 8.32 秒。相同提交的 N1 与 CURRENT 检查通过；本机原测试也通过。因此原 CI 日志只能确认等待超时，不能据此判定证书验证或配对恢复损坏。
+
+TLS 首次重试本身有 5～6 秒退避，之后仍需等待网络响应、存储和线程调度。新增恢复响应延迟 4 秒的对照：修正前即时响应通过、延迟响应在相同等待位置失败。仅为四项 TLS 后台恢复等待设置 25 秒上限，并在失败时输出状态、连接、错误码与忙碌标记；其他通用等待仍为 8 秒。配对恢复允许观察 `PENDING` 或随后自动读取到的 `APPROVED`，避免漏掉中间状态；仍要求只创建两次、两次提交完全一致、设备未经确认不得激活。产品重试间隔、证书校验和授权语义未修改。
+
+修正后使用 pairing CI 相同的 Debug 配置运行完整传输／恢复套件，184 项通过，0 失败、0 跳过，包含即时与延迟恢复两种情况。证据位于 `.artifacts/pr13-ci/`：原 GitHub TRX 在 `pairing-before/extracted/`，本机延迟复现在 `tls-repro/delayed-before.trx`，修正后结果在 `tls-fixed/after.trx`。推送后的新提交仍须由 GitHub 检查；此处不将旧提交其他检查的通过视为新提交通过。未执行真实设备或生产验收。

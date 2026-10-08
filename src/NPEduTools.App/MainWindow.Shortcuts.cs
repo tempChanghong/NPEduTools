@@ -105,7 +105,12 @@ public partial class MainWindow
             PopulateShortcuts(selection); return true;
         }
         catch (Exception error) when (IsShortcutError(error))
-        { SetShortcutMessage("未能保存更改，列表保持原样。请检查配置目录的访问权限。"); return false; }
+        {
+            SetShortcutMessage(error is InvalidDataException
+                ? $"未能保存更改，列表保持原样。{error.Message}"
+                : "未能保存更改，列表保持原样。请检查配置目录的访问权限。");
+            return false;
+        }
     }
 
     private void RemoveShortcutClicked(object sender, RoutedEventArgs e)
@@ -179,6 +184,6 @@ public partial class MainWindow
         }
     }
 
-    private static bool IsShortcutError(Exception error) => error is IOException or UnauthorizedAccessException or JsonException or
+    private static bool IsShortcutError(Exception error) => error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or
         ArgumentException or NotSupportedException or InvalidOperationException or Win32Exception or System.Security.SecurityException;
 }

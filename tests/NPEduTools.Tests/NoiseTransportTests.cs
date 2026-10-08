@@ -106,6 +106,90 @@ public sealed class NoiseTransportTests
         finally { if (Directory.Exists(original)) Directory.Delete(original, true); Directory.Delete(crashed, true); }
     }
 
+    [Theory]
+    [InlineData("42")]
+    [InlineData("true")]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("\"not-a-session\"")]
+    [InlineData("\"00000000-0000-0000-0000-000000000000\"")]
+    public async Task Invalid_excluded_session_preserves_outbox_and_does_not_break_capture_cleanup(string marker)
+    {
+        string directory = DirectoryName();
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "noise-outbox.json");
+        string original = "{\"scope\":\"class-A\",\"reports\":[],\"commands\":[],\"checkpoint\":null,\"excludedSessionId\":" + marker + "}";
+        File.WriteAllText(path, original);
+        var capture = new Capture();
+        var service = new NoiseService(_ => capture, () => []);
+        bool disposed = false;
+        try
+        {
+            Select(service);
+            var transport = new NoiseTransport(service, directory);
+            var state = service.Snapshot();
+            Assert.Equal("Accepted", service.Handle(new(Protocol.Version, Guid.NewGuid(), "noise.command",
+                Noise: new("start", state.InstanceId, state.Revision, "mic"))).Outcome);
+            await Until(() => service.Snapshot().State == "Active");
+            JsonObject? observed = null;
+            var observeError = Record.Exception(() => observed = transport.Observe());
+            var cleanupError = await Record.ExceptionAsync(async () => await service.DisposeAsync());
+            disposed = true;
+            Assert.True(observeError is null && cleanupError is null,
+                $"Status error: {observeError}; cleanup error: {cleanupError}");
+            Assert.Equal("NOISE_STORE_UNAVAILABLE", observed!["uploadError"]?.GetValue<string>());
+            Assert.False(observed["configured"]!.GetValue<bool>());
+            Assert.Empty(transport.Reports());
+            Assert.Equal(original, File.ReadAllText(path));
+            Assert.True(capture.Disposed);
+        }
+        finally
+        {
+            if (!disposed) await service.DisposeAsync();
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("missing", false)]
+    [InlineData("null", false)]
+    [InlineData("current", true)]
+    [InlineData("other", false)]
+    public async Task Valid_excluded_session_keeps_legacy_reports_and_binding_exclusion(string marker, bool excluded)
+    {
+        string directory = DirectoryName();
+        Directory.CreateDirectory(directory);
+        var capture = new Capture();
+        var service = new NoiseService(_ => capture, () => []);
+        bool disposed = false;
+        try
+        {
+            Select(service);
+            var state = service.Snapshot();
+            service.Handle(new(Protocol.Version, Guid.NewGuid(), "noise.command",
+                Noise: new("start", state.InstanceId, state.Revision, "mic")));
+            await Until(() => service.Snapshot().State == "Active");
+            var store = new JsonObject { ["scope"] = "class-A", ["reports"] = new JsonArray(),
+                ["commands"] = new JsonArray(), ["checkpoint"] = null };
+            if (marker != "missing") store["excludedSessionId"] = marker == "null" ? null :
+                (marker == "current" ? service.Snapshot().SessionId!.Value : Guid.NewGuid()).ToString("D");
+            string path = Path.Combine(directory, "noise-outbox.json");
+            File.WriteAllText(path, store.ToJsonString());
+            var transport = new NoiseTransport(service, directory);
+            var observed = transport.Observe();
+            Assert.Null(observed["uploadError"]);
+            Assert.True(observed["configured"]!.GetValue<bool>());
+            await service.DisposeAsync(); disposed = true;
+            Assert.Equal(excluded ? 0 : 1, transport.Reports().Count);
+            Assert.True(capture.Disposed);
+        }
+        finally
+        {
+            if (!disposed) await service.DisposeAsync();
+            Directory.Delete(directory, true);
+        }
+    }
+
     [Fact]
     public async Task Lost_report_ack_survives_restart_and_duplicate_ack_does_not_remove_a_later_report()
     {

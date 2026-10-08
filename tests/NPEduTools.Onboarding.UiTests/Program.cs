@@ -36,7 +36,8 @@ internal static partial class Program
         bool planSaveOnly = args.Length == 2 && args[1] == "--recording-plan-save";
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox]");
+        bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
+        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -51,6 +52,11 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (shortcutsOnly)
+            {
+                RunShortcutRecoveryChecks();
+                WriteResult("PASSED", null); return 0;
+            }
             if (inboxOnly)
             {
                 RunNotificationInboxChecks();
@@ -136,6 +142,7 @@ internal static partial class Program
                 RunClassIslandLaunchChecks();
                 WriteResult("PASSED", null); return 0;
             }
+            RunShortcutRecoveryChecks();
             Exercise(new AgreementsWindow(pipe), window =>
             {
                 Assert(!Check(window, "AcceptApp").IsChecked.GetValueOrDefault(), "first consent preselected");

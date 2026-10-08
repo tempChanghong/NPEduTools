@@ -196,6 +196,64 @@ public sealed class NoiseScheduleHostTests
         f.Time.Ms=3600000; f.Scheduler.Tick(); await Until(()=>f.Noise.Snapshot().State=="Stopped");
         Assert.True(f.Captures[0].Disposed);
     }
+    [Theory]
+    [InlineData(false, "local")]
+    [InlineData(true, "local")]
+    [InlineData(false, "web")]
+    [InlineData(true, "web")]
+    [InlineData(false, "failure")]
+    [InlineData(true, "failure")]
+    public async Task Continuing_capture_uses_updated_window_for_protection_and_stop_blocks(bool shifted, string action)
+    {
+        await using var f = new Fixture();
+        if (shifted) f.Base = new(2026, 10, 1, 19, 59, 58, TimeSpan.Zero);
+        await f.Start();
+        var session = f.Noise.Snapshot().SessionId;
+        var policy = f.Policy();
+        policy["policy"]!["version"] = new string('b', 64);
+        policy["policy"]!["rules"]![0]!["start"] = shifted ? "20:00" : "19:00";
+        policy["policy"]!["rules"]![0]!["end"] = "21:00";
+        f.Scheduler.Confirm(policy); f.Tick();
+        Assert.Equal(session, f.Noise.Snapshot().SessionId);
+        Assert.Single(f.Captures);
+        bool protectionMatches = JsonNode.DeepEquals(f.Scheduler.Observe()["window"], f.Scheduler.ProtectionWindow(session));
+
+        if (action == "failure") f.Captures[0].Break();
+        else if (action == "web")
+        {
+            var state = f.Noise.Snapshot();
+            Assert.Equal("Accepted", f.Noise.RemoteCommand(Guid.NewGuid(), "STOP", state.InstanceId, state.Revision, session, 60).Outcome);
+        }
+        else Assert.Equal("Accepted", f.Noise.Handle(f.Command("stop")).Outcome);
+        await Until(() => f.Noise.Snapshot().State == (action == "failure" ? "Faulted" : "Stopped"));
+        f.Tick(); f.Tick();
+        Assert.Equal(action == "failure" ? "WINDOW_FAILED" : "WINDOW_SKIPPED", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        Assert.Single(f.Captures);
+        Assert.True(protectionMatches, "the running capture's protection window still describes the previous policy");
+        var journal = JsonNode.Parse(File.ReadAllText(System.IO.Path.Combine(f.Path, "noise-schedule-state.json")))!;
+        var block = journal["blocks"]!.AsArray().Single()!["window"]!;
+        Assert.Equal(shifted ? "2026-10-01T20:00:00+00:00" : "2026-10-01T19:00:00+00:00", block["start"]!.GetValue<string>());
+        Assert.Equal("2026-10-01T21:00:00+00:00", block["end"]!.GetValue<string>());
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Window_update_must_be_durable_but_unchanged_ticks_do_not_rewrite_journal(bool changed)
+    {
+        await using var f = new Fixture(); await f.Start();
+        string path = System.IO.Path.Combine(f.Path, "noise-schedule-state.json");
+        byte[] original = File.ReadAllBytes(path);
+        using var locked = new FileStream(path + ".tmp", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var policy = f.Policy();
+        if (changed) policy["policy"]!["rules"]![0]!["end"] = "21:00";
+        f.Scheduler.Confirm(policy); f.Tick();
+        Assert.Equal(changed ? "SCHEDULE_STORE_UNAVAILABLE" : "WINDOW_ACTIVE", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        if (changed) await Until(() => f.Noise.Snapshot().State == "Stopped");
+        else Assert.Equal("Active", f.Noise.Snapshot().State);
+        Assert.Equal(original, File.ReadAllBytes(path));
+        Assert.Single(f.Captures);
+    }
+
     [Theory] [InlineData(false)] [InlineData(true)]
     public async Task Local_and_web_manual_stops_persist_skip_across_restart_and_policy_edits(bool web)
     {

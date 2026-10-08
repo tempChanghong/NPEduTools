@@ -104,6 +104,41 @@ public sealed class NoisePipeTests
             try { await running; } catch (OperationCanceledException) { }
         }
     }
+    [Fact]
+    public async Task Oversized_saved_microphone_does_not_break_status_or_device_selection_over_pipe()
+    {
+        string directory = Directory.CreateTempSubdirectory("NPEduTools-noise-selection-pipe-").FullName;
+        string path = Path.Combine(directory, "noise-microphone.json");
+        string content = System.Text.Json.JsonSerializer.Serialize(new string('x', 70000));
+        File.WriteAllText(path, content);
+        int created = 0;
+        await using var noise = new NoiseService(_ => { created++; return new Capture(); },
+            () => [new("mic", "Fixture")], directory: directory);
+        string name = "NPEduTools.Test.Noise.Selection." + Guid.NewGuid().ToString("N");
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var server = new PipeServer(name, new ForbiddenReader(), _ => { }, noise: noise);
+        var running = server.RunAsync(lifetime.Token);
+        try
+        {
+            var devices = await HostClient.RequestAsync(name, "noise.devices", lifetime.Token);
+            Assert.Equal("Succeeded", devices.Outcome);
+            Assert.Equal("mic", Assert.Single(devices.NoiseDevices!).Id);
+            Assert.Null(devices.Noise!.SelectedDeviceId);
+            Assert.Equal(content, File.ReadAllText(path));
+            var selected = await HostClient.RequestAsync(name, new HostRequest(Protocol.Version,
+                Guid.NewGuid(), "noise.command", Noise: new("select", devices.Noise.InstanceId, devices.Noise.Revision, "mic")), lifetime.Token);
+            Assert.Equal("Succeeded", selected.Outcome);
+            Assert.Equal("mic", (await HostClient.RequestAsync(name, "noise.status", lifetime.Token)).Noise!.SelectedDeviceId);
+            Assert.Equal(0, created);
+        }
+        finally
+        {
+            await lifetime.CancelAsync();
+            try { await running; } catch (OperationCanceledException) { }
+            Directory.Delete(directory, true);
+        }
+    }
+
     private sealed class ForbiddenReader : ILessonStatusReader
     {
         public Task<StatusResult> ReadAsync(StatusQuery query, CancellationToken cancellationToken)

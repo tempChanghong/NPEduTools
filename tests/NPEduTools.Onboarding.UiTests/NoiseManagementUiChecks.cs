@@ -11,6 +11,10 @@ internal static partial class Program
     private static void RunNoiseManagementChecks()
     {
         var failures = new List<Exception>();
+        foreach (string ownerAction in new[] { "close", "keep", "hide" })
+            foreach (string operation in new[] { "configure", "authorize", "unprotected" })
+                try { RunNoiseManagementOwnerCheck(operation, ownerAction); }
+                catch (Exception error) { failures.Add(new InvalidOperationException(operation + "/owner=" + ownerAction + ": " + error.Message, error)); }
         foreach (string operation in new[] { "configure", "authorize", "entry" })
             foreach (string invalid in new[] { "request-id", "version", "zero-length", "empty-message" })
                 try
@@ -20,6 +24,69 @@ internal static partial class Program
                 }
                 catch (Exception error) { failures.Add(new InvalidOperationException(operation + "/" + invalid + ": " + error.Message, error)); }
         if (failures.Count > 0) throw new AggregateException("Noise management protocol recovery failed", failures);
+    }
+
+    private static void RunNoiseManagementOwnerCheck(string operation, string ownerAction)
+    {
+        bool closeOwner = ownerAction == "close";
+        string pipe = "NPEduTools.Test.noise-management-owner." + Guid.NewGuid().ToString("N");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var server = new NamedPipeServerStream(pipe, PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        var type = typeof(NoiseWindow).Assembly.GetType("NPEduTools.App.NoiseManagementDialog")!;
+        var state = new NoiseProtectionState(operation == "authorize", true, Guid.NewGuid(),
+            operation == "authorize" ? Guid.NewGuid() : null);
+        var target = new HostRequest(Protocol.Version, Guid.NewGuid(), "noise.command", Noise: new("stop", state.InstanceId, 7));
+        var owner = new Window { Title = "隔离管理入口关闭测试", Width = 600, Height = 400 };
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
+        int dialogs = 0;
+        var cancelDialog = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+        cancelDialog.Tick += (_, _) =>
+        {
+            foreach (var dialog in Application.Current.Windows.Cast<Window>().Where(w => w.GetType() == type && w.Owner == owner).ToArray())
+            {
+                dialogs++;
+                dialog.Close(); // Live controls must still open normally; no synthetic password is submitted.
+            }
+        };
+        async Task<HostRequest> Read()
+        {
+            await server.WaitForConnectionAsync(timeout.Token);
+            return await Protocol.ReadAsync<HostRequest>(server, timeout.Token);
+        }
+        try
+        {
+            owner.Show();
+            var read = Read();
+            var method = type.GetMethod(operation == "configure" ? "ConfigureAsync" : "AuthorizeAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
+            var action = (Task)method.Invoke(null, operation == "configure" ? [owner, pipe] : [owner, pipe, target])!;
+            PumpUntil(() => read.IsCompleted, "management owner status query did not arrive");
+            var request = read.GetAwaiter().GetResult();
+            Assert(request.Capability == "noise.management.status" && Protocol.Validate(request) is null, "management entry sent a mutation");
+            if (closeOwner) owner.Close();
+            else if (ownerAction == "hide") owner.Hide();
+            cancelDialog.Start();
+            var reply = Protocol.WriteAsync(server, new HostResponse(Protocol.Version, request.RequestId,
+                "Succeeded", null, "隔离管理状态", NoiseProtection: state), timeout.Token);
+            PumpUntil(() => reply.IsCompleted, "management owner reply did not finish"); reply.GetAwaiter().GetResult();
+            PumpUntil(() => action.IsCompleted, "management entry did not settle after the delayed reply");
+            Assert(!action.IsFaulted && !action.IsCanceled,
+                "delayed management status attempted to reopen a closed owner: " + action.Exception?.GetBaseException().Message);
+            if (operation != "configure")
+            {
+                var authorized = ((Task<HostRequest?>)action).GetAwaiter().GetResult();
+                Assert(closeOwner || operation == "authorize" ? authorized is null : ReferenceEquals(authorized, target),
+                    "management entry returned an operation after its owner closed or changed normal unprotected behavior");
+            }
+            Assert(dialogs == (!closeOwner && operation != "unprotected" ? 1 : 0), "management entry opened an unexpected modal");
+            Checks.Add(operation + "/owner=" + ownerAction + ": delayed status settles; closed owner receives no modal or operation; live and hidden entry retain normal behavior");
+        }
+        finally
+        {
+            cancelDialog.Stop(); owner.Close();
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
     }
 
     private static Task InvalidManagementReply(NamedPipeServerStream server, HostRequest request, string invalid,
