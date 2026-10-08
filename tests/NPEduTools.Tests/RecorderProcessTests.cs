@@ -1,5 +1,7 @@
 using NPEduTools.Contracts;
 using NPEduTools.Host;
+using System.Diagnostics;
+using System.Reflection;
 
 namespace NPEduTools.Tests;
 
@@ -72,5 +74,55 @@ public sealed class RecorderProcessTests
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         while (recorder.State.Phase != phase) await Task.Delay(20, timeout.Token);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TimedOutCleanupCanBeRetriedAfterWorkerFinishes(bool concurrent)
+    {
+        string directory = Directory.CreateTempSubdirectory("NPEduTools-recorder-cleanup-").FullName;
+        string release = Path.Combine(directory, "release-worker");
+        string executable = Path.Combine(AppContext.BaseDirectory, "GuardFixture", "NPEduTools.GuardFixture.exe");
+        var recorder = new RecorderProcess(executable, "recorder-finalizing");
+        Process? process = null;
+        Microsoft.Win32.SafeHandles.SafeProcessHandle? handle = null;
+        try
+        {
+            var control = new RecorderControl("Manual", Guid.NewGuid(), "", 0,
+                RecorderDeadline.After(TimeSpan.FromSeconds(8)));
+            await recorder.StartAsync(new("synthetic", directory), control);
+            await WaitForPhaseAsync(recorder, "Recording");
+            await recorder.CommandAsync("stop", control);
+            await WaitForPhaseAsync(recorder, "Saved");
+            // Observe the actual owned native handle, rather than relying on GC or process-count timing.
+            process = (Process)typeof(RecorderProcess).GetField("_process", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(recorder)!;
+            handle = process.SafeHandle;
+            Task cleanup = recorder.DisposeAsync().AsTask();
+            Task? concurrentCleanup = concurrent ? recorder.DisposeAsync().AsTask() : null;
+            await cleanup;
+            Assert.True(recorder.Alive); // Timeout must not kill a worker that is still finalizing.
+            Assert.False(handle.IsClosed);
+            File.WriteAllText(release, "done");
+            if (concurrentCleanup is not null) await concurrentCleanup;
+            else await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            await recorder.DisposeAsync();
+            Assert.False(recorder.Alive);
+            Assert.True(handle.IsClosed); // A retry must finish releasing the first worker's resources.
+            Assert.Equal("Saved", recorder.State.Phase);
+            await recorder.DisposeAsync(); // Completed cleanup remains idempotent.
+        }
+        finally
+        {
+            File.WriteAllText(release, "done");
+            await recorder.DisposeAsync();
+            if (process is not null && handle is { IsClosed: false })
+            {
+                try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch (TimeoutException) { process.Kill(true); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                process.Dispose();
+            }
+            Directory.Delete(directory, true);
+        }
     }
 }

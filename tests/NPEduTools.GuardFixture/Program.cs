@@ -6,8 +6,9 @@ using System.Text.Json;
 if (args.Length == 2 && args[0] == "--fixture-window" && args[1] is
     "recorder-null" or "recorder-oversized" or "recorder-malformed" or "recorder-empty" or
     "recorder-unknown" or "recorder-missing-message" or "recorder-owned-idle" or "recorder-saved" or
-    "recorder-ready" or "recorder-failed")
+    "recorder-ready" or "recorder-failed" or "recorder-finalizing")
 {
+    string? outputDirectory = null;
     Console.WriteLine(args[1] switch
     {
         "recorder-null" => "null",
@@ -24,11 +25,20 @@ if (args.Length == 2 && args[0] == "--fixture-window" && args[1] is
     });
     while (await Console.In.ReadLineAsync() is { } line)
     {
-        if (args[1] != "recorder-ready") continue;
+        if (args[1] is not ("recorder-ready" or "recorder-finalizing")) continue;
         var command = JsonSerializer.Deserialize<RecorderCommand>(line, RecordingContract.Json)!;
+        if (command.Options is { } options) outputDirectory = options.OutputDirectory;
         if (command.Action is "start" or "stop")
             Console.WriteLine(JsonSerializer.Serialize(new RecordingState(
                 command.Action == "start" ? "Recording" : "Saved", command.Action, Control: command.Control), RecordingContract.Json));
+    }
+    if (args[1] == "recorder-finalizing" && outputDirectory is not null)
+    {
+        // Keep the synthetic worker alive after stdin EOF until the test releases it.
+        // A bounded fallback prevents a failed test from leaving a permanent process.
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (!File.Exists(Path.Combine(outputDirectory, "release-worker")) && watch.Elapsed < TimeSpan.FromSeconds(30))
+            await Task.Delay(20);
     }
     return 0;
 }

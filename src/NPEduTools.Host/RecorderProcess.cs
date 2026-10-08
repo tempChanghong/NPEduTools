@@ -7,6 +7,7 @@ namespace NPEduTools.Host;
 public sealed class RecorderProcess(string executable, string? fixture = null) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _write = new(1, 1);
+    private readonly SemaphoreSlim _disposeGate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly TaskCompletionSource _hello = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Process? _process;
@@ -111,22 +112,27 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
     public void Fail(string message) => Volatile.Write(ref _state, State with { Phase = "Failed", Message = "录制未完成", Error = message });
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _lifetime.Cancel();
-        if (_lease is not null) await _lease;
-        if (_process is not null)
+        await _disposeGate.WaitAsync();
+        try
         {
-            try { _process.StandardInput.Close(); } catch (IOException) { }
-            try { await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
-            catch (TimeoutException)
+            if (_disposed) return;
+            _lifetime.Cancel();
+            if (_lease is not null) await _lease;
+            if (_process is not null)
             {
-                // Do not kill a finalizing recorder; EOF and its independent watchdog bound its lifetime.
-                return;
+                try { _process.StandardInput.Close(); } catch (IOException) { }
+                try { await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch (TimeoutException)
+                {
+                    // Keep cleanup retryable while EOF and the watchdog allow finalization to finish.
+                    return;
+                }
+                if (_read is not null) await _read; if (_errors is not null) await _errors;
+                _process.Dispose();
             }
-            if (_read is not null) await _read; if (_errors is not null) await _errors;
-            _process.Dispose();
+            _lifetime.Dispose();
+            _disposed = true;
         }
-        _lifetime.Dispose();
+        finally { _disposeGate.Release(); }
     }
 }
