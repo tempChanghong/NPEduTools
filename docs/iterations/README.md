@@ -6,7 +6,7 @@
 
 | 主题 | 任务卡 |
 | --- | --- |
-| Host 无效数据恢复 | [配置校验失败与录制器状态清理](HOST-INVALID-DATA-RECOVERY-20261008.md) |
+| Host 无效数据恢复 | [配置恢复、录制器状态清理与启动握手](HOST-INVALID-DATA-RECOVERY-20261008.md) |
 | 考试结果展示 | [中文原因、处理建议与历史回执](EXAM-RESULT-PRESENTATION-20261007.md) |
 | 学校连接提示 | [状态、原因与恢复建议](SCHOOL-CONNECTION-PRESENTATION-20261007.md) |
 | 噪音状态展示 | [当前采样、历史摘要与断连恢复](NOISE-STATUS-PRESENTATION-20261007.md) |

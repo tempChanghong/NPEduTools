@@ -50,12 +50,19 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
     }
     private async Task ReadAsync(Process process)
     {
+        bool receivedHello = false;
         try
         {
             while (await process.StandardOutput.ReadLineAsync() is { } line)
             {
                 if (line.Length > 16384) throw new InvalidDataException("录制状态过大。");
                 var state = JsonSerializer.Deserialize<RecordingState>(line, RecordingContract.Json) ?? throw new InvalidDataException();
+                // Before start, the worker must be idle and unowned (or report a startup failure).
+                // A parseable object or a receipt from an existing session is not a readiness handshake.
+                if (!receivedHello && (state.Phase is not ("Idle" or "Failed") || state.Control is not null ||
+                    string.IsNullOrWhiteSpace(state.Message)))
+                    throw new InvalidDataException("录制组件未返回有效的启动状态。");
+                receivedHello = true;
                 if (state.Phase != "Idle" && (state.Control is null && state.Phase == "Failed" || _control?.Matches(state.Control) == true))
                     Volatile.Write(ref _state, state);
                 _hello.TrySetResult();
