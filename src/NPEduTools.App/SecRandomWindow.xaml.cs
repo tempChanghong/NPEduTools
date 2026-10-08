@@ -65,7 +65,7 @@ public partial class SecRandomWindow : Window
             if (result.State != "Succeeded") return ShowGuidance(result.Message);
             return result.Winner is { } winner ? $"SecRandom 闪抽一人 · 上次抽中：{winner.Name}" : "SecRandom 闪抽一人 · 上次已完成";
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
         { Render(null); return ShowGuidance("未收到可靠回执。请核实 SecRandom 窗口及历史，勿立即重复抽取。"); }
         finally { _busy = false; Render(_state); }
     }
@@ -119,7 +119,7 @@ public partial class SecRandomWindow : Window
                     var response = await RequestAsync("secrandom.status");
                     if (!_closing && !_busy && generation == _generation) Render(response.SecRandom);
                 }
-                catch (Exception e) when (e is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException)
+                catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
                 { if (!_closing && !_busy && generation == _generation) Render(null); }
             }
             try { await Task.Delay(800, _lifetime.Token); } catch (OperationCanceledException) { break; }
@@ -136,7 +136,7 @@ public partial class SecRandomWindow : Window
                 save ? null : new(action!, acknowledge));
             Render(response.SecRandom); Message.Text = response.Message;
         }
-        catch (Exception e) when (e is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
         { Render(null); Message.Text = "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。"; }
         finally { _busy = false; Render(_state); }
     }

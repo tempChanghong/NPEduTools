@@ -29,6 +29,7 @@
 | 录制设置文件恢复 | [文件与隔离 WPF 检查](iterations/RECORDING-PREFERENCES-RECOVERY-20261007.md#验证) | 无效设置、原文件保留、正常保存及重开恢复；仅使用合成设备 |
 | 手动录课恢复 | [客户端与隔离 WPF 检查](iterations/MANUAL-RECORDING-RECOVERY-20261007.md#验证) | 断连、重新确认、旧查询时序与回执丢失；使用唯一模拟管道，不启动真实录制 |
 | 点名回执恢复 | [SecRandom 专项与隔离 WPF 检查](iterations/SECRANDOM-STATE-RECOVERY-20261007.md#验证) | 页面与侧栏失联、旧查询时序、历史回执和恢复；不执行真实抽取 |
+| 点名后台访问恢复 | [访问拒绝与隔离管道检查](iterations/SECRANDOM-ACCESS-RECOVERY-20261008.md#验证) | 轮询、页面与侧栏访问被拒绝后的失效与恢复；不执行真实抽取 |
 | 考试看板恢复 | [ExamAware 专项与隔离 WPF 检查](iterations/EXAMAWARE-STATE-RECOVERY-20261007.md#验证) | 方案与操作请求时序、失联恢复及配对导出失败；不操作真实软件或自启动 |
 | 考试看板快捷入口 | [协议与隔离事件检查](iterations/EXAMAWARE-QUICK-RECOVERY-20261007.md#验证) | 无效启动回执、管理页状态核实、正常接受及关闭时取消；不启动真实软件 |
 | 考试看板协议恢复 | [协议与隔离管理页检查](iterations/EXAMAWARE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效状态／操作／配对回执、旧查询错误及只读恢复；不启动真实软件或写入真实配对 |

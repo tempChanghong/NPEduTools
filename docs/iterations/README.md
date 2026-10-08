@@ -18,6 +18,7 @@
 | 自动录课反馈 | [实际状态与上次操作提示](AUTOMATIC-RECORDING-STATUS-20261007.md) |
 | 手动录课恢复 | [断连提示、操作回执与重新核对](MANUAL-RECORDING-RECOVERY-20261007.md) |
 | 点名回执恢复 | [未知状态、历史回执与操作顺序](SECRANDOM-STATE-RECOVERY-20261007.md) |
+| 点名后台访问恢复 | [权限拒绝后的状态失效与重新连接](SECRANDOM-ACCESS-RECOVERY-20261008.md) |
 | 考试看板恢复 | [连接、方案与操作回执](EXAMAWARE-STATE-RECOVERY-20261007.md) |
 | 考试看板快捷入口 | [无效启动回执与管理页核实](EXAMAWARE-QUICK-RECOVERY-20261007.md) |
 | 考试看板协议恢复 | [无效查询、操作与配对回执](EXAMAWARE-PROTOCOL-RECOVERY-20261007.md) |
