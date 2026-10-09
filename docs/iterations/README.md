@@ -32,6 +32,7 @@
 | 定时监测返回回执 | [旧会话隔离与新会话返回](SCHEDULED-DISPLAY-RETURN-20261007.md) |
 | 定时监测返回协议恢复 | [无效回执与显式重试](SCHEDULED-RETURN-PROTOCOL-RECOVERY-20261007.md) |
 | 学校互联协议恢复 | [共享未知状态与只读恢复](SCHOOL-CONNECTION-PROTOCOL-RECOVERY-20261007.md) |
+| 学校互联后台访问恢复 | [刷新事件、配对请求与共享控件恢复](SCHOOL-CONNECTION-ACCESS-20261009.md) |
 | 远程考试检查恢复 | [失败后未知状态与重新核实](REMOTE-EXAM-INSPECTION-RECOVERY-20261007.md) |
 | 学校通知列表恢复 | [未确认列表失效与第一页恢复](NOTIFICATION-INBOX-RECOVERY-20261007.md) |
 | 学校通知正文有效性 | [核对失败不延长保留期限](NOTIFICATION-VALIDITY-RECOVERY-20261007.md) |

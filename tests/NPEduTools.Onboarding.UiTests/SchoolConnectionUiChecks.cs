@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using NPEduTools.App;
 using NPEduTools.Contracts;
 
@@ -13,12 +14,14 @@ internal static partial class Program
             Origin: "https://school.example", LastReceivedAt: "2026-10-07T01:00:00Z");
         bool unavailable = false;
         bool invalidProtocol = false;
+        bool accessDenied = false;
         var requests = new List<HostRequest>();
         var session = new NpepConnectionSession((request, _) =>
         {
             requests.Add(request);
             if (unavailable) throw new IOException("isolated Host unavailable");
             if (invalidProtocol) throw new InvalidDataException("isolated invalid Host receipt");
+            if (accessDenied) throw new UnauthorizedAccessException("isolated Host access denied");
             return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "隔离状态", Npep: state));
         });
         session.RefreshAsync().GetAwaiter().GetResult();
@@ -94,6 +97,47 @@ internal static partial class Program
                     ((Button)Find(view, "NpepPause")).IsEnabled, "valid recovery did not refresh both shared controls");
             Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "protocol recovery sent a mutation");
             Checks.Add("Invalid protocol clears both shared online views and completion eligibility; read-only refresh restores the latest paused state without losing the device draft");
+
+            var previousContext = SynchronizationContext.Current;
+            var eventContext = new QuickEventContext();
+            Exception? eventError = null;
+            void OnError(object sender, DispatcherUnhandledExceptionEventArgs args)
+            { eventError = args.Exception; args.Handled = true; }
+            Application.Current.DispatcherUnhandledException += OnError;
+            SynchronizationContext.SetSynchronizationContext(eventContext);
+            try
+            {
+                accessDenied = true;
+                ((Button)Find(settings, "NpepRefresh")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                PumpUntil(() => eventContext.Active == 0, "school refresh event did not settle after access denial");
+                var idle = Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                PumpUntil(() => idle.IsCompleted, "school refresh exception dispatch did not settle");
+                Assert(eventError is null, "school refresh event raised an unhandled " + eventError?.GetType().Name);
+                window.UpdateLayout();
+                foreach (var view in new[] { settings, onboarding })
+                {
+                    Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("未确认"), "access denial retained shared connected status");
+                    Assert(!((Button)Find(view, "NpepPause")).IsEnabled && !((Button)Find(view, "NpepUnpair")).IsEnabled &&
+                        ((Button)Find(view, "NpepRefresh")).IsEnabled, "access denial retained mutation controls or blocked recovery");
+                }
+                Assert(!session.CanFinish && !session.IsWorking && session.DeviceName == "隔离设备草稿",
+                    "access denial allowed onboarding completion, held the request gate or discarded the draft");
+                accessDenied = false; state = state with { Revision = 3, Connection = "ONLINE", ReportingPaused = false };
+                Assert(session.RefreshAsync().GetAwaiter().GetResult(), "read-only refresh after access denial failed"); window.UpdateLayout();
+                foreach (var view in new[] { settings, onboarding })
+                    Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("当前在线") &&
+                        ((Button)Find(view, "NpepPause")).IsEnabled, "fresh status failed to restore both shared views");
+                Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "access recovery replayed a school mutation");
+                Checks.Add("Access-denied real refresh event does not crash; both shared views become unknown and recover on read-only status without losing the draft or replaying commands");
+            }
+            finally
+            {
+                accessDenied = false;
+                var idle = Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                PumpUntil(() => idle.IsCompleted, "school access cleanup did not settle");
+                Application.Current.DispatcherUnhandledException -= OnError;
+                SynchronizationContext.SetSynchronizationContext(previousContext);
+            }
             window.Close();
         });
 

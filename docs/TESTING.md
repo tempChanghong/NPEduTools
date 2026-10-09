@@ -43,6 +43,7 @@
 | 定时监测返回回执 | [展示专项与隔离 WPF 检查](iterations/SCHEDULED-DISPLAY-RETURN-20261007.md#验证) | 原生备用页面的新旧会话、返回回执与失败重试；不启动采集或连接学校 |
 | 定时监测返回协议恢复 | [协议与隔离 WPF 检查](iterations/SCHEDULED-RETURN-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧会话隔离及显式重试；只发送模拟返回请求 |
 | 学校互联协议恢复 | [共享会话与隔离 WPF 检查](iterations/SCHOOL-CONNECTION-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧状态失效和只读恢复；不连接真实学校或创建真实配对 |
+| 学校互联后台访问恢复 | [会话异常与隔离按钮事件检查](iterations/SCHOOL-CONNECTION-ACCESS-20261009.md#验证) | 访问拒绝、旧配对状态失效、草稿保留与双控件只读恢复；不连接真实学校 |
 | 远程考试检查恢复 | [按钮事件与隔离 WPF 检查](iterations/REMOTE-EXAM-INSPECTION-RECOVERY-20261007.md#验证) | 失败后未知状态、只读恢复与重新核实；不执行软件切换或解除暂停 |
 | 学校通知列表恢复 | [通知轮询与隔离 WPF 检查](iterations/NOTIFICATION-INBOX-RECOVERY-20261007.md#验证) | 未确认条目与分页失效、新列表及空列表恢复；只轮询模拟列表，不显示通知弹窗 |
 | 学校通知正文有效性 | [模拟计时与隔离字段检查](iterations/NOTIFICATION-VALIDITY-RECOVERY-20261007.md#验证) | 正文核对失败、保留期限与有效恢复；不显示弹窗或发送展示／关闭回执 |
