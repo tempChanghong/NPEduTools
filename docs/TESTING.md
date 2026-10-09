@@ -20,6 +20,7 @@
 | 单次录课编辑刷新 | [课表回执与隔离输入检查](iterations/RECORDING-DATED-EDIT-REFRESH-20261008.md#验证) | 冲突提示刷新、草稿保留、显式保存与切换条目；不启动实际录课 |
 | 噪音状态界面 | [构建并运行隔离 WPF 检查](iterations/NOISE-STATUS-PRESENTATION-20261007.md#验证) | 当前／历史统计、断连与恢复、最小尺寸布局；不启动真实采集 |
 | 噪音监测协议恢复 | [协议与隔离监测页检查](iterations/NOISE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效设备／状态／操作回执、旧数据失效和轮询恢复；只用合成麦克风 |
+| 噪音后台访问恢复 | [访问拒绝与隔离窗口检查](iterations/NOISE-ACCESS-RECOVERY-20261009.md#验证) | 旧采样事实失效、只读恢复和管理显式重试；不修改实际管道权限或执行真实采集 |
 | 定时监测管理验证 | [协议与隔离弹窗检查](iterations/NOISE-MANAGEMENT-RECOVERY-20261007.md#验证) | 无效管理回执、授权范围及显式重试；不修改真实口令或停止监测 |
 | 自动录课状态界面 | [构建并运行隔离 WPF 检查](iterations/AUTOMATIC-RECORDING-STATUS-20261007.md#验证) | 设置验证、实际状态与操作反馈、记录和最小尺寸布局；不执行真实录课命令 |
 | 录课计划保存反馈 | [文件锁与隔离 WPF 检查](iterations/RECORDING-PLAN-SAVE-FEEDBACK-20261007.md#验证) | 计划写入失败、试运行记录写入失败及重开恢复；不启动真实录制 |

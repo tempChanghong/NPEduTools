@@ -8,6 +8,7 @@ internal static partial class Program
 {
     private static void RunNoiseStatusChecks()
     {
+        RunNoiseAccessChecks();
         RunNoiseManagementChecks();
         RunNoiseProtocolChecks();
         // A unique nonexistent pipe cannot reach the user's Host. Synchronous rendering

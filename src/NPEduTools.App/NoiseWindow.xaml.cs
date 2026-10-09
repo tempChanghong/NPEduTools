@@ -62,7 +62,7 @@ public partial class NoiseWindow : Window
                     if (response.Outcome == "Rejected") MessageText.Text = response.Message;
                 }
             }
-            catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
             { if (!_lifetime.IsCancellationRequested && operation == _uiOperation) Render(null); }
             try { await Task.Delay(500, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
@@ -160,7 +160,7 @@ public partial class NoiseWindow : Window
             else MessageText.Text = response.Message;
             Render(response.Noise);
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         { Render(null); }
         finally { _busy = false; UpdateButtons(); }
     }
@@ -182,7 +182,7 @@ public partial class NoiseWindow : Window
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {
         try { await NoiseManagementDialog.ConfigureAsync(this, _pipe); }
-        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         { MessageText.Text = "无法读取后台管理设置，请重试。"; }
     }
 }
