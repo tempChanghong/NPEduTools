@@ -108,6 +108,7 @@ internal static partial class Program
         RunRecordingRequestOrderingCheck();
         RunRecordingPollRecoveryChecks();
         RunManualReceiptRecoveryChecks();
+        RunRecordingCommandOrderingChecks();
     }
 
     private static void RunRecordingRequestOrderingCheck()

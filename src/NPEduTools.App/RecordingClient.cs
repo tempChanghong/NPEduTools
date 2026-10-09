@@ -118,7 +118,9 @@ internal sealed class RecordingClient : IAsyncDisposable
                 MarkUnavailable(previous, "本次操作未确认；" + error.Message);
             else { State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }
         }
-        finally { _sending = false; }
+        // Polling continues to renew leases while a command is pending. Queries started
+        // during that command must not overwrite its receipt when they complete later.
+        finally { _generation++; _sending = false; }
     }
     public async Task SetAutomaticAsync(string action, RecordingOptions? options = null)
     {
@@ -138,6 +140,7 @@ internal sealed class RecordingClient : IAsyncDisposable
             // The Host may have applied the command. Reconcile through polling, never replay it here.
             throw new IOException(message, error);
         }
+        finally { _generation++; }
     }
     public async Task<bool> StopAndSaveAsync()
     {
