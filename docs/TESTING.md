@@ -39,6 +39,7 @@
 | 本机课堂模式恢复 | [课堂模式专项与隔离 WPF 检查](iterations/CLASSROOM-STATE-RECOVERY-20261007.md#验证) | 断连、新旧查询顺序与过期配置检查；只读模拟请求，不切换真实软件或自启动 |
 | 主页课堂模式轮询 | [模拟协议与隔离主页检查](iterations/CLASSROOM-HOME-POLL-RECOVERY-20261007.md#验证) | 无效回执、旧模式失效和同一轮询恢复；不执行真实切换 |
 | 课堂模式协议恢复 | [协议与隔离管理页检查](iterations/CLASSROOM-PROTOCOL-RECOVERY-20261007.md#验证) | 无效查询／核实回执、旧查询错误与状态恢复；只读模拟请求，不执行真实切换 |
+| 课堂模式后台访问恢复 | [访问拒绝与隔离界面检查](iterations/CLASSROOM-ACCESS-RECOVERY-20261009.md#验证) | 主页／管理页旧模式失效、核实请求异常与只读恢复；不修改权限或执行真实切换 |
 | 定时监测返回回执 | [展示专项与隔离 WPF 检查](iterations/SCHEDULED-DISPLAY-RETURN-20261007.md#验证) | 原生备用页面的新旧会话、返回回执与失败重试；不启动采集或连接学校 |
 | 定时监测返回协议恢复 | [协议与隔离 WPF 检查](iterations/SCHEDULED-RETURN-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧会话隔离及显式重试；只发送模拟返回请求 |
 | 学校互联协议恢复 | [共享会话与隔离 WPF 检查](iterations/SCHOOL-CONNECTION-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧状态失效和只读恢复；不连接真实学校或创建真实配对 |

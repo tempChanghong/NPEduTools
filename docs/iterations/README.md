@@ -26,6 +26,7 @@
 | 考试看板快捷访问恢复 | [访问拒绝与管理页只读恢复](EXAMAWARE-QUICK-ACCESS-20261009.md) |
 | 考试看板协议恢复 | [无效查询、操作与配对回执](EXAMAWARE-PROTOCOL-RECOVERY-20261007.md) |
 | 本机课堂模式恢复 | [未知状态、查询时序与配置检查](CLASSROOM-STATE-RECOVERY-20261007.md) |
+| 课堂模式后台访问恢复 | [访问拒绝、状态失效与继续查询](CLASSROOM-ACCESS-RECOVERY-20261009.md) |
 | 主页课堂模式轮询 | [无效回执、未知状态与继续查询](CLASSROOM-HOME-POLL-RECOVERY-20261007.md) |
 | 课堂模式协议恢复 | [管理页未知状态、解除等待与重新查询](CLASSROOM-PROTOCOL-RECOVERY-20261007.md) |
 | 定时监测返回回执 | [旧会话隔离与新会话返回](SCHEDULED-DISPLAY-RETURN-20261007.md) |
