@@ -34,6 +34,7 @@
 | 点名后台访问恢复 | [访问拒绝与隔离管道检查](iterations/SECRANDOM-ACCESS-RECOVERY-20261008.md#验证) | 轮询、页面与侧栏访问被拒绝后的失效与恢复；不执行真实抽取 |
 | 考试看板恢复 | [ExamAware 专项与隔离 WPF 检查](iterations/EXAMAWARE-STATE-RECOVERY-20261007.md#验证) | 方案与操作请求时序、失联恢复及配对导出失败；不操作真实软件或自启动 |
 | 考试看板快捷入口 | [协议与隔离事件检查](iterations/EXAMAWARE-QUICK-RECOVERY-20261007.md#验证) | 无效启动回执、管理页状态核实、正常接受及关闭时取消；不启动真实软件 |
+| 考试看板快捷访问恢复 | [访问拒绝与隔离按钮事件检查](iterations/EXAMAWARE-QUICK-ACCESS-20261009.md#验证) | 未处理异常、管理页未知状态及只读恢复；不修改权限或启动真实软件 |
 | 考试看板协议恢复 | [协议与隔离管理页检查](iterations/EXAMAWARE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效状态／操作／配对回执、旧查询错误及只读恢复；不启动真实软件或写入真实配对 |
 | 本机课堂模式恢复 | [课堂模式专项与隔离 WPF 检查](iterations/CLASSROOM-STATE-RECOVERY-20261007.md#验证) | 断连、新旧查询顺序与过期配置检查；只读模拟请求，不切换真实软件或自启动 |
 | 主页课堂模式轮询 | [模拟协议与隔离主页检查](iterations/CLASSROOM-HOME-POLL-RECOVERY-20261007.md#验证) | 无效回执、旧模式失效和同一轮询恢复；不执行真实切换 |

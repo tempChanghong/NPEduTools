@@ -23,6 +23,7 @@
 | 点名后台访问恢复 | [权限拒绝后的状态失效与重新连接](SECRANDOM-ACCESS-RECOVERY-20261008.md) |
 | 考试看板恢复 | [连接、方案与操作回执](EXAMAWARE-STATE-RECOVERY-20261007.md) |
 | 考试看板快捷入口 | [无效启动回执与管理页核实](EXAMAWARE-QUICK-RECOVERY-20261007.md) |
+| 考试看板快捷访问恢复 | [访问拒绝与管理页只读恢复](EXAMAWARE-QUICK-ACCESS-20261009.md) |
 | 考试看板协议恢复 | [无效查询、操作与配对回执](EXAMAWARE-PROTOCOL-RECOVERY-20261007.md) |
 | 本机课堂模式恢复 | [未知状态、查询时序与配置检查](CLASSROOM-STATE-RECOVERY-20261007.md) |
 | 主页课堂模式轮询 | [无效回执、未知状态与继续查询](CLASSROOM-HOME-POLL-RECOVERY-20261007.md) |

@@ -22,8 +22,81 @@ internal static partial class Program
 
     private static void RunExamAwareQuickChecks()
     {
+        RunExamAwareQuickAccessCheck();
         foreach (string scenario in new[] { "request-id", "version", "zero-length", "empty-message", "disconnected", "rejected", "accepted", "stopped" })
             RunExamAwareQuickCheck(scenario);
+    }
+
+    private static void RunExamAwareQuickAccessCheck()
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        string pipe = "NPEduTools.Test.examaware-quick-access." + Guid.NewGuid().ToString("N");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        // Deny the real duplex client by exposing a write-only test server, without changing ACLs.
+        using var denied = new NamedPipeServerStream(pipe, PipeDirection.Out, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        var window = IsolatedMainWindow(pipe);
+        var context = new QuickEventContext();
+        var previous = SynchronizationContext.Current;
+        Exception? eventError = null;
+        ExamAwareWindow? Fallback() => (ExamAwareWindow?)typeof(MainWindow).GetField("_examAwareWindow", flags)!.GetValue(window);
+        void OnError(object sender, DispatcherUnhandledExceptionEventArgs args)
+        {
+            eventError = args.Exception;
+            args.Handled = true; // Observe the baseline async-void crash without terminating the fixture.
+        }
+        SynchronizationContext.SetSynchronizationContext(context);
+        Application.Current.DispatcherUnhandledException += OnError;
+        try
+        {
+            Exercise(window, _ =>
+            {
+                try
+                {
+                    SynchronizationContext.SetSynchronizationContext(context);
+                    typeof(MainWindow).GetMethod("OpenExamAwareQuick", flags)!.Invoke(window, null);
+                    PumpUntil(() => context.Active == 0, "access-denied quick event did not complete");
+                    var idle = Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+                    PumpUntil(() => idle.IsCompleted, "quick access error dispatch did not settle");
+                    Assert(eventError is null, "access-denied quick entry raised an unhandled " + eventError?.GetType().Name + ": " + eventError?.Message);
+                    var fallback = Fallback();
+                    Assert(fallback?.IsVisible == true, "access denial did not open the examination management window");
+                    Assert(((TextBlock)fallback!.FindName("Connection")).Text.Contains("未确认") &&
+                        !Button(fallback, "PresentPlanButton").IsEnabled && !Button(fallback, "EnableAutoStartButton").IsEnabled,
+                        "access denial presented an actionable bridge or startup state");
+
+                    denied.Dispose();
+                    using var recovered = new NamedPipeServerStream(pipe, PipeDirection.InOut, 1,
+                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                    async Task Reply()
+                    {
+                        await recovered.WaitForConnectionAsync(timeout.Token);
+                        var request = await Protocol.ReadAsync<HostRequest>(recovered, timeout.Token);
+                        Assert(request.Capability == "examaware.status" && request.ExamPlan is null && request.AutoStartEnabled is null,
+                            "recovery replayed a start or configuration command");
+                        await Protocol.WriteAsync(recovered, new HostResponse(Protocol.Version, request.RequestId,
+                            "Succeeded", null, "隔离连接恢复", ExamAware: ReadyExamAware()), timeout.Token);
+                    }
+                    var reply = Reply();
+                    PumpUntil(() => reply.IsCompleted && ((TextBlock)fallback.FindName("Connection")).Text == "隔离桥接已连接",
+                        "management window failed to recover through read-only polling");
+                    reply.GetAwaiter().GetResult();
+                    Assert(eventError is null && Button(fallback, "PresentPlanButton").IsEnabled,
+                        "confirmed recovery failed to restore normal management actions");
+                    Checks.Add("ExamAware quick access denial: async-void event settles without a crash; unconfirmed management fallback recovers through status polling without replaying startup");
+                }
+                finally { Fallback()?.Shutdown(); window.Close(); }
+            });
+        }
+        finally
+        {
+            Fallback()?.Shutdown(); window.Close();
+            if (context.Active > 0) PumpUntil(() => context.Active == 0, "quick access event did not stop");
+            var idle = Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
+            PumpUntil(() => idle.IsCompleted, "quick access cleanup did not settle");
+            Application.Current.DispatcherUnhandledException -= OnError;
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
     }
 
     private static void RunExamAwareQuickCheck(string scenario)
