@@ -4,12 +4,20 @@ public sealed record NoiseDevice(string Id, string Name);
 // Instance + revision fence delayed commands, including an old UI reconnecting to a new Host.
 public sealed record NoiseCommand(string Action, Guid InstanceId, long Revision, string? DeviceId = null);
 public sealed record NoisePoint(double Seconds, double? Dbfs, string Quality);
+public sealed record NoiseEstimatedPoint(double Seconds, double? DbA, string Quality);
 public sealed record NoiseSummary(double ElapsedSeconds, double SampledSeconds, double Coverage,
     double? EnergyMeanDbfs, double? PeakDbfs, double ClippedPercent, long Frames);
 public sealed record NoiseState(Guid InstanceId, long Revision, string State, string Message,
     string? DeviceId, string? DeviceName, DateTimeOffset? StartedAt, double? CurrentDbfs,
     string Quality, NoiseSummary? Summary, IReadOnlyList<NoisePoint> Trend,
-    string Algorithm = "pcm-energy-v1", Guid? SessionId = null, string? SelectedDeviceId = null);
+    string Algorithm = "pcm-energy-v1", Guid? SessionId = null, string? SelectedDeviceId = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] NoiseEstimate? Estimate = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<NoiseEstimatedPoint>? EstimatedTrend = null);
+
+// Separate from raw PCM dBFS. Maximum is the sampled F/S display maximum, not acoustic true peak.
+public sealed record NoiseEstimateSummary(double SampledSeconds, double Coverage, double? EnergyMeanDbA, double? MaximumDbA);
+public sealed record NoiseEstimate(string ProfileId, string Algorithm, string Method, string TimeWeighting,
+    double OffsetDb, string ConfirmedAt, string State, string? Reason, double? CurrentDbA, NoiseEstimateSummary Summary);
 
 public static class NoiseContract
 {

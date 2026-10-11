@@ -26,7 +26,17 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomCommand? SecRandom = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseManagementCommand? NoiseManagement = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? NoiseAuthorization = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseDisplayCommand? NoiseDisplay = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseDisplayCommand? NoiseDisplay = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyHideCommand? StudyHide = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyReminderCommand? StudyReminder = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyHomeworkRead? StudyHomework = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyPresentationPulse? StudyPresentation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingRead? StudySeating = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingPulse? SeatingPresentation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyCameraCommand? StudyCamera = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationCommand? NoiseCalibration = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseReferenceCommand? NoiseReference = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoundMeterCommand? SoundMeter = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -63,7 +73,14 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<NoiseDevice>? NoiseDevices = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SecRandomState? SecRandom = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseProtectionState? NoiseProtection = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseDisplayState? NoiseDisplay = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseDisplayState? NoiseDisplay = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyHostState? Study = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyHomeworkChunk? HomeworkChunk = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingChunk? SeatingChunk = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyDeviceState? StudyDevices = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationState? NoiseCalibration = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseReferenceState? NoiseReference = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoundMeterState? SoundMeter = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -103,6 +120,41 @@ public static class Protocol
     public static string? Validate(HostRequest request)
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
+        if (request.Capability == "noise.meter.command" ? request.SoundMeter is null ||
+            !SoundMeterContract.Valid(request.SoundMeter) : request.SoundMeter is not null) return "InvalidSoundMeterCommand";
+        if (request.Capability == "noise.reference.command" ? request.NoiseReference is null ||
+            !NoiseReferenceContract.Valid(request.NoiseReference) : request.NoiseReference is not null)
+            return "InvalidNoiseReferenceCommand";
+        if (request.Capability == "noise.calibration.command" ? request.NoiseCalibration is null ||
+            !NoiseCalibrationContract.Valid(request.NoiseCalibration) : request.NoiseCalibration is not null)
+            return "InvalidNoiseCalibrationCommand";
+        if (request.Capability == "study.devices.select" ? request.StudyCamera is not { } camera || !StudyDeviceContract.Valid(camera) : request.StudyCamera is not null)
+            return "InvalidStudyCameraCommand";
+        if (request.Capability == "study.presentation" ? request.StudyPresentation is not { } pulse ||
+            !ValidStudyDisplayIdentity(pulse.InstanceId, pulse.Version, pulse.Window) || pulse.AppInstanceId == Guid.Empty ||
+            pulse.Sequence is <= 0 or > 9007199254740991 || pulse.Phase is not ("Preparing" or "Active" or "Ended") ||
+            pulse.State is not ("Visible" or "Hidden" or "Stale") ||
+            (pulse.State == "Visible" ? pulse.RenderAgeMs is not (>= 0 and < 1000) : pulse.RenderAgeMs is not null)
+            : request.StudyPresentation is not null) return "InvalidStudyPresentation";
+        if (request.Capability == "study.seating" ? request.StudySeating is not { Version.Length: 64, Hash.Length: 64, Revision: > 0, Index: >= 0 and < 128 } seat ||
+            !seat.Hash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') || !seat.Version.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') : request.StudySeating is not null)
+            return "InvalidStudySeatingRead";
+        if (request.Capability == "study.seating.presentation" ? request.SeatingPresentation is not { InstanceId: var si, AppInstanceId: var ai, Sequence: > 0, Version.Length: 64, Revision: >= 0 } sp ||
+            si == Guid.Empty || ai == Guid.Empty || !sp.Version.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') || sp.Sequence > 9007199254740991 || sp.AppliedHash is not null && (sp.AppliedHash.Length != 64 || !sp.AppliedHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')) ||
+            sp.RenderAgeMs is < 0 or > 999 || sp.Visible && (sp.AppliedHash is null || sp.RenderAgeMs is null) : request.SeatingPresentation is not null)
+            return "InvalidStudySeatingPresentation";
+        if (request.Capability == "study.homework" ? request.StudyHomework is not { SnapshotId.Length: 64, Index: >= 0 and < 128 } read ||
+            !read.SnapshotId.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') : request.StudyHomework is not null)
+            return "InvalidStudyHomeworkRead";
+        if (request.Capability.StartsWith("study.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
+        if (request.Capability == "study.reminder" ? request.StudyReminder is not { Phase: "Preparing" or "Active" or "Ended" or "Discipline" } reminder ||
+            !ValidStudyDisplayIdentity(reminder.InstanceId, reminder.Version, reminder.Window) ||
+            (reminder.Phase == "Discipline" ? reminder.DisciplineId is null || reminder.DisciplineId == Guid.Empty ||
+                reminder.SessionId is null || reminder.SessionId == Guid.Empty : reminder.DisciplineId is not null || reminder.SessionId is not null)
+            : request.StudyReminder is not null)
+            return "InvalidStudyReminderCommand";
+        if (request.Capability == "study.hide" ? request.StudyHide is not { } hide || !ValidStudyDisplayIdentity(hide.InstanceId, hide.Version, hide.Window)
+            : request.StudyHide is not null) return "InvalidStudyHideCommand";
         if (request.Capability == "noise.display.return" ? request.NoiseDisplay is null || !NoiseDisplayContract.Valid(request.NoiseDisplay) : request.NoiseDisplay is not null)
             return "InvalidNoiseDisplayCommand";
         if (request.Capability == "noise.management.command" ? request.NoiseManagement is null || !NoiseManagementContract.Valid(request.NoiseManagement) : request.NoiseManagement is not null)
@@ -111,16 +163,16 @@ public static class Protocol
         if (request.Capability == "secrandom.command" ? request.SecRandom is null || !SecRandomContract.Valid(request.SecRandom) : request.SecRandom is not null)
             return "InvalidSecRandomCommand";
         if (request.Capability.StartsWith("secrandom.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
-        if (request.Capability == "noise.command" ? request.Noise is null || !NoiseContract.Valid(request.Noise) : request.Noise is not null) return "InvalidNoiseCommand";
+        if (request.Capability is "noise.command" or "study.devices.microphone" ? request.Noise is null || !NoiseContract.Valid(request.Noise) || request.Capability == "study.devices.microphone" && request.Noise.Action != "select" : request.Noise is not null) return "InvalidNoiseCommand";
         if (request.Capability.StartsWith("noise.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
         if (request.Capability == "examaware.plan" ? request.ExamPlan is null || !ExamAwarePlanContract.Valid(request.ExamPlan) : request.ExamPlan is not null) return "InvalidExamPlan";
         if (request.Capability == "remoteexam.command" ? request.RemoteExam is null || !RemoteExamContract.Valid(request.RemoteExam) : request.RemoteExam is not null) return "InvalidRemoteExamCommand";
         if (request.Capability == "npep.notifications" ? request.Notification is null || !NpepNotificationContract.Valid(request.Notification) : request.Notification is not null) return "InvalidNotificationCommand";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
-            "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
+            "study.devices.microphone" or "study.devices.status" or "study.devices.refresh" or "study.devices.select" or "study.status.seating" or "study.seating" or "study.seating.presentation" or "study.status" or "study.hide" or "study.reminder" or "study.homework" or "study.presentation" or "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
-            "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or
+            "noise.meter.command" or "noise.reference.status" or "noise.reference.command" or "noise.calibration.status" or "noise.calibration.command" or "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
@@ -185,6 +237,11 @@ public static class Protocol
         r.Capability == "npep.command" && r.Npep?.Action is "pause" or "unpair" ||
         r.Capability is "classroom.set" or "classroom.retry" or "classroom.restore" ||
         r.Capability is "classisland.config.set" or "examaware.quit";
+
+    private static bool ValidStudyDisplayIdentity(Guid instance, string? version, SchoolNoiseWindow? window) =>
+        instance != Guid.Empty && version is { Length: 64 } && version.All(Uri.IsHexDigit) && window is not null &&
+        window.Start.Offset == TimeSpan.Zero && window.End.Offset == TimeSpan.Zero && window.Start.Year >= 2000 && window.End.Year <= 9998 &&
+        window.End > window.Start && window.End - window.Start <= TimeSpan.FromHours(3);
 
     public static string NoisePurpose(HostRequest r) => r.Capability is "host.stop" or "noise.management.prepare-exit" ? "maintenance" :
         r.Capability == "noise.command" ? "stop" : "change-environment";
