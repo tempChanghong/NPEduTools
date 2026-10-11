@@ -14,6 +14,20 @@ public partial class MainWindow
     private long? _photosUnsupportedAt;
     private long? _reportUnsupportedAt;
     private StudyReportWindow? _studyReportWindow;
+    private long? _quickProjectionAt;
+    private void UpdateQuickPresentationVisibility()
+    {
+        bool projector = _quickProjectionAt is { } at && Stopwatch.GetElapsedTime(at) < TimeSpan.FromSeconds(1.5);
+        static bool Visible(Window? window) => window is { IsVisible: true } && window.WindowState != WindowState.Minimized;
+        bool study = Visible(_studyWindow) || Visible(_manualStudyWindow) || Visible(_studyReportWindow) || Visible(_exitWarning);
+        _quick?.SetAutoHidden(projector || study);
+    }
+    private T TrackStudyPresentationWindow<T>(T window) where T : Window
+    {
+        window.IsVisibleChanged += (_, _) => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, UpdateQuickPresentationVisibility);
+        window.StateChanged += (_, _) => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, UpdateQuickPresentationVisibility);
+        return window;
+    }
     private async Task NoiseDisplayPollAsync()
     {
         while (!_lifetime.IsCancellationRequested)
@@ -34,6 +48,8 @@ public partial class MainWindow
                 } else if (probeSeating && studyResponse.Outcome == "Succeeded") _seatingUnsupportedAt = null;
                 var studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
                 if (_lifetime.IsCancellationRequested) break;
+                _quickProjectionAt = studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
+                if (_quickProjectionAt is not null) UpdateQuickPresentationVisibility();
                 await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
                 long manualAt=Stopwatch.GetTimestamp();
                 var manual=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.status"));
@@ -44,8 +60,8 @@ public partial class MainWindow
                 {
                     using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
                     long reportAt=Stopwatch.GetTimestamp();var report=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.report.status"));
-                    if(report.StudyReport is {Available:true} mr){_manualStudyWindow?.HideDisplay();_studyReportWindow??=new();_studyReportWindow.Apply(mr,Stopwatch.GetElapsedTime(reportAt));continue;}
-                    if(manual.Study is {Display.Available:true} ms){_studyReportWindow?.HideDisplay();_studyWindow?.HideDisplay();_manualStudyWindow??=new(_pipe,()=>OpenNoiseClicked(this,new RoutedEventArgs()),manual:true);_manualStudyWindow.Apply(ms,manual.Noise,manualAge,studyResponse.StudyPhotos);_manualStudyWindow.ShowDisplay();continue;}
+                    if(report.StudyReport is {Available:true} mr){_manualStudyWindow?.HideDisplay();_studyReportWindow??=TrackStudyPresentationWindow(new StudyReportWindow());_studyReportWindow.Apply(mr,Stopwatch.GetElapsedTime(reportAt));continue;}
+                    if(manual.Study is {Display.Available:true} ms){_studyReportWindow?.HideDisplay();_studyWindow?.HideDisplay();_manualStudyWindow??=TrackStudyPresentationWindow(new StudyWindow(_pipe,()=>OpenNoiseClicked(this,new RoutedEventArgs()),manual:true));_manualStudyWindow.Apply(ms,manual.Noise,manualAge,studyResponse.StudyPhotos);_manualStudyWindow.ShowDisplay();continue;}
                     _manualStudyWindow?.HideDisplay();
                 }
                 else _manualStudyWindow?.HideDisplay();
@@ -69,7 +85,7 @@ public partial class MainWindow
                         if (studyProbe is null) _studyWindow?.HideDisplay();
                         else
                         {
-                            _studyWindow ??= new(_pipe, () => OpenStudyMonitoringClicked(this, new RoutedEventArgs()));
+                            _studyWindow ??= TrackStudyPresentationWindow(new StudyWindow(_pipe, () => OpenStudyMonitoringClicked(this, new RoutedEventArgs())));
                             _studyWindow.Apply(studyResponse.Study, studyResponse.Noise, studyRoundTrip, studyResponse.StudyPhotos);
                             _studyWindow.ShowDisplay();
                         }
@@ -106,6 +122,7 @@ public partial class MainWindow
             catch (Exception e) when (IsManagementError(e)) { UpdateStudyHome(null); _scheduledNoiseWindow?.Hide(); _studyWindow?.HideDisplay(); _studyReportWindow?.HideDisplay(); _manualStudyWindow?.HideDisplay(); }
             finally
             {
+                UpdateQuickPresentationVisibility();
                 if (!_lifetime.IsCancellationRequested && _studyWindow is not null) await _studyWindow.ReportPresentationAsync();
                 if (!_lifetime.IsCancellationRequested && _manualStudyWindow is not null) await _manualStudyWindow.ReportPresentationAsync();
                 try { await Task.Delay(500, _lifetime.Token); } catch (OperationCanceledException) { }
@@ -128,7 +145,7 @@ public partial class MainWindow
         { _studyReportWindow?.HideDisplay(); return; }
         using var probe = RuntimeOperationFile.TryAcquire(false);
         if (probe is null) { _studyReportWindow?.HideDisplay(); return; }
-        _studyReportWindow ??= new StudyReportWindow();
+        _studyReportWindow ??= TrackStudyPresentationWindow(new StudyReportWindow());
         _studyReportWindow.Apply(report, Stopwatch.GetElapsedTime(sent));
     }
 }

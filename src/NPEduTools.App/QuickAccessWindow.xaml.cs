@@ -44,14 +44,15 @@ public partial class QuickAccessWindow : Window
     }
     public void SetExamAwareAction(Action action) => _examAware = action;
     private void ExamAwareClicked(object sender, RoutedEventArgs e) => _examAware?.Invoke();
-    private const double RailWidth = 80, RailHeight = 340, PanelWidth = 440, PanelHeight = 620;
-    private sealed record Placement(bool LeftSide = false, double RelativeY = 0.78, string? Display = null);
+    private const double RailWidth = 80, RailHeight = 360, CompactHeight = 94, PanelWidth = 440, PanelHeight = 620;
+    private sealed record Placement(bool LeftSide = false, double RelativeY = 0.78, string? Display = null, bool Compact = false);
     private readonly string _settingsPath;
     private readonly Action _power, _pause, _startClassIsland, _settings;
     private readonly Action<ShortcutEntry> _openShortcut;
     private readonly Action _manageShortcuts, _repairShortcut;
     private Placement _placement = new();
     private nint _handle, _previous;
+    private bool _autoHidden;
     private bool _expanded, _dragging, _closing, _positioning, _shortcutsSelected;
     private Point? _dragStart;
     private double _dragOffsetY;
@@ -74,7 +75,7 @@ public partial class QuickAccessWindow : Window
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
-        SelectShortcutPage(false);
+        SelectShortcutPage(false); RefreshCompact();
         SourceInitialized += (_, _) =>
         {
             _handle = new WindowInteropHelper(this).Handle;
@@ -126,7 +127,7 @@ public partial class QuickAccessWindow : Window
             // WPF handles WM_DPICHANGED; its DpiChanged event reapplies bounds on the new monitor.
             var screen = Screen; var area = screen.WorkingArea; double scale = Scale();
             int width = Math.Min((int)Math.Round((_expanded ? PanelWidth : RailWidth) * scale), area.Width);
-            int height = Math.Min((int)Math.Round((_expanded ? PanelHeight : RailHeight) * scale), area.Height);
+            int height = Math.Min((int)Math.Round((_expanded ? PanelHeight : _placement.Compact ? CompactHeight : RailHeight) * scale), area.Height);
             double anchor = area.Top + Math.Max(0, area.Height - RailHeight * scale) * _placement.RelativeY;
             int y = (int)Math.Clamp(anchor + (_expanded ? RailHeight * scale - height : 0), area.Top, area.Bottom - height);
             int x = _placement.LeftSide ? area.Left : area.Right - width;
@@ -145,10 +146,10 @@ public partial class QuickAccessWindow : Window
 
     public void OpenPanel()
     {
-        if (_closing) return;
+        if (_closing || _autoHidden) return;
         if (!_expanded) _previous = GetForegroundWindow();
         bool animate = !_expanded && SystemParameters.ClientAreaAnimation;
-        _expanded = true;
+        _expanded = true; RefreshCompact();
         PanelSurface.Visibility = Visibility.Visible;
         RefreshRail();
         if (!IsVisible) Show();
@@ -160,7 +161,7 @@ public partial class QuickAccessWindow : Window
     {
         if (_closing) return;
         bool wasExpanded = _expanded;
-        _expanded = false;
+        _expanded = false; RefreshCompact();
         PanelSurface.BeginAnimation(OpacityProperty, null);
         PanelSurface.Visibility = Visibility.Collapsed;
         RefreshRail();
@@ -213,7 +214,7 @@ public partial class QuickAccessWindow : Window
     {
         if (_dragStart is null) return;
         _dragStart = null;
-        if (_dragging) Save(); else if (_expanded) Collapse(); else OpenPanel();
+        if (_dragging) Save(); else ToggleHandle();
         _dragging = false;
     }
 
@@ -243,7 +244,26 @@ public partial class QuickAccessWindow : Window
         RailTools.ToolTip = "课堂工具 · " + status;
     }
 
-    private void HandleClicked(object sender, RoutedEventArgs e) { if (_expanded) Collapse(); else OpenPanel(); }
+    private void HandleClicked(object sender, RoutedEventArgs e) => ToggleHandle();
+    private void ToggleHandle() { if (_autoHidden) return; if (_placement.Compact && !_expanded) SetCompact(false); else if (_expanded) Collapse(); else OpenPanel(); }
+    public void SetCompact(bool compact) { _placement = _placement with { Compact = compact }; Collapse(false); Save(); }
+    private void FoldClicked(object sender, RoutedEventArgs e) => SetCompact(!_placement.Compact);
+    private void RefreshCompact()
+    {
+        bool compact = _placement.Compact && !_expanded;
+        RailTools.Visibility = RailShortcuts.Visibility = RailSecRandom.Visibility = RailSettings.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        RailFold.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        RailFold.Content = compact ? "‹›" : "⋮";
+        RailFold.ToolTip = compact ? "恢复快捷侧栏" : "折叠为快捷把手";
+    }
+    public void SetAutoHidden(bool hidden)
+    {
+        if (_closing || _autoHidden == hidden) return;
+        _autoHidden = hidden;
+        if (hidden) { CancelDrag(); EdgeHandle.ReleaseMouseCapture(); EdgeHandle.ReleaseAllTouchCaptures(); Collapse(false); Hide(); }
+        else ShowEntry();
+    }
+    public void ShowEntry() { if (!_autoHidden && !_closing) { if (!IsVisible) Show(); Position(); } }
     public void SetRecordingActions(Action open, Action pause, Action stop, Action plan, Action skipToday)
     { _openRecording = open; _pauseRecording = pause; _stopRecording = stop; _openRecordingPlan = plan; _skipAutomaticToday = skipToday; }
     public void UpdateAutomaticRecording(AutomaticRecordingState state)

@@ -187,7 +187,7 @@ public partial class MainWindow : Window
     {
         Hide();
         _quick?.Collapse(false);
-        _quick?.Show();
+        _quick?.ShowEntry();
         if (!_entryHint && _tray is not null)
         {
             _entryHint = true;
