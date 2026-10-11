@@ -4,7 +4,7 @@
  <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Resources/RecordingControls.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
  <Grid Margin="28"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel><TextBlock Text="自习座位表" FontSize="30" FontWeight="Bold"/>
-   <TextBlock Text="只上传到本机绑定的班级，无需口令。保存后按按钮查看，不自动弹出，也不参与作业轮换。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,18"/>
+   <TextBlock Text="只上传到本机绑定的班级，无需口令。定时自习提前五分钟自动展示，开始后两分钟收起；之后可按按钮查看，不参与作业轮换。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,18"/>
    <DockPanel><Button x:Name="RefreshScope" DockPanel.Dock="Right" Content="核对当前版本" Click="RefreshClicked"/>
     <TextBlock x:Name="ScopeText" Text="正在核对本班当前版本…" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/></DockPanel>
   </StackPanel>
