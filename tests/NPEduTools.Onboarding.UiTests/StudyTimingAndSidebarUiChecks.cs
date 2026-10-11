@@ -8,6 +8,21 @@ using NPEduTools.Contracts;
 using NPEduTools.Core;
 internal static partial class Program
 {
+    private static void CheckCompactDragBounds(QuickAccessWindow quick)
+    {
+        const BindingFlags flags=BindingFlags.NonPublic|BindingFlags.Instance;
+        var screen=typeof(QuickAccessWindow).GetProperty("Screen",flags)!.GetValue(quick)!;
+        var area=(System.Drawing.Rectangle)screen.GetType().GetProperty("WorkingArea")!.GetValue(screen)!;
+        double scale=(double)typeof(QuickAccessWindow).GetMethod("Scale",flags)!.Invoke(quick,null)!;
+        void Invoke(string name,params object[] args)=>typeof(QuickAccessWindow).GetMethod(name,flags)!.Invoke(quick,args);
+        var start=quick.PointToScreen(new Point(40,20));Invoke("BeginDrag",start);
+        Invoke("MoveHandle",new Point(start.X,area.Bottom-Math.Round(94*scale)+20*scale));quick.UpdateLayout();
+        double bottom=quick.PointToScreen(new Point(0,quick.ActualHeight)).Y;
+        Assert(Math.Abs(bottom-area.Bottom)<=2,$"compact handle could not reach lower work area: bottom={bottom}, expected={area.Bottom}");
+        Invoke("CancelDrag");
+        quick.SetAutoHidden(true);quick.SetAutoHidden(false);quick.UpdateLayout();
+        Assert(Math.Abs(quick.PointToScreen(new Point(0,quick.ActualHeight)).Y-bottom)<=2,"auto-hide changed compact drag placement");
+    }
     private static void RunStudySidebarOwnershipChecks()
     {
         const BindingFlags flags=BindingFlags.NonPublic|BindingFlags.Instance;
@@ -27,6 +42,12 @@ internal static partial class Program
             Assert(new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(pipe)).Read().DisplayLeadSeconds==90,"settings page did not save local lead without management verification");
             ((TextBox)main.FindName("ManualDisplayLead")).Text="invalid";Click(main,"SaveManualDisplayLeadButton");
             Assert(new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(pipe)).Read().DisplayLeadSeconds==90,"invalid setting overwrote previous preference");
+            string preference=ManualStudyPreferencesStore.PathFor(pipe), damaged="{\"Version\":1,\"DisplayLeadSeconds\":-1}";
+            File.WriteAllText(preference,damaged);Click(main,"TeachingSettingsTab");
+            Assert(((TextBox)main.FindName("ManualDisplayLead")).Text=="" && ((TextBlock)main.FindName("ManualDisplayLeadMessage")).Text.Contains("无法读取"),"damaged preference did not leave a recoverable settings page");
+            Assert(File.ReadAllText(preference)==damaged,"opening settings overwrote damaged preference");
+            ((TextBox)main.FindName("ManualDisplayLead")).Text="1.5";Click(main,"SaveManualDisplayLeadButton");
+            Assert(new ManualStudyPreferencesStore(preference).Read().DisplayLeadSeconds==90,"explicit confirmation could not repair damaged preference");
         }finally{study.Shutdown();report.Shutdown();quick.Shutdown();main.Close();var path=ManualStudyPreferencesStore.PathFor(pipe);if(File.Exists(path))File.Delete(path);}
     }
     private static void RunStudyTimingAndSidebarChecks()
@@ -66,6 +87,7 @@ internal static partial class Program
         string placement=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NPEduTools","ui",Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(pipe)))[..24]+".json");
         try{q.Show();q.UpdateLayout();
             q.SetCompact(true);Assert(((Button)q.FindName("RailTools")).Visibility==Visibility.Collapsed,"compact rail retained tool stack");Assert(q.IsVisible,"compact rail fully disappeared");
+            CheckCompactDragBounds(q);
             q.SetAutoHidden(true);Assert(!q.IsVisible,"full-screen suppression retained handle");q.ShowEntry();q.OpenPanel();Assert(!q.IsVisible,"tray/panel action bypassed full-screen suppression");
             q.SetAutoHidden(false);Assert(q.IsVisible && ((Button)q.FindName("RailTools")).Visibility==Visibility.Collapsed,"restore discarded prior compact state");
             q.SetCompact(false);q.SetAutoHidden(true);q.SetAutoHidden(false);Assert(((Button)q.FindName("RailTools")).Visibility==Visibility.Visible,"normal rail did not restore");

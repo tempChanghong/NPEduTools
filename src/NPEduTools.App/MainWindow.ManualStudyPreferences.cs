@@ -9,7 +9,7 @@ public partial class MainWindow
     private void ReadManualStudyPreferences()
     {
         try { ManualDisplayLead.Text = (new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(_pipe)).Read().DisplayLeadSeconds / 60.0).ToString("0.##", CultureInfo.InvariantCulture); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) {
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or JsonException) {
             ManualDisplayLead.Text = ""; ManualDisplayLeadMessage.Text = "设置无法读取，原文件已保留；请重新确认提前时间。";
         }
     }

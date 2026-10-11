@@ -24,11 +24,11 @@ public sealed class ManualStudyTests
     {
         public readonly Clock Time=new();public readonly List<Capture> Captures=[];
         public readonly string Folder=Path.Combine(Path.GetTempPath(),"manual-study-test-"+Guid.NewGuid());
-        public bool Blocked=false;public int Lead=120;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
+        public bool Blocked=false;public int Lead=120;public Func<int>? ReadLead;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
         public Fixture()
         {
             Noise=new(_=>{var c=new Capture();Captures.Add(c);return c;},()=>[new("mic","Synthetic")],Time);
-            Manual=new(Noise,()=> (null,false,new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null)),()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>Lead);
+            Manual=new(Noise,()=> (null,false,new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null)),()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>ReadLead?.Invoke()??Lead);
         }
         public HostResponse Start(DateTimeOffset? start=null,DateTimeOffset? end=null,int? hide=600)
         {var s=Manual.Status();return Manual.Handle(new(1,Guid.NewGuid(),"manual.study.command",ManualStudy:new("start",s.InstanceId,s.Revision,DeviceId:"mic",StartUtc:start,EndUtc:end,HideSeconds:hide)));}
@@ -69,6 +69,19 @@ public sealed class ManualStudyTests
         await using var f=new Fixture();var start=f.Time.GetUtcNow().AddSeconds(3);f.Start(start);Assert.Equal("Preparing",f.Manual.Status().State);
         Assert.Equal(3,f.Manual.Status().DisplayLeadSeconds);Assert.Empty(f.Captures);
         f.Time.Ms=3000;f.Manual.Tick();await f.Active();Assert.Single(f.Captures);
+    }
+    [Theory]
+    [InlineData("range")][InlineData("version")][InlineData("size")][InlineData("json")]
+    public async Task Invalid_local_preference_rejects_start_without_throwing_or_touching_device_and_preserves_file(string kind)
+    {
+        await using var f=new Fixture();Directory.CreateDirectory(f.Folder);
+        string path=Path.Combine(f.Folder,"preferences.json");
+        string content=kind switch {"range"=>"{\"Version\":1,\"DisplayLeadSeconds\":-1}","version"=>"{\"Version\":2,\"DisplayLeadSeconds\":120}","size"=>new string(' ',4097),_=>"{"};
+        File.WriteAllText(path,content);f.ReadLead=()=>new ManualStudyPreferencesStore(path).Read().DisplayLeadSeconds;
+        var reply=f.Start();Assert.Equal("Rejected",reply.Outcome);Assert.Equal("MANUAL_PREFERENCES_UNAVAILABLE",reply.ErrorCode);
+        Assert.Equal("Idle",f.Manual.Status().State);Assert.Empty(f.Captures);Assert.Equal(content,File.ReadAllText(path));
+        new ManualStudyPreferencesStore(path).Save(new(DisplayLeadSeconds:90));
+        Assert.Equal("Succeeded",f.Start(f.Time.GetUtcNow().AddMinutes(5)).Outcome);Assert.Equal(90,f.Manual.Status().DisplayLeadSeconds);Assert.Empty(f.Captures);
     }
     [Theory]
     [InlineData(0)][InlineData(-1)][InlineData(181)]

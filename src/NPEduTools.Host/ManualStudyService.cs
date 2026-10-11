@@ -63,7 +63,7 @@ public sealed class ManualStudyService : IAsyncDisposable
                     return Reply(r,"Rejected","MANUAL_BUSY","当前设备忙碌或学校定时自习优先；没有创建手动会话。");
                 int lead;
                 try { lead = _lead(); }
-                catch(Exception e) when(e is IOException or UnauthorizedAccessException or JsonException) {
+                catch(Exception e) when(e is IOException or InvalidDataException or UnauthorizedAccessException or JsonException) {
                     return Reply(r,"Rejected","MANUAL_PREFERENCES_UNAVAILABLE","手动自习展示设置无法读取；原文件保留，请在设置页重新确认。");
                 }
                 if (lead is < 0 or > 1800) return Reply(r,"Rejected","MANUAL_PREFERENCES_UNAVAILABLE","展示提前时间无效。");

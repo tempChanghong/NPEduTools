@@ -117,6 +117,7 @@ public partial class QuickAccessWindow : Window
         uint dpi = GetDpiForWindow(_handle);
         return dpi > 0 ? dpi / 96.0 : 1;
     }
+    private double AnchorHeight => _placement.Compact ? CompactHeight : RailHeight;
 
     private void Position()
     {
@@ -127,9 +128,9 @@ public partial class QuickAccessWindow : Window
             // WPF handles WM_DPICHANGED; its DpiChanged event reapplies bounds on the new monitor.
             var screen = Screen; var area = screen.WorkingArea; double scale = Scale();
             int width = Math.Min((int)Math.Round((_expanded ? PanelWidth : RailWidth) * scale), area.Width);
-            int height = Math.Min((int)Math.Round((_expanded ? PanelHeight : _placement.Compact ? CompactHeight : RailHeight) * scale), area.Height);
-            double anchor = area.Top + Math.Max(0, area.Height - RailHeight * scale) * _placement.RelativeY;
-            int y = (int)Math.Clamp(anchor + (_expanded ? RailHeight * scale - height : 0), area.Top, area.Bottom - height);
+            int height = Math.Min((int)Math.Round((_expanded ? PanelHeight : AnchorHeight) * scale), area.Height);
+            double anchor = area.Top + Math.Max(0, area.Height - AnchorHeight * scale) * _placement.RelativeY;
+            int y = (int)Math.Clamp(anchor + (_expanded ? AnchorHeight * scale - height : 0), area.Top, area.Bottom - height);
             int x = _placement.LeftSide ? area.Left : area.Right - width;
             var rail = new GridLength(RailWidth - 12);
             var panel = _expanded ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
@@ -204,7 +205,7 @@ public partial class QuickAccessWindow : Window
         if (_expanded || _dragStart is not { } start || (!_dragging && (point - start).Length < 8)) return;
         _dragging = true;
         var screen = Forms.Screen.FromPoint(new System.Drawing.Point((int)point.X, (int)point.Y));
-        double available = screen.WorkingArea.Height - RailHeight * Scale();
+        double available = screen.WorkingArea.Height - AnchorHeight * Scale();
         double ratio = available <= 0 ? 0 : (point.Y - screen.WorkingArea.Top - _dragOffsetY) / available;
         _placement = _placement with { RelativeY = Math.Clamp(ratio, 0, 1), Display = screen.DeviceName };
         Position();
