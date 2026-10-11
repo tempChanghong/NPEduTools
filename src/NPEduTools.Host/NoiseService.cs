@@ -9,6 +9,8 @@ public interface INoiseCapture : IDisposable
     event Action<NoiseFrame>? Frame;
     event Action<string>? Failed;
     void Start();
+    // Terminal tails are separate from normal events: cancellation fences remain closed.
+    void StopAndFlush(Action<NoiseFrame> rawTail, Action<ReferenceNoiseFrame> referenceTail) => Dispose();
 }
 
 /// <summary>One explicitly started session. No raw audio, disk storage, cloud traffic or recording dependency.</summary>
@@ -173,6 +175,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         public NoiseQuickCalibration? Calibration { get; init; }
         public NoiseReferenceCalibration? Reference;
         public bool CalibrationInterrupted;
+        public bool ReferenceUseArmed;
+        public bool Finishing;
         public INoiseCaptureMetadata? Metadata;
         public string? Signature;
         public StudyNoise? ThresholdPolicy;
@@ -301,7 +305,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             var summary = s is null ? null : new NoiseSummary(elapsed, s.Sampled,
                 elapsed > 0 ? Math.Clamp(s.Sampled / elapsed, 0, 1) : 0,
                 s.Sampled > 0 ? NoiseMeter.Dbfs(Math.Sqrt(s.Energy / s.Sampled)) : null,
-                NoiseMeter.Dbfs(s.Peak), s.Sampled > 0 ? 100 * s.Clipped / s.Sampled : 0, s.Frames);
+                s.Sampled > 0 ? NoiseMeter.Dbfs(s.Peak) : null, s.Sampled > 0 ? 100 * s.Clipped / s.Sampled : 0, s.Frames);
             return new(_instance, _revision, _state, _message, s?.DeviceId, s?.DeviceName, s?.StartedAt,
                 _state == "Active" && !stale ? s?.Current : null,
                 stale ? "NoData" : s?.Quality ?? "Waiting", summary, s?.Trend.ToArray() ?? [], SessionId: s?.Id, SelectedDeviceId: _selected,
@@ -309,15 +313,20 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         }
     }
 
-    private void Receive(Session s, NoiseFrame frame)
+    private void Receive(Session s, NoiseFrame frame, bool terminalTail = false)
     {
         lock (_sync)
         {
-            if (_session != s || s.Stop.IsCancellationRequested) return;
+            if (_session != s || (terminalTail ? !s.Finishing : s.Stop.IsCancellationRequested)) return;
             s.LastData = _time.GetTimestamp();
             bool invalid = frame.Invalid || !double.IsFinite(frame.MeanSquare) || !double.IsFinite(frame.Peak) ||
                 !double.IsFinite(frame.Seconds) || frame.Seconds <= 0 || frame.Seconds > 1 || frame.MeanSquare < 0 || frame.Peak < 0 ||
                 !double.IsFinite(frame.ClippedRatio) || frame.ClippedRatio is < 0 or > 1;
+            if (terminalTail)
+            {
+                if (!invalid) Accumulate(s, frame);
+                return; // No thresholds, calibration, live readings or COM inspection during cleanup.
+            }
             s.Current = invalid ? null : NoiseMeter.Dbfs(Math.Sqrt(frame.MeanSquare));
             s.Quality = invalid ? "Invalid" : frame.MeanSquare == 0 ? "DigitalSilence" :
                 frame.ClippedRatio > 0.01 ? "Clipping" : "Good";
@@ -342,8 +351,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             { _state = "Stopping"; s.Stop.Cancel(); }
             if (!invalid)
             {
-                s.Sampled += frame.Seconds; s.Energy += frame.MeanSquare * frame.Seconds;
-                s.Clipped += frame.ClippedRatio * frame.Seconds; s.Peak = Math.Max(s.Peak, frame.Peak); s.Frames++;
+                Accumulate(s, frame);
             }
             double elapsed = _time.GetElapsedTime(s.Started).TotalSeconds;
             if (elapsed - s.LastPoint >= 0.5)
@@ -352,6 +360,11 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                 while (s.Trend.Count > 120) s.Trend.Dequeue();
             }
         }
+    }
+    private static void Accumulate(Session s, NoiseFrame frame)
+    {
+        s.Sampled += frame.Seconds; s.Energy += frame.MeanSquare * frame.Seconds;
+        s.Clipped += frame.ClippedRatio * frame.Seconds; s.Peak = Math.Max(s.Peak, frame.Peak); s.Frames++;
     }
 
     private void Fail(Session s, string message)
@@ -399,6 +412,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             s.Stop.Token.ThrowIfCancellationRequested();
             if ((s.Reference is not null || s.Calibration is not null) && CalibrationRuntimePaused())
             { s.CalibrationInterrupted = true; s.Stop.Cancel(); s.Stop.Token.ThrowIfCancellationRequested(); }
+            lock (_sync) BeginReferenceUse(s);
             capture = s.Reference is not null ? referenceCreate!(s.DeviceId) : create(s.DeviceId);
             lock (_sync)
             {
@@ -435,20 +449,28 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         }
         catch (OperationCanceledException) when (s.Stop.IsCancellationRequested) { }
         catch (Exception error) when (error is not OutOfMemoryException)
-        { lock (_sync) s.Failure = s.Reference is not null && error is ArgumentException ?
+        { lock (_sync) s.Failure = error is ReferenceUseException ?
+            "参考使用标记无法保存，未打开麦克风。请检查配置目录并重新核对参考；不会在无持久失效证据的情况下使用旧参考。" :
+            s.Reference is not null && error is ArgumentException ?
             "参考采样不支持当前格式，请使用 44.1–384 kHz 的 PCM16／24／32 或 Float32；未回退到未加权数据。" :
             "无法采集所选麦克风，请检查设备连接、Windows 麦克风权限或其他程序的独占使用。"; }
         finally
         {
             NoiseState finished;
             s.Stop.Cancel();
-            try { capture?.Dispose(); }
+            lock (_sync)
+            {
+                s.FinishedSeconds = _time.GetElapsedTime(s.Started).TotalSeconds;
+                s.Finishing = true;
+                CheckFinalReferenceInput(s);
+            }
+            try { capture?.StopAndFlush(frame => Receive(s, frame, true), frame => ReceiveEstimate(s, frame, true)); }
             catch (Exception error) when (error is not OutOfMemoryException)
             { lock (_sync) { _cleanupFailed = true; s.Failure = "麦克风清理发生错误，请重启后台后再试。"; } }
             lock (_sync)
             {
                 s.EstimateCapture = null;
-                s.FinishedSeconds = _time.GetElapsedTime(s.Started).TotalSeconds;
+                s.Finishing = false;
                 _state = s.Failure.Length > 0 ? "Faulted" : "Stopped";
                 _message = s.Failure.Length > 0 ? s.Failure : s.Reference is not null ?
                     "外部参考采样已结束，麦克风已释放；请核对本段质量并填写同期仪表读数，统计保存不代表校准成功。" :
@@ -456,7 +478,6 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                     "监测已停止，麦克风已释放。本次摘要保留至下次开始或后台退出。";
                 s.Current = null; if (s.Failure.Length > 0) s.Quality = "NoData";
                 _revision++;
-                finished = Snapshot();
                 if (s.Calibration is not null) FinishCalibration(s);
                 if (s.Reference is not null)
                 {
@@ -464,6 +485,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                     { _lastReferenceSignature = null; _referenceSignatureAt = null; }
                     FinishReference(s);
                 }
+                FinishReferenceUse(s);
+                finished = Snapshot();
             }
             if (s.Calibration is null && s.Reference is null) Completed?.Invoke(finished);
         }

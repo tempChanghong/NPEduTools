@@ -17,6 +17,9 @@ public sealed partial class NoiseService
         if (!_referenceLoaded && (ReferencePath is not { } path || !File.Exists(path))) return;
         LoadReference();
         if (_referenceProfile is null || _referenceInvalidated is not null) return;
+        // Selection changes can invalidate a reference before any capture exists.
+        // Establish durable evidence before changing that binding too.
+        EnsureReferenceUseMarker();
         _referenceInvalidated = reason;
         SaveReference(_referenceDraft, _referenceProfile);
     }
@@ -74,12 +77,12 @@ public sealed partial class NoiseService
         s.EstimateCurrent = null; s.EstimateQuality = "Invalidated";
         if (s.ThresholdPolicy?.Estimated is not null) _studyThresholds.Configure(null, null);
     }
-    private void ReceiveEstimate(Session s, ReferenceNoiseFrame f)
+    private void ReceiveEstimate(Session s, ReferenceNoiseFrame f, bool terminalTail = false)
     {
         lock (_sync)
         {
-            if (_session != s || s.Stop.IsCancellationRequested || s.EstimateProfile is not { } p) return;
-            CheckEstimateInput(s);
+            if (_session != s || (terminalTail ? !s.Finishing : s.Stop.IsCancellationRequested) || s.EstimateProfile is not { } p) return;
+            if (!terminalTail) CheckEstimateInput(s);
             if (s.EstimateReason is not null) return;
             double energy = p.TimeWeighting == "Fast" ? f.FastMeanSquare : f.SlowMeanSquare;
             double value = energy > 0 ? 10 * Math.Log10(energy) + p.OffsetDb : double.NaN;
@@ -97,7 +100,7 @@ public sealed partial class NoiseService
                 s.EstimateSampled += f.Seconds; s.EstimateEnergy += energy * f.Seconds;
                 s.EstimateMaximum = s.EstimateMaximum is { } max ? Math.Max(max, value) : value;
             }
-            if (s.ThresholdPolicy?.Estimated is not null)
+            if (!terminalTail && s.ThresholdPolicy?.Estimated is not null)
                 _studyThresholds.Receive(s.Id, new(f.Seconds, 0, 0, 0, false), s.EstimateCurrent, !valid);
             double elapsed = _time.GetElapsedTime(s.Started).TotalSeconds;
             if (elapsed - s.EstimateLastPoint >= .5)

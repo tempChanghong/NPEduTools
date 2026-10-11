@@ -22,6 +22,7 @@ public sealed partial class NoiseService
     private long? _referenceSignatureAt;
     private bool RecentReferenceSignature => _referenceSignatureAt is { } at && _time.GetElapsedTime(at).TotalSeconds is >= 0 and < 600;
     private string? ReferencePath => directory is null ? null : Path.Combine(directory, "noise-reference-calibration.json");
+    private string? ReferenceUsePath => directory is null ? null : Path.Combine(directory, "noise-reference-use.pending");
     private static bool ReferenceSignature(string? value) => value is { Length: > 0 and <= 4096 } &&
         value.StartsWith(ReferenceNoiseMeter.AlgorithmVersion + "|", StringComparison.Ordinal) && !value.Any(char.IsControl);
     private static bool ReferenceSampleValid(NoiseReferenceSample? s) => s is not null && s.Id != Guid.Empty &&
@@ -66,9 +67,64 @@ public sealed partial class NoiseService
                 file.Profile is not null && !ReferenceProfileValid(file.Profile)) throw new InvalidDataException();
             if (file.Invalidated is not null && file.Invalidated is not ("DEVICE_CHANGED" or "INPUT_SETTINGS_CHANGED" or "INPUT_SETTINGS_UNAVAILABLE")) throw new InvalidDataException();
             _referenceDraft = file.Draft; _referenceProfile = file.Profile; _referenceInvalidated = file.Invalidated;
+            // This marker predates capture. A crash or a later unwritable directory cannot
+            // erase the evidence that the preceding input checks did not finish durably.
+            if (_referenceProfile is not null && ReferenceUsePath is { } usePath && File.Exists(usePath))
+                _referenceInvalidated ??= "INPUT_SETTINGS_UNAVAILABLE";
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         { _referenceError = "REFERENCE_STORE_UNAVAILABLE"; } // Preserve originals, never activate malformed data.
+    }
+    private sealed class ReferenceUseException : IOException { }
+    private bool _referenceMarkerArmed;
+    private void BeginReferenceUse(Session s)
+    {
+        LoadReference();
+        if (_referenceProfile is null || _referenceInvalidated is not null) return;
+        if (_referenceError is not null) throw new ReferenceUseException();
+        EnsureReferenceUseMarker();
+        s.ReferenceUseArmed = true;
+    }
+    private void EnsureReferenceUseMarker()
+    {
+        if (_referenceMarkerArmed) return;
+        try
+        {
+            if (_referenceProfile is not { } profile) throw new ReferenceUseException();
+            if (ReferenceUsePath is not { } path) throw new IOException();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough);
+            System.Text.Json.JsonSerializer.Serialize(stream, new { profileId = ProfileId(profile) }, Protocol.Json);
+            stream.Flush(true);
+            _referenceMarkerArmed = true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { _referenceError = "REFERENCE_STORE_UNAVAILABLE"; throw new ReferenceUseException(); }
+    }
+    private bool ClearReferenceUse()
+    {
+        try { if (ReferenceUsePath is { } path) File.Delete(path); _referenceMarkerArmed = false; return true; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        { _referenceError = "REFERENCE_STORE_UNAVAILABLE"; _referenceInvalidated ??= "INPUT_SETTINGS_UNAVAILABLE"; return false; }
+    }
+    private void CheckFinalReferenceInput(Session s)
+    {
+        if (!s.ReferenceUseArmed || _referenceInvalidated is not null || _referenceProfile is not { } profile) return;
+        try
+        {
+            if (s.Metadata is not IReferenceNoiseCapture input) InvalidateReference("INPUT_SETTINGS_UNAVAILABLE");
+            else if (input.ReferenceSignature != profile.Signature) InvalidateReference("INPUT_SETTINGS_CHANGED");
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { InvalidateReference("INPUT_SETTINGS_UNAVAILABLE"); }
+        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated;
+    }
+    private void FinishReferenceUse(Session s)
+    {
+        if (!s.ReferenceUseArmed) return;
+        if (s.Failure.Length > 0) return; // Preserve the marker without relabelling an audio fault as an observed input change.
+        if (_referenceInvalidated is null && _referenceError is null && SaveReference(_referenceDraft, _referenceProfile)) ClearReferenceUse();
+        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated;
+        // Any failure retains the prewritten marker, including a failed tombstone write.
     }
     private bool SaveReference(NoiseReferenceDraft? draft, NoiseReferenceProfile? profile)
     {
@@ -134,7 +190,7 @@ public sealed partial class NoiseService
             if (_session is { Work.IsCompleted: false }) return Reply("NoiseBusy", "已有采集尚未释放，参考流程不会停止或接管它。");
             if (paused || study?.Phase is "Preparing" or "Active" || study?.Reason == "EXAM_PAUSED")
                 return Reply("REFERENCE_SCHEDULE_BUSY", "准备、自习或考试运行阶段不能操作参考校准。");
-            if (cmd.Action == "clear") { _referenceInvalidated = null; return SaveReference(_referenceDraft, null) ? Reply(message: "已清除外部参考配置；快速阈值配置保留。") : Reply(_referenceError); }
+            if (cmd.Action == "clear") { _referenceInvalidated = null; return SaveReference(_referenceDraft, null) && ClearReferenceUse() ? Reply(message: "已清除外部参考配置；快速阈值配置保留。") : Reply(_referenceError); }
             if (_selected is null) return Reply("MicrophoneNotConfigured", "请先在本机保存监测麦克风。");
             if (cmd.Action == "begin")
             {
@@ -162,7 +218,7 @@ public sealed partial class NoiseService
                     d.DeviceId, d.Signature!, d.Instrument, d.TimeWeighting, evaluation.OffsetDb!.Value,
                     d.StabilityDb, d.CheckToleranceDb, _time.GetUtcNow(), d.Samples);
                 _referenceInvalidated = null;
-                return SaveReference(d, profile) ? Reply(message: "已保存本机估算参考；正式监测将核对输入设置，并分别保存 dBFS 和估算 dB(A)。") : Reply(_referenceError);
+                return SaveReference(d, profile) && ClearReferenceUse() ? Reply(message: "已保存本机估算参考；正式监测将核对输入设置，并分别保存 dBFS 和估算 dB(A)。") : Reply(_referenceError);
             }
             if (referenceCreate is null) return Reply("REFERENCE_UNSUPPORTED", "请更新后台以进行 A 加权参考采样。");
             if (_cleanupFailed) return Reply("NoiseCleanupRequired", "麦克风未确认释放，请重启后台。");

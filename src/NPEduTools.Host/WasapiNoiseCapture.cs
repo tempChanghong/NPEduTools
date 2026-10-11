@@ -14,6 +14,11 @@ public sealed class WasapiNoiseCapture : IReferenceNoiseCapture
     private readonly NoiseMeter? _meter;
     private ReferenceNoiseMeter? _referenceMeter;
     private int _disposed;
+    private readonly object _processing = new();
+    private Action<NoiseFrame>? _rawTail;
+    private Action<ReferenceNoiseFrame>? _referenceTail;
+    private void EmitRaw(NoiseFrame frame) { if (_rawTail is { } tail) tail(frame); else Frame?.Invoke(frame); }
+    private void EmitReference(ReferenceNoiseFrame frame) { if (_referenceTail is { } tail) tail(frame); else ReferenceFrame?.Invoke(frame); }
     public string DeviceName { get; }
     private string _formatSignature = "";
     private readonly bool _referenceOnly;
@@ -38,7 +43,7 @@ public sealed class WasapiNoiseCapture : IReferenceNoiseCapture
         var f = _capture.WaveFormat;
         bool floating = f.Encoding == WaveFormatEncoding.IeeeFloat || f is WaveFormatExtensible ext &&
             ext.SubFormat == new Guid("00000003-0000-0010-8000-00aa00389b71");
-        _referenceMeter = new(f.SampleRate, f.Channels, f.BitsPerSample, floating, frame => ReferenceFrame?.Invoke(frame));
+        _referenceMeter = new(f.SampleRate, f.Channels, f.BitsPerSample, floating, EmitReference);
     }
     public event Action<NoiseFrame>? Frame;
     public event Action<ReferenceNoiseFrame>? ReferenceFrame;
@@ -82,19 +87,22 @@ public sealed class WasapiNoiseCapture : IReferenceNoiseCapture
             bool pcm = format.Encoding == WaveFormatEncoding.Pcm ||
                 format is WaveFormatExtensible pcmExt && pcmExt.SubFormat == new Guid("00000001-0000-0010-8000-00aa00389b71");
             if (!floating && !pcm) throw new InvalidOperationException("Unsupported capture format.");
-            if (reference) _referenceMeter = new(format.SampleRate, format.Channels, format.BitsPerSample, floating, frame => ReferenceFrame?.Invoke(frame));
-            else _meter = new(format.SampleRate, format.Channels, format.BitsPerSample, floating, frame => Frame?.Invoke(frame));
+            if (reference) _referenceMeter = new(format.SampleRate, format.Channels, format.BitsPerSample, floating, EmitReference);
+            else _meter = new(format.SampleRate, format.Channels, format.BitsPerSample, floating, EmitRaw);
             _capture = capture;
             _capture.DataAvailable += (_, data) =>
             {
-                if (Volatile.Read(ref _disposed) != 0) return;
-                try
+                lock (_processing)
                 {
-                    if (_referenceMeter is not null) _referenceMeter.Push(data.Buffer.AsSpan(0, data.BytesRecorded));
-                    _meter?.Push(data.Buffer.AsSpan(0, data.BytesRecorded));
+                    if (Volatile.Read(ref _disposed) != 0) return;
+                    try
+                    {
+                        if (_referenceMeter is not null) _referenceMeter.Push(data.Buffer.AsSpan(0, data.BytesRecorded));
+                        _meter?.Push(data.Buffer.AsSpan(0, data.BytesRecorded));
+                    }
+                    catch (Exception error) when (error is not OutOfMemoryException)
+                    { Failed?.Invoke("音频格式或采样数据异常，监测已停止。"); }
                 }
-                catch (Exception error) when (error is not OutOfMemoryException)
-                { Failed?.Invoke("音频格式或采样数据异常，监测已停止。"); }
             };
             _capture.RecordingStopped += (_, _) =>
             {
@@ -105,10 +113,21 @@ public sealed class WasapiNoiseCapture : IReferenceNoiseCapture
     }
 
     public void Start() => _capture.StartRecording();
-    public void Dispose()
+    public void Dispose() => StopAndFlush(frame => Frame?.Invoke(frame), frame => ReferenceFrame?.Invoke(frame));
+    public void StopAndFlush(Action<NoiseFrame> rawTail, Action<ReferenceNoiseFrame> referenceTail)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        try { _capture.StopRecording(); }
-        finally { try { _capture.Dispose(); } finally { _device.Dispose(); } }
+        try
+        {
+            // Never hold _processing while joining the audio producer.
+            try { _capture.StopRecording(); } finally { _capture.Dispose(); }
+            lock (_processing)
+            {
+                _rawTail = rawTail; _referenceTail = referenceTail;
+                try { _referenceMeter?.Flush(); _meter?.Flush(); }
+                finally { _rawTail = null; _referenceTail = null; }
+            }
+        }
+        finally { _device.Dispose(); }
     }
 }
