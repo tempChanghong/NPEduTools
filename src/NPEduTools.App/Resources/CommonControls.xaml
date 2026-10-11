@@ -1,4 +1,10 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="RecordingControls.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+  <!-- Use the same choice control in calibration, device setup and recording. -->
+  <Style TargetType="ComboBox" BasedOn="{StaticResource RecordingChoice}" />
+
   <!-- The application's expandable sections all open downwards. Keep the native
        Expander and ToggleButton behavior, changing only their presentation. -->
   <Style TargetType="Expander">

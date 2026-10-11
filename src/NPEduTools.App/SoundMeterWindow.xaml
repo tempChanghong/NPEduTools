@@ -4,12 +4,13 @@
  WindowStartupLocation="CenterOwner" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI">
  <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
   <TextBlock Text="联机校准 (Beta)" FontSize="28" FontWeight="SemiBold"/>
-  <TextBlock Text="先核对 2202 与当前 USB 协议是否兼容。当前入口仅测试仪表读数，尚不自动完成同期麦克风校准；保存参考请使用外部声级计参考页。" TextWrapping="Wrap" Margin="0,12,0,20"/>
+  <TextBlock Text="先关闭 SoundLab2、核对单次读数，再进入 USB 同期参考：连续读取所选 2202，与监测麦克风采集两段稳定电平，自动计算偏移并复核。实物协议、内部读数时延及精度仍待验证。" TextWrapping="Wrap" Margin="0,12,0,20"/>
   <TextBlock Text="本机管理口令"/><PasswordBox x:Name="ManagementSecret" MaxLength="128" Margin="0,8,0,12" AutomationProperties.AutomationId="MeterSecret"/>
   <WrapPanel><Button x:Name="ListDevices" Content="刷新声级计" Click="ListClicked" Padding="14,7" AutomationProperties.AutomationId="MeterList"/>
    <Button Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="14,7"/></WrapPanel>
   <ComboBox x:Name="Devices" DisplayMemberPath="Name" Margin="0,14,0,12" SelectionChanged="DeviceSelected" AutomationProperties.AutomationId="MeterDevices"/>
   <Button x:Name="ReadMeter" Content="连接并读取一次" Click="ReadClicked" IsEnabled="False" HorizontalAlignment="Left" Padding="14,7" AutomationProperties.AutomationId="MeterRead"/>
+  <Button x:Name="OpenReference" Content="USB 同期校准 (Beta)…" Click="ReferenceClicked" IsEnabled="False" HorizontalAlignment="Left" Padding="14,7" Margin="0,12,0,0" AutomationProperties.AutomationId="MeterReference"/>
   <TextBlock x:Name="Reading" Text="尚未读取" FontSize="30" FontWeight="SemiBold" Margin="0,22,0,6" AutomationProperties.AutomationId="MeterReading"/>
   <TextBlock x:Name="Mode" TextWrapping="Wrap" Margin="0,0,0,12"/>
   <TextBlock x:Name="Message" Text="请先关闭 SoundLab2。只有点击读取才连接所选设备；每次读取后关闭连接，不自动轮询，不保存或上传读数。" TextWrapping="Wrap" Foreground="#61786B" AutomationProperties.AutomationId="MeterMessage"/>

@@ -27,6 +27,7 @@ internal static partial class Program
         public ValueTask<int> ReadAsync(Memory<byte> report, CancellationToken token)
         { report.Span.Clear(); System.Buffers.Binary.BinaryPrimitives.WriteInt16BigEndian(report.Span[1..], (short)(backend.Value * 10)); report.Span[3] = backend.Flags; return ValueTask.FromResult(9); }
         public void Dispose() => backend.Disposals++;
+        public void DiscardQueuedInput() { }
     }
     private static void RunSoundMeterChecks()
     {

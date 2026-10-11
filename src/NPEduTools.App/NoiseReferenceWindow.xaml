@@ -4,9 +4,9 @@
  Title="外部声级计参考 · NPEduTools" Width="920" Height="850" MinWidth="760" MinHeight="620"
  WindowStartupLocation="CenterOwner" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI">
  <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
-  <TextBlock Text="外部声级计参考" FontSize="28" FontWeight="SemiBold"/>
+  <TextBlock x:Name="Heading" Text="外部声级计参考" FontSize="28" FontWeight="SemiBold"/>
   <TextBlock Text="将声级计拾音头放在大屏麦克风附近，在稳定声场中同时测量。使用 A 加权和下方选择的 FAST／SLOW，关闭 MAX 保持；不需要学生配合，也不保存原音频。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,14"/>
-  <Border Background="#FFF1D5" Padding="14" CornerRadius="8" Margin="0,0,0,14"><TextBlock Text="手动输入同期 A 加权仪表读数。正式监测核对本机参考后分别显示 dBFS 与估算 dB(A)；学校后台明确选择双阈值单位。设备、音量、静音或采样格式变化后参考失效，须重新校准。USB 联机仍待实物验证。" TextWrapping="Wrap"/></Border>
+  <Border Background="#FFF1D5" Padding="14" CornerRadius="8" Margin="0,0,0,14"><TextBlock x:Name="WorkflowNote" Text="手动输入同期 A 加权仪表读数。正式监测核对本机参考后分别显示 dBFS 与估算 dB(A)；学校后台明确选择双阈值单位。设备、音量、静音或采样格式变化后参考失效，须重新校准。USB 联机仍待实物验证。" TextWrapping="Wrap"/></Border>
   <Border Background="White" Padding="20" CornerRadius="12" Margin="0,0,0,14"><StackPanel>
    <DockPanel><Button DockPanel.Dock="Right" Content="刷新" Click="RefreshClicked" Padding="14,6"/><TextBlock x:Name="DeviceStatus" Text="正在读取本机状态…" FontSize="17" TextWrapping="Wrap"/></DockPanel>
    <TextBlock x:Name="ProfileStatus" TextWrapping="Wrap" Margin="0,8,0,0"/>
@@ -20,7 +20,7 @@
    <TextBlock Text="1　建立参考草稿" FontSize="19" FontWeight="SemiBold"/>
    <WrapPanel Margin="0,12,0,0">
     <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表型号"/><TextBox x:Name="Instrument" Text="DLY-2202" Width="180" Padding="7" MaxLength="80" Margin="0,6,0,0"/></StackPanel>
-    <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表时间模式"/><ComboBox x:Name="TimeMode" Width="150" DisplayMemberPath="Name" SelectedValuePath="Id" MinHeight="32" Margin="0,6,0,0"/></StackPanel>
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表时间模式"/><ComboBox x:Name="TimeMode" Width="150" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0"/></StackPanel>
     <StackPanel Margin="0,0,20,0"><TextBlock Text="允许波动（dB）"/><TextBox x:Name="Stability" Width="135" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceStability"/></StackPanel>
     <StackPanel><TextBlock Text="复核允许差值（dB）"/><TextBox x:Name="CheckTolerance" Width="145" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceTolerance"/></StackPanel>
    </WrapPanel>
@@ -29,21 +29,22 @@
    <TextBlock x:Name="DraftStatus" TextWrapping="Wrap" Margin="0,8,0,0"/>
   </StackPanel></Border>
   <Border Background="White" Padding="20" CornerRadius="12" Margin="0,0,0,14"><StackPanel>
-   <TextBlock Text="2　采样与填入同期读数" FontSize="19" FontWeight="SemiBold"/>
+   <TextBlock x:Name="SamplingHeading" Text="2　采样与填入同期读数" FontSize="19" FontWeight="SemiBold"/>
    <TextBlock Text="先采第一电平，再换一个稳定电平作复核。两段参考至少相差 6 dB；此间隔用于检查输入链路，不是精度承诺。每次先预热 5 秒，再收集约 10 秒统计，总过程最多 20 秒。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,12"/>
-   <WrapPanel><ComboBox x:Name="RoleChoice" Width="190" DisplayMemberPath="Name" SelectedValuePath="Id" MinHeight="32"/>
+   <WrapPanel><ComboBox x:Name="RoleChoice" Width="190" DisplayMemberPath="Name" SelectedValuePath="Id"/>
     <Button x:Name="StartSample" Content="开始本段采样" Click="StartClicked" Padding="14,7" Margin="12,0,0,0" AutomationProperties.AutomationId="ReferenceStart"/>
     <Button x:Name="CancelSample" Content="取消本段" Click="CancelClicked" Padding="14,7" Margin="12,0,0,0"/>
    </WrapPanel>
    <ProgressBar x:Name="Progress" Minimum="0" Maximum="10" Height="5" Margin="0,12,0,0"/>
    <TextBlock x:Name="SamplingStatus" TextWrapping="Wrap" Margin="0,8,0,12"/>
+   <TextBlock x:Name="MeterStatus" TextWrapping="Wrap" Foreground="#61786B" Margin="0,0,0,12"/>
    <ListBox x:Name="SampleList" Height="138" DisplayMemberPath="Description" SelectionChanged="SampleSelected" AutomationProperties.AutomationId="ReferenceSamples"/>
-   <WrapPanel Margin="0,12,0,0">
+   <WrapPanel x:Name="ManualReferenceInputs" Margin="0,12,0,0">
     <StackPanel Margin="0,0,20,0"><TextBlock Text="稳定参考读数（dB(A)）"/><TextBox x:Name="ReferenceValue" Width="180" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceReading"/></StackPanel>
     <StackPanel Margin="0,0,20,0"><TextBlock Text="同期最低读数（可选）"/><TextBox x:Name="ReferenceMinimum" Width="160" Padding="7" Margin="0,6,0,0"/></StackPanel>
     <StackPanel><TextBlock Text="同期最高读数（可选）"/><TextBox x:Name="ReferenceMaximum" Width="160" Padding="7" Margin="0,6,0,0"/></StackPanel>
    </WrapPanel>
-   <TextBlock Text="读数范围 30–130 dB(A)。最低／最高如需填写须成对填写，仅检查波动，不用于拟合斜率。只支持即时读数的仪表，请记录采样期间稳定的同模式读数；本流程不把它称为 LAeq。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,10,0,0"/>
+   <TextBlock x:Name="ReferenceInstructions" Text="读数范围 30–130 dB(A)。最低／最高如需填写须成对填写，仅检查波动，不用于拟合斜率。只支持即时读数的仪表，请记录采样期间稳定的同模式读数；本流程不把它称为 LAeq。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,10,0,0"/>
    <CheckBox x:Name="SameWindow" Margin="0,12,0,0"><TextBlock Text="我确认读数来自所选采样的同一时段，仪表为 A 加权、草稿时间模式、非 MAX，且声场与读数稳定。" TextWrapping="Wrap"/></CheckBox>
    <WrapPanel Margin="0,12,0,0"><Button x:Name="AttachReference" Content="保存所选段的参考读数" Click="ReferenceClicked" Padding="14,7" AutomationProperties.AutomationId="ReferenceAttach"/>
     <Button x:Name="RemoveSample" Content="删除所选段" Click="RemoveClicked" Padding="14,7" Margin="12,0,0,0"/>

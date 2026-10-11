@@ -12,13 +12,21 @@ public partial class NoiseReferenceWindow : Window
     private sealed record Choice(string Id, string Name);
     private sealed record SampleRow(Guid Id, string Description);
     private readonly string _pipe;
+    private readonly string? _meterPath;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private NoiseReferenceState? _state;
-    private bool _busy, _reading, _connected;
-    public NoiseReferenceWindow(string pipe)
+    private Guid? _ownedSampleDraft;
+    private long? _ownedSamplingRevision;
+    private bool _busy, _reading, _connected, _closing, _allowClose;
+    public NoiseReferenceWindow(string pipe, string? meterPath = null)
     {
-        _pipe = pipe; InitializeComponent();
+        _pipe = pipe; _meterPath = meterPath; InitializeComponent();
+        if (meterPath is not null)
+        {
+            Title = "USB 同期校准 (Beta) · NPEduTools"; Heading.Text = "USB 同期校准 (Beta)";
+            WorkflowNote.Text = "连续读取所选仪表，与麦克风在同一 Host 时钟下取稳定窗口，自动填写同期参考、计算偏移并复核。仪表内部采样时间没有确认的时间戳；保留 Beta，不宣称精确硬件同步或 LAeq。设备、输入设置变化后参考失效。";
+        }
         TimeMode.ItemsSource = new[] { new Choice("Slow", "SLOW · 1 秒"), new Choice("Fast", "FAST · 125 毫秒") };
         TimeMode.SelectedIndex = 0;
         RoleChoice.ItemsSource = new[] { new Choice("Primary", "第一电平"), new Choice("Check", "复核电平") };
@@ -26,6 +34,22 @@ public partial class NoiseReferenceWindow : Window
         _timer.Tick += async (_, _) => await ReadAsync();
         Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); };
         Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); ManagementSecret.Clear(); };
+        Closing += async (_, e) =>
+        {
+            if (_allowClose || _state is not { State: "Sampling", Draft.MeterDevicePath: not null } ||
+                _ownedSampleDraft != _state.Draft.Id || _ownedSamplingRevision != _state.Revision) return;
+            e.Cancel = true; if (_closing) return; _closing = true;
+            // A separate deadline permits cancellation even if a status poll is stalled.
+            try
+            {
+                var command = new NoiseReferenceCommand("cancel", _state.InstanceId, _state.Revision,
+                    ManagementSecret.Password, _state.Draft.Id);
+                using var deadline = new CancellationTokenSource(3500);
+                await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.reference.command", NoiseReference: command), deadline.Token);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException) { }
+            finally { _allowClose = true; Close(); } // Host's 20 s limit is independent of this window.
+        };
         UpdateButtons();
     }
     private async Task ReadAsync()
@@ -54,9 +78,14 @@ public partial class NoiseReferenceWindow : Window
         bool newDraft = _state?.Draft?.Id != state.Draft?.Id;
         var previousSelected = (SampleList.SelectedItem as SampleRow)?.Id;
         _state = state;
+        bool usb = state.Draft?.MeterDevicePath is not null || _meterPath is not null;
+        SamplingHeading.Text = usb ? "2　采样与自动取得同期读数" : "2　采样与填入同期读数";
+        ManualReferenceInputs.Visibility = SameWindow.Visibility = AttachReference.Visibility = usb ? Visibility.Collapsed : Visibility.Visible;
+        ReferenceInstructions.Text = usb ? "同期读数由 USB 自动取得，不能手动覆盖；预热、跨窗口、迟到和不完整数据不用于参考。模式、MAX、低电量、量程变化或断线会使本段作废。" :
+            "填写同一时段的 A 加权参考值及可选最低／最高；本流程不称为 LAeq。";
         DeviceStatus.Text = state.DeviceId is null ? "请先保存监测麦克风" : state.DeviceName is { } name ? "监测麦克风：" + name : "监测麦克风已选择";
         ProfileStatus.Text = state.Profile is not { } p ? "尚无已确认的外部参考配置" :
-            $"已保存估算参考 · {p.Instrument} · A/{p.TimeWeighting} · 偏移 {p.OffsetDb:+0.00;-0.00;0.00} dB\n" +
+            $"已保存估算参考 · {(p.Method == "UsbReferenceBeta" ? "USB (Beta) · " : "")}{p.Instrument} · A/{p.TimeWeighting} · 偏移 {p.OffsetDb:+0.00;-0.00;0.00} dB\n" +
             (state.Error is not null || state.InvalidationReason is not null ? "参考不可用：" + (state.Error ?? state.InvalidationReason) + "；请新建草稿重新校准。" : "正式监测会核对所选设备、输入设置与格式；匹配后另行显示估算 dB(A)，原始 dBFS 保留。");
         DraftStatus.Text = state.Draft is { } d ? $"当前草稿：{d.Instrument} · A/{d.TimeWeighting} · 波动 ≤ {d.StabilityDb:F1} dB · 复核差值 ≤ {d.CheckToleranceDb:F1} dB" : "请先明确检查门槛并新建草稿。";
         if (newDraft && state.Draft is { } draft)
@@ -66,6 +95,9 @@ public partial class NoiseReferenceWindow : Window
             CheckTolerance.Text = draft.CheckToleranceDb.ToString(CultureInfo.CurrentCulture);
         }
         Progress.Value = state.MeasuredSeconds;
+        MeterStatus.Text = state.Meter?.Reading is { } reading ?
+            $"USB {reading.Decibels:F1} dB(A) · {reading.TimeWeighting} · 往返 {reading.RoundTripMilliseconds:F0} ms · 读数年龄 {state.Meter.AgeSeconds:F2} 秒\n{state.Meter.Message}" : state.Meter?.Message ??
+            (usb ? "USB 仅在明确开始本段采样时连接，到时／取消后释放；不会自动重连。" : "");
         SamplingStatus.Text = state.State == "Sampling" ? $"预热／采样中 · 已采有效统计 {state.MeasuredSeconds:F1} / 10 秒 · 总过程 {state.ProgressSeconds:F1} / 最多 20 秒。关闭此窗口不会无限占用设备，到时自动释放。" :
             state.State == "Busy" ? "当前采集占用或运行保护生效（准备／自习／考试、暂停或状态未确认），暂不可操作参考校准。" :
             state.State == "Unsupported" ? "当前后台尚不支持 A 加权参考采样，请更新后台。" : state.CaptureMessage ?? "请选择电平开始采样；重采同一电平会替换其旧统计和参考读数。";
@@ -74,7 +106,8 @@ public partial class NoiseReferenceWindow : Window
             var samples = state.Draft?.Samples ?? [];
             SampleList.ItemsSource = samples.Select(s => new SampleRow(s.Id,
                 $"{Role(s.Role)} · {Quality(s.Quality)} · {s.WindowStartedAt.ToLocalTime():HH:mm:ss}–{s.WindowEndedAt.ToLocalTime():HH:mm:ss}\n" +
-                $"A 加权数字统计 {Number(s.DigitalDbfs)} dBFS · 波动 {Number(s.MaximumDbfs - s.MinimumDbfs)} dB · 覆盖 {s.Coverage:P0} · 削波 {s.ClippedPercent:F2}% · 参考 {Number(s.ReferenceDbA)} dB(A)")).ToArray();
+                $"A 加权数字统计 {Number(s.DigitalDbfs)} dBFS · 波动 {Number(s.MaximumDbfs - s.MinimumDbfs)} dB · 覆盖 {s.Coverage:P0} · 削波 {s.ClippedPercent:F2}% · 参考 {Number(s.ReferenceDbA)} dB(A)" +
+                (s.MeterEvidence is { } evidence ? $"\nUSB (Beta) · {evidence.Readings} 次 · 连续跨度 {evidence.SpanSeconds:F2} 秒 · 最大间隔 {evidence.MaximumGapSeconds:F2} 秒" : ""))).ToArray();
             SampleList.SelectedItem = ((IEnumerable<SampleRow>)SampleList.ItemsSource).FirstOrDefault(s => s.Id == previousSelected);
             if (SampleList.SelectedItem is null && samples.Count > 0) SampleList.SelectedIndex = samples.Count - 1;
             if (samples.Count == 1) RoleChoice.SelectedValue = samples[0].Role == "Primary" ? "Check" : "Primary";
@@ -90,11 +123,13 @@ public partial class NoiseReferenceWindow : Window
         if (BeginDraft is null) return;
         bool idle = !_busy && !_reading && _connected && _state is { State: "Ready", Error: null };
         bool draft = idle && _state!.Draft is not null;
+        bool matchingDraft = draft && _state!.Draft!.MeterDevicePath == _meterPath;
         BeginDraft.IsEnabled = idle && _state!.DeviceId is not null;
-        StartSample.IsEnabled = draft;
+        StartSample.IsEnabled = matchingDraft;
         CancelSample.IsEnabled = !_busy && _connected && _state is { State: "Sampling" };
-        AttachReference.IsEnabled = RemoveSample.IsEnabled = draft && SampleList.SelectedItem is SampleRow;
-        ConfirmProfile.IsEnabled = draft && _state!.Evaluation.Ready;
+        RemoveSample.IsEnabled = matchingDraft && SampleList.SelectedItem is SampleRow;
+        AttachReference.IsEnabled = RemoveSample.IsEnabled && _state!.Draft!.MeterDevicePath is null;
+        ConfirmProfile.IsEnabled = matchingDraft && _state!.Evaluation.Ready;
         ClearProfile.IsEnabled = idle && _state!.Profile is not null;
     }
     private async Task SendAsync(string action, string? role = null, Guid? sample = null,
@@ -112,7 +147,8 @@ public partial class NoiseReferenceWindow : Window
         var command = new NoiseReferenceCommand(action, _state.InstanceId, _state.Revision, ManagementSecret.Password,
             action is "begin" or "clear" ? null : _state.Draft?.Id,
             action == "begin" ? Instrument.Text.Trim() : null, action == "begin" ? TimeMode.SelectedValue as string : null,
-            stability, tolerance, role, sample, reference, minimum, maximum, action == "reference" && SameWindow.IsChecked == true);
+            stability, tolerance, role, sample, reference, minimum, maximum, action == "reference" && SameWindow.IsChecked == true,
+            action == "begin" ? _meterPath : null);
         if (!NoiseReferenceContract.Valid(command)) { OperationMessage.Text = "请检查口令、草稿和输入值，并确认参考读数的时段与仪表设置。"; return; }
         _busy = true; UpdateButtons();
         try
@@ -121,6 +157,10 @@ public partial class NoiseReferenceWindow : Window
             var reply = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.reference.command", NoiseReference: command), deadline.Token);
             if (_lifetime.IsCancellationRequested) return;
             _connected = reply.NoiseReference is not null;
+            if (action == "start" && reply.Outcome == "Accepted" && reply.NoiseReference is { State: "Sampling", Draft: { } owned } started)
+            { _ownedSampleDraft = owned.Id; _ownedSamplingRevision = started.Revision; }
+            if (action == "cancel" && reply.Outcome == "Succeeded")
+            { _ownedSampleDraft = null; _ownedSamplingRevision = null; }
             if (reply.NoiseReference is { } state) Render(state);
             OperationMessage.Text = reply.Message;
         }

@@ -29,7 +29,7 @@ public partial class SoundMeterWindow : Window
         var selected = Devices.SelectedItem as SoundMeterDevice;
         var command = new SoundMeterCommand(action, ManagementSecret.Password, action == "read" ? selected?.Path : null);
         if (!SoundMeterContract.Valid(command)) { ClearReading("请填写本机管理口令，并选择声级计。"); return; }
-        _busy = true; ListDevices.IsEnabled = ReadMeter.IsEnabled = Devices.IsEnabled = false;
+        _busy = true; ListDevices.IsEnabled = ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.IsEnabled = false;
         ClearReading(); Message.Text = "正在核对设备…";
         if (action == "list") Devices.ItemsSource = null;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(5000);
@@ -56,12 +56,18 @@ public partial class SoundMeterWindow : Window
         finally
         {
             _busy = false;
-            if (!_lifetime.IsCancellationRequested) { ListDevices.IsEnabled = Devices.IsEnabled = true; ReadMeter.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
+            if (!_lifetime.IsCancellationRequested) { ListDevices.IsEnabled = Devices.IsEnabled = true; ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
         }
     }
     private async void ListClicked(object sender, RoutedEventArgs e) => await ExecuteAsync("list");
     private async void ReadClicked(object sender, RoutedEventArgs e) => await ExecuteAsync("read");
     private void DeviceSelected(object sender, SelectionChangedEventArgs e)
-    { ClearReading(); if (!_busy) ReadMeter.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
+    { ClearReading(); if (!_busy) ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
+    private void ReferenceClicked(object sender, RoutedEventArgs e)
+    {
+        if (_busy || Devices.SelectedItem is not SoundMeterDevice selected) return;
+        ClearReading("单次诊断已撤下；同期参考需新建草稿并明确开始采样。");
+        new NoiseReferenceWindow(_pipe, selected.Path) { Owner = this }.ShowDialog();
+    }
     private async void ManagementClicked(object sender, RoutedEventArgs e) => await NoiseManagementDialog.ConfigureAsync(this, _pipe);
 }

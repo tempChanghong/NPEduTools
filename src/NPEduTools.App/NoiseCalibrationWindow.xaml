@@ -21,8 +21,8 @@
    <DockPanel><Button x:Name="BeginDraft" DockPanel.Dock="Right" Content="新建校准草稿" Click="BeginClicked" Padding="14,6"/>
     <TextBlock Text="场景采样" FontSize="19" FontWeight="SemiBold"/></DockPanel>
    <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-    <StackPanel><TextBlock Text="现场场景"/><ComboBox x:Name="SceneChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0" MinHeight="34"/></StackPanel>
-    <StackPanel Grid.Column="2"><TextBlock Text="管理员希望如何处理"/><ComboBox x:Name="LabelChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0" MinHeight="34"/></StackPanel>
+    <StackPanel><TextBlock Text="现场场景"/><ComboBox x:Name="SceneChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0"/></StackPanel>
+    <StackPanel Grid.Column="2"><TextBlock Text="管理员希望如何处理"/><ComboBox x:Name="LabelChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0"/></StackPanel>
    </Grid>
    <WrapPanel Margin="0,14,0,8">
     <Button x:Name="StartSample" Content="采样 15 秒" Click="StartClicked" Padding="16,7" AutomationProperties.AutomationId="CalibrationStart"/>

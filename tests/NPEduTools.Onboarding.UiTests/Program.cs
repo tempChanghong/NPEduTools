@@ -32,7 +32,8 @@ internal static partial class Program
         bool studyDisplayOnly = args.Length == 2 && args[1] == "--study-display";
         bool studyDevicesOnly = args.Length == 2 && args[1] == "--study-devices";
         bool calibrationOnly = args.Length == 2 && args[1] == "--noise-calibration";
-        bool meterOnly = args.Length == 2 && args[1] == "--sound-meter-beta";
+        bool meterOnly = args.Length == 2 && args[1] is "--sound-meter-beta" or "--usb-reference";
+        bool usbReferenceOnly = args.Length == 2 && args[1] == "--usb-reference";
         bool scheduledDisplayOnly = args.Length == 2 && args[1] == "--scheduled-display";
         bool preparationOnly = args.Length == 2 && args[1] == "--onboarding-preparation";
         bool touchOnly = args.Length == 2 && args[1] == "--touch-status";
@@ -58,6 +59,7 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (usbReferenceOnly) { RunUsbReferenceChecks(); WriteResult("PASSED", null); return 0; }
             if (meterOnly) { RunSoundMeterChecks(); WriteResult("PASSED", null); return 0; }
             if (calibrationOnly)
             { RunNoiseCalibrationChecks(); WriteResult("PASSED", null); return 0; }
@@ -268,12 +270,12 @@ internal static partial class Program
         throw new InvalidOperationException("Control missing: " + id);
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-    private static void PumpUntil(Func<bool> condition, string failure)
+    private static void PumpUntil(Func<bool> condition, string failure, double timeoutSeconds = 5)
     {
         var elapsed = Stopwatch.StartNew();
         var frame = new DispatcherFrame();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
-        timer.Tick += (_, _) => { if (condition() || elapsed.Elapsed > TimeSpan.FromSeconds(5)) frame.Continue = false; };
+        timer.Tick += (_, _) => { if (condition() || elapsed.Elapsed > TimeSpan.FromSeconds(timeoutSeconds)) frame.Continue = false; };
         timer.Start();
         try { Dispatcher.PushFrame(frame); }
         finally { timer.Stop(); }
