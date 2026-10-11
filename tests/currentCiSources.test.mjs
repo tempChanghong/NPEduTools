@@ -1,9 +1,27 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {repositories, resolveCurrentSources} from '../scripts/resolve-npep-current-ci.mjs';
 
 const sha = digit => digit.repeat(40);
 const request = {callerRepository: repositories.web, callerCommit: sha('a'), event: 'pull_request'};
+
+test('reusable workflow PR defaults never replace the caller while still pinning siblings', () => {
+  const workflow=readFileSync(new URL('../.github/workflows/npep-current.yml',import.meta.url),'utf8');
+  for(const caller of Object.values(repositories)) {
+    const overrides={};
+    for(const [key,env] of [['web','WEB_OVERRIDE'],['backend','BACKEND_OVERRIDE']]) {
+      const expression=workflow.match(new RegExp(env+': \\$\\{\\{([^\\n]+)\\}\\}'))?.[1];
+      assert.ok(expression,'Workflow override expression must exist');
+      // This workflow uses only the boolean/string expression syntax shared by JS and Actions.
+      overrides[key]=Function('inputs','github',`return (${expression})`)({}, {event_name:'pull_request',repository:caller});
+    }
+    const result=resolveCurrentSources({callerRepository:caller,callerCommit:sha('a'),event:'pull_request',overrides},()=>sha('b'));
+    const key=Object.keys(repositories).find(k=>repositories[k]===caller);
+    assert.equal(result.sources[key].commit,sha('a'));
+    assert.equal(result.sources[key].selection,'CALLER');
+  }
+});
 
 test('each PR/push keeps its own head and resolves each sibling main exactly once', () => {
   for (const event of ['pull_request', 'push']) for (const caller of Object.keys(repositories)) {
