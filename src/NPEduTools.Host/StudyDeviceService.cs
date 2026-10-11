@@ -33,10 +33,11 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
         {
             if (!File.Exists(_path)) return;
             if (new FileInfo(_path).Length > 16384) throw new InvalidDataException();
-            _selected = JsonSerializer.Deserialize<string?>(File.ReadAllText(_path));
-            if (_selected is not null && !NoiseContract.ValidDeviceId(_selected)) throw new InvalidDataException();
+            var selected = JsonSerializer.Deserialize<string?>(File.ReadAllText(_path));
+            if (selected is not null && !NoiseContract.ValidDeviceId(selected)) throw new InvalidDataException();
+            _selected = selected;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         { _selected = null; _configurationError = true; }
     }
     public StudyDeviceState Snapshot()

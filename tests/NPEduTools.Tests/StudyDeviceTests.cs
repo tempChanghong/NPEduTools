@@ -77,6 +77,24 @@ public sealed class StudyDeviceTests
         Assert.Null(refreshed.StudyDevices!.Error);
         Assert.True(refreshed.StudyDevices.CameraAvailable);
     }
+    [Theory]
+    [InlineData("oversize")]
+    [InlineData("invalid-endpoint")]
+    [InlineData("invalid-json")]
+    public void Invalid_configuration_remains_rejected_across_reads_and_cannot_be_overwritten(string variant)
+    {
+        using var folder = new Folder(); string path = System.IO.Path.Combine(folder.Path, "study-camera.json");
+        string original = variant == "oversize" ? new string('x', 16385) : variant == "invalid-endpoint" ? JsonSerializer.Serialize("bad\nendpoint") : "{broken";
+        File.WriteAllText(path, original);
+        var service = new StudyDeviceService(() => [new("synthetic", "Synthetic camera")], folder.Path);
+        for (int i = 0; i < 3; i++)
+        {
+            var state = service.Snapshot(); Assert.Null(state.CameraId); Assert.Equal("CameraConfigurationUnavailable", state.Error);
+            Assert.Equal("CameraConfigurationUnavailable", service.Handle(Select(state, "synthetic")).ErrorCode);
+            Assert.Equal("CameraConfigurationUnavailable", service.Handle(Select(state, null)).ErrorCode);
+            Assert.Equal(original, File.ReadAllText(path));
+        }
+    }
     [Fact]
     public void Catalog_is_bounded_for_the_existing_pipe_frame_even_with_escaped_endpoint_ids()
     {
