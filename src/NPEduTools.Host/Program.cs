@@ -148,15 +148,18 @@ await using var recording = new RecordingService(pipeName, dataDirectory, school
 await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget(), runtimeGate);
 await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader), runtimeGate);
 var noiseManagement = new NoiseManagementStore(dataDirectory);
+NoiseService? meterNoise = null;
+var soundMeter = new SoundMeterService(() => OperatingSystem.IsWindows() ? new WindowsSoundMeterHid() : throw new PlatformNotSupportedException(),
+    noiseManagement.VerifyCalibration, () => meterNoise?.MeterUnavailable == true);
 await using var noise = new NoiseService(id => OperatingSystem.IsWindows()
     ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory,
     management: noiseManagement,
     referenceCreate: id => OperatingSystem.IsWindows() ? WasapiNoiseCapture.CreateReference(id) : throw new PlatformNotSupportedException(),
-    referencePaused: () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested);
+    referencePaused: () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
+    referenceMeterOpen: soundMeter.OpenReferenceAsync);
+meterNoise = noise;
 var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
     ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
-var soundMeter = new SoundMeterService(() => OperatingSystem.IsWindows() ? new WindowsSoundMeterHid() : throw new PlatformNotSupportedException(),
-    noiseManagement.VerifyCalibration, () => noise.MeterUnavailable);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
 await using var noiseSchedules = new NoiseScheduleService(noise, schoolClock.Snapshot,
     () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,

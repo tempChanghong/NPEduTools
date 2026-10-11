@@ -67,6 +67,8 @@ public sealed class NoiseReferenceCalibration(string role, string mode, DateTime
         if (primary is null || check is null) return No("需要第一电平和另一稳定电平的复核采样。");
         foreach (var s in new[] { primary, check })
         {
+            if (draft.MeterDevicePath is not null && !NoiseReferenceContract.MeterEvidenceValid(s.MeterEvidence))
+                return No("USB 同期读数覆盖或时效不足，请重采；未使用缓存参考。");
             if (s.Quality != "Good" || s.DigitalDbfs is not { } digital || !double.IsFinite(digital) ||
                 s.MinimumDbfs is not { } minimum || !double.IsFinite(minimum) || minimum <= NoiseMeter.NumericalFloorDbfs ||
                 s.MaximumDbfs is not { } maximumLevel || !double.IsFinite(maximumLevel) ||
@@ -81,6 +83,8 @@ public sealed class NoiseReferenceCalibration(string role, string mode, DateTime
                 s.ReferenceMaximumDbA is { } maximum && maximum - s.ReferenceMinimumDbA!.Value > draft.StabilityDb)
                 return No("采样或参考读数的波动超过管理员填写的允许值，请换稳定声场重采。");
         }
+        if (draft.MeterDevicePath is not null && primary.MeterEvidence!.Range != check.MeterEvidence!.Range)
+            return No("两段仪表量程不同，请保持仪表设置一致并重新采样。");
         double referenceChange = check.ReferenceDbA!.Value - primary.ReferenceDbA!.Value;
         double digitalChange = check.DigitalDbfs!.Value - primary.DigitalDbfs!.Value;
         if (Math.Abs(referenceChange) < MinimumReferenceSeparationDb || referenceChange * digitalChange <= 0)

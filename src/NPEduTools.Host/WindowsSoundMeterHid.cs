@@ -159,6 +159,12 @@ public sealed class WindowsSoundMeterHid : ISoundMeterHidBackend
         }
         public ValueTask<int> ReadAsync(Memory<byte> report, CancellationToken cancellationToken) =>
             stream.ReadAsync(report, cancellationToken);
+        public void DiscardQueuedInput()
+        {
+            if (!Native.HidD_FlushQueue(stream.SafeFileHandle))
+                throw new SoundMeterException(SoundMeterError.Disconnected, "Could not discard queued HID reports.",
+                    stage: "Freshness", nativeErrorCode: Marshal.GetLastWin32Error());
+        }
         public void Dispose() => stream.Dispose();
     }
 
@@ -201,6 +207,9 @@ public sealed class WindowsSoundMeterHid : ISoundMeterHidBackend
         [DllImport("hid.dll", ExactSpelling = true)]
         [return: MarshalAs(UnmanagedType.U1)]
         internal static extern bool HidD_FreePreparsedData(IntPtr data);
+        [DllImport("hid.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        internal static extern bool HidD_FlushQueue(SafeFileHandle handle);
         [DllImport("hid.dll", ExactSpelling = true)]
         internal static extern int HidP_GetCaps(IntPtr data, out Capabilities caps);
         [DllImport("setupapi.dll", EntryPoint = "SetupDiGetClassDevsW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]

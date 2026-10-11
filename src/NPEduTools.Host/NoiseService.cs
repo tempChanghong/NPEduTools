@@ -16,7 +16,8 @@ public interface INoiseCapture : IDisposable
 /// <summary>One explicitly started session. No raw audio, disk storage, cloud traffic or recording dependency.</summary>
 public sealed partial class NoiseService(Func<string, INoiseCapture> create, Func<IReadOnlyList<NoiseDevice>> devices,
     TimeProvider? time = null, string? directory = null, NoiseManagementStore? management = null,
-    Func<string, IReferenceNoiseCapture>? referenceCreate = null, Func<bool>? referencePaused = null) : IAsyncDisposable
+    Func<string, IReferenceNoiseCapture>? referenceCreate = null, Func<bool>? referencePaused = null,
+    Func<string, TimeProvider, CancellationToken, Task<IReferenceSoundMeter>>? referenceMeterOpen = null) : IAsyncDisposable
 {
     private readonly object _sync = new();
     private readonly TimeProvider _time = time ?? TimeProvider.System;
@@ -174,6 +175,10 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         public Task Watch = Task.CompletedTask;
         public NoiseQuickCalibration? Calibration { get; init; }
         public NoiseReferenceCalibration? Reference;
+        public string? MeterPath;
+        public NoiseUsbReference? UsbReference;
+        public SoundMeterSample? MeterReading;
+        public long? MeterReceived;
         public bool CalibrationInterrupted;
         public bool ReferenceUseArmed;
         public bool Finishing;
@@ -407,11 +412,19 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     private async Task RunAsync(Session s)
     {
         INoiseCapture? capture = null;
+        IReferenceSoundMeter? meter = null;
+        Task meterWork = Task.CompletedTask;
         try
         {
             s.Stop.Token.ThrowIfCancellationRequested();
             if ((s.Reference is not null || s.Calibration is not null) && CalibrationRuntimePaused())
             { s.CalibrationInterrupted = true; s.Stop.Cancel(); s.Stop.Token.ThrowIfCancellationRequested(); }
+            if (s.MeterPath is { } path)
+            {
+                meter = await referenceMeterOpen!(path, _time, s.Stop.Token);
+                AcceptMeter(s, await meter.ReadAsync(s.Stop.Token));
+                s.Stop.Token.ThrowIfCancellationRequested();
+            }
             lock (_sync) BeginReferenceUse(s);
             capture = s.Reference is not null ? referenceCreate!(s.DeviceId) : create(s.DeviceId);
             lock (_sync)
@@ -434,6 +447,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             if ((s.Reference is not null || s.Calibration is not null) && CalibrationRuntimePaused())
             { s.CalibrationInterrupted = true; s.Stop.Cancel(); s.Stop.Token.ThrowIfCancellationRequested(); }
             capture.Start();
+            if (meter is not null) meterWork = PollMeterAsync(s, meter);
             lock (_sync)
             {
                 s.DeviceName = capture.DeviceName;
@@ -449,7 +463,9 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         }
         catch (OperationCanceledException) when (s.Stop.IsCancellationRequested) { }
         catch (Exception error) when (error is not OutOfMemoryException)
-        { lock (_sync) s.Failure = error is ReferenceUseException ?
+        { lock (_sync) s.Failure = error is SoundMeterException ?
+            "USB 声级计读取失败（" + ((SoundMeterException)error).Error + "），本段作废；请关闭 SoundLab2、检查仪表后显式重试。" :
+            error is ReferenceUseException ?
             "参考使用标记无法保存，未打开麦克风。请检查配置目录并重新核对参考；不会在无持久失效证据的情况下使用旧参考。" :
             s.Reference is not null && error is ArgumentException ?
             "参考采样不支持当前格式，请使用 44.1–384 kHz 的 PCM16／24／32 或 Float32；未回退到未加权数据。" :
@@ -463,20 +479,30 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                 s.FinishedSeconds = _time.GetElapsedTime(s.Started).TotalSeconds;
                 s.Finishing = true;
                 CheckFinalReferenceInput(s);
+                CheckFinalCalibrationSignature(s);
             }
             try { capture?.StopAndFlush(frame => Receive(s, frame, true), frame => ReceiveEstimate(s, frame, true)); }
             catch (Exception error) when (error is not OutOfMemoryException)
             { lock (_sync) { _cleanupFailed = true; s.Failure = "麦克风清理发生错误，请重启后台后再试。"; } }
+            try
+            {
+                await meterWork;
+                if (meter is not null) await meter.DisposeAsync();
+            }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            { lock (_sync) { _cleanupFailed = true; s.Failure = "USB 连接释放未确认，请重启后台后重试。"; } }
             lock (_sync)
             {
                 s.EstimateCapture = null;
                 s.Finishing = false;
                 _state = s.Failure.Length > 0 ? "Faulted" : "Stopped";
                 _message = s.Failure.Length > 0 ? s.Failure : s.Reference is not null ?
+                    s.UsbReference is not null ? "USB 同期采样已结束，设备已释放；请核对自动参考和两段复核结果，统计保存不代表校准成功。" :
                     "外部参考采样已结束，麦克风已释放；请核对本段质量并填写同期仪表读数，统计保存不代表校准成功。" :
                     s.Calibration is not null ? "快速校准采样已结束，麦克风已释放；统计请在快速校准页核对，不产生正式监测报告。" :
                     "监测已停止，麦克风已释放。本次摘要保留至下次开始或后台退出。";
                 s.Current = null; if (s.Failure.Length > 0) s.Quality = "NoData";
+                s.MeterReading = null; s.MeterReceived = null;
                 _revision++;
                 if (s.Calibration is not null) FinishCalibration(s);
                 if (s.Reference is not null)

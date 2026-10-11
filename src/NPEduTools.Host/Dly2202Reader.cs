@@ -19,6 +19,9 @@ public interface ISoundMeterHidConnection : IDisposable
     int OutputReportLength { get; }
     ValueTask WriteAsync(ReadOnlyMemory<byte> report, CancellationToken cancellationToken);
     ValueTask<int> ReadAsync(Memory<byte> report, CancellationToken cancellationToken);
+    // A reference exchange must discard unread reports before its request. Diagnostics remain compatible.
+    void DiscardQueuedInput() => throw new SoundMeterException(SoundMeterError.UnsupportedReport,
+        "This transport cannot discard queued reports for reference sampling.", stage: "Freshness");
 }
 
 public enum SoundMeterError
@@ -40,7 +43,8 @@ public sealed class SoundMeterException(SoundMeterError error, string message, E
 
 /// <summary>Host monotonic timestamps bracket this request; they are not instrument sample times.</summary>
 public sealed record SoundMeterObservation(SoundMeterHidDevice Device, SoundMeterReading Reading,
-    long RequestedTimestamp, long ReceivedTimestamp, TimeSpan RoundTrip, int InputReportLength = 0, int OutputReportLength = 0);
+    long RequestedTimestamp, long ReceivedTimestamp, TimeSpan RoundTrip, int InputReportLength = 0, int OutputReportLength = 0,
+    bool QueuedInputDiscarded = false);
 
 /// <summary>
 /// Explicit, single-flight reference reads. No polling at startup, background reconnect, stale-value
@@ -117,7 +121,7 @@ public sealed class Dly2202Reader : IAsyncDisposable
         finally { _gate.Release(); }
     }
 
-    public async Task<SoundMeterObservation> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SoundMeterObservation> ReadAsync(CancellationToken cancellationToken = default, bool discardQueuedInput = false)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetimeToken);
@@ -127,6 +131,8 @@ public sealed class Dly2202Reader : IAsyncDisposable
             linked.Token.ThrowIfCancellationRequested();
             var connection = _connection ?? throw new SoundMeterException(SoundMeterError.NotConnected,
                 "Explicitly connect the selected reference meter first.");
+            if (discardQueuedInput) connection.DiscardQueuedInput();
+            linked.Token.ThrowIfCancellationRequested();
             long requested = _time.GetTimestamp();
             using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
             var exchange = ExchangeAsync(connection, operationCancellation.Token);
@@ -138,7 +144,7 @@ public sealed class Dly2202Reader : IAsyncDisposable
                     throw new SoundMeterException(SoundMeterError.InvalidReading, "Invalid reference report: " + reason);
                 long received = _time.GetTimestamp();
                 return new(connection.Device, reading!, requested, received, _time.GetElapsedTime(requested, received),
-                    connection.InputReportLength, connection.OutputReportLength);
+                    connection.InputReportLength, connection.OutputReportLength, discardQueuedInput);
             }
             catch (TimeoutException error)
             {

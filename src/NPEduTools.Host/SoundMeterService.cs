@@ -3,11 +3,47 @@ using NPEduTools.Core;
 
 namespace NPEduTools.Host;
 
+public interface IReferenceSoundMeter : IAsyncDisposable
+{
+    Task<SoundMeterObservation> ReadAsync(CancellationToken token);
+}
+
 /// <summary>One explicit read, one disposable connection. Never auto-polls or alters a calibration.</summary>
 public sealed class SoundMeterService(Func<ISoundMeterHidBackend> backend, Func<string, string?> verify,
     Func<bool>? unavailable = null)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    // Only the authenticated NoiseService workflow acquires this lease. Shared with diagnostics.
+    public async Task<IReferenceSoundMeter> OpenReferenceAsync(string path, TimeProvider time, CancellationToken token)
+    {
+        if (!NoiseReferenceContract.MeterPathValid(path)) throw new ArgumentException("Invalid meter path.", nameof(path));
+        if (unavailable?.Invoke() == true || !await _gate.WaitAsync(0, token))
+            throw new SoundMeterException(SoundMeterError.BusyOrDenied, "Meter unavailable or already in use.");
+        Dly2202Reader? reader = null;
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            reader = new(backend(), time, TimeSpan.FromMilliseconds(500));
+            await reader.ConnectAsync(path, token);
+            return new ReferenceLease(reader, _gate);
+        }
+        catch
+        {
+            try { if (reader is not null) await reader.DisposeAsync(); }
+            finally { _gate.Release(); }
+            throw;
+        }
+    }
+    private sealed class ReferenceLease(Dly2202Reader reader, SemaphoreSlim gate) : IReferenceSoundMeter
+    {
+        private int _disposed;
+        public Task<SoundMeterObservation> ReadAsync(CancellationToken token) => reader.ReadAsync(token, discardQueuedInput: true);
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            try { await reader.DisposeAsync(); } finally { gate.Release(); }
+        }
+    }
     public async Task<HostResponse> HandleAsync(HostRequest r, CancellationToken token)
     {
         HostResponse Reject(string code, string message) => new(1, r.RequestId, "Rejected", code, message);

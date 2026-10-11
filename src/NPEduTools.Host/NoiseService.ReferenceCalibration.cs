@@ -36,20 +36,27 @@ public sealed partial class NoiseService
             s.MinimumDbfs > NoiseMeter.NumericalFloorDbfs && s.MaximumDbfs is not null &&
             s.DigitalDbfs >= s.MinimumDbfs - 1e-8 && s.DigitalDbfs <= s.MaximumDbfs + 1e-8 &&
             (s.WindowEndedAt - s.WindowStartedAt).TotalSeconds >= 9.7) &&
+        (s.MeterEvidence is null || NoiseReferenceContract.MeterEvidenceValid(s.MeterEvidence)) &&
         (s.SameWindowConfirmed ? NoiseReferenceContract.ReferenceRange(s.ReferenceDbA, s.ReferenceMinimumDbA, s.ReferenceMaximumDbA)
             : s.ReferenceDbA is null && s.ReferenceMinimumDbA is null && s.ReferenceMaximumDbA is null);
     private static bool ReferenceDraftValid(NoiseReferenceDraft? d) => d is not null && d.Id != Guid.Empty &&
         NoiseContract.ValidDeviceId(d.DeviceId) && NoiseReferenceContract.InstrumentValid(d.Instrument) &&
+        (d.MeterDevicePath is null || NoiseReferenceContract.MeterPathValid(d.MeterDevicePath)) &&
         d.TimeWeighting is "Fast" or "Slow" && NoiseReferenceContract.Limit(d.StabilityDb) && NoiseReferenceContract.Limit(d.CheckToleranceDb) &&
         (d.Signature is null || ReferenceSignature(d.Signature)) && d.Samples is not null && d.Samples.Count <= 2 &&
-        d.Samples.All(ReferenceSampleValid) && d.Samples.Select(s => s.Role).Distinct().Count() == d.Samples.Count &&
+        d.Samples.All(s => ReferenceSampleValid(s) && (d.MeterDevicePath is null ? s.MeterEvidence is null :
+            !s.SameWindowConfirmed || NoiseReferenceContract.MeterEvidenceValid(s.MeterEvidence))) &&
+        d.Samples.Select(s => s.Role).Distinct().Count() == d.Samples.Count &&
         d.Samples.Select(s => s.Id).Distinct().Count() == d.Samples.Count;
     private static bool ReferenceProfileValid(NoiseReferenceProfile p)
     {
         var draft = new NoiseReferenceDraft(Guid.NewGuid(), p.DeviceId, p.Instrument, p.TimeWeighting,
-            p.StabilityDb, p.CheckToleranceDb, p.Signature, p.Samples);
-        if (p.Version != 1 || p.Algorithm != ReferenceNoiseMeter.AlgorithmVersion || p.Method != "ManualReference" ||
-            p.Statistic != NoiseReferenceCalibration.Statistic || !ReferenceSignature(p.Signature) || !ReferenceDraftValid(draft) ||
+            p.StabilityDb, p.CheckToleranceDb, p.Signature, p.Samples, p.MeterDevicePath);
+        if (p.Samples is null || p.Version != 1 || p.Algorithm != ReferenceNoiseMeter.AlgorithmVersion ||
+            !ReferenceDraftValid(draft) ||
+            p.Method != (p.MeterDevicePath is null ? "ManualReference" : "UsbReferenceBeta") ||
+            p.MeterDevicePath is null && p.Samples.Any(s => s.MeterEvidence is not null) ||
+            p.Statistic != NoiseReferenceCalibration.Statistic || !ReferenceSignature(p.Signature) ||
             p.Samples.Count != 2 || !double.IsFinite(p.OffsetDb)) return false;
         var evaluation = NoiseReferenceCalibration.Evaluate(draft);
         return evaluation.Ready && Math.Abs(evaluation.OffsetDb!.Value - p.OffsetDb) < 1e-8;
@@ -159,7 +166,8 @@ public sealed partial class NoiseService
             _selected, _session is { } selectedSession && selectedSession.DeviceId == _selected ? selectedSession.DeviceName : null, progress,
             sampling ? _session!.Reference!.MeasuredSeconds : 0, _referenceDraft, NoiseReferenceCalibration.Evaluate(_referenceDraft),
             _referenceProfile, _referenceError is null && _referenceInvalidated is null && RecentReferenceSignature && _referenceProfile is { } p && p.DeviceId == _selected && p.Signature == _lastReferenceSignature,
-            _referenceError, _session?.Reference is not null ? _message : null, _referenceInvalidated);
+            _referenceError, _session?.Reference is not null ? _message : null, _referenceInvalidated,
+            sampling && _session!.UsbReference is not null ? MeterSnapshot(_session!) : null);
     }
     public HostResponse ReferenceHandle(HostRequest request, StudyHostState? study = null)
     {
@@ -194,14 +202,18 @@ public sealed partial class NoiseService
             if (_selected is null) return Reply("MicrophoneNotConfigured", "请先在本机保存监测麦克风。");
             if (cmd.Action == "begin")
             {
+                if (cmd.MeterDevicePath is not null && referenceMeterOpen is null)
+                    return Reply("REFERENCE_USB_UNSUPPORTED", "当前后台不支持 USB 同期参考采样，请更新后台。");
                 var draft = new NoiseReferenceDraft(Guid.NewGuid(), _selected, cmd.Instrument!, cmd.TimeWeighting!,
-                    cmd.StabilityDb!.Value, cmd.CheckToleranceDb!.Value, null, []);
+                    cmd.StabilityDb!.Value, cmd.CheckToleranceDb!.Value, null, [], cmd.MeterDevicePath);
                 return SaveReference(draft, _referenceProfile) ? Reply(message: "已新建外部参考草稿；原确认参考保留。") : Reply(_referenceError);
             }
             if (_referenceDraft is not { } d || d.Id != cmd.DraftId || d.DeviceId != _selected)
                 return Reply("REFERENCE_CHANGED", "麦克风或草稿已变化，请新建参考草稿。");
             if (cmd.Action is "reference" or "remove")
             {
+                if (cmd.Action == "reference" && d.MeterDevicePath is not null)
+                    return Reply("REFERENCE_USB_AUTOMATIC", "USB 草稿使用同期自动读数，不能用手动数值替换；请重采或新建手动草稿。");
                 if (!d.Samples.Any(s => s.Id == cmd.SampleId)) return Reply("REFERENCE_CHANGED");
                 var samples = d.Samples.Where(s => cmd.Action != "remove" || s.Id != cmd.SampleId).Select(s => s.Id == cmd.SampleId ? s with
                 { ReferenceDbA = cmd.ReferenceDbA, ReferenceMinimumDbA = cmd.ReferenceMinimumDbA,
@@ -214,20 +226,25 @@ public sealed partial class NoiseService
                 if (!evaluation.Ready) return Reply("REFERENCE_CHECK_FAILED", evaluation.Message);
                 if (!RecentReferenceSignature || !ReferenceSignature(d.Signature) || d.Signature != _lastReferenceSignature)
                     return Reply("REFERENCE_DEVICE_SETTINGS_CHANGED", "尚无匹配的新鲜采集签名，请在同一输入设置下重采。");
-                var profile = new NoiseReferenceProfile(1, ReferenceNoiseMeter.AlgorithmVersion, "ManualReference", NoiseReferenceCalibration.Statistic,
+                var profile = new NoiseReferenceProfile(1, ReferenceNoiseMeter.AlgorithmVersion,
+                    d.MeterDevicePath is null ? "ManualReference" : "UsbReferenceBeta", NoiseReferenceCalibration.Statistic,
                     d.DeviceId, d.Signature!, d.Instrument, d.TimeWeighting, evaluation.OffsetDb!.Value,
-                    d.StabilityDb, d.CheckToleranceDb, _time.GetUtcNow(), d.Samples);
+                    d.StabilityDb, d.CheckToleranceDb, _time.GetUtcNow(), d.Samples, d.MeterDevicePath);
                 _referenceInvalidated = null;
                 return SaveReference(d, profile) && ClearReferenceUse() ? Reply(message: "已保存本机估算参考；正式监测将核对输入设置，并分别保存 dBFS 和估算 dB(A)。") : Reply(_referenceError);
             }
             if (referenceCreate is null) return Reply("REFERENCE_UNSUPPORTED", "请更新后台以进行 A 加权参考采样。");
+            if (d.MeterDevicePath is not null && referenceMeterOpen is null)
+                return Reply("REFERENCE_USB_UNSUPPORTED", "当前后台不支持 USB 同期采样，未打开设备。");
             if (_cleanupFailed) return Reply("NoiseCleanupRequired", "麦克风未确认释放，请重启后台。");
             var listed = Handle(request with { Capability = "noise.devices", NoiseReference = null });
             if (listed.Outcome != "Succeeded" || listed.NoiseDevices?.Any(x => x.Id == _selected) != true)
                 return Reply("NoiseDeviceUnavailable", "所选麦克风不可用，不会切换其他设备。");
             _session?.Stop.Dispose();
             var session = new Session(_selected, _time.GetTimestamp(), _time.GetUtcNow())
-            { Reference = new(cmd.Role!, d.TimeWeighting, _time.GetUtcNow()), LimitSeconds = NoiseReferenceCalibration.MaximumCaptureSeconds };
+            { LimitSeconds = NoiseReferenceCalibration.MaximumCaptureSeconds,
+                MeterPath = d.MeterDevicePath, UsbReference = d.MeterDevicePath is null ? null : new(d.TimeWeighting) };
+            session.Reference = new(cmd.Role!, d.TimeWeighting, session.StartedAt);
             _session = session; _revision++; _referenceRevision++; _lastReferenceSignature = null; _referenceSignatureAt = null;
             _state = "Starting"; _message = "正在打开外部参考采样；不会作为正式噪音会话上报。";
             session.Work = Task.Run(() => RunAsync(session)); session.Watch = Task.Run(() => WatchAsync(session));
@@ -266,6 +283,11 @@ public sealed partial class NoiseService
         if (_referenceDraft is not { } draft || s.Reference is null) return;
         var sample = s.Reference.Finish(s.FinishedSeconds!.Value,
             s.CalibrationInterrupted || s.Failure.Length > 0 || _disposed || _shuttingDown);
+        if (s.UsbReference is not null)
+        {
+            sample = s.UsbReference.Attach(sample, s.StartedAt);
+            if (s.UsbReference.Error is { } usbError) _message = usbError + " 设备已释放，原确认参考保留。";
+        }
         // A cancelled/failed attempt is visible, but never used to confirm a reference.
         SaveReference(draft with { Signature = draft.Signature ?? (ReferenceSignature(s.Signature) ? s.Signature : null),
             Samples = draft.Samples.Where(x => x.Role != sample.Role).Append(sample).ToArray() }, _referenceProfile);
