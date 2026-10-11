@@ -5,6 +5,77 @@
   <!-- Use the same choice control in calibration, device setup and recording. -->
   <Style TargetType="ComboBox" BasedOn="{StaticResource RecordingChoice}" />
 
+  <Style TargetType="PasswordBox">
+    <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+    <Setter Property="FontSize" Value="14" /><Setter Property="MinHeight" Value="46" />
+    <Setter Property="Padding" Value="12,8" /><Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="#F6F8F9" /><Setter Property="Foreground" Value="#202E35" />
+    <Setter Property="BorderBrush" Value="#DCE3E6" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="SelectionBrush" Value="#B8DECF" /><Setter Property="SelectionOpacity" Value="0.6" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="PasswordBox">
+      <Border x:Name="InputSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+        <ScrollViewer x:Name="PART_ContentHost" />
+      </Border>
+      <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#9ABDAF" /></Trigger>
+        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#147D68" /></Trigger>
+        <Trigger Property="Validation.HasError" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#B95853" /></Trigger>
+        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="InputSurface" Property="Opacity" Value="0.45" /></Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+
+  <!-- Preserve DatePicker's parsing, keyboard navigation and native Calendar.
+       The inner editor must not inherit the application's padded TextBox template. -->
+  <Style x:Key="DateInputEditor" TargetType="DatePickerTextBox">
+    <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="MinHeight" Value="0" /><Setter Property="Padding" Value="0" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DatePickerTextBox">
+      <Grid>
+        <ScrollViewer x:Name="PART_ContentHost" />
+        <ContentControl x:Name="PART_Watermark" Content="选择日期" Visibility="Collapsed" Foreground="#718089" IsHitTestVisible="False" Focusable="False" VerticalAlignment="Center" />
+      </Grid>
+      <ControlTemplate.Triggers>
+        <Trigger Property="Text" Value=""><Setter TargetName="PART_Watermark" Property="Visibility" Value="Visible" /></Trigger>
+        <Trigger Property="Text" Value="{x:Null}"><Setter TargetName="PART_Watermark" Property="Visibility" Value="Visible" /></Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style TargetType="DatePicker">
+    <Setter Property="MinHeight" Value="42" /><Setter Property="FontSize" Value="14" />
+    <Setter Property="Background" Value="#F6F8F9" /><Setter Property="Foreground" Value="#202E35" />
+    <Setter Property="BorderBrush" Value="#DCE3E6" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="SelectedDateFormat" Value="Short" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="CalendarStyle"><Setter.Value><Style TargetType="Calendar">
+      <Setter Property="Background" Value="White" /><Setter Property="Foreground" Value="#203D32" />
+      <Setter Property="BorderBrush" Value="#DCE6E0" /><Setter Property="BorderThickness" Value="1" />
+    </Style></Setter.Value></Setter>
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DatePicker">
+      <Grid x:Name="PART_Root" SnapsToDevicePixels="True">
+        <Border x:Name="InputSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" />
+        <Grid Margin="12,4,4,4"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="34" /></Grid.ColumnDefinitions>
+          <DatePickerTextBox x:Name="PART_TextBox" Style="{StaticResource DateInputEditor}" Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" VerticalAlignment="Stretch" />
+          <Button x:Name="PART_Button" Grid.Column="1" Focusable="False" MinHeight="0" Padding="0" Background="Transparent" ToolTip="选择日期" AutomationProperties.Name="打开日历">
+            <Button.Template><ControlTemplate TargetType="Button">
+              <Border x:Name="CalendarSurface" CornerRadius="6" Background="Transparent">
+                <Path Data="M 3,5 L 17,5 L 17,18 L 3,18 Z M 3,9 L 17,9 M 7,2 L 7,7 M 13,2 L 13,7 M 7,12 L 9,12 M 11,12 L 13,12 M 7,15 L 9,15 M 11,15 L 13,15" Stroke="#61786B" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CalendarSurface" Property="Background" Value="#E2F0E9" /></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="CalendarSurface" Property="Background" Value="#CDE5D9" /></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Button.Template>
+          </Button>
+        </Grid>
+        <Popup x:Name="PART_Popup" Placement="Bottom" PlacementTarget="{Binding ElementName=PART_Root}" StaysOpen="False" AllowsTransparency="True" VerticalOffset="4" />
+      </Grid>
+      <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#9ABDAF" /></Trigger>
+        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#147D68" /></Trigger>
+        <Trigger Property="Validation.HasError" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="#B95853" /></Trigger>
+        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45" /></Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+
   <!-- The application's expandable sections all open downwards. Keep the native
        Expander and ToggleButton behavior, changing only their presentation. -->
   <Style TargetType="Expander">

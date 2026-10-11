@@ -20,10 +20,11 @@
    <TextBlock Text="1　建立参考草稿" FontSize="19" FontWeight="SemiBold"/>
    <WrapPanel Margin="0,12,0,0">
     <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表型号"/><TextBox x:Name="Instrument" Text="DLY-2202" Width="180" Padding="7" MaxLength="80" Margin="0,6,0,0"/></StackPanel>
-    <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表时间模式"/><ComboBox x:Name="TimeMode" Width="150" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0"/></StackPanel>
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表时间加权"/><ComboBox x:Name="TimeMode" Width="180" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0"/></StackPanel>
     <StackPanel Margin="0,0,20,0"><TextBlock Text="允许波动（dB）"/><TextBox x:Name="Stability" Width="135" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceStability"/></StackPanel>
     <StackPanel><TextBlock Text="复核允许差值（dB）"/><TextBox x:Name="CheckTolerance" Width="145" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceTolerance"/></StackPanel>
    </WrapPanel>
+   <TextBlock Text="DLY-2202 说明书：SLOW 读取当前 1 秒内平均值，取样率为每秒 2 次；FAST 取样率为每秒 8 次。响应时间与读数更新频率是两回事，此选项必须与仪表屏幕的 FAST／SLOW 一致。USB 实际到达频率仍须实物验证。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,12,0,0"/>
    <TextBlock Text="两项门槛请明确填写 0.1–5 dB：这是您允许的波动与复核差值，不是设备精度。没有已验证的实际误差，因此不替您预填。新草稿后按草稿设置采样；改设置须重新建草稿。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,12,0,0"/>
    <Button x:Name="BeginDraft" Content="新建参考草稿" Click="BeginClicked" HorizontalAlignment="Left" Padding="14,7" Margin="0,12,0,0"/>
    <TextBlock x:Name="DraftStatus" TextWrapping="Wrap" Margin="0,8,0,0"/>
@@ -40,11 +41,11 @@
    <TextBlock x:Name="MeterStatus" TextWrapping="Wrap" Foreground="#61786B" Margin="0,0,0,12"/>
    <ListBox x:Name="SampleList" Height="138" DisplayMemberPath="Description" SelectionChanged="SampleSelected" AutomationProperties.AutomationId="ReferenceSamples"/>
    <WrapPanel x:Name="ManualReferenceInputs" Margin="0,12,0,0">
-    <StackPanel Margin="0,0,20,0"><TextBlock Text="稳定参考读数（dB(A)）"/><TextBox x:Name="ReferenceValue" Width="180" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceReading"/></StackPanel>
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="同期稳定的 SPL 读数（dB(A)）"/><TextBox x:Name="ReferenceValue" Width="180" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceReading"/></StackPanel>
     <StackPanel Margin="0,0,20,0"><TextBlock Text="同期最低读数（可选）"/><TextBox x:Name="ReferenceMinimum" Width="160" Padding="7" Margin="0,6,0,0"/></StackPanel>
     <StackPanel><TextBlock Text="同期最高读数（可选）"/><TextBox x:Name="ReferenceMaximum" Width="160" Padding="7" Margin="0,6,0,0"/></StackPanel>
    </WrapPanel>
-   <TextBlock x:Name="ReferenceInstructions" Text="读数范围 30–130 dB(A)。最低／最高如需填写须成对填写，仅检查波动，不用于拟合斜率。只支持即时读数的仪表，请记录采样期间稳定的同模式读数；本流程不把它称为 LAeq。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,10,0,0"/>
+   <TextBlock x:Name="ReferenceInstructions" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,10,0,0"/>
    <CheckBox x:Name="SameWindow" Margin="0,12,0,0"><TextBlock Text="我确认读数来自所选采样的同一时段，仪表为 A 加权、草稿时间模式、非 MAX，且声场与读数稳定。" TextWrapping="Wrap"/></CheckBox>
    <WrapPanel Margin="0,12,0,0"><Button x:Name="AttachReference" Content="保存所选段的参考读数" Click="ReferenceClicked" Padding="14,7" AutomationProperties.AutomationId="ReferenceAttach"/>
     <Button x:Name="RemoveSample" Content="删除所选段" Click="RemoveClicked" Padding="14,7" Margin="12,0,0,0"/>

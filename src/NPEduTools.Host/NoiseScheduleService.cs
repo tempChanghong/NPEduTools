@@ -32,6 +32,8 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
     private Guid? _owned;
     private SchoolNoiseWindow? _ownedWindow;
     private string _owner = "None", _reason = "NOT_ELIGIBLE";
+    private bool _priority;
+    public bool ScheduledDue(){lock(_sync){Tick();return _priority;}}
     private JsonObject? _receipt;
     public NoiseScheduleService(NoiseService noise, Func<SchoolClockFrame> clock, Func<bool> exam,
         string directory, TimeProvider? time = null, bool background = true, Action<string?>? bindReports = null, Func<bool>? statisticsReady = null)
@@ -191,6 +193,12 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             var input = new NoiseScheduleInput(_policy, reading, _eligible && (!_studyProbeRequired || _studyProbeComplete || _studySelected) && _storeError is null && statisticsReady, lease,
                 !string.IsNullOrWhiteSpace(status.SelectedDeviceId), _exam(), _owner, status.State == "Stopping",
                 MicrophoneKey(status.SelectedDeviceId), blocks);
+            var priorityInput=input with {Owner="None",CaptureBusy=false};
+            NoiseScheduleDecision priorityDecision;
+            try{priorityDecision=_studySelected && _studySettings is not null?NoiseScheduleEvaluator.EvaluateStudy(priorityInput,_studySettings):NoiseScheduleEvaluator.Evaluate(priorityInput);}
+            catch(ArgumentException){priorityDecision=new("Wait","SCHOOL_CLOCK_UNAVAILABLE",null);}
+            _priority=priorityDecision.Action=="Start";
+            _noise.SetScheduledPriority(_priority);
             NoiseScheduleDecision decision;
             try { decision = _studySelected && _studySettings is not null ? NoiseScheduleEvaluator.EvaluateStudy(input, _studySettings) : NoiseScheduleEvaluator.Evaluate(input); }
             catch (ArgumentException) { decision = new(_owner == "Schedule" ? "Stop" : "Wait", "SCHOOL_CLOCK_UNAVAILABLE", null); }

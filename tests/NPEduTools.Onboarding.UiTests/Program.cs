@@ -19,6 +19,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        bool manualStudyOnly = args.Length == 2 && args[1] == "--manual-study";
         bool examOnly = args.Length == 2 && args[1] == "--remote-exam";
         bool connectionOnly = args.Length == 2 && args[1] == "--school-connection";
         bool noiseOnly = args.Length == 2 && args[1] == "--noise-status";
@@ -36,6 +37,7 @@ internal static partial class Program
         bool calibrationOnly = args.Length == 2 && args[1] == "--noise-calibration";
         bool meterOnly = args.Length == 2 && args[1] is "--sound-meter-beta" or "--usb-reference";
         bool usbReferenceOnly = args.Length == 2 && args[1] == "--usb-reference";
+        bool inputsOnly = args.Length == 2 && args[1] == "--input-controls";
         bool scheduledDisplayOnly = args.Length == 2 && args[1] == "--scheduled-display";
         bool preparationOnly = args.Length == 2 && args[1] == "--onboarding-preparation";
         bool touchOnly = args.Length == 2 && args[1] == "--touch-status";
@@ -46,7 +48,7 @@ internal static partial class Program
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
         bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
-        if (args.Length != 1 && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
+        if (args.Length != 1 && !manualStudyOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -61,6 +63,8 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (manualStudyOnly) { RunManualStudyChecks(); WriteResult("PASSED", null); return 0; }
+            if (inputsOnly) { RunInputControlChecks(); WriteResult("PASSED", null); return 0; }
             if (studyReportOnly) { RunStudyReportChecks(); WriteResult("PASSED", null); return 0; }
             if (studyExitOnly) { RunStudyExitChecks(); WriteResult("PASSED", null); return 0; }
             if (usbReferenceOnly) { RunUsbReferenceChecks(); WriteResult("PASSED", null); return 0; }

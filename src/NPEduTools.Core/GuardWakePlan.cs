@@ -4,9 +4,9 @@ namespace NPEduTools.Core;
 /// These never constitute permission to open a sensor or to resume a manual session.</summary>
 public sealed record GuardWakeWindow(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
 public sealed record GuardWakePlan(Guid Generation, GuardProcess Host, DateTimeOffset IssuedUtc,
-    IReadOnlyList<GuardWakeWindow> Windows, DateTimeOffset? CurrentEndUtc = null)
+    IReadOnlyList<GuardWakeWindow> Windows, DateTimeOffset? CurrentEndUtc = null,string? ContextKey=null)
 {
-    public bool Valid() => Generation != Guid.Empty && Host is { Id: > 0, StartedUtcTicks: > 0 } &&
+    public bool Valid() => (ContextKey is null || ContextKey.Length==64 && ContextKey.All(Uri.IsHexDigit)) && Generation != Guid.Empty && Host is { Id: > 0, StartedUtcTicks: > 0 } &&
         IssuedUtc.Offset == TimeSpan.Zero && IssuedUtc.Year is >= 2000 and <= 9997 && Windows is { Count: <= 16 } &&
         Windows.All(w => w is not null && w.StartUtc.Offset == TimeSpan.Zero && w.EndUtc.Offset == TimeSpan.Zero &&
             w.EndUtc > w.StartUtc && w.EndUtc - w.StartUtc <= TimeSpan.FromHours(3) &&

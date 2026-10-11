@@ -24,6 +24,7 @@ public sealed class GuardFiles(string directory)
         : Path.Combine(Path.GetTempPath(), "NPEduTools", "instances", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(pipe)))[..24]);
     [SupportedOSPlatform("windows")]
     public static GuardFiles ForPipe(string pipe) => new(Path.Combine(DataDirectory(pipe), "guard"));
+    public bool Exists(string name) => File.Exists(Path.Combine(directory, name));
     public T? Read<T>(string name) where T : class
     {
         try
@@ -34,6 +35,7 @@ public sealed class GuardFiles(string directory)
             if (value is GuardRegistration r && (r.Generation == Guid.Empty || !Valid(r.App) ||
                 r.Upstream is { } upstream && (upstream.Length is 0 or > 200 || upstream.IndexOfAny(['/', '\\', ':']) >= 0 || upstream.StartsWith("--", StringComparison.Ordinal)))) return null;
             if (value is GuardLease lease && (lease.Generation == Guid.Empty || !Valid(lease.Host) || lease.Sequence <= 0)) return null;
+            if (value is GuardRecoveryEvent recovery && !recovery.Valid()) return null;
             if (value is GuardWakePlan plan && !plan.Valid()) return null;
             if (value is GuardExpectedExit exit && (exit.Generation == Guid.Empty || !Valid(exit.Host) || exit.SkipUntilUtc is { Offset: var offset } && offset != TimeSpan.Zero)) return null;
             return value;

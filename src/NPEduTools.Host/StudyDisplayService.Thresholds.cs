@@ -11,9 +11,9 @@ public sealed partial class StudyDisplayService
     {
         // Polling checkpoints elapsed progress, never school/Windows wall time. Binding hashes remain independent.
         bool cooled = _scope is not null && state.Settings is { } settings && _cooldown.CanRemind(_scope, settings.Noise.DisciplineCooldownSeconds);
-        bool eligible = state.PolicyState == "APPLIED" && state.ClockReady &&
+        bool eligible = (state.Execution?.Owner != "Manual" || state.Manual is not null) && state.PolicyState == "APPLIED" && state.ClockReady &&
             state.Phase == "Active" && state.Window is not null && state.Settings?.Noise is { Enabled: true } &&
-            state.Execution is { Owner: "Schedule", State: "Active", SignalFresh: true, SessionId: not null };
+            state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true, SessionId: not null };
         if (!eligible)
         { thresholds?.Invoke(null, null); _thresholdContext = null; _disciplineOffer = null; return null; }
         var effectivePolicy = calibratedThresholds?.Invoke(_scope, state.Version, state.Settings!.Noise) ?? state.Settings!.Noise;

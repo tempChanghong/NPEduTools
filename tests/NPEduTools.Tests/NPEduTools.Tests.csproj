@@ -16,6 +16,7 @@
     <ProjectReference Include="../NPEduTools.ClassIsland.TestPeer/NPEduTools.ClassIsland.TestPeer.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../NPEduTools.GuardFixture/NPEduTools.GuardFixture.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../src/NPEduTools.Guard/NPEduTools.Guard.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
+    <ProjectReference Include="../../src/NPEduTools.Camera/NPEduTools.Camera.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
   </ItemGroup>
   <Target Name="CopyGuardTestBundles" AfterTargets="Build">
     <MSBuild Projects="../NPEduTools.GuardFixture/NPEduTools.GuardFixture.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);TargetFramework=net10.0">

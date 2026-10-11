@@ -27,7 +27,8 @@ public partial class NoiseReferenceWindow : Window
             Title = "USB 同期校准 (Beta) · NPEduTools"; Heading.Text = "USB 同期校准 (Beta)";
             WorkflowNote.Text = "连续读取所选仪表，与麦克风在同一 Host 时钟下取稳定窗口，自动填写同期参考、计算偏移并复核。仪表内部采样时间没有确认的时间戳；保留 Beta，不宣称精确硬件同步或 LAeq。设备、输入设置变化后参考失效。";
         }
-        TimeMode.ItemsSource = new[] { new Choice("Slow", "SLOW · 1 秒"), new Choice("Fast", "FAST · 125 毫秒") };
+        TimeMode.ItemsSource = new[] { new Choice("Slow", "SLOW · 慢响应"), new Choice("Fast", "FAST · 快响应") };
+        ReferenceInstructions.Text = ManualReferenceInstructions;
         TimeMode.SelectedIndex = 0;
         RoleChoice.ItemsSource = new[] { new Choice("Primary", "第一电平"), new Choice("Check", "复核电平") };
         RoleChoice.SelectedIndex = 0;
@@ -70,6 +71,7 @@ public partial class NoiseReferenceWindow : Window
     }
     private static string Number(double? value) => value?.ToString("F2", CultureInfo.CurrentCulture) ?? "—";
     private static string Role(string role) => role == "Primary" ? "第一电平" : "复核电平";
+    private const string ManualReferenceInstructions = "看 DLY-2202 屏幕中央的 SPL 大数字，右侧须为 A，并与草稿 FAST／SLOW 一致、关闭 MAX 保持。这里没有单独的‘稳定读数’模式：填入本段同期采样期间持续小幅波动的代表读数，范围 30–130 dB(A)；明显起伏时请重采，不要只抄结束瞬间或把最低／最高取中点。最低／最高可成对填写，仅检查波动，本流程不称为 LAeq。";
     private static string Quality(string value) => value switch
     { "Good" => "采样有效", "Interrupted" => "已中断，须重采", "Clipping" => "削波，须重采", "Incomplete" => "采样不足，须重采", _ => "信号异常，须重采" };
     internal void Render(NoiseReferenceState state)
@@ -82,7 +84,7 @@ public partial class NoiseReferenceWindow : Window
         SamplingHeading.Text = usb ? "2　采样与自动取得同期读数" : "2　采样与填入同期读数";
         ManualReferenceInputs.Visibility = SameWindow.Visibility = AttachReference.Visibility = usb ? Visibility.Collapsed : Visibility.Visible;
         ReferenceInstructions.Text = usb ? "同期读数由 USB 自动取得，不能手动覆盖；预热、跨窗口、迟到和不完整数据不用于参考。模式、MAX、低电量、量程变化或断线会使本段作废。" :
-            "填写同一时段的 A 加权参考值及可选最低／最高；本流程不称为 LAeq。";
+            ManualReferenceInstructions;
         DeviceStatus.Text = state.DeviceId is null ? "请先保存监测麦克风" : state.DeviceName is { } name ? "监测麦克风：" + name : "监测麦克风已选择";
         ProfileStatus.Text = state.Profile is not { } p ? "尚无已确认的外部参考配置" :
             $"已保存估算参考 · {(p.Method == "UsbReferenceBeta" ? "USB (Beta) · " : "")}{p.Instrument} · A/{p.TimeWeighting} · 偏移 {p.OffsetDb:+0.00;-0.00;0.00} dB\n" +

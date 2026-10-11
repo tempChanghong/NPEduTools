@@ -27,7 +27,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         lock (_sync)
         {
             // Only the already running scheduled microphone can feed this observer.
-            if (_state != "Active" || _session is not { Scheduled: true } s || s.Id != session || s.Stop.IsCancellationRequested)
+            if (_state != "Active" || _session is not { } s || !s.Scheduled && !s.ManualStudy || s.Id != session || s.Stop.IsCancellationRequested)
             { _studyThresholds.Configure(null, null); return ("None", false); }
             s.ThresholdPolicy = policy;
             CheckEstimateInput(s);
@@ -159,6 +159,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     {
         public string DeviceId { get; } = device;
         public bool Scheduled;
+        public bool ManualStudy;
+        public string? EndReason;
         public Guid Id = Guid.NewGuid();
         public double LimitSeconds = 10800;
         public string? DeviceName;

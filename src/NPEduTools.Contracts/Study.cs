@@ -19,7 +19,8 @@ public sealed record StudyHostState(string? Version, string PolicyState, string 
     string Phase, string Reason, bool ClockReady, DateTimeOffset? SchoolNow, SchoolNoiseWindow? Window,
     SchoolNoiseWindow? Next, StudySettings? Settings, StudyCaptureState? Execution = null, StudyDisplayState? Display = null,
     StudyHomeworkState? Homework = null, StudyThresholdState? Threshold = null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] StudySeatingState? Seating = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] StudySeatingState? Seating = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? Manual = null);
 // Local statistics only. An offer is not a camera action or evidence of audio playback.
 public sealed record StudyThresholdState(Guid SessionId, string Band, Guid? DisciplineId = null, string? ReminderError = null);
 // Local Named Pipe only. Available means eligible to show, never a claim that WPF is visible.

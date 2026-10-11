@@ -18,6 +18,32 @@ public sealed class GuardWakeTests : IDisposable
     private GuardWakePlan Plan(params GuardWakeWindow[] windows) => new(_registration.Generation, new(20, 200), _clock.Utc, windows);
     private void Publish(GuardWakePlan plan) => _files.Write("wake.json", plan);
     [Fact]
+    public async Task Normal_manual_exit_during_preparation_does_not_skip_the_upcoming_school_window()
+    {
+        var end=_clock.Utc.AddHours(1);
+        await using var host=new GuardHostSession(_files,()=>false,(gen,p)=>new(gen,p,_clock.Utc,[new(_clock.Utc.AddMinutes(1),end)],end));
+        Assert.True(host.ExpectedStop(false));Assert.Null(_files.Read<GuardExpectedExit>("expected-exit.json")!.SkipUntilUtc);
+        _guard.Tick(0,true);_guard.Tick(2,true);Assert.True(Assert.Single(_processes.Starts));Assert.Null(_files.Read<GuardRecoveryEvent>("recovery.json"));
+    }
+    [Fact]
+    public void Armed_crash_writes_one_incident_across_both_process_restarts_but_planned_wake_does_not()
+    {
+        var host=new GuardProcess(20,200);_processes.Alive.Add(host);_processes.Alive.Add(_registration.App);
+        var end=_clock.Utc.AddHours(1);Publish(Plan(new GuardWakeWindow(_clock.Utc,end)) with{CurrentEndUtc=end,ContextKey=new string('a',64)});
+        _files.Write("lease.json",new GuardLease(_registration.Generation,host,1,true));_guard.Tick(0,true);
+        _processes.Alive.Clear();_guard.Tick(1,true);_guard.Tick(3,true);
+        var incident=_files.Read<GuardRecoveryEvent>("recovery.json");Assert.NotNull(incident);Assert.Equal(host,incident.Host);Assert.Equal(_registration.App,incident.App);
+        _guard.Tick(4,true);_guard.Tick(9,true);Assert.Equal(incident.Id,_files.Read<GuardRecoveryEvent>("recovery.json")!.Id);Assert.Equal(new[]{true,false},_processes.Starts);
+    }
+    [Fact]
+    public void Expected_stop_and_preparation_wake_never_claim_abnormal_recovery()
+    {
+        var end=_clock.Utc.AddHours(1);Publish(Plan(new GuardWakeWindow(_clock.Utc,end)) with{CurrentEndUtc=end,ContextKey=new string('a',64)});
+        _guard.Tick(0,true);_guard.Tick(2,true);Assert.Null(_files.Read<GuardRecoveryEvent>("recovery.json"));
+        _files.Write("expected-exit.json",new GuardExpectedExit(_registration.Generation,new(20,200),end));
+        _guard.Tick(10,true);Assert.Null(_files.Read<GuardRecoveryEvent>("recovery.json"));
+    }
+    [Fact]
     public void Empty_standby_survives_both_processes_exiting_and_does_not_restart_manual_capture()
     {
         Assert.True(_guard.Tick(0, true)); Assert.True(_guard.Tick(5000, true));

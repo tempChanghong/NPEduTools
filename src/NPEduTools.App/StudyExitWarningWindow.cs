@@ -19,7 +19,7 @@ public sealed class StudyExitWarningWindow : Window
     public StudyExitWarningWindow(Window owner,StudyExitState state,Func<Task<StudyExitState?>> read)
     {
         Owner=owner;_attempt=state.AttemptId;_remaining=Math.Clamp(state.WarningRemainingSeconds,0,30);_read=read;
-        Title="NPEduTools · 自习退出验证未通过";WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;
+        Title=state.Reason=="ProcessRecovery"?"NPEduTools · 定时自习异常恢复":"NPEduTools · 自习退出验证未通过";WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;
         Left=Top=0;Width=SystemParameters.PrimaryScreenWidth;Height=SystemParameters.PrimaryScreenHeight;Topmost=true;ShowInTaskbar=false;Background=new SolidColorBrush(Color.FromRgb(5,12,17));
         var panel=new Grid{Width=1920,Height=1080};
         var full=new Grid{Background=new SolidColorBrush(Color.FromArgb(238,158,23,32))};

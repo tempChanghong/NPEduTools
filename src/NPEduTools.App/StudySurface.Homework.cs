@@ -25,7 +25,7 @@ public partial class StudySurface
     { if (_pendingHomework is { } pending) CommitHomework(pending); else _pager.Change(delta); _drawnPage = -1; Render(); }
     public void ApplyHomework(string snapshotId, StudyHomeworkSnapshot snapshot)
     {
-        if (_timeline.State is not { } state || snapshot.Version != state.Version || snapshot.Date != state.SchoolNow?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ||
+        if (_timeline.State is not { } state || snapshot.Version != (state.Manual is null?state.Version:state.Homework?.Version) || snapshot.Date != state.SchoolNow?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ||
             state.Homework is not { State: "READY" } homework || homework.SnapshotId != snapshotId) return;
         if (_latestHomework == snapshotId) return;
         _latestHomework = snapshotId;

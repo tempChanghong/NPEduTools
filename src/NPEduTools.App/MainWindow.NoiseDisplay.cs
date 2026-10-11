@@ -9,6 +9,7 @@ public partial class MainWindow
 {
     private ScheduledNoiseWindow? _scheduledNoiseWindow;
     private StudyWindow? _studyWindow;
+    private StudyWindow? _manualStudyWindow;
     private long? _seatingUnsupportedAt;
     private long? _photosUnsupportedAt;
     private long? _reportUnsupportedAt;
@@ -34,6 +35,20 @@ public partial class MainWindow
                 var studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
                 if (_lifetime.IsCancellationRequested) break;
                 await PollStudyExitAsync();
+                long manualAt=Stopwatch.GetTimestamp();
+                var manual=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.status"));
+                var manualAge=Stopwatch.GetElapsedTime(manualAt);
+                bool schoolPriority=studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
+                if(schoolPriority)_manualStudyWindow?.HideDisplay();
+                else if(!_exitBusy && _exitWarning is not {IsVisible:true} && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
+                {
+                    using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
+                    long reportAt=Stopwatch.GetTimestamp();var report=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.report.status"));
+                    if(report.StudyReport is {Available:true} mr){_manualStudyWindow?.HideDisplay();_studyReportWindow??=new();_studyReportWindow.Apply(mr,Stopwatch.GetElapsedTime(reportAt));continue;}
+                    if(manual.Study is {Display.Available:true} ms){_studyReportWindow?.HideDisplay();_studyWindow?.HideDisplay();_manualStudyWindow??=new(_pipe,()=>OpenNoiseClicked(this,new RoutedEventArgs()),manual:true);_manualStudyWindow.Apply(ms,manual.Noise,manualAge,studyResponse.StudyPhotos);_manualStudyWindow.ShowDisplay();continue;}
+                    _manualStudyWindow?.HideDisplay();
+                }
+                else _manualStudyWindow?.HideDisplay();
                 UpdateStudyHome(studyResponse.Outcome == "Succeeded" ? studyResponse.Study : null);
                 if (studyResponse.Study is not { Display.Selected: true, PolicyState: "APPLIED", Seating.State: "READY" }) _studyWindow?.InvalidateSeating();
                 bool blocked = _exitBusy || _notificationOpening || _schoolNotification is not null || _notificationPreview is not null ||
@@ -88,16 +103,18 @@ public partial class MainWindow
                     }
                 }
             }
-            catch (Exception e) when (IsManagementError(e)) { UpdateStudyHome(null); _scheduledNoiseWindow?.Hide(); _studyWindow?.HideDisplay(); _studyReportWindow?.HideDisplay(); }
+            catch (Exception e) when (IsManagementError(e)) { UpdateStudyHome(null); _scheduledNoiseWindow?.Hide(); _studyWindow?.HideDisplay(); _studyReportWindow?.HideDisplay(); _manualStudyWindow?.HideDisplay(); }
             finally
             {
                 if (!_lifetime.IsCancellationRequested && _studyWindow is not null) await _studyWindow.ReportPresentationAsync();
+                if (!_lifetime.IsCancellationRequested && _manualStudyWindow is not null) await _manualStudyWindow.ReportPresentationAsync();
                 try { await Task.Delay(500, _lifetime.Token); } catch (OperationCanceledException) { }
             }
         }
         _scheduledNoiseWindow?.Hide();
         _studyWindow?.HideDisplay();
         _studyReportWindow?.HideDisplay();
+        _manualStudyWindow?.HideDisplay();
     }
     private async Task UpdateStudyReportAsync(bool blocked)
     {

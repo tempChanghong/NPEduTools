@@ -16,7 +16,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
     Func<bool>? prepareStop = null, StudySettingsService? study = null, StudyDisplayService? studyDisplay = null, StudyDeviceService? studyDevices = null,
-    SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null)
+    SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null, ManualStudyService? manualStudy=null, StudyRecoveryService? studyRecovery=null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -84,6 +84,14 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     response = study is not null && studyDisplay is not null ? study.ReceiveSeating(request, studyDisplay.Snapshot()) : new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "座位表展示尚未接入。");
                 else if (request.Capability == "study.homework")
                     response = study?.ReadHomework(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "作业读取尚未接入。");
+                else if(request.Capability.StartsWith("manual.study.",StringComparison.Ordinal))
+                {
+                    if(manualStudy is null)response=new(1,request.RequestId,"Rejected","MANUAL_STUDY_UNSUPPORTED","请更新后台。");
+                    else if(request.Capability=="manual.study.report.status")response=new(1,request.RequestId,"Succeeded",null,"手动自习报告。",StudyReport:manualStudy.Report());
+                    else if(request.Capability is "manual.study.status" or "manual.study.command")response=manualStudy.Handle(request);
+                    else response=manualStudy.Display.Handle(request with {Capability=request.Capability[7..]}) with {Noise=noise?.Snapshot(),ManualStudy=manualStudy.Status()};
+                }
+                else if(request.Capability=="study.recovery.status")response=new(1,request.RequestId,"Succeeded",null,"定时自习异常恢复状态。",StudyExit:studyRecovery?.Snapshot());
                 else if (request.Capability == "study.report.status")
                     response = studyReport is null ? new(1, request.RequestId, "Rejected", "STUDY_REPORT_UNSUPPORTED", "自习报告尚未接入。")
                         : new(1, request.RequestId, "Succeeded", null, "本机自习报告；不代表服务器上传回执。", StudyReport: studyReport.Snapshot());

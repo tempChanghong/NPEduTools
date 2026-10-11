@@ -28,6 +28,8 @@ public partial class StudySurface : UserControl
     private readonly StudyPresentationTimeline _timeline;
     private readonly StudyReminderAudio _audio;
     private readonly Func<Task> _hide;
+    private readonly Func<Task>? _end;
+    private bool _endHold;
     private readonly Action _manage;
     private readonly Func<string, StudyHostState, Task<bool>>? _reminderPermission;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(200) };
@@ -52,9 +54,9 @@ public partial class StudySurface : UserControl
     private static readonly Brush Collecting = new SolidColorBrush(Color.FromRgb(148, 194, 163));
 
     public StudySurface(Func<Task> hide, Action manage, bool muted = false, TimeProvider? time = null,
-        Func<string, StudyHostState, Task<bool>>? reminderPermission = null)
+        Func<string, StudyHostState, Task<bool>>? reminderPermission = null,Func<Task>? end=null)
     {
-        _hide = hide; _manage = manage; _reminderPermission = reminderPermission; _time = time ?? TimeProvider.System; _timeline = new(_time); _audio = new(muted);
+        _hide = hide; _end=end; _manage = manage; _reminderPermission = reminderPermission; _time = time ?? TimeProvider.System; _timeline = new(_time); _audio = new(muted);
         InitializeComponent();
         InitializeHomework();
         Clock.FontFamily = Remaining.FontFamily = NoticeTime.FontFamily = new FontFamily(new Uri("pack://application:,,,/NPEduTools.App;component/"), "./Assets/Study/Fonts/#TCloudNumber");
@@ -65,7 +67,7 @@ public partial class StudySurface : UserControl
             if (_holdAt is not { } at) return;
             if (!_timeline.Fresh || _timeline.State?.Phase != "Active") { CancelHold(); return; }
             if (_time.GetElapsedTime(at).TotalSeconds < 2) return;
-            CancelHold(); await HideAsync();
+            bool ending=_endHold; CancelHold(); if(ending && _end is not null)await _end();else await HideAsync();
         };
     }
     public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default)
@@ -82,20 +84,27 @@ public partial class StudySurface : UserControl
     {
         if (_paused || _timeline.State is not { } state) return;
         bool fresh = _timeline.Fresh;
+        bool manual=state.Manual is not null;
+        ClassTitle.Text=manual?"手动自习":"学校自习";
+        EndButton.Visibility=manual?Visibility.Visible:Visibility.Collapsed;EndButton.IsEnabled=fresh && state.Phase=="Active" && !_busy;
+        if(manual){SeatingButton.Visibility=SeatingStatus.Visibility=Visibility.Collapsed;Canvas.SetLeft(HoldButton,266);Canvas.SetLeft(ManageButton,492);}
+        HoldHint.Text=manual?state.Manual!.HideSeconds is {} seconds?$"长按 2 秒 · {seconds/60.0:g} 分钟后返回":"长按 2 秒 · 不自动返回":"长按 2 秒 · 最多 3 分钟";
         Clock.Text = state.SchoolNow?.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "--:--:--";
         Clock.Foreground = fresh ? Brushes.White : Muted;
-        DateSource.Text = state.SchoolNow is { } date ? $"{date.ToString("M月d日 dddd", CultureInfo.GetCultureInfo("zh-CN"))} · ClassIsland 学校时间" : "等待 ClassIsland 学校时间";
-        PhaseText.Text = !fresh ? "学校时间待同步" : state.Phase switch { "Preparing" => "准备开始", "Active" => "自习进行中", "Ended" => "本次自习结束", _ => "自习暂停" };
+        DateSource.Text = state.SchoolNow is { } date ? $"{date.ToString("M月d日 dddd", CultureInfo.GetCultureInfo("zh-CN"))} · {(manual?"Windows 本机时间":"ClassIsland 学校时间")}" : "等待 ClassIsland 学校时间";
+        PhaseText.Text = !fresh ? (manual?"本机状态待同步":"学校时间待同步") : state.Phase switch { "Preparing" => "准备开始", "Active" => "自习进行中", "Ended" => "本次自习结束", _ => "自习暂停" };
         WindowText.Text = state.Window is { } w ? $"{w.Start:HH:mm} – {w.End:HH:mm}" : "—";
         RemainingLabel.Text = "剩余时间";
         Remaining.Text = fresh && state.Phase == "Active" && state.Window is { } window && state.SchoolNow is { } now
             ? TimeSpan.FromSeconds(Math.Max(0, Math.Ceiling((window.End - now).TotalSeconds))).ToString(@"hh\:mm\:ss") : "—";
         if (fresh) { ProgressFill.Width = 1470 * _timeline.Progress; ProgressPercent.Text = $"{Math.Floor(_timeline.Progress * 100):0}%"; }
         ProgressCaption.Text = fresh ? "本时段时间进度" : "时间待同步 · 进度暂停";
+        if(manual && !state.Manual!.HasPlannedEnd && state.Window is {} mw && state.SchoolNow is {} mn)
+        {WindowText.Text=$"{mw.Start:HH:mm} – 主动结束";RemainingLabel.Text="已进行";Remaining.Text=TimeSpan.FromSeconds(Math.Max(0,(mn-mw.Start).TotalSeconds)).ToString(@"hh\:mm\:ss");ProgressFill.Width=0;ProgressPercent.Text="";ProgressCaption.Text="实际采集最多三小时";}
         SessionNote.Text = _returnError ?? (state.Display?.StageAudioError is not null ? "阶段提示音暂不可用" :
-            state.Phase == "Preparing" ? "即将开始自习" : "自习安排由学校管理后台设置");
-        bool capturing = fresh && state.Phase == "Active" && state.Execution is { Owner: "Schedule", State: "Active", SignalFresh: true } execution &&
-            _noise is { State: "Active" } noise && execution.SessionId == noise.SessionId &&
+            state.Phase == "Preparing" ? "即将开始自习" : manual?"手动自习 · 学校定时自习优先":"自习安排由学校管理后台设置");
+        bool capturing = fresh && state.Phase == "Active" && state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true } execution &&
+            _noise is { State: "Active" } noise && (execution.Owner=="Schedule" || manual) && execution.SessionId == noise.SessionId &&
             (noise.Quality == "DigitalSilence" || noise.Quality is "Good" or "Clipping" && noise.CurrentDbfs is { } level && double.IsFinite(level));
         NoiseStatus.Text = !fresh ? "监测状态待确认" : capturing ? "正在监测" : state.Execution?.Owner == "Manual" ? "当前为手动监测" :
             state.Settings?.Noise.Enabled == false ? "噪音监测未启用" :
@@ -213,7 +222,13 @@ public partial class StudySurface : UserControl
     }
     public void BeginHold()
     { if (_busy || !_timeline.Fresh || _timeline.State?.Phase != "Active" || _holdAt is not null) return; _holdAt = _time.GetTimestamp(); HoldText.Text = "继续按住…"; _holdTimer.Start(); }
-    public void CancelHold() { _holdAt = null; _holdTimer.Stop(); HoldText.Text = "临时使用电脑"; }
+    private void BeginEndHold(){if(_end is null || !EndButton.IsEnabled)return;BeginHold();_endHold=_holdAt is not null;}
+    private void EndMouseDown(object sender,MouseButtonEventArgs e){if(e.StylusDevice is not null)return;BeginEndHold();EndButton.CaptureMouse();e.Handled=true;}
+    private void EndMouseUp(object sender,MouseButtonEventArgs e){CancelHold();EndButton.ReleaseMouseCapture();e.Handled=true;}
+    private void EndTouchDown(object sender,TouchEventArgs e){BeginEndHold();EndButton.CaptureTouch(e.TouchDevice);e.Handled=true;}
+    private void EndTouchUp(object sender,TouchEventArgs e){CancelHold();EndButton.ReleaseTouchCapture(e.TouchDevice);e.Handled=true;}
+    private void EndKeyDown(object sender,KeyEventArgs e){if(e.Key is Key.Space or Key.Enter){if(!e.IsRepeat)BeginEndHold();e.Handled=true;}}
+    public void CancelHold() { _endHold=false; _holdAt = null; _holdTimer.Stop(); HoldText.Text = "临时使用电脑"; }
     public void ReturnError(string? message) { _returnError = message; if (!_paused) Render(); }
     private void HoldMouseDown(object sender, MouseButtonEventArgs e) { if (e.StylusDevice is not null) return; BeginHold(); HoldButton.CaptureMouse(); e.Handled = true; }
     private void HoldMouseUp(object sender, MouseButtonEventArgs e) { CancelHold(); HoldButton.ReleaseMouseCapture(); e.Handled = true; }

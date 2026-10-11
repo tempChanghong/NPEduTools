@@ -77,7 +77,7 @@ public sealed partial class NoiseScheduleHostTests
                 ["rules"]=source is "None" or "Disabled" ? new JsonArray() : JsonNode.Parse("[{\"days\":[4],\"start\":\"19:00\",\"end\":\"20:00\"}]") },
             ["leaseSeconds"]=seconds,["confirmed"]=confirmed,["command"]=null };
         public void Tick(int ms=500) { Time.Ms+=ms; Scheduler.Tick(); }
-        public async Task Start() { Tick(); Tick(); Tick(); await Until(()=>Noise.Snapshot().State=="Active"); }
+        public async Task Start() { Tick(); Tick(); Tick(); await Until(()=>{Scheduler.Tick();return Noise.Snapshot().State=="Active" && Scheduler.Observe()["owner"]!.GetValue<string>()=="Schedule";}); }
         public async ValueTask DisposeAsync()
         { await Scheduler.DisposeAsync(); await Noise.DisposeAsync(); if(Directory.Exists(Path)) Directory.Delete(Path,true); }
     }

@@ -63,7 +63,8 @@ public sealed class StudyPhotoTests
     {
         if (!OperatingSystem.IsWindows()) return;
         var root=System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory,"../../../../../"));
-        string exe=System.IO.Path.Combine(root,"src","NPEduTools.Camera","bin","Debug","net10.0-windows","NPEduTools.Camera.exe");
+        string configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
+        string exe=System.IO.Path.Combine(root,"src","NPEduTools.Camera","bin",configuration,"net10.0-windows","NPEduTools.Camera.exe");
         Assert.True(File.Exists(exe));
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(6));
         var frame=await StudyPhotoProcess.RunAsync(exe,"synthetic-only",true,timeout.Token);
@@ -113,7 +114,7 @@ public sealed class StudyPhotoTests
         Assert.Equal("Suppressed",service.ExitIntent(new(1,Guid.NewGuid(),"study.photos.exit-intent")).Outcome);
         service.BindPhotos(null); Assert.Equal(1,journal.Pending); // graceful shutdown retains queue.
         service.PhotoFailed("PHOTO_NOT_ELIGIBLE"); Assert.Equal(0,journal.Pending);
-        service.BindPhotos("scope"); clock.Ms=30000; service.ConfirmPhotoLease(Lease(),TimeSpan.Zero);
+        service.BindPhotos("scope"); clock.Ms=30000; capture.Emit(-50); service.ConfirmPhotoLease(Lease(),TimeSpan.Zero);
         // No App or selected display is required; actual high frames alone qualify the photo.
         state=state with { Display=null }; service.Tick();
         for(int i=0;i<29;i++) { clock.Ms+=100; capture.Emit(-20); service.Tick(); }
@@ -127,7 +128,7 @@ public sealed class StudyPhotoTests
         state=state with { Phase="Active",Execution=state.Execution! with { Owner="Manual" } }; Assert.Equal("Suppressed",service.ExitIntent(request).Outcome);
         state=state with { Execution=state.Execution! with { Owner="Schedule",SignalFresh=false } }; Assert.Equal("Suppressed",service.ExitIntent(request).Outcome);
         state=state with { Execution=state.Execution! with { SignalFresh=true },Settings=state.Settings! with { Noise=policy with { Estimated=new(70,60) } } };
-        service.ConfirmPhotoLease(Lease(),TimeSpan.Zero);
+        capture.Emit(-20); service.ConfirmPhotoLease(Lease(),TimeSpan.Zero);
         Assert.Equal("Succeeded",service.ExitIntent(new(1,Guid.NewGuid(),"study.photos.exit-intent")).Outcome);
         await service.FlushAsync(CancellationToken.None);
         packet=service.PendingPhoto()!;

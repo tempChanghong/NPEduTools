@@ -42,7 +42,7 @@ public sealed partial class NoiseScheduleService
                     cursor = window.End;
                 }
             }
-            return new(generation, host, utc, hints, suppress);
+            return new(generation, host, utc, hints, suppress,_studySelected && _scope is not null && _version is not null?GuardRecoveryEvent.Key(_scope,_version):null);
         }
     }
 }

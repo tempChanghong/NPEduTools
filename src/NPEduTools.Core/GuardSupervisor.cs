@@ -9,6 +9,7 @@ public sealed class GuardSupervisor(GuardFiles files, GuardRegistration registra
     private readonly TimeProvider _time = time ?? TimeProvider.System;
     private bool _suspended;
     private bool _finished;
+    private GuardRecoveryEvent? _incident;
     public void Suspend() { _policy.Suspend(); _suspended = true; }
     // Resuming permits cached launch hints, but never revives the pre-sleep capture lease.
     public void Resume() { _policy.Suspend(); _suspended = false; }
@@ -43,11 +44,19 @@ public sealed class GuardSupervisor(GuardFiles files, GuardRegistration registra
         var current = files.Read<GuardRegistration>("registration.json");
         if (current?.Generation == registration.Generation && processes.Matches(current.App, true)) _app = current.App;
         bool appMissing = !processes.IsAlive(_app), hostMissing = _host is not null && !processes.IsAlive(_host);
+        if(!appMissing && !hostMissing)_incident=null;
         string phase = _policy.Limited ? "RecoveryLimit" : _policy.Armed(seconds) ? "Armed" : planned ? "ScheduledWake" : "Watching";
         if (_policy.MayRestart(appMissing || hostMissing || planned && _host is null, interactive, seconds, planned))
         {
             if (files.Stopped(registration.Generation)) return false;
             if (files.SessionEnding(registration.Generation)) return true;
+            if (_policy.Armed(seconds) && !expectedHost && !skipWindow && _plan is {ContextKey:not null,CurrentEndUtc:{}} && _plan.CurrentEndUtc is {} end && end>utc)
+            {
+                var previous=files.Read<GuardRecoveryEvent>("recovery.json");
+                _incident??=previous?.Generation==registration.Generation && previous.App==_app && previous.Host==_host && previous.WindowEndUtc==end?previous:
+                    new(Guid.NewGuid(),registration.Generation,_app,_host,utc,end,_plan.ContextKey);
+                try {files.Write("recovery.json",_incident);}catch(Exception e)when(e is IOException or UnauthorizedAccessException){ }
+            }
             _policy.Attempted(); phase = "Recovering";
             try { if (appMissing) _app = processes.Start(true); else _host = processes.Start(false); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException or System.ComponentModel.Win32Exception or InvalidOperationException or ArgumentException) { phase = "RecoveryFailed"; }

@@ -92,7 +92,7 @@
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A7;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="快捷启动" /></StackPanel>
           </Button>
           <TextBlock Text="监测" Foreground="#718089" FontSize="11" Margin="16,18,0,12"/>
-          <Button Content="手动噪音监测" Style="{StaticResource SidebarNavigation}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="OpenNoise"/>
+          <Button Content="手动自习" Style="{StaticResource SidebarNavigation}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="OpenNoise"/>
           <Button Content="自习监测" Style="{StaticResource SidebarNavigation}" Click="OpenStudyMonitoringClicked" AutomationProperties.AutomationId="OpenStudyMonitoring"/>
           <Button x:Name="SettingsNav" Style="{StaticResource SidebarNavigation}" Click="SettingsNavClicked" AutomationProperties.AutomationId="SettingsTab">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设置" /></StackPanel>
@@ -168,13 +168,13 @@
             </TextBlock>
             <TextBlock Text="监测" Style="{StaticResource HomeSection}" Margin="0,8,0,10"/>
             <UniformGrid Columns="2" Margin="0,0,-10,12">
-              <Button Style="{StaticResource HomeTool}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="HomeOpenNoise" AutomationProperties.Name="手动噪音监测">
+              <Button Style="{StaticResource HomeTool}" Click="OpenNoiseClicked" AutomationProperties.AutomationId="HomeOpenNoise" AutomationProperties.Name="手动自习">
                 <StackPanel>
                   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
                     <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE720;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="手动噪音监测" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock Grid.Column="1" Text="手动自习" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                   </Grid>
-                  <TextBlock Text="主动开始本机采样 · 查看当前统计" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                  <TextBlock Text="可选开始与结束时间 · 全屏自习与统计" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
               </Button>
               <Button Style="{StaticResource HomeTool}" Click="OpenStudyMonitoringClicked" AutomationProperties.AutomationId="HomeOpenStudyMonitoring" AutomationProperties.Name="自习监测">

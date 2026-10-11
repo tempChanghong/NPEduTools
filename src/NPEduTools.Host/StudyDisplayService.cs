@@ -16,6 +16,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
     private SchoolNoiseWindow? _lastWindow, _hiddenWindow;
     private SchoolNoiseWindow? _presentationWindow;
     private long? _hiddenUntil;
+    private bool _manualHidden;
     private readonly HashSet<Guid> _requests = [];
     private readonly Queue<Guid> _requestOrder = new();
     private double Remaining => _hiddenUntil is { } until ? Math.Max(0, (until - _time.GetTimestamp()) / (double)_time.TimestampFrequency) : 0;
@@ -32,7 +33,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             if (_scope != current.Scope || !current.Selected)
             {
                 if (_scope != current.Scope) _instance = Guid.NewGuid();
-                _scope = current.Scope; _lastWindow = _hiddenWindow = null; _hiddenUntil = null;
+                _scope = current.Scope; _lastWindow = _hiddenWindow = null; _hiddenUntil = null;_manualHidden=false;
                 _requests.Clear(); _requestOrder.Clear();
                 _presentations.Clear();
                 _presentationWindow = null;
@@ -50,7 +51,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             {
                 _presentationWindow = presentationWindow; _instance = Guid.NewGuid(); _presentations.Clear();
             }
-            double hidden = state.Window == _hiddenWindow ? Remaining : 0;
+            double hidden = state.Window == _hiddenWindow ? _manualHidden?10801:Remaining : 0;
             bool available = current.Selected && state.PolicyState == "APPLIED" && state.ClockReady &&
                 state.Window is not null && state.Phase is "Preparing" or "Active" or "Ended" && hidden <= 0;
             state = state with { Display = new(_instance, current.Selected, available, hidden, _stageReminders.Error) };
@@ -90,7 +91,8 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             if (_requestOrder.Count > 128) _requests.Remove(_requestOrder.Dequeue());
             if (state.Display!.HiddenRemainingSeconds <= 0)
             {
-                int seconds = Math.Clamp(state.Settings!.Presentation.TemporaryHideSeconds, 1, 180);
+                int seconds = Math.Clamp(state.Manual?.HideSeconds??state.Settings!.Presentation.TemporaryHideSeconds, 1, state.Manual is null?180:10800);
+                _manualHidden=state.Manual is {HideSeconds:null};
                 _hiddenWindow = state.Window;
                 _hiddenUntil = _time.GetTimestamp() + (long)(seconds * (double)_time.TimestampFrequency);
             }

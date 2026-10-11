@@ -13,11 +13,12 @@ public partial class NoiseWindow : Window
     private readonly string _pipe;
     private readonly CancellationTokenSource _lifetime = new();
     private NoiseState? _state;
+    private ManualStudyState? _manual;
     private bool _closing, _busy, _connected;
     private long _uiOperation;
     public NoiseWindow(string pipe)
     {
-        _pipe = pipe; InitializeComponent();
+        _pipe = pipe; InitializeComponent();ManualStartDate.SelectedDate=ManualEndDate.SelectedDate=DateTime.Today;
         Closing += (_, args) => { if (!_closing) { args.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Microphone.SelectionChanged += (_, _) => UpdateButtons();
@@ -54,6 +55,11 @@ public partial class NoiseWindow : Window
                     var response = await RequestAsync(loadedDevices ? "noise.status" : "noise.devices");
                     if (_lifetime.IsCancellationRequested || operation != _uiOperation) continue;
                     if (response.NoiseDevices is not null) { _state = response.Noise; SetDevices(response.NoiseDevices); loadedDevices = true; }
+                    using var manualTimeout=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);manualTimeout.CancelAfter(TimeSpan.FromSeconds(4));
+                    var manual=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.status"),manualTimeout.Token);
+                    if(operation!=_uiOperation)continue;
+                    _manual=manual.ManualStudy;
+                    ManualStatus.Text=_manual is {} m?$"{m.State} · {m.Reason??"学校定时优先；预约不会在后台重启后续开"}":"当前后台尚未支持手动自习，请更新后台。";
                     Render(response.Noise);
                     if (response.Noise is not null)
                         DisplayStatusText.Text = response.NoiseDisplay is { } display
@@ -78,9 +84,9 @@ public partial class NoiseWindow : Window
     private void UpdateButtons()
     {
         bool running = _state?.State is "Starting" or "Active" or "Stopping";
-        StartButton.IsEnabled = _connected && !_busy && !running && Microphone.SelectedItem is NoiseDevice;
+        StartButton.IsEnabled = _manual is not null && _manual.State is not ("Waiting" or "Preparing" or "Starting" or "Active" or "Stopping") && _connected && !_busy && !running && Microphone.SelectedItem is NoiseDevice;
         SaveDeviceButton.IsEnabled = StartButton.IsEnabled;
-        StopButton.IsEnabled = _connected && !_busy && _state?.State is "Starting" or "Active";
+        StopButton.IsEnabled = _connected && !_busy && _manual?.State is "Waiting" or "Preparing" or "Starting" or "Active";
         Microphone.IsEnabled = RefreshButton.IsEnabled = !_busy && !running;
     }
     private void Render(NoiseState? state)
@@ -178,12 +184,26 @@ public partial class NoiseWindow : Window
     }
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
-        if (_state is { } state && Microphone.SelectedItem is NoiseDevice device)
-            await RunAsync("noise.command", new("start", state.InstanceId, state.Revision, device.Id));
+        if(_manual is not {} m || Microphone.SelectedItem is not NoiseDevice device)return;
+        DateTimeOffset? start=null,end=null;int? hide=null;
+        try {
+            DateTimeOffset Parse(System.Windows.Controls.DatePicker picker,string text){if(picker.SelectedDate is not {} d || !TimeSpan.TryParseExact(text.Trim(),@"hh\:mm",System.Globalization.CultureInfo.InvariantCulture,out var t))throw new FormatException();return new DateTimeOffset(DateTime.SpecifyKind(d.Date+t,DateTimeKind.Local)).ToUniversalTime();}
+            if(UseStart.IsChecked==true)start=Parse(ManualStartDate,ManualStartTime.Text);
+            if(UseEnd.IsChecked==true)end=Parse(ManualEndDate,ManualEndTime.Text);
+            if(NoManualReturn.IsChecked!=true){if(!int.TryParse(ManualHideMinutes.Text,out var minutes) || minutes is <1 or >180)throw new FormatException();hide=minutes*60;}
+        } catch(FormatException){MessageText.Text="请选择日期，时间使用 HH:mm；返回时长为 1–180 分钟。";return;}
+        await ManualCommandAsync(new("start",m.InstanceId,m.Revision,DeviceId:device.Id,StartUtc:start,EndUtc:end,HideSeconds:hide));
     }
     private async void StopClicked(object sender, RoutedEventArgs e)
     {
-        if (_state is { } state) await RunAsync("noise.command", new("stop", state.InstanceId, state.Revision));
+        if(_manual is {} m)await ManualCommandAsync(new("end",m.InstanceId,m.Revision,m.SessionId));
+    }
+    private async Task ManualCommandAsync(ManualStudyCommand command)
+    {
+        if(_busy)return;_busy=true;_uiOperation++;UpdateButtons();
+        try{using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(5));var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",ManualStudy:command),deadline.Token);_manual=reply.ManualStudy;MessageText.Text=reply.Message;Render(reply.Noise);}
+        catch(Exception e)when(e is IOException or InvalidDataException or JsonException or OperationCanceledException){Render(null);MessageText.Text="请求结果待确认；请等待后台状态恢复，不重复启动。";}
+        finally{_busy=false;UpdateButtons();}
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {

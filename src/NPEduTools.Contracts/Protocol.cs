@@ -36,7 +36,8 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyCameraCommand? StudyCamera = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationCommand? NoiseCalibration = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseReferenceCommand? NoiseReference = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoundMeterCommand? SoundMeter = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoundMeterCommand? SoundMeter = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyCommand? ManualStudy = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -83,7 +84,8 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoundMeterState? SoundMeter = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyPhotoState? StudyPhotos = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyExitState? StudyExit = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyReportState? StudyReport = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyReportState? StudyReport = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? ManualStudy = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -123,6 +125,10 @@ public static class Protocol
     public static string? Validate(HostRequest request)
     {
         if (request.Version != Version) return "ProtocolVersionMismatch";
+        if (request.Capability is "manual.study.hide" or "manual.study.reminder" or "manual.study.presentation")
+            return Validate(request with { Capability=request.Capability[7..] });
+        if (request.Capability=="manual.study.command" ? request.ManualStudy is not {Action:"start" or "end",InstanceId:var mid,Revision:>=0} || mid==Guid.Empty : request.ManualStudy is not null) return "InvalidManualStudyCommand";
+        if (request.ManualStudy is { } manual && (manual.Action == "end" ? manual.SessionId is null || manual.SessionId == Guid.Empty : manual.SessionId is not null)) return "InvalidManualStudyCommand";
         if (request.Capability == "noise.meter.command" ? request.SoundMeter is null ||
             !SoundMeterContract.Valid(request.SoundMeter) : request.SoundMeter is not null) return "InvalidSoundMeterCommand";
         if (request.Capability == "noise.reference.command" ? request.NoiseReference is null ||
@@ -173,7 +179,7 @@ public static class Protocol
         if (request.Capability == "npep.notifications" ? request.Notification is null || !NpepNotificationContract.Valid(request.Notification) : request.Notification is not null) return "InvalidNotificationCommand";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
-            "study.report.status" or "study.exit.begin" or "study.exit.status" or "study.photos.exit-intent" or "study.photos.flush" or "study.status.photos" or "study.devices.microphone" or "study.devices.status" or "study.devices.refresh" or "study.devices.select" or "study.status.seating" or "study.seating" or "study.seating.presentation" or "study.status" or "study.hide" or "study.reminder" or "study.homework" or "study.presentation" or "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
+            "manual.study.command" or "manual.study.status" or "manual.study.report.status" or "study.recovery.status" or "study.report.status" or "study.exit.begin" or "study.exit.status" or "study.photos.exit-intent" or "study.photos.flush" or "study.status.photos" or "study.devices.microphone" or "study.devices.status" or "study.devices.refresh" or "study.devices.select" or "study.status.seating" or "study.seating" or "study.seating.presentation" or "study.status" or "study.hide" or "study.reminder" or "study.homework" or "study.presentation" or "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
             "noise.meter.command" or "noise.reference.status" or "noise.reference.command" or "noise.calibration.status" or "noise.calibration.command" or "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or

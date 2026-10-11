@@ -21,7 +21,7 @@ public sealed class StudyPresentationTimeline(TimeProvider? time = null)
         ? Math.Clamp((now - w.Start).TotalSeconds / (w.End - w.Start).TotalSeconds, 0, 1) : 0;
     public void Apply(StudyHostState state, TimeSpan transportAge = default)
     {
-        if (_notice == "Discipline" && (_state?.Execution?.SessionId != state.Execution?.SessionId || _state?.Version != state.Version)) ClearNotice();
+        if (_notice == "Discipline" && (state.Execution?.Owner=="Manual" && state.Manual is null || _state?.Execution?.SessionId != state.Execution?.SessionId || _state?.Version != state.Version)) ClearNotice();
         if (_instance != state.Display?.InstanceId)
         { _instance = state.Display?.InstanceId; _seen.Clear(); _order.Clear(); ClearNotice(); }
         _state = state;
@@ -30,7 +30,7 @@ public sealed class StudyPresentationTimeline(TimeProvider? time = null)
         if (!Fresh || state.Window is not { } window || state.Phase is not ("Preparing" or "Active" or "Ended"))
         { ClearNotice(); return; }
         if (_notice != state.Phase && !(_notice == "Discipline" && state.Phase == "Active" &&
-            state.Execution is { Owner: "Schedule", State: "Active", SignalFresh: true })) ClearNotice();
+            state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true })) ClearNotice();
         string key = $"{window.Start:O}|{window.End:O}|{state.Phase}";
         if (!_seen.Add(key))
         {
@@ -55,7 +55,7 @@ public sealed class StudyPresentationTimeline(TimeProvider? time = null)
     public bool BeginDiscipline()
     {
         // Stage transitions take priority; discipline never queues behind a start/end notice.
-        if (!Fresh || Notice is not null || _state is not { Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } }) return false;
+        if (!Fresh || Notice is not null || _state?.Execution?.Owner=="Manual" && _state.Manual is null || _state is not { Phase: "Active", Execution: { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true } }) return false;
         _notice = "Discipline"; _noticeUntil = _time.GetTimestamp() + 5 * _time.TimestampFrequency;
         return true;
     }

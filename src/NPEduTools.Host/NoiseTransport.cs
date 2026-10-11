@@ -100,7 +100,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
             var s = _noise.Snapshot();
             if (_error is null && _store["scope"] is not null && !Excluded(s) && s.Summary is not null && s.State is "Active" or "Starting" or "Stopping" && Stopwatch.GetElapsedTime(_checkpointAt).TotalSeconds >= 30)
             {
-                _store["checkpoint"] = Report(s, "Interrupted"); _checkpointAt = Stopwatch.GetTimestamp();
+                _store["checkpoint"] = OwnedReport(s, "Interrupted"); _checkpointAt = Stopwatch.GetTimestamp();
                 try { Save(); } catch (Exception e) when (StorageError(e)) { _error = "NOISE_STORE_UNAVAILABLE"; }
             }
             var status = new JsonObject { ["instanceId"] = s.InstanceId.ToString("D"), ["revision"] = s.Revision,
@@ -130,6 +130,12 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         { State = estimate.Reason is null ? "Stopped" : "Invalidated", CurrentDbA = null }, Json);
         return report;
     }
+    private JsonObject OwnedReport(NoiseState s,string outcome)
+    {
+        var report=Report(s,outcome);
+        if(_noise.IsManualStudy(s.SessionId)){report["sessionKind"]="Manual";if(s.SessionId is {} id)report["endReason"]=_noise.ManualStudyEndReason(id)??"Interrupted";}
+        return report;
+    }
     private void AddReport(JsonObject report)
     {
         NpepNoiseProtocol.Validate("report", report);
@@ -146,7 +152,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         lock (_sync)
         {
             if (_error is not null || _store["scope"] is null || s.Summary is null || Excluded(s)) return;
-            try { AddReport(Report(s, s.State)); _store["checkpoint"] = null; Save(); }
+            try { AddReport(OwnedReport(s, s.State)); _store["checkpoint"] = null; Save(); }
             catch (Exception e) when (StorageError(e)) { _error = "NOISE_STORE_UNAVAILABLE"; }
         }
     }

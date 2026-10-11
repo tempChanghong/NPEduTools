@@ -379,9 +379,9 @@ public sealed class NoiseCalibrationTests
             "rules":[{"days":[4],"start":"19:00","end":"21:30"}]},"leaseSeconds":86400,"confirmed":true,"command":null}
             """)!.AsObject());
         for (int i = 0; i < 3; i++) { f.Time.Milliseconds += 500; scheduler.Tick(); }
-        await Until(() => quick.Disposed && !f.Noise.CaptureBusy);
+        await Until(() => quick.Disposed);
         Assert.Equal("Interrupted", Assert.Single(f.State.Samples).Quality);
-        f.Time.Milliseconds += 500; scheduler.Tick(); await Until(() => f.Noise.Snapshot().State == "Active");
+        await Until(() => { f.Time.Milliseconds += 100; scheduler.Tick(); return f.Noise.Snapshot().State == "Active" && scheduler.Observe()["owner"]!.GetValue<string>()=="Schedule"; });
         Assert.Equal("Schedule", scheduler.Observe()["owner"]!.GetValue<string>()); Assert.Equal(0, f.Reports);
     }
     [Fact]

@@ -46,9 +46,14 @@ public sealed class GuardProcessTests(ITestOutputHelper output)
             var originalHost = files.Read<GuardLease>("lease.json")!.Host;
             Assert.True(processes.Matches(originalHost, false));
             Assert.False(processes.Matches(originalHost with { StartedUtcTicks = originalHost.StartedUtcTicks + 1 }, false));
+            var now=DateTimeOffset.UtcNow;
+            files.Write("wake.json",new GuardWakePlan(registration.Generation,originalHost,now,[new(now.AddMinutes(-1),now.AddHours(1))],now.AddHours(1),new string('a',64)));
+            await Task.Delay(600); // Let the real isolated guardian observe the scoped plan.
             host.Kill(entireProcessTree: true); await host.WaitForExitAsync();
             await Until(() => files.Read<GuardLease>("lease.json")?.Host is { } p && p != originalHost && processes.Matches(p, false));
             recovered.Add(files.Read<GuardLease>("lease.json")!.Host);
+            var incident=files.Read<GuardRecoveryEvent>("recovery.json");Assert.NotNull(incident);
+            Assert.Equal(originalHost,incident.Host);Assert.Equal(registration.Generation,incident.Generation);
             using (var freshHost = Process.GetProcessById(recovered[^1].Id))
                 Assert.NotEqual(guard.Id, Parent(freshHost)); // Recovery is owned by Task Scheduler.
             Assert.False(app.HasExited); // Actual independent guard survives its monitored Host's death.

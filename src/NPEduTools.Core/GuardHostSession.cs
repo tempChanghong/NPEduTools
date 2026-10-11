@@ -14,7 +14,8 @@ public sealed class GuardHostSession : IAsyncDisposable
     private readonly object _writeSync = new();
     public GuardHostSession(GuardFiles files, Func<bool> armed, Func<Guid, GuardProcess, GuardWakePlan?>? plan = null, Action? ensureGuard = null)
     { _files = files; _armed = armed; _plan = plan; _ensureGuard = ensureGuard; _loop = LoopAsync(); }
-    public bool ExpectedStop()
+    public bool ExpectedStop()=>ExpectedStop(true);
+    public bool ExpectedStop(bool skipCurrentWindow)
     {
         try
         {
@@ -26,7 +27,7 @@ public sealed class GuardHostSession : IAsyncDisposable
                     var previous = _files.Read<GuardWakePlan>("wake.json");
                     var end = plan?.CurrentEndUtc ?? (previous?.Generation == r.Generation && previous.Host == _identity ? previous.CurrentEndUtc : null);
                     // Write the suppression before acknowledging exit. The guardian itself remains alive.
-                    _files.Write("expected-exit.json", new GuardExpectedExit(r.Generation, _identity, end));
+                    _files.Write("expected-exit.json", new GuardExpectedExit(r.Generation, _identity, skipCurrentWindow?end:null));
                     if (plan is not null) _files.Write("wake.json", plan);
                     _files.Write("lease.json", new GuardLease(r.Generation, _identity, ++_sequence, false));
                 }

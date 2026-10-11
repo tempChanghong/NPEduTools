@@ -64,10 +64,15 @@
       <Grid x:Name="HomeworkGrid" Grid.Row="1"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions></Grid>
      </Grid>
     </Border>
+    <Button x:Name="EndButton" Canvas.Left="40" Canvas.Top="970" Width="204" Height="77" Style="{StaticResource Tool}" Visibility="Collapsed"
+     PreviewMouseLeftButtonDown="EndMouseDown" PreviewMouseLeftButtonUp="EndMouseUp" LostMouseCapture="HoldLost" LostKeyboardFocus="HoldLost"
+     PreviewTouchDown="EndTouchDown" PreviewTouchUp="EndTouchUp" LostTouchCapture="HoldLost" PreviewKeyDown="EndKeyDown" PreviewKeyUp="HoldKeyUp">
+     <StackPanel><TextBlock Text="结束自习" FontSize="23" HorizontalAlignment="Center"/><TextBlock Text="长按 2 秒 · 提前结束" FontSize="15" HorizontalAlignment="Center"/></StackPanel>
+    </Button>
     <Button x:Name="HoldButton" Canvas.Left="40" Canvas.Top="970" Width="204" Height="77" Style="{StaticResource Tool}" IsEnabled="False"
      PreviewMouseLeftButtonDown="HoldMouseDown" PreviewMouseLeftButtonUp="HoldMouseUp" LostMouseCapture="HoldLost" LostKeyboardFocus="HoldLost"
      PreviewTouchDown="HoldTouchDown" PreviewTouchUp="HoldTouchUp" LostTouchCapture="HoldLost" PreviewKeyDown="HoldKeyDown" PreviewKeyUp="HoldKeyUp">
-     <StackPanel><TextBlock x:Name="HoldText" Text="临时使用电脑" FontSize="23" HorizontalAlignment="Center"/><TextBlock Text="长按 2 秒 · 最多 3 分钟" FontSize="15" Margin="0,5,0,0" HorizontalAlignment="Center" Foreground="{StaticResource Muted}"/></StackPanel>
+     <StackPanel><TextBlock x:Name="HoldText" Text="临时使用电脑" FontSize="23" HorizontalAlignment="Center"/><TextBlock x:Name="HoldHint" Text="长按 2 秒 · 最多 3 分钟" FontSize="15" Margin="0,5,0,0" HorizontalAlignment="Center" Foreground="{StaticResource Muted}"/></StackPanel>
     </Button>
     <Button x:Name="ManageButton" Canvas.Left="266" Canvas.Top="970" Width="144" Height="77" Style="{StaticResource Tool}" Click="ManageClicked" Content="监测管理"/>
     <Button x:Name="SeatingButton" Canvas.Left="432" Canvas.Top="970" Width="210" Height="77" Style="{StaticResource Tool}" Content="查看自习座位表" IsEnabled="False" Click="OpenSeatingClicked"/>
