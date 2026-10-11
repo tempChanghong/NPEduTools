@@ -9,6 +9,6 @@ public sealed record StudySessionReport(Guid SessionId, bool Complete, double El
     long Frames, int DisciplineReminders, StudyReportChannel Raw, StudyReportChannel? Estimated, string? EstimateReason);
 public sealed record StudyReportData(SchoolNoiseWindow Window, double ExpectedSeconds, double SampledSeconds, double Coverage,
     double ClippedPercent, long Frames, int DisciplineReminders, StudyReportChannel Raw, StudyReportChannel? Estimated,
-    bool Complete, IReadOnlyList<string> Notes);
+    bool Complete, IReadOnlyList<string> Notes, string Mode = "Daily", string ClockSource = "ClassIsland");
 public sealed record StudyReportState(Guid InstanceId, string? Version, bool Available, string State,
     double RemainingSeconds, StudyReportData? Data);

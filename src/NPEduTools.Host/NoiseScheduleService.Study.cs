@@ -23,7 +23,7 @@ public sealed partial class NoiseScheduleService
             Tick();
             // Existing persisted consumption is returned without clearing a later manual stop.
             bool permitted = LeaseRemaining(Elapsed) > 0 && roundTrip >= TimeSpan.Zero && roundTrip < TimeSpan.FromSeconds(30)
-                && _owner == "None" && _reason is "WINDOW_SKIPPED" or "WINDOW_FAILED" && !_exam();
+                && (command["mode"]?.GetValue<string>() ?? "Daily") == _mode && _owner == "None" && _reason is "WINDOW_SKIPPED" or "WINDOW_FAILED" && !_exam();
             Resume(command, permitted, currentWindowOnly: true);
             _studyResumeReceipt = _receipt?.DeepClone().AsObject();
             Tick();
@@ -60,7 +60,7 @@ public sealed partial class NoiseScheduleService
     }
     private SchoolNoiseWindows ScheduleWindows(DateTimeOffset now)
     {
-        try { return _studySelected && _studySettings is not null ? SchoolStudySchedule.Windows(_studySettings, now) : SchoolNoiseSchedule.Windows(_policy, now); }
+        try { return _studySelected && _studySettings is not null ? SchoolStudySchedule.Windows(_studySettings.ForMode(_mode), now) : SchoolNoiseSchedule.Windows(_policy, now); }
         catch (ArgumentException) { return new(null, null); }
     }
     public void SelectStudy(JsonObject configuration, string scope)
@@ -108,6 +108,7 @@ public sealed partial class NoiseScheduleService
         {
             if (!_eligible || !_studySelected || _version != configuration.Text("version") || response.Text("version") != _version ||
                 _scope is null || !JsonNode.DeepEquals(JsonNode.Parse(_scope), configuration["identity"])) throw new NpepException("SESSION_SUPERSEDED");
+            if ((response["mode"]?.GetValue<string>() ?? "Daily") != _mode) throw new NpepException("STATE_CHANGED");
             if (!response["confirmed"]!.GetValue<bool>()) throw new NpepException("SEQUENCE_CONFLICT");
             if (roundTrip < TimeSpan.Zero || roundTrip.TotalMilliseconds >= StudyLeaseMs) throw new NpepException("POLICY_EXPIRED");
             _studyConfirmedAt = Elapsed;
@@ -123,9 +124,11 @@ public sealed partial class NoiseScheduleService
             Tick(); var schedule = Observe(); var state = _noise.Snapshot();
             bool fresh = _owner == "Schedule" && state.State == "Active" && _reason == "WINDOW_ACTIVE" && LeaseRemaining(Elapsed) > 0
                 && (state.Quality == "DigitalSilence" || state.CurrentDbfs is not null && state.Quality is "Good" or "Clipping");
-            return new() { ["owner"] = _owner, ["state"] = state.State, ["sessionId"] = _owner == "Schedule" ? state.SessionId?.ToString("D") : null,
+            var observation = new JsonObject { ["owner"] = _owner, ["state"] = state.State, ["sessionId"] = _owner == "Schedule" ? state.SessionId?.ToString("D") : null,
                 ["reason"] = _reason, ["clockReady"] = schedule["clockReady"]!.DeepClone(), ["schoolNow"] = schedule["schoolNow"]?.DeepClone(),
                 ["window"] = schedule["window"]?.DeepClone(), ["signalFresh"] = fresh };
+            if (_mode == "Exam") observation["mode"] = _mode;
+            return observation;
         }
     }
 }

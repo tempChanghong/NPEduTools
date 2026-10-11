@@ -56,12 +56,15 @@ public sealed partial class StudyDisplayService
                 else if (_presentations.Count > 0) reason = "APP_STALE";
             }
             static string Stamp(DateTimeOffset value) => value.ToString("yyyy-MM-dd'T'HH:mm:ss.fff", CultureInfo.InvariantCulture);
-            return new() { ["version"] = state.Version, ["status"] = new JsonObject {
+            var result = new JsonObject { ["version"] = state.Version, ["status"] = new JsonObject {
                 ["state"] = shown, ["reason"] = reason, ["phase"] = state.Phase, ["clockReady"] = state.ClockReady,
                 ["schoolNow"] = state.SchoolNow is { } now ? Stamp(now) : null,
                 ["window"] = state.Window is { } window ? new JsonObject { ["start"] = Stamp(window.Start), ["end"] = Stamp(window.End) } : null,
                 ["hostInstanceId"] = _instance.ToString(), ["appInstanceId"] = seen?.Pulse.AppInstanceId.ToString(),
                 ["pulse"] = seen?.Pulse.Sequence, ["remainingMs"] = remaining } };
+            if (state.Mode == "Exam") result["status"]!["mode"] = state.Mode;
+            if (state.ProjectionPriority) result["status"]!["reason"] = "EXAM_PRESENTATION_PRIORITY";
+            return result;
         }
     }
 }

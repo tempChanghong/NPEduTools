@@ -5,7 +5,7 @@ namespace NPEduTools.Host;
 /// <summary>Presentation only. A monotonic Host deadline survives App restarts, but never resumes capture.</summary>
 public sealed partial class StudyDisplayService(Func<(string? Scope, bool Selected, StudyHostState State)> sample, TimeProvider? time = null,
     Func<Guid?, StudyNoise?, (string Band, bool Qualified)>? thresholds = null, string? directory = null,
-    Func<string?, string?, StudyNoise, StudyNoise>? calibratedThresholds = null, Action<Guid>? disciplineClaimed = null)
+    Func<string?, string?, StudyNoise, StudyNoise>? calibratedThresholds = null, Action<Guid>? disciplineClaimed = null, Func<bool>? projection = null)
 {
     private readonly object _sync = new();
     private readonly TimeProvider _time = time ?? TimeProvider.System;
@@ -13,6 +13,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
     private readonly StudyStageReminderStore _stageReminders = new(directory);
     private Guid _instance = Guid.NewGuid();
     private string? _scope, _version;
+    private string _mode = "Daily";
     private SchoolNoiseWindow? _lastWindow, _hiddenWindow;
     private SchoolNoiseWindow? _presentationWindow;
     private long? _hiddenUntil;
@@ -38,7 +39,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                 _presentations.Clear();
                 _presentationWindow = null;
             }
-            if (_version != state.Version) { _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); _presentations.Clear(); }
+            if (_version != state.Version || _mode != state.Mode) { _mode = state.Mode; _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); _presentations.Clear(); }
             // The end overlay is displayed only after observing this exact active window.
             // Reconnection, disabled policy, exam or invalid time cannot manufacture an end event.
             if (state.PolicyState != "APPLIED" || !state.ClockReady) _lastWindow = null;
@@ -52,7 +53,12 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                 _presentationWindow = presentationWindow; _instance = Guid.NewGuid(); _presentations.Clear();
             }
             double hidden = state.Window == _hiddenWindow ? _manualHidden?10801:Remaining : 0;
-            bool available = current.Selected && state.PolicyState == "APPLIED" && state.ClockReady &&
+            bool projectionPriority = projection?.Invoke() == true;
+            if (projectionPriority && current.Selected && _scope is not null && state.Window is { } mutedWindow && state.SchoolNow is { } mutedNow &&
+                (state.Phase is "Preparing" or "Ended" || state.Phase == "Active" && mutedNow < mutedWindow.Start.AddSeconds(5)))
+                _stageReminders.Claim(_scope + (_mode == "Exam" ? ":Exam" : ""), mutedWindow, state.Phase);
+            state = state with { ProjectionPriority = projectionPriority };
+            bool available = !projectionPriority && current.Selected && state.PolicyState == "APPLIED" && state.ClockReady &&
                 state.Window is not null && state.Phase is "Preparing" or "Active" or "Ended" && hidden <= 0;
             state = state with { Display = new(_instance, current.Selected, available, hidden, _stageReminders.Error) };
             return state with { Threshold = ObserveThreshold(state) };
@@ -76,7 +82,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                     state.Phase == "Ended" && (now < reminder.Window.End || now >= reminder.Window.End.AddSeconds(5)) ||
                     state.Phase == "Active" && (now < reminder.Window.Start || now >= reminder.Window.Start.AddSeconds(5)))
                     return new(1, request.RequestId, "Rejected", "STUDY_STATE_CHANGED", "阶段已变化，不播放旧提示音。");
-                var claimed = _stageReminders.Claim(_scope, reminder.Window, reminder.Phase);
+                var claimed = _stageReminders.Claim(_scope + (_mode == "Exam" ? ":Exam" : ""), reminder.Window, reminder.Phase);
                 if (claimed == StudyStageClaim.Duplicate) return new(1, request.RequestId, "Suppressed", null, "本阶段已申请提示音，不重复播放。");
                 if (claimed == StudyStageClaim.Unavailable)
                     return new(1, request.RequestId, "Rejected", _stageReminders.Error, "阶段提示音记录暂不可用；监测和展示继续。", Study: Snapshot());

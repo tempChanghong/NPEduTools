@@ -36,13 +36,13 @@ public sealed partial class NoiseScheduleService
                     var start = utc + (window.Start - schoolNow); var end = utc + (window.End - schoolNow);
                     if (window.Start.AddMinutes(-2) <= schoolNow && schoolNow < window.End) suppress = end;
                     bool skipped;
-                    lock (_journalLock) skipped = _journal.Blocks.Any(b => b.Kind == "Skipped" && SchoolNoiseSchedule.Overlaps(b.Window, window));
+                    lock (_journalLock) skipped = _journal.Blocks.Any(b => b.Mode == _mode && b.Kind == "Skipped" && SchoolNoiseSchedule.Overlaps(b.Window, window));
                     // A current exam blocks current/preparing wake, but future slots remain launch hints.
                     if (!skipped && (!paused || window.Start.AddMinutes(-2) > schoolNow)) hints.Add(new(start, end));
                     cursor = window.End;
                 }
             }
-            return new(generation, host, utc, hints, suppress,_studySelected && _scope is not null && _version is not null?GuardRecoveryEvent.Key(_scope,_version):null);
+            return new(generation, host, utc, hints, suppress,_studySelected && _scope is not null && _version is not null?GuardRecoveryEvent.Key(_scope,_version + (_mode == "Exam" ? ":Exam" : "")):null);
         }
     }
 }

@@ -13,6 +13,8 @@ public static class SchoolStudySchedule
     public static string? Validate(StudySettings settings)
     {
         var s = settings.Schedule;
+        if (settings.ExamSchedule is { } exam && Validate(settings with { Schedule = exam, ExamSchedule = null }) is { } examError) return examError;
+        if (s.Rules.Count == 0) return s.TimeZone == "Asia/Shanghai" && s.Exceptions.Count == 0 && (s.EffectiveFrom == "" || Date(s.EffectiveFrom, out _)) && (s.EffectiveTo is null || Date(s.EffectiveTo, out _)) ? null : "INVALID_DATES";
         if (s.TimeZone != "Asia/Shanghai" || !Date(s.EffectiveFrom, out var from) ||
             s.EffectiveTo is not null && (!Date(s.EffectiveTo, out var to) || to < from)) return "INVALID_DATES";
         if (SchoolNoiseSchedule.Validate(new("Override", s.Rules)) is { } rule) return rule;
@@ -37,6 +39,7 @@ public static class SchoolStudySchedule
         if (now.Offset != TimeSpan.Zero || now.Year is < 2000 or > 9998) throw new ArgumentException("INVALID_SCHOOL_CALENDAR");
         if (Validate(settings) is { } error) throw new ArgumentException(error);
         var s = settings.Schedule;
+        if (s.Rules.Count == 0) return new(null, null);
         var from = Parse(s.EffectiveFrom);
         var to = s.EffectiveTo is null ? new DateOnly(9998, 12, 31) : Parse(s.EffectiveTo);
         var today = DateOnly.FromDateTime(now.Date);
@@ -69,6 +72,7 @@ public static class SchoolStudySchedule
     private static IReadOnlyList<SchoolNoiseWindow> ForDateValidated(StudySettings settings, DateOnly day)
     {
         var s = settings.Schedule;
+        if (s.Rules.Count == 0) return [];
         if (day < Parse(s.EffectiveFrom) || s.EffectiveTo is not null && day > Parse(s.EffectiveTo)) return [];
         var special = s.Exceptions.FirstOrDefault(e => e.Date == day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         if (special?.Kind == "Skip") return [];

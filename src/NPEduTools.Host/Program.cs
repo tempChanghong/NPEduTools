@@ -162,12 +162,13 @@ var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
     ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
 var schoolManagement=new SchoolManagementService(noise,studyDevices,Path.Combine(dataDirectory,"npep"));
-await using var noiseSchedules = new NoiseScheduleService(noise, schoolClock.Snapshot,
-    () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
-    Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available);
+var studyClock = new StudyModeClock(() => classroom.Snapshot.Mode, schoolClock.Snapshot);
+Func<bool> studyPaused = () => classroom.Snapshot.Phase != "Idle" || runtimeGate.Switching || runtimeGate.ExamRequested;
+Func<bool> projecting = () => StudyProjection.Active(examAware.Snapshot());
+await using var noiseSchedules = new NoiseScheduleService(noise, studyClock.Snapshot, studyPaused,
+    Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available, mode: () => studyClock.Mode);
 noiseTransport.ManagementWindow = noiseSchedules.ProtectionWindow;
-await using var studySettings = new StudySettingsService(schoolClock.Snapshot,
-    () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested, capture: noiseSchedules);
+await using var studySettings = new StudySettingsService(studyClock.Snapshot, studyPaused, capture: noiseSchedules, mode: () => studyClock.Mode);
 var noiseDisplay = new NoiseDisplayService(() => {
     var (s, p) = noise.ManagementSnapshot();
     var w = p.Protected ? noiseSchedules.ProtectionWindow(s.SessionId) : null;
@@ -177,12 +178,12 @@ var noiseDisplay = new NoiseDisplayService(() => {
     Path.Combine(dataDirectory, "npep"));
 noiseTransport.Display = noiseDisplay;
 await using var manualStudy=new ManualStudyService(noise,studySettings.DisplaySnapshot,
-    ()=>noiseSchedules.ScheduledDue() || classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
-    Path.Combine(dataDirectory,"manual-study"));
+    ()=>noiseSchedules.ScheduledDue() || studyPaused(),
+    Path.Combine(dataDirectory,"manual-study"), projection: projecting);
 var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
-    calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder);
+    calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder, projection: projecting);
 await using var studyReport = new StudyReportService(studySettings.DisplaySnapshot, noise.StudyReportSnapshot,
-    observePolicy: (scope, version, session, policy) => noise.StudyThresholds(session, noise.ResolveCalibration(scope, version, policy)));
+    observePolicy: (scope, version, session, policy) => noise.StudyThresholds(session, noise.ResolveCalibration(scope, version, policy)), projection: projecting);
 studySettings.PresentationObservation = studyDisplay.ObservePresentation;
 await using var studyPhotos = new StudyPhotoService(()=>manualStudy.Status().State is "Starting" or "Active"?manualStudy.PhotoSource():studySettings.DisplaySnapshot(), noise, studyDevices, StudyPhotoProcess.CaptureAsync,
     new StudyPhotoJournal(Path.Combine(dataDirectory, "npep", "photos"), NpepPhotoProtection.Protect));
@@ -199,7 +200,7 @@ await using var guard = new GuardHostSession(new GuardFiles(Path.Combine(dataDir
     return protection.Protected && state.State is "Active" or "Starting" && noiseSchedules.ProtectionWindow(state.SessionId) is not null &&
         schedule["clockReady"]?.GetValue<bool>() == true && schedule["leaseRemainingSeconds"]?.GetValue<int>() > 0 &&
         schedule["owner"]?.GetValue<string>() == "Schedule" && schedule["reason"]?.GetValue<string>() == "WINDOW_ACTIVE" &&
-        !classroom.Snapshot.AutomaticPaused && !remoteExamStore.State.AutomaticPaused && !runtimeGate.Switching && !runtimeGate.ExamRequested;
+        !studyPaused();
 }, noiseSchedules.GuardPlan, () =>
 {
     if (!OperatingSystem.IsWindows()) return;

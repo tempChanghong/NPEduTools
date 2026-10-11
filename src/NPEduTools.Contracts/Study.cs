@@ -14,13 +14,17 @@ public sealed record StudyNoise(bool Enabled, double? RedLineDbfs, double? Mediu
     [System.Text.Json.Serialization.JsonIgnore] public double? Medium => Estimated is { } e ? e.MediumDbA : MediumLineDbfs;
 }
 public sealed record StudyPhotos(bool Enabled, int ContinuousSeconds, int CooldownSeconds, int RetentionDays, bool CaptureOnExit, bool ExtendedRetentionAcknowledged);
-public sealed record StudySettings(StudySchedule Schedule, StudyPresentation Presentation, StudyHomework Homework, StudyNoise Noise, StudyPhotos Photos);
+public sealed record StudySettings(StudySchedule Schedule, StudyPresentation Presentation, StudyHomework Homework, StudyNoise Noise, StudyPhotos Photos,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] StudySchedule? ExamSchedule = null)
+{
+    public StudySettings ForMode(string mode) => this with { Schedule = mode == "Exam" ? ExamSchedule ?? new("Asia/Shanghai", "", null, [], []) : Schedule, ExamSchedule = null };
+}
 public sealed record StudyHostState(string? Version, string PolicyState, string PresentationState, string CaptureState,
     string Phase, string Reason, bool ClockReady, DateTimeOffset? SchoolNow, SchoolNoiseWindow? Window,
     SchoolNoiseWindow? Next, StudySettings? Settings, StudyCaptureState? Execution = null, StudyDisplayState? Display = null,
     StudyHomeworkState? Homework = null, StudyThresholdState? Threshold = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] StudySeatingState? Seating = null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? Manual = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? Manual = null, string Mode = "Daily", string ClockSource = "ClassIsland", bool ProjectionPriority = false);
 // Local statistics only. An offer is not a camera action or evidence of audio playback.
 public sealed record StudyThresholdState(Guid SessionId, string Band, Guid? DisciplineId = null, string? ReminderError = null);
 // Local Named Pipe only. Available means eligible to show, never a claim that WPF is visible.
@@ -35,7 +39,7 @@ public sealed record StudyPresentationPulse(Guid InstanceId, Guid AppInstanceId,
 // schoolNow is an offset-free school wall stamp, never deserialized as a Windows-local timestamp.
 public sealed record StudyExecutionWindow(string Start, string End);
 public sealed record StudyCaptureState(string Owner, string State, Guid? SessionId, string Reason,
-    bool ClockReady, string? SchoolNow, StudyExecutionWindow? Window, bool SignalFresh);
+    bool ClockReady, string? SchoolNow, StudyExecutionWindow? Window, bool SignalFresh, string Mode = "Daily");
 public sealed record StudyHomeworkSource(string Id, string Name);
 public sealed record StudyHomeworkItem(string Id, long Revision, string Subject, string Title, string Content, IReadOnlyList<StudyHomeworkSource> Sources);
 public sealed record StudyHomeworkSnapshot(string Version, string Date, IReadOnlyList<StudyHomeworkItem> Items);

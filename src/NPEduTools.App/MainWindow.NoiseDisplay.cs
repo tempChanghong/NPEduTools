@@ -40,7 +40,7 @@ public partial class MainWindow
                 var manualAge=Stopwatch.GetElapsedTime(manualAt);
                 bool schoolPriority=studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
                 if(schoolPriority)_manualStudyWindow?.HideDisplay();
-                else if(!_exitBusy && _exitWarning is not {IsVisible:true} && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
+                else if(studyResponse.Study?.ProjectionPriority != true && !_exitBusy && _exitWarning is not {IsVisible:true} && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
                 {
                     using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
                     long reportAt=Stopwatch.GetTimestamp();var report=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.report.status"));
@@ -59,7 +59,7 @@ public partial class MainWindow
                     _scheduledNoiseWindow?.Hide();
                     // Ordinary App/settings windows use the same bounded hide lease. Only real
                     // priority operations may defer display after its expiry; an open noise page cannot renew it.
-                    bool studyBlocked = _exitBusy || _exitWarning is {IsVisible:true} || _notificationOpening || _schoolNotification is not null || _notificationPreview is not null ||
+                    bool studyBlocked = studyResponse.Study.ProjectionPriority || _exitBusy || _exitWarning is {IsVisible:true} || _notificationOpening || _schoolNotification is not null || _notificationPreview is not null ||
                         _onboardingWindow?.IsVisible == true || Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible);
                     await UpdateStudyReportAsync(studyBlocked);
                     if (_studyReportWindow?.IsVisible == true) { _studyWindow?.HideDisplay(); continue; }

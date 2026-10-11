@@ -11,6 +11,8 @@ public sealed class StudyReportService : IAsyncDisposable
     private readonly Func<StudySessionReport?> _statistics;
     private readonly Action<string, string, Guid, StudyNoise>? _observePolicy;
     private readonly TimeProvider _time;
+    private readonly Func<bool>? _projection;
+    private string _mode = "Daily";
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
     private readonly Dictionary<Guid, (double Offset, StudySessionReport Report)> _sessions = [];
@@ -24,8 +26,9 @@ public sealed class StudyReportService : IAsyncDisposable
     private StudyReportData? _frozen;
     public StudyReportService(Func<(string? Scope, bool Selected, StudyHostState State)> sample,
         Func<StudySessionReport?> statistics, TimeProvider? time = null, bool background = true,
-        Action<string, string, Guid, StudyNoise>? observePolicy = null)
+        Action<string, string, Guid, StudyNoise>? observePolicy = null, Func<bool>? projection = null)
     {
+        _projection = projection;
         _sample = sample; _statistics = statistics; _time = time ?? TimeProvider.System; _observePolicy = observePolicy;
         _loop = background ? Task.Run(LoopAsync) : Task.CompletedTask;
     }
@@ -39,7 +42,7 @@ public sealed class StudyReportService : IAsyncDisposable
         lock (_sync)
         {
             var (scope, selected, s) = _sample();
-            if (_scope != scope || _version != s.Version) { Clear(); _scope = scope; _version = s.Version; }
+            if (_scope != scope || _version != s.Version || _mode != s.Mode) { Clear(); _scope = scope; _version = s.Version; _mode = s.Mode; }
             if (!selected || scope is null || s.Version is null || s.PolicyState != "APPLIED" || !s.ClockReady || s.SchoolNow is not { } now ||
                 s.Phase is not ("Active" or "Outside" or "Ended"))
             { Clear(); return State(false, "Unavailable", 0); }
@@ -71,7 +74,7 @@ public sealed class StudyReportService : IAsyncDisposable
         }
     }
     private StudyReportState State(bool available, string state, double remaining) =>
-        new(_instance, _version, available, state, remaining, _window is null || state is "Monitoring" or "Unavailable" or "Expired" ? null : _frozen ?? Build());
+        new(_instance, _version, available && _projection?.Invoke() != true, state, remaining, _window is null || state is "Monitoring" or "Unavailable" or "Expired" ? null : _frozen ?? Build());
     private void Observe(StudyHostState s, DateTimeOffset now)
     {
         if (_frozen is not null) return;
@@ -101,7 +104,7 @@ public sealed class StudyReportService : IAsyncDisposable
         return new(window, expected, raw.SampledSeconds, Math.Clamp(raw.SampledSeconds / expected, 0, 1),
             raw.SampledSeconds > 0 ? 100 * sessions.Sum(x => x.Report.ClippedSeconds) / raw.SampledSeconds : 0,
             sessions.Sum(x => x.Report.Frames), sessions.Sum(x => x.Report.DisciplineReminders), raw, estimated,
-            sessions.All(x => x.Report.Complete), notes);
+            sessions.All(x => x.Report.Complete), notes, _mode, _mode == "Exam" ? "Windows" : "ClassIsland");
     }
     private static StudyReportChannel Merge(string unit, IEnumerable<(double Offset, StudyReportChannel Data)> source, double expected)
     {

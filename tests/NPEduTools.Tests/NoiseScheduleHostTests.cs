@@ -54,7 +54,7 @@ public sealed partial class NoiseScheduleHostTests
         public readonly List<Capture> Captures = [];
         public readonly NoiseService Noise;
         public NoiseScheduleService Scheduler;
-        public bool Exam, Frozen;
+        public bool Exam, Frozen, ModeExam;
         public bool StatisticsReady=true;
         public string Scope = "test-school-and-binding";
         public DateTimeOffset Base = new(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
@@ -67,7 +67,7 @@ public sealed partial class NoiseScheduleHostTests
             Scheduler = NewScheduler(); Scheduler.Bind(Scope, true); Scheduler.Confirm(Policy());
         }
         public NoiseScheduleService NewScheduler() => new(Noise, () => new(_connection,_bridge,++_sequence,0,
-            Base.AddMilliseconds(Frozen ? 0 : Time.Ms),0,"Advancing","synthetic school time"), () => Exam,Path,Time,false,statisticsReady:()=>StatisticsReady);
+            Base.AddMilliseconds(Frozen ? 0 : Time.Ms),0,"Advancing","synthetic school time"), () => Exam,Path,Time,false,statisticsReady:()=>StatisticsReady,mode:()=>ModeExam?"Exam":"Daily");
         public HostRequest Command(string action,string? mic=null)
         {
             var s=Noise.Snapshot(); return new(Protocol.Version,Guid.NewGuid(),"noise.command",Noise:new(action,s.InstanceId,s.Revision,mic));

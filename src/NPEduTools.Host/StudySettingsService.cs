@@ -14,6 +14,8 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     private readonly object _sync = new();
     private readonly Func<SchoolClockFrame> _clock;
     private readonly Func<bool> _exam;
+    private readonly Func<string> _modeSource;
+    private string _mode = "Daily";
     private readonly INpepStudyCapture? _capture;
     private readonly TimeProvider _time;
     private readonly long _origin;
@@ -42,8 +44,9 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     private static StudyHostState Empty(string reason) => new(null, "UNAVAILABLE", "NOT_INTEGRATED", "NOT_INTEGRATED",
         "Blocked", reason, false, null, null, null, null);
 
-    public StudySettingsService(Func<SchoolClockFrame> clock, Func<bool> exam, TimeProvider? time = null, bool background = true, INpepStudyCapture? capture = null)
+    public StudySettingsService(Func<SchoolClockFrame> clock, Func<bool> exam, TimeProvider? time = null, bool background = true, INpepStudyCapture? capture = null, Func<string>? mode = null)
     {
+        _modeSource = mode ?? (() => "Daily");
         _clock = clock; _exam = exam; _capture = capture; _time = time ?? TimeProvider.System; _origin = _time.GetTimestamp();
         _capture?.BindStudyCapture(null);
         _loop = background ? Task.Run(LoopAsync) : Task.CompletedTask;
@@ -99,6 +102,8 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     {
         lock (_sync)
         {
+            var mode = _modeSource() == "Exam" ? "Exam" : "Daily";
+            if (_mode != mode) { _mode = mode; _tracker = new(); ClearHomework(); }
             var elapsed = Elapsed;
             if (_scope is null || _confirmedAt is not { } received || elapsed < received || elapsed - received >= MaxConfigurationAge)
             { _state = Empty(_error.Length > 0 ? _error : "CONFIGURATION_STALE"); return; }
@@ -112,7 +117,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
             if (!reading.CanStart || reading.Now is not { Year: >= 2000 and <= 9998 } now) return;
             try
             {
-                var windows = SchoolStudySchedule.Windows(_settings!, now);
+                var windows = SchoolStudySchedule.Windows(_settings!.ForMode(_mode), now);
                 bool prepare = windows.Current is null && windows.Next is { } next && now >= next.Start.AddSeconds(-120);
                 _state = _state with { Phase = windows.Current is not null ? "Active" : prepare ? "Preparing" : "Outside",
                     Reason = windows.Current is not null ? "WINDOW_ACTIVE" : prepare ? "PREPARING" : "OUTSIDE_WINDOW",
@@ -152,7 +157,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
         lock (_sync)
         {
             var execution = _capture?.ObserveStudyExecution()?.Deserialize<StudyCaptureState>(Protocol.Json);
-            return _state with { Execution = execution, CaptureState = execution is null ? "NOT_INTEGRATED"
+            return _state with { Mode = _mode, ClockSource = _mode == "Exam" ? "Windows" : "ClassIsland", Execution = execution, CaptureState = execution is null ? "NOT_INTEGRATED"
                 : execution.Owner == "Manual" ? "MANUAL" : execution.SignalFresh ? "ACTIVE"
                 : execution.State == "Active" ? "WAITING_FRESH_SIGNAL" : execution.State.ToUpperInvariant(), Homework = HomeworkState(), Seating = SeatingState() };
         }
@@ -162,13 +167,15 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     {
         var state = Snapshot();
         if (state.PolicyState != "APPLIED" || state.Version is null) return null;
-        return new() { ["version"] = state.Version, ["policyState"] = state.PolicyState,
+        var observation = new JsonObject { ["version"] = state.Version, ["policyState"] = state.PolicyState,
             // The 0.10 configuration-only receipt keeps its reserved placeholder for old parsers.
             // Actual capture facts are sent through the independent execution exchange and local Execution field.
             ["presentationState"] = state.PresentationState, ["captureState"] = "NOT_INTEGRATED",
             ["phase"] = state.Phase, ["reason"] = state.Reason, ["clockReady"] = state.ClockReady,
             ["schoolNow"] = state.SchoolNow is { Year: >= 2000 and <= 9998 } now ? Stamp(now) : null,
             ["window"] = state.Window is { } window ? new JsonObject { ["start"] = Stamp(window.Start), ["end"] = Stamp(window.End) } : null };
+        if (_mode == "Exam") observation["mode"] = _mode;
+        return observation;
     }
     private async Task LoopAsync()
     {
