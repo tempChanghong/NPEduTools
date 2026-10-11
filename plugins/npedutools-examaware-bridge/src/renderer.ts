@@ -3,7 +3,7 @@ import { pairing } from './pairing.js';
 
 export default defineRendererPlugin({ activate(ctx) {
   ctx.scope.add(ctx.api.ui.home.register({
-    id: 'npedutools-pair', label: '连接 NPEduTools', icon: 'link',
+    id: 'npedutools-pair', label: '连接 NPEduTools', icon: 'link', order: 100,
     hint: '导入配对文件，连接状态查询、正常退出与登录自启动设置。',
     async action() {
       try {
@@ -21,7 +21,7 @@ export default defineRendererPlugin({ activate(ctx) {
     }
   }));
   ctx.scope.add(ctx.api.ui.home.register({
-    id: 'npedutools-unpair', label: '断开 NPEduTools', icon: 'unlink', hint: '清除本插件保存的配对信息。',
+    id: 'npedutools-unpair', label: '断开 NPEduTools', icon: 'close-circle', order: 101, hint: '清除本插件保存的配对信息。',
     async action() { await ctx.api.settings.replace({}); }
   }));
 } });
