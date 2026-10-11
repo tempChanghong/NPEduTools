@@ -8,6 +8,7 @@
     <Compile Include="../../src/NPEduTools.Host/SoundMeterService.cs" Link="SoundMeterService.cs" />
     <Compile Include="../../src/NPEduTools.Host/Dly2202Reader.cs" Link="Dly2202Reader.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseManagementStore.cs" Link="NoiseManagementStore.cs" />
+    <Compile Include="../../src/NPEduTools.Host/NoiseManagementStore.*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../../src/NPEduTools.Host/NoiseDisplayService.cs" Link="NoiseDisplayService.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseTransport.cs" Link="NoiseTransport.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseScheduleService.cs" Link="NoiseScheduleService.cs" />
