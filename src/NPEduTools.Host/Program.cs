@@ -147,14 +147,23 @@ await using var recording = new RecordingService(pipeName, dataDirectory, school
     () => classroomStore.State.AutomaticPaused, () => remoteExamStore.State.AutomaticPaused, runtimeGate);
 await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget(), runtimeGate);
 await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader), runtimeGate);
+var noiseManagement = new NoiseManagementStore(dataDirectory);
 await using var noise = new NoiseService(id => OperatingSystem.IsWindows()
     ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory,
-    management: new NoiseManagementStore(dataDirectory));
+    management: noiseManagement,
+    referenceCreate: id => OperatingSystem.IsWindows() ? WasapiNoiseCapture.CreateReference(id) : throw new PlatformNotSupportedException(),
+    referencePaused: () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested);
+var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
+    ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
+var soundMeter = new SoundMeterService(() => OperatingSystem.IsWindows() ? new WindowsSoundMeterHid() : throw new PlatformNotSupportedException(),
+    noiseManagement.VerifyCalibration, () => noise.MeterUnavailable);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
 await using var noiseSchedules = new NoiseScheduleService(noise, schoolClock.Snapshot,
     () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
     Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available);
 noiseTransport.ManagementWindow = noiseSchedules.ProtectionWindow;
+await using var studySettings = new StudySettingsService(schoolClock.Snapshot,
+    () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested, capture: noiseSchedules);
 var noiseDisplay = new NoiseDisplayService(() => {
     var (s, p) = noise.ManagementSnapshot();
     var w = p.Protected ? noiseSchedules.ProtectionWindow(s.SessionId) : null;
@@ -163,6 +172,9 @@ var noiseDisplay = new NoiseDisplayService(() => {
 }, () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
     Path.Combine(dataDirectory, "npep"));
 noiseTransport.Display = noiseDisplay;
+var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
+    calibratedThresholds: noise.ResolveCalibration);
+studySettings.PresentationObservation = studyDisplay.ObservePresentation;
 await using var guard = new GuardHostSession(new GuardFiles(Path.Combine(dataDirectory, "guard")), () =>
 {
     var (state, protection) = noise.ManagementSnapshot();
@@ -180,11 +192,11 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
     () => new(Protocol.Version, Guid.Empty, "Succeeded", null, "已有本地缓存", SchoolClock: schoolClock.PeekSnapshot(),
         Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
-    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules);
+    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings);
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, guard.ExpectedStop).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, guard.ExpectedStop, studySettings, studyDisplay, studyDevices, soundMeter).RunAsync(shutdown.Token);
     // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
     if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
     await serving;

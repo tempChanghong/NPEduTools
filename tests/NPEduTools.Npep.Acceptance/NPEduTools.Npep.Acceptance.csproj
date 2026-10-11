@@ -8,5 +8,14 @@
     <Compile Include="../../src/NPEduTools.Host/NoiseDisplayService.cs" Link="NoiseDisplayService.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseTransport.cs" Link="NoiseTransport.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseScheduleService.cs" Link="NoiseScheduleService.cs" />
+    <Compile Include="../../src/NPEduTools.Host/NoiseScheduleService.Study.cs" Link="NoiseScheduleService.Study.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudySettingsService.cs" Link="StudySettingsService.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudySettingsService.Seating.cs" Link="StudySettingsService.Seating.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudySettingsService.Homework.cs" Link="StudySettingsService.Homework.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudyDisplayService.cs" Link="StudyDisplayService.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudyDisplayService.Presentation.cs" Link="StudyDisplayService.Presentation.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudyDisplayService.Thresholds.cs" Link="StudyDisplayService.Thresholds.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudyReminderStore.cs" Link="StudyReminderStore.cs" />
+    <Compile Include="../../src/NPEduTools.Host/StudyStageReminderStore.cs" Link="StudyStageReminderStore.cs" />
   </ItemGroup>
 </Project>

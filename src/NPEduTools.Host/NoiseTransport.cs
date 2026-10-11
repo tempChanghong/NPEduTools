@@ -108,16 +108,23 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
                 ["configured"] = !string.IsNullOrWhiteSpace(s.SelectedDeviceId) && _error is null,
                 ["startedAt"] = s.StartedAt is { } started ? Stamp(started) : null, ["currentDbfs"] = s.CurrentDbfs, ["quality"] = s.Quality,
                 ["summary"] = JsonSerializer.SerializeToNode(s.Summary, Json), ["algorithm"] = s.Algorithm, ["uploadError"] = _error };
+            if (s.Estimate is not null) status["estimate"] = JsonSerializer.SerializeToNode(s.Estimate, Json);
             return status;
         }
     }
     private static string? Short(string? value) => value is null ? null : new string(value.Where(c => !char.IsControl(c)).Take(200).ToArray());
     private static string Stamp(DateTimeOffset value) => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-    private static JsonObject Report(NoiseState s, string outcome) => new() {
+    private static JsonObject Report(NoiseState s, string outcome)
+    {
+        var report = new JsonObject {
         ["sessionId"] = s.SessionId?.ToString("D"), ["startedAt"] = Stamp(s.StartedAt!.Value),
         ["endedAt"] = Stamp(DateTimeOffset.UtcNow < s.StartedAt ? s.StartedAt.Value : DateTimeOffset.UtcNow),
         ["deviceName"] = Short(s.DeviceName), ["algorithm"] = s.Algorithm, ["summary"] = JsonSerializer.SerializeToNode(s.Summary, Json), ["outcome"] = outcome
-    };
+        };
+        if (s.Estimate is { } estimate) report["estimate"] = JsonSerializer.SerializeToNode(estimate with
+        { State = estimate.Reason is null ? "Stopped" : "Invalidated", CurrentDbA = null }, Json);
+        return report;
+    }
     private void AddReport(JsonObject report)
     {
         NpepNoiseProtocol.Validate("report", report);

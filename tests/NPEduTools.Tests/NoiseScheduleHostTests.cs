@@ -6,7 +6,7 @@ using NPEduTools.Integrations.Npep;
 
 namespace NPEduTools.Tests;
 
-public sealed class NoiseScheduleHostTests
+public sealed partial class NoiseScheduleHostTests
 {
     public static IEnumerable<object[]> WireCases => JsonNode.Parse(File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory,"Fixtures/noise-schedule-wire-cases.json")))!.AsArray()
         .Select(c => new object[] { c!["name"]!.GetValue<string>(),c["definition"]!.GetValue<string>(),c["expected"]!.GetValue<bool>(),c["value"]!.ToJsonString() });
@@ -41,6 +41,7 @@ public sealed class NoiseScheduleHostTests
         public ManualResetEventSlim? StartGate;
         public void Start() => StartGate?.Wait();
         public void Sample() => Frame?.Invoke(new(0.1, 0.000001, 0.002, 0, false));
+        public void Silence() => Frame?.Invoke(new(0.1, 0, 0, 0, false));
         public void Break() => Failed?.Invoke("Disconnected");
         public void Dispose() => Disposed = true;
     }

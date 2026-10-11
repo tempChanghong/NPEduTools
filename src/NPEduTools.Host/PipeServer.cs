@@ -15,7 +15,8 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     StatusMonitor? monitor = null, Action? stop = null, LaunchService? launch = null, TouchAssistService? touch = null,
     SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
-    Func<bool>? prepareStop = null)
+    Func<bool>? prepareStop = null, StudySettingsService? study = null, StudyDisplayService? studyDisplay = null, StudyDeviceService? studyDevices = null,
+    SoundMeterService? soundMeter = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -58,8 +59,52 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
+                else if (request.Capability == "noise.meter.command")
+                {
+                    using var meterDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    meterDeadline.CancelAfter(request.TimeoutMs);
+                    response = soundMeter is null ? new(1, request.RequestId, "Rejected", "METER_UNSUPPORTED", "请更新后台以使用联机校准 (Beta)。")
+                        : await soundMeter.HandleAsync(request, meterDeadline.Token);
+                }
+                else if (request.Capability == "study.devices.microphone")
+                {
+                    var listed = noise?.Handle(request with { Capability = "noise.devices", Noise = null });
+                    response = listed is { Outcome: "Succeeded", NoiseDevices: not null } && listed.NoiseDevices.Any(d => d.Id == request.Noise!.DeviceId)
+                        ? noise!.Handle(request with { Capability = "noise.command" })
+                        : new(1, request.RequestId, "Rejected", "NoiseDeviceUnavailable", "所选麦克风已不可用，请刷新；未更换设备。", Noise: noise?.Snapshot());
+                }
+                else if (request.Capability.StartsWith("study.devices.", StringComparison.Ordinal))
+                    response = studyDevices?.Handle(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "请更新后台以设置自习设备。");
+                else if (request.Capability == "study.seating")
+                    response = study?.ReadSeating(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "座位表读取尚未接入。");
+                else if (request.Capability == "study.seating.presentation")
+                    response = study is not null && studyDisplay is not null ? study.ReceiveSeating(request, studyDisplay.Snapshot()) : new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "座位表展示尚未接入。");
+                else if (request.Capability == "study.homework")
+                    response = study?.ReadHomework(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "作业读取尚未接入。");
+                else if (request.Capability == "study.status.seating")
+                    response = study is null ? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "自习展示尚未接入。")
+                        : studyDisplay is not null ? studyDisplay.Handle(request with { Capability = "study.status" }) with { Noise = noise?.Snapshot() }
+                        : new(1, request.RequestId, "Succeeded", null, "学校自习状态。", Study: study.Snapshot());
+                else if (request.Capability is "study.status" or "study.hide" or "study.reminder" or "study.presentation")
+                {
+                    response = study is null ? new(Protocol.Version, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "请更新后台以读取自习配置。")
+                        : studyDisplay is not null ? studyDisplay.Handle(request) with { Noise = noise?.Snapshot() }
+                        : request.Capability == "study.status" ? new(Protocol.Version, request.RequestId, "Succeeded", null, "学校自习状态。", Study: study.Snapshot())
+                        : new(Protocol.Version, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "展示控制尚未接入。" );
+                    // Old Apps deserialize strictly: optional seating metadata is opt-in only.
+                    if (response.Study is { } oldState) response = response with { Study = oldState with { Seating = null } };
+                }
                 else if (request.Capability.StartsWith("secrandom.", StringComparison.Ordinal))
                     response = secRandom?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "SecRandomUnavailable", "请重启新版后台以使用 SecRandom。");
+                else if (request.Capability.StartsWith("noise.reference.", StringComparison.Ordinal))
+                    response = noise?.ReferenceHandle(request, study?.DisplaySnapshot().State) ??
+                        new(1, request.RequestId, "Rejected", "REFERENCE_UNSUPPORTED", "请更新后台以使用外部参考校准。");
+                else if (request.Capability.StartsWith("noise.calibration.", StringComparison.Ordinal))
+                {
+                    var context = study?.DisplaySnapshot();
+                    response = noise?.CalibrationHandle(request, context?.Scope, context?.State) ??
+                        new(1, request.RequestId, "Rejected", "CALIBRATION_UNSUPPORTED", "请更新后台以使用快速校准。");
+                }
                 else if (request.Capability.StartsWith("noise.management.", StringComparison.Ordinal))
                     response = noise?.ManagementHandle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台。");
                 else if (request.Capability.StartsWith("noise.display.", StringComparison.Ordinal))

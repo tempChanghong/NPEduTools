@@ -193,7 +193,8 @@
       "npedutools.integrations.npep": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.0.0, )"
+          "NPEduTools.Contracts": "[1.0.0, )",
+          "NPEduTools.Core": "[1.0.0, )"
         }
       },
       "npedutools.integrations.secrandom": {

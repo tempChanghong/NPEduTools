@@ -67,6 +67,7 @@ public sealed class NoiseManagementStore
         }
         _failures = 0; return null;
     }
+    internal string? VerifyCalibration(string? secret) => Verify(secret);
     public (Guid? Ticket, string? Error) Issue(NoiseManagementCommand c, Guid instance, Guid session)
     {
         if (c.InstanceId != instance || c.SessionId != session) return (null, "NoiseStateChanged");

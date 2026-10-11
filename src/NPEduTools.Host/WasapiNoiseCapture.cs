@@ -7,14 +7,41 @@ using NPEduTools.Core;
 namespace NPEduTools.Host;
 
 [SupportedOSPlatform("windows")]
-public sealed class WasapiNoiseCapture : INoiseCapture
+public sealed class WasapiNoiseCapture : IReferenceNoiseCapture
 {
     private readonly MMDevice _device;
     private readonly WasapiCapture _capture;
-    private readonly NoiseMeter _meter;
+    private readonly NoiseMeter? _meter;
+    private ReferenceNoiseMeter? _referenceMeter;
     private int _disposed;
     public string DeviceName { get; }
+    private string _formatSignature = "";
+    private readonly bool _referenceOnly;
+    public string Signature
+    {
+        get
+        {
+            var volume = _device.AudioEndpointVolume;
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            return _formatSignature + "|gain=" + volume.MasterVolumeLevelScalar.ToString("R", culture) +
+                "|mute=" + volume.Mute + "|channelGain=" + string.Join(",", Enumerable.Range(0, volume.Channels.Count)
+                    .Select(i => volume.Channels[i].VolumeLevelScalar.ToString("R", culture)));
+        }
+    }
+    public string ReferenceSignature
+    {
+        get { string signature = Signature; return _referenceOnly ? signature : ReferenceNoiseMeter.AlgorithmVersion + signature[signature.IndexOf('|')..]; }
+    }
+    public void EnableReference()
+    {
+        if (_referenceMeter is not null) return;
+        var f = _capture.WaveFormat;
+        bool floating = f.Encoding == WaveFormatEncoding.IeeeFloat || f is WaveFormatExtensible ext &&
+            ext.SubFormat == new Guid("00000003-0000-0010-8000-00aa00389b71");
+        _referenceMeter = new(f.SampleRate, f.Channels, f.BitsPerSample, floating, frame => ReferenceFrame?.Invoke(frame));
+    }
     public event Action<NoiseFrame>? Frame;
+    public event Action<ReferenceNoiseFrame>? ReferenceFrame;
     public event Action<string>? Failed;
 
     public static IReadOnlyList<NoiseDevice> Enumerate()
@@ -29,8 +56,11 @@ public sealed class WasapiNoiseCapture : INoiseCapture
         return result;
     }
 
-    public WasapiNoiseCapture(string id)
+    public WasapiNoiseCapture(string id) : this(id, false) { }
+    public static IReferenceNoiseCapture CreateReference(string id) => new WasapiNoiseCapture(id, true);
+    private WasapiNoiseCapture(string id, bool reference)
     {
+        _referenceOnly = reference;
         using var enumerator = new MMDeviceEnumerator();
         _device = enumerator.GetDevice(id); // Pin the actual capture endpoint; never fall back to another microphone.
         WasapiCapture? capture = null;
@@ -41,17 +71,28 @@ public sealed class WasapiNoiseCapture : INoiseCapture
             DeviceName = _device.FriendlyName;
             capture = new WasapiCapture(_device) { ShareMode = AudioClientShareMode.Shared };
             var format = capture.WaveFormat;
+            _formatSignature = $"{(reference ? ReferenceNoiseMeter.AlgorithmVersion : "pcm-energy-v1")}|{format.SampleRate}|{format.Channels}|{format.BitsPerSample}|{format.Encoding}";
+            using (var formatBytes = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(formatBytes, System.Text.Encoding.UTF8, true)) format.Serialize(writer);
+                _formatSignature += "|format=" + Convert.ToHexString(formatBytes.ToArray());
+            }
             bool floating = format.Encoding == WaveFormatEncoding.IeeeFloat ||
                 format is WaveFormatExtensible ext && ext.SubFormat == new Guid("00000003-0000-0010-8000-00aa00389b71");
             bool pcm = format.Encoding == WaveFormatEncoding.Pcm ||
                 format is WaveFormatExtensible pcmExt && pcmExt.SubFormat == new Guid("00000001-0000-0010-8000-00aa00389b71");
             if (!floating && !pcm) throw new InvalidOperationException("Unsupported capture format.");
-            _meter = new(format.SampleRate, format.Channels, format.BitsPerSample, floating, frame => Frame?.Invoke(frame));
+            if (reference) _referenceMeter = new(format.SampleRate, format.Channels, format.BitsPerSample, floating, frame => ReferenceFrame?.Invoke(frame));
+            else _meter = new(format.SampleRate, format.Channels, format.BitsPerSample, floating, frame => Frame?.Invoke(frame));
             _capture = capture;
             _capture.DataAvailable += (_, data) =>
             {
                 if (Volatile.Read(ref _disposed) != 0) return;
-                try { _meter.Push(data.Buffer.AsSpan(0, data.BytesRecorded)); }
+                try
+                {
+                    if (_referenceMeter is not null) _referenceMeter.Push(data.Buffer.AsSpan(0, data.BytesRecorded));
+                    _meter?.Push(data.Buffer.AsSpan(0, data.BytesRecorded));
+                }
                 catch (Exception error) when (error is not OutOfMemoryException)
                 { Failed?.Invoke("音频格式或采样数据异常，监测已停止。"); }
             };

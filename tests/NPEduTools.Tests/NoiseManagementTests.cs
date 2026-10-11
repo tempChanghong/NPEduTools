@@ -4,7 +4,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class NoiseManagementTests
+public sealed partial class NoiseManagementTests
 {
     private const string Secret = "teacher-local-2026";
     private sealed class Clock : TimeProvider
@@ -27,12 +27,13 @@ public sealed class NoiseManagementTests
         public readonly NoiseManagementStore Store;
         public readonly NoiseService Noise;
         public int Skips;
+        public int Creates;
         public bool CanSave = true;
         public Fixture(bool configured = true, ManualResetEventSlim? startGate = null)
         {
             Store = new(Path, Time);
             if (configured) Assert.Null(Store.Configure(null, Secret, false));
-            Noise = new(_ => new Capture(startGate), () => [], Time, management: Store);
+            Noise = new(_ => { Creates++; return new Capture(startGate); }, () => [], Time, management: Store);
             Noise.ManualStopping = _ => { if (CanSave) Skips++; return CanSave; };
             Noise.Handle(Command("select", "synthetic"));
         }
