@@ -7,8 +7,8 @@ namespace NPEduTools.App;
 
 public sealed record AgreementDefinition(string Id, string Title, string Text)
 {
-    public const string Version = "1.0";
-    public const string EffectiveDate = "2026-10-04";
+    public const string Version = "1.1";
+    public const string EffectiveDate = "2026-10-11";
     public string Hash => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Text)));
 }
 

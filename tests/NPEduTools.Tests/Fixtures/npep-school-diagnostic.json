@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "npep-school-overview-diagnostics",
+  "generatedAt": "2026-10-04T12:00:00.000Z",
+  "appVersion": "1.2.0",
+  "backendOrigin": "https://api.example.test",
+  "schoolId": "11111111-1111-4111-8111-111111111111",
+  "privacy": "Includes service origin and business identifiers. No credentials, pairing codes, names, search text, paths, logs or audio. Review before sharing.",
+  "observation": "Only loaded devices, at most 200. Pages may have different observation times; this is not a live probe or an execution receipt.",
+  "asOf": "2026-10-04T12:00:00.000Z",
+  "stale": false,
+  "filter": "ALL",
+  "summary": {
+    "total": 1,
+    "active": 1,
+    "online": 1,
+    "offline": 0,
+    "unreported": 0,
+    "attention": 0,
+    "inactive": 0
+  },
+  "matchedTotal": 1,
+  "loadedCount": 1,
+  "exportedCount": 1,
+  "omittedLoadedCount": 0,
+  "hasMore": false,
+  "items": [
+    {
+      "deviceId": "44444444-4444-4444-8444-444444444444",
+      "schoolId": "11111111-1111-4111-8111-111111111111",
+      "administrativeClassId": "22222222-2222-4222-8222-222222222222",
+      "screenBindingId": "33333333-3333-4333-8333-333333333333",
+      "bindingRevision": 1,
+      "bindingChanged": false,
+      "state": "ACTIVE",
+      "connectivity": "ONLINE",
+      "lastSeenAt": "2026-10-04T12:00:00.000Z",
+      "issues": [],
+      "status": {
+        "appVersion": "InDev 20261002",
+        "mode": "DAILY",
+        "modePhase": "IDLE",
+        "modeRevision": 1,
+        "automaticRecording": "ENABLED",
+        "recording": "IDLE",
+        "classIsland": {
+          "connection": "READY",
+          "bridgeVersion": null
+        },
+        "examAware": {
+          "connection": "DISCONNECTED",
+          "bridgeVersion": null
+        }
+      }
+    }
+  ]
+}

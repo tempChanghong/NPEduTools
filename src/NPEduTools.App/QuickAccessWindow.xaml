@@ -13,6 +13,7 @@
         <Button x:Name="EdgeHandle" Style="{StaticResource RailButton}" Background="#147D68" Foreground="White" Click="HandleClicked" ToolTip="点击展开或收起；拖动调整位置" AutomationProperties.AutomationId="EdgeHandle" AutomationProperties.Name="展开快捷工具，可上下拖动">
           <StackPanel><Image Source="{StaticResource BrandLogoLight}" Width="30" Height="30" /><TextBlock x:Name="RailModeText" Text="未知" FontSize="10" Foreground="White" HorizontalAlignment="Center" Margin="0,2,0,0" AutomationProperties.AutomationId="RailClassroomMode" /></StackPanel>
         </Button>
+        <Button x:Name="RailFold" Width="52" Height="28" Padding="0" Margin="0,2" Content="⋮" Style="{StaticResource Quiet}" Click="FoldClicked" ToolTip="折叠为快捷把手" AutomationProperties.AutomationId="CompactQuickAccess" AutomationProperties.Name="折叠或恢复快捷侧栏" />
         <Button x:Name="RailTools" Style="{StaticResource RailButton}" Click="RailToolsClicked" ToolTip="课堂工具" AutomationProperties.AutomationId="RailTools" AutomationProperties.Name="打开课堂工具">
           <Grid><TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="22" /><Ellipse x:Name="RailStatusDot" Fill="#A5B3AB" Width="6" Height="6" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-5,0" /></Grid>
         </Button>
@@ -21,7 +22,7 @@
           <TextBlock x:Name="RailSecRandomGlyph" Text="抽" FontSize="23" FontWeight="SemiBold" />
         </Button>
         <Border Height="1" Background="#E2E9E4" Margin="10,8" />
-        <Button Style="{StaticResource RailButton}" Click="SettingsClicked" ToolTip="管理与设置" AutomationProperties.AutomationId="RailSettings" AutomationProperties.Name="打开管理与设置"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="21" /></Button>
+        <Button x:Name="RailSettings" Style="{StaticResource RailButton}" Click="SettingsClicked" ToolTip="管理与设置" AutomationProperties.AutomationId="RailSettings" AutomationProperties.Name="打开管理与设置"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="21" /></Button>
       </StackPanel>
     </Border>
     <Border x:Name="PanelSurface" Visibility="Collapsed" Background="#FAFCFA" BorderBrush="#DCE5DF" BorderThickness="1" CornerRadius="20" Padding="20" Margin="0,0,8,0">

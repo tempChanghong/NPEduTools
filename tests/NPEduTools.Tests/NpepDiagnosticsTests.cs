@@ -1,0 +1,110 @@
+using System.Text.Json.Nodes;
+using NPEduTools.App;
+using NPEduTools.Contracts;
+
+namespace NPEduTools.Tests;
+
+public sealed class NpepDiagnosticsTests
+{
+    private static readonly DateTimeOffset At = DateTimeOffset.Parse("2026-10-04T18:00:00+08:00");
+    private static readonly Guid Binding = Guid.Parse("fd6298d3-a8ad-4dac-847d-b4d831410092");
+    private static HostResponse Reply(HostRequest request, NpepState? state = null) => new(Protocol.Version, request.RequestId, "Succeeded", null, "not exported", Npep: state);
+
+    [Fact]
+    public void ExportUsesAllowListEvenWhenSourceContainsSecretsAndArbitraryNestedFields()
+    {
+        const string secret = "DO-NOT-EXPORT-ABCD2345";
+        var state = new NpepState(4, "ACTIVE", "ONLINE", secret, Origin: "https://api.example.test:8443/ignored?key=" + secret,
+            Pairing: new() { ["userCode"] = secret }, Approval: new() { ["schoolId"] = Binding.ToString(),
+                ["screenBindingId"] = Binding.ToString(), ["schoolName"] = secret, ["credentialId"] = Binding.ToString(), ["secret"] = secret },
+            Error: "TLS_VALIDATION_FAILED", LastReceivedAt: "2026-10-04T10:00:00Z");
+        var request = new HostRequest(1, Guid.NewGuid(), "npep.status");
+        var cache = Reply(request) with { ClassroomMode = new(Mode: "Exam", Actual: new(secret, 0, false, secret, 0, true)),
+            Recording = new("Idle", secret, OutputFile: secret), ExamAwarePairing = new(1, "localhost", 1234, secret),
+            ExamAware = new(secret, 1, "Connected", secret, "1.5.2", true, false, 1234) };
+        var report = NpepDiagnostics.Create("InDev 20261002", At, Reply(request, state), At, cache, At);
+        string json = report.ToJsonString();
+        Assert.DoesNotContain(secret, json);
+        Assert.DoesNotContain("credentialId", json);
+        Assert.Equal("https://api.example.test:8443", report["connection"]!["origin"]!.GetValue<string>());
+        Assert.Equal(Binding.ToString(), report["connection"]!["binding"]!["screenBindingId"]!.GetValue<string>());
+        Assert.Equal("TLS_VALIDATION_FAILED", report["connection"]!["error"]!.GetValue<string>());
+        Assert.Equal("Connected", report["localCache"]!["examAwareBridge"]!.GetValue<string>());
+        Assert.Equal("2026-10-04T10:00:00.0000000+00:00", report["generatedAt"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void UnknownValuesAndRejectedResponsesCannotMasqueradeAsObservedStatus()
+    {
+        var request = new HostRequest(1, Guid.NewGuid(), "npep.status");
+        var state = new NpepState(-1, "SECRET", "SECRET", "SECRET", Origin: "https://user:secret@example.test",
+            LastReceivedAt: "secret", Error: "SECRET", Approval: new() { ["schoolId"] = "secret" });
+        var report = NpepDiagnostics.Create("secret", At, Reply(request, state), At, null, null);
+        Assert.Null(report["appVersion"]);
+        Assert.Null(report["connection"]!["origin"]);
+        Assert.Null(report["connection"]!["revision"]);
+        Assert.Null(report["connection"]!["lastReceivedAt"]);
+        Assert.DoesNotContain("SECRET", report.ToJsonString());
+        report = NpepDiagnostics.Create("1.2.3", At, Reply(request, state) with { Outcome = "Rejected" }, At, null, null);
+        Assert.False(report["connection"]!["available"]!.GetValue<bool>());
+        Assert.Null(report["connection"]!["observedAt"]);
+        Assert.False(report["localCache"]!["available"]!.GetValue<bool>());
+        Assert.Equal("Rejected", report["connection"]!["readOutcome"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task CollectionReadsOnlyKnownSnapshotsAndPreservesMissingSection()
+    {
+        var capabilities = new List<string>();
+        var session = new NpepConnectionSession((request, _) =>
+        {
+            capabilities.Add(request.Capability);
+            Assert.Null(request.Npep); Assert.Null(request.ClassroomMode); Assert.Null(request.Noise);
+            if (request.Capability == "npep.status") throw new IOException("secret credential and path");
+            return Task.FromResult(Reply(request) with { ClassroomMode = new(Mode: "Exam") });
+        });
+        var report = await session.CollectDiagnosticsAsync("InDev 20261002");
+        Assert.Equal(["npep.status", "host.cached-status"], capabilities);
+        Assert.False(report!["connection"]!["available"]!.GetValue<bool>());
+        Assert.True(report["localCache"]!["available"]!.GetValue<bool>());
+        Assert.Equal("Exam", report["localCache"]!["mode"]!.GetValue<string>());
+        Assert.DoesNotContain("secret", report.ToJsonString());
+        Assert.True(session.CanRefresh);
+    }
+
+    [Fact]
+    public async Task CollectingFreshFailureCannotReusePreviouslyHealthyConnection()
+    {
+        bool failed = false;
+        var session = new NpepConnectionSession((request, _) => Task.FromResult(failed
+            ? Reply(request, new(3, "ACTIVE", "ONLINE", "private")) with { Outcome = "Rejected", ErrorCode = "INVALID_RESPONSE" }
+            : Reply(request, new(2, "ACTIVE", "ONLINE", "private"))));
+        Assert.True(await session.RefreshAsync());
+        Assert.True(session.HasPairing);
+        failed = true;
+        var report = await session.CollectDiagnosticsAsync("1.2.3");
+        Assert.False(report!["connection"]!["available"]!.GetValue<bool>());
+        Assert.False(report["localCache"]!["available"]!.GetValue<bool>());
+        Assert.Null(report["connection"]!["observedAt"]);
+        Assert.Equal("UNKNOWN", report["connection"]!["state"]!.GetValue<string>());
+        Assert.True(session.HasPairing); // Export does not mutate the user's existing UI session.
+    }
+
+    [Fact]
+    public async Task BusyCollectionBlocksCompetingRequestsAndClosingCancelsFurtherReads()
+    {
+        var pending = new TaskCompletionSource<HostResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var lifetime = new CancellationTokenSource();
+        int calls = 0;
+        var session = new NpepConnectionSession((request, _) => { calls++; return pending.Task; }, lifetime.Token);
+        var collecting = session.CollectDiagnosticsAsync("1.2.3");
+        Assert.False(session.CanRefresh);
+        Assert.False(await session.RefreshAsync());
+        Assert.Null(await session.CollectDiagnosticsAsync("1.2.3"));
+        lifetime.Cancel();
+        pending.SetResult(new(1, Guid.NewGuid(), "Succeeded", null, ""));
+        Assert.Null(await collecting);
+        Assert.Equal(1, calls);
+        Assert.True(session.CanRefresh);
+    }
+}

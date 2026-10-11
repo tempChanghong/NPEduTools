@@ -8,6 +8,7 @@ internal static partial class Program
 {
     private static void RunNoiseStatusChecks()
     {
+        RunNoiseAccessChecks();
         RunNoiseManagementChecks();
         RunNoiseProtocolChecks();
         // A unique nonexistent pipe cannot reach the user's Host. Synchronous rendering
@@ -28,6 +29,14 @@ internal static partial class Program
                 choices.ItemsSource = new[] { new NoiseDevice("fixture", "隔离测试麦克风") };
                 choices.SelectedIndex = 0;
 
+                Show(active);
+                var estimate = new NoiseEstimate(new string('a', 64), "a-sos-band8500-v1|sample-energy-fs-v1", "ManualReference", "Slow", 90,
+                    "2026-10-11T00:00:00.000Z", "Active", null, 60, new(20,20d/30,60,65));
+                Show(active with { Estimate = estimate });
+                Assert(Text("LevelText") == "-57.0" && Text("EstimateText").Contains("60.0 估算 dB(A)"), "manual view mixes raw and estimated units");
+                Assert(Text("SummaryText").Contains("最高平滑电平") && Text("SummaryText").Contains("估算有效覆盖"), "estimated summary drops partial coverage or true-peak distinction");
+                Show(active with { Estimate = estimate with { State="Invalidated",Reason="INPUT_SETTINGS_CHANGED",CurrentDbA=null } });
+                Assert(Text("EstimateText").Contains("失效") && !Text("EstimateText").Contains("60.0"), "invalid estimate keeps a live acoustic reading");
                 Show(active);
                 Assert(Text("LevelText") == "-57.0" && Text("SummaryText").Contains("29.6"), "active sampling missing");
                 Assert(!Button(owner, "StartButton").IsEnabled && Button(owner, "StopButton").IsEnabled, "active controls changed");

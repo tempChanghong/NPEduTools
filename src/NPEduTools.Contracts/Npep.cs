@@ -4,16 +4,24 @@ namespace NPEduTools.Contracts;
 
 // Local UI commands contain no device credentials or arbitrary cloud request body.
 public sealed record NpepCommand(string Action, long Revision, string? Origin = null, string? DeviceName = null,
-    string? ServerInstanceId = null, string? DeploymentEpoch = null, string? ApprovalId = null, string? UserCode = null);
+    string? ServerInstanceId = null, string? DeploymentEpoch = null, string? ApprovalId = null, string? UserCode = null,string? ScreenBindingId = null,string? ManagementSecret = null);
 public sealed record NpepState(long Revision, string State, string Connection, string Message, bool Busy = false,
     string? Origin = null, JsonObject? Server = null, JsonObject? Pairing = null, JsonObject? Approval = null,
-    bool ReportingPaused = false, string? LastReceivedAt = null, string? Error = null, Guid? OperationId = null, string? PairingSource = null);
+    bool ReportingPaused = false, string? LastReceivedAt = null, string? Error = null, Guid? OperationId = null, string? PairingSource = null,JsonObject? Catalogue = null);
 
 public static class NpepContract
 {
     public static bool Valid(NpepCommand c)
     {
         if (c.Revision < 0) return false;
+        if(c.Action is "apply-class" or "password-class")return c.ScreenBindingId is {Length:>0 and <=191} && c.ScreenBindingId.All(ch=>char.IsAsciiLetterOrDigit(ch)||ch is '_' or '-') &&
+            (c.Action=="apply-class"?c.ManagementSecret is null:NoiseManagementContract.SecretValid(c.ManagementSecret)) &&
+            Valid(c with{Action="pair",ScreenBindingId=null,ManagementSecret=null});
+        if(c.ScreenBindingId is not null || c.ManagementSecret is not null)return false;
+        if(c.Action is "apply-class" or "password-class")return c.ScreenBindingId is {Length:>0 and <=191} && c.ScreenBindingId.All(ch=>char.IsAsciiLetterOrDigit(ch)||ch is '_' or '-') &&
+            (c.Action=="apply-class"?c.ManagementSecret is null:NoiseManagementContract.SecretValid(c.ManagementSecret)) &&
+            Valid(c with{Action="pair",ScreenBindingId=null,ManagementSecret=null});
+        if(c.ScreenBindingId is not null || c.ManagementSecret is not null)return false;
         if (c.Action == "claim") return c.UserCode is { Length: 8 } && c.UserCode.All(ch => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".Contains(ch)) &&
             Valid(c with { Action = "pair", UserCode = null });
         if (c.UserCode is not null) return false;

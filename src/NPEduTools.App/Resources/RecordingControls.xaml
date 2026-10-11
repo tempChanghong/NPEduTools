@@ -1,5 +1,5 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <!-- Scoped to the recording windows. These ComboBoxes are intentionally non-editable. -->
+  <!-- Shared by all application choice controls. Current selectors are non-editable. -->
   <Style x:Key="RecordingChoiceItem" TargetType="ComboBoxItem">
     <Setter Property="MinHeight" Value="40" />
     <Setter Property="Padding" Value="12,8" />

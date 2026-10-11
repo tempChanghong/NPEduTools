@@ -6,7 +6,7 @@ using NPEduTools.Integrations.Npep;
 
 namespace NPEduTools.Tests;
 
-public sealed class NoiseScheduleHostTests
+public sealed partial class NoiseScheduleHostTests
 {
     public static IEnumerable<object[]> WireCases => JsonNode.Parse(File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory,"Fixtures/noise-schedule-wire-cases.json")))!.AsArray()
         .Select(c => new object[] { c!["name"]!.GetValue<string>(),c["definition"]!.GetValue<string>(),c["expected"]!.GetValue<bool>(),c["value"]!.ToJsonString() });
@@ -20,6 +20,8 @@ public sealed class NoiseScheduleHostTests
     private sealed class Clock : TimeProvider
     {
         public long Ms;
+        public DateTimeOffset? UtcBase;
+        public override DateTimeOffset GetUtcNow() => UtcBase?.AddMilliseconds(Ms) ?? base.GetUtcNow();
         public override long TimestampFrequency => 1000;
         public override long GetTimestamp() => Ms;
         // Scheduler tests drive time explicitly; NoiseService's separate watchdog is
@@ -41,6 +43,7 @@ public sealed class NoiseScheduleHostTests
         public ManualResetEventSlim? StartGate;
         public void Start() => StartGate?.Wait();
         public void Sample() => Frame?.Invoke(new(0.1, 0.000001, 0.002, 0, false));
+        public void Silence() => Frame?.Invoke(new(0.1, 0, 0, 0, false));
         public void Break() => Failed?.Invoke("Disconnected");
         public void Dispose() => Disposed = true;
     }
@@ -51,7 +54,7 @@ public sealed class NoiseScheduleHostTests
         public readonly List<Capture> Captures = [];
         public readonly NoiseService Noise;
         public NoiseScheduleService Scheduler;
-        public bool Exam, Frozen;
+        public bool Exam, Frozen, ModeExam;
         public bool StatisticsReady=true;
         public string Scope = "test-school-and-binding";
         public DateTimeOffset Base = new(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
@@ -63,8 +66,8 @@ public sealed class NoiseScheduleHostTests
             Noise.Handle(Command("select", "synthetic"));
             Scheduler = NewScheduler(); Scheduler.Bind(Scope, true); Scheduler.Confirm(Policy());
         }
-        public NoiseScheduleService NewScheduler() => new(Noise, () => new(_connection,_bridge,++_sequence,0,
-            Base.AddMilliseconds(Frozen ? 0 : Time.Ms),0,"Advancing","synthetic school time"), () => Exam,Path,Time,false,statisticsReady:()=>StatisticsReady);
+        public NoiseScheduleService NewScheduler(Action<Guid, JsonObject>? studySession = null) => new(Noise, () => new(_connection,_bridge,++_sequence,0,
+            Base.AddMilliseconds(Frozen ? 0 : Time.Ms),0,"Advancing","synthetic school time"), () => Exam,Path,Time,false,statisticsReady:()=>StatisticsReady,mode:()=>ModeExam?"Exam":"Daily",studySession:studySession);
         public HostRequest Command(string action,string? mic=null)
         {
             var s=Noise.Snapshot(); return new(Protocol.Version,Guid.NewGuid(),"noise.command",Noise:new(action,s.InstanceId,s.Revision,mic));
@@ -74,7 +77,7 @@ public sealed class NoiseScheduleHostTests
                 ["rules"]=source is "None" or "Disabled" ? new JsonArray() : JsonNode.Parse("[{\"days\":[4],\"start\":\"19:00\",\"end\":\"20:00\"}]") },
             ["leaseSeconds"]=seconds,["confirmed"]=confirmed,["command"]=null };
         public void Tick(int ms=500) { Time.Ms+=ms; Scheduler.Tick(); }
-        public async Task Start() { Tick(); Tick(); Tick(); await Until(()=>Noise.Snapshot().State=="Active"); }
+        public async Task Start() { Tick(); Tick(); Tick(); await Until(()=>{Scheduler.Tick();return Noise.Snapshot().State=="Active" && Scheduler.Observe()["owner"]!.GetValue<string>()=="Schedule";}); }
         public async ValueTask DisposeAsync()
         { await Scheduler.DisposeAsync(); await Noise.DisposeAsync(); if(Directory.Exists(Path)) Directory.Delete(Path,true); }
     }

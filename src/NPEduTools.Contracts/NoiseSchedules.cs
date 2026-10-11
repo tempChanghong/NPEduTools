@@ -12,5 +12,5 @@ public sealed record SchoolNoisePolicy([property: JsonRequired] string Mode,
 public sealed record EffectiveNoiseSchedule(string Source, IReadOnlyList<SchoolNoiseRule> Rules);
 public sealed record SchoolNoiseWindow(DateTimeOffset Start, DateTimeOffset End);
 public sealed record SchoolNoiseWindows(SchoolNoiseWindow? Current, SchoolNoiseWindow? Next);
-public sealed record NoiseWindowBlock(SchoolNoiseWindow Window, string Kind, string? MicrophoneKey = null);
+public sealed record NoiseWindowBlock(SchoolNoiseWindow Window, string Kind, string? MicrophoneKey = null, string Mode = "Daily");
 public sealed record NoiseScheduleDecision(string Action, string Reason, SchoolNoiseWindow? Window);

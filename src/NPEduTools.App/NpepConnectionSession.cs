@@ -14,6 +14,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private NpepState? _state;
     private string _origin = "", _deviceName = "教室大屏";
     private string _userCode = "";
+    private string? _catalogueSeen;
+    private IReadOnlyList<ClassChoice> _classes=[];
     public string UserCode { get => _userCode; set { _userCode = value; Changed(); } }
     private string? _serverSeen, _approvalSeen, _feedback;
     private string? _feedbackCode;
@@ -60,6 +62,16 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private string NormalizedCode => UserCode.Replace("-", "").Replace(" ", "").ToUpperInvariant();
     public bool CanClaim => CanPair && NpepContract.Valid(new("claim", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
         Text(_state.Server, "serverInstanceId"), Text(_state.Server, "deploymentEpoch"), UserCode: NormalizedCode));
+    public sealed record ClassChoice(string Id,string Name);
+    public IReadOnlyList<ClassChoice> Classes => _classes;
+    public bool HasClasses => Classes.Count>0;
+    public Task<bool> ConnectClassAsync(string? binding,string? secret)
+    {
+        if(!CanPair || binding is null || !Classes.Any(x=>x.Id==binding))return Task.FromResult(false);
+        var c=new NpepCommand(secret is null?"apply-class":"password-class",_state!.Revision,Origin.Trim(),DeviceName.Trim(),
+            Text(_state.Server,"serverInstanceId"),Text(_state.Server,"deploymentEpoch"),ScreenBindingId:binding,ManagementSecret:secret);
+        return NpepContract.Valid(c)?RunAsync(c):Task.FromResult(false);
+    }
     public bool ShowRecover => _state?.State is "CREATING" or "CONFIRMING" ||
         _state?.State is "PENDING" or "ACTIVE" && _state.Connection == "STOPPED";
     public bool CanRecover => Available && ShowRecover;
@@ -93,6 +105,13 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private void Apply(HostResponse response)
     {
         _state = response.Npep;
+        string? catalogue=_state?.Catalogue?.ToJsonString();
+        if(catalogue!=_catalogueSeen)
+        {
+            _catalogueSeen=catalogue;
+            _classes=_state?.Catalogue?["items"] is JsonArray items ? items.OfType<JsonObject>().Where(x=>Text(x,"screenBindingId").Length>0)
+                .Select(x=>new ClassChoice(Text(x,"screenBindingId"),$"{Text(x,"schoolName")} · {Text(x,"gradeName")} {Text(x,"className")} · {Text(x,"screenName")}")).ToArray():[];
+        }
         if (_state?.State is "APPROVED" or "ACTIVE") _userCode = "";
         string? server = _state?.Server?.ToJsonString();
         string? approval = _state?.Approval?.ToJsonString();
@@ -106,6 +125,32 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     }
 
     public Task<bool> RefreshAsync() => RunAsync(null);
+    public async Task<JsonObject?> CollectDiagnosticsAsync(string appVersion, CancellationToken token = default)
+    {
+        if (lifetime.IsCancellationRequested || token.IsCancellationRequested || !await _gate.WaitAsync(0)) return null;
+        _working = true; Changed();
+        try
+        {
+            async Task<(HostResponse? Response, DateTimeOffset? At)> ReadAsync(string capability)
+            {
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime, token);
+                deadline.CancelAfter(TimeSpan.FromSeconds(3));
+                try
+                {
+                    var response = await request(new(Protocol.Version, Guid.NewGuid(), capability), deadline.Token);
+                    return (response, DateTimeOffset.UtcNow);
+                }
+                catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+                { return (null, null); }
+            }
+            var connection = await ReadAsync("npep.status");
+            if (lifetime.IsCancellationRequested || token.IsCancellationRequested) return null;
+            var cache = await ReadAsync("host.cached-status");
+            if (lifetime.IsCancellationRequested || token.IsCancellationRequested) return null;
+            return NpepDiagnostics.Create(appVersion, DateTimeOffset.UtcNow, connection.Response, connection.At, cache.Response, cache.At);
+        }
+        finally { _working = false; _gate.Release(); Changed(); }
+    }
     public Task<bool> InspectAsync() => CanInspect ? RunAsync(new("inspect", _state!.Revision, Origin.Trim())) : Task.FromResult(false);
     public Task<bool> PairAsync() => CanPair ? RunAsync(new("pair", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
         Text(_state.Server, "serverInstanceId"), Text(_state.Server, "deploymentEpoch"))) : Task.FromResult(false);
@@ -146,7 +191,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             Apply(response);
             return response.Outcome is "Succeeded" or "Accepted";
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
             // A lost mutation response is ambiguous. Disable mutations until a fresh Host snapshot resolves it.
             _state = null; _serverConfirmed = _bindingConfirmed = false;

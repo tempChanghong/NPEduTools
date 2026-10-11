@@ -7,7 +7,7 @@ using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Host;
 
 /// <summary>Owns scheduled sessions only. Policy leases live in memory; user skips live on disk.</summary>
-public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
+public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStudyCapture, IAsyncDisposable
 {
     private readonly NoiseService _noise;
     private readonly Func<SchoolClockFrame> _clock;
@@ -15,16 +15,19 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
     private readonly TimeProvider _time;
     private readonly Action<string?>? _bindReports;
     private readonly Func<bool>? _statisticsReady;
+    private readonly Action<Guid, JsonObject>? _studySession;
     private readonly long _origin;
     private readonly string _path;
     private readonly object _sync = new(), _journalLock = new();
-    private readonly SchoolClockTracker _tracker = new();
+    private SchoolClockTracker _tracker = new();
+    private readonly Func<string> _modeSource;
+    private string _mode = "Daily";
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private Journal _journal = new(null, [], [], null, null);
     private sealed record CommandReceipt(string CommandId, string Outcome);
-    private sealed record Journal(string? Scope, List<NoiseWindowBlock> Blocks, List<CommandReceipt> Commands, Guid? OwnedId, SchoolNoiseWindow? OwnedWindow);
+    private sealed record Journal(string? Scope, List<NoiseWindowBlock> Blocks, List<CommandReceipt> Commands, Guid? OwnedId, SchoolNoiseWindow? OwnedWindow, string OwnedMode = "Daily");
     private string? _scope, _version, _storeError;
     private bool _eligible;
     private double _confirmedAt = -1, _leaseMs;
@@ -32,14 +35,17 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
     private Guid? _owned;
     private SchoolNoiseWindow? _ownedWindow;
     private string _owner = "None", _reason = "NOT_ELIGIBLE";
+    private bool _priority;
+    public bool ScheduledDue(){lock(_sync){Tick();return _priority;}}
     private JsonObject? _receipt;
     public NoiseScheduleService(NoiseService noise, Func<SchoolClockFrame> clock, Func<bool> exam,
-        string directory, TimeProvider? time = null, bool background = true, Action<string?>? bindReports = null, Func<bool>? statisticsReady = null)
+        string directory, TimeProvider? time = null, bool background = true, Action<string?>? bindReports = null, Func<bool>? statisticsReady = null, Func<string>? mode = null, Action<Guid, JsonObject>? studySession = null)
     {
+        _modeSource = mode ?? (() => "Daily");
         _noise = noise; _clock = clock; _exam = exam; _time = time ?? TimeProvider.System;
         _origin = _time.GetTimestamp(); _path = Path.Combine(directory, "noise-schedule-state.json");
         _bindReports = bindReports;
-        _statisticsReady = statisticsReady;
+        _statisticsReady = statisticsReady; _studySession = studySession;
         try
         {
             if (File.Exists(_path))
@@ -78,7 +84,7 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
         lock (_journalLock)
         {
             if (_journal.OwnedId != id || _journal.OwnedWindow is not { } w) return true;
-            _journal.Blocks.Add(new(w, "Skipped")); Trim(); Save();
+            _journal.Blocks.Add(new(w, "Skipped", Mode: _journal.OwnedMode)); Trim(); Save();
             return _storeError is null;
         }
     }
@@ -99,12 +105,15 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
                 if (_owned is { } id) _noise.StopScheduled(id);
                 _owned = null; _ownedWindow = null; _confirmedAt = -1; _version = null;
                 _policy = new("None", []); _scope = scope;
+                _studySelected = false; _studySettings = null; _studyProbeComplete = false;
+                _studyResumeReceipt = null;
                 _bindReports?.Invoke(scope); // Fence the report outbox before a scheduled session can start.
                 lock (_journalLock)
                 {
                     if (_journal.Scope != scope) { _journal = new(scope, [], [], null, null); Save(); }
                 }
             }
+            if (!_eligible) _studyConfirmedAt = -1;
             if (!_eligible && _owned is { } current) _noise.StopScheduled(current);
             if (scope is null)
             {
@@ -117,7 +126,7 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
         NpepNoiseScheduleProtocol.Validate("exchangeResponse", response);
         lock (_sync)
         {
-            if (!_eligible || _scope is null || !response["confirmed"]!.GetValue<bool>()) return;
+            if (_studySelected || !_eligible || _scope is null || !response["confirmed"]!.GetValue<bool>()) return;
             var p = response["policy"]!.AsObject();
             var rules = p["rules"]!.Deserialize<List<SchoolNoiseRule>>(Json)!;
             string source = p["source"]!.GetValue<string>();
@@ -128,7 +137,7 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
             if (response["command"] is JsonObject command) Resume(command);
         }
     }
-    private void Resume(JsonObject command)
+    private void Resume(JsonObject command, bool permitted = true, bool currentWindowOnly = false)
     {
         string id = command["commandId"]!.GetValue<string>();
         lock (_journalLock)
@@ -136,13 +145,27 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
             var previous = _journal.Commands.FirstOrDefault(c => c.CommandId == id);
             if (previous is not null) { _receipt = JsonSerializer.SerializeToNode(previous, Json)!.AsObject(); return; }
             var reading = _tracker.Read(TimeSpan.FromMilliseconds(Elapsed));
-            var window = reading.Now is { Year: >= 2000 and <= 9998 } now ? SchoolNoiseSchedule.Windows(_policy, now).Current : null;
-            bool valid = _version == command["version"]!.GetValue<string>() && window is not null && reading.Fresh &&
+            var window = reading.Now is { Year: >= 2000 and <= 9998 } now ? ScheduleWindows(now).Current : null;
+            bool valid = permitted && _version == command["version"]!.GetValue<string>() && window is not null && reading.Fresh &&
                 ParseWindow(command["window"]!.AsObject()) == window;
             // Persist the consumption and removal together before any new capture.
             if (valid)
             {
-                _journal.Blocks.RemoveAll(b => SchoolNoiseSchedule.Overlaps(b.Window, window!));
+                if (currentWindowOnly)
+                {
+                    // A policy edit may split one previously stopped interval into several windows.
+                    // Restore only the current slice and preserve stops in later slices.
+                    var remaining = new List<NoiseWindowBlock>();
+                    foreach (var block in _journal.Blocks)
+                    {
+                        if (block.Mode != _mode || !SchoolNoiseSchedule.Overlaps(block.Window, window!)) { remaining.Add(block); continue; }
+                        if (block.Window.Start < window!.Start) remaining.Add(block with { Window = new(block.Window.Start, window.Start) });
+                        if (block.Window.End > window.End) remaining.Add(block with { Window = new(window.End, block.Window.End) });
+                    }
+                    if (remaining.Count > 128) valid = false; // Never discard an unrelated stop to fit the journal.
+                    else { _journal.Blocks.Clear(); _journal.Blocks.AddRange(remaining); }
+                }
+                else _journal.Blocks.RemoveAll(b => b.Mode == _mode && SchoolNoiseSchedule.Overlaps(b.Window, window!));
                 _tracker.ConfirmDate();
             }
             var receipt = new CommandReceipt(id, valid && _storeError is null ? "ACCEPTED" : "REJECTED");
@@ -154,6 +177,9 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
     {
         lock (_sync)
         {
+            var mode = _modeSource() == "Exam" ? "Exam" : "Daily";
+            if (mode != _mode) { if (_owned is { } prior) _noise.StopScheduled(prior); _mode = mode; _tracker = new(); _studyConfirmedAt = -1; _confirmedAt = -1; _owned = null; _ownedWindow = null; _studyResumeReceipt = null; }
+            if (_studySelected) _policy = new(_studySettings?.Noise.Enabled == true ? _studySource : "Disabled", _studySettings?.ForMode(_mode).Schedule.Rules ?? []);
             double elapsed = Elapsed;
             if (_policy.Source is "Grade" or "Class") _tracker.Accept(_clock(), TimeSpan.FromMilliseconds(elapsed), 0);
             var reading = _tracker.Read(TimeSpan.FromMilliseconds(elapsed));
@@ -163,17 +189,28 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
             bool active = status.State is "Starting" or "Active" or "Stopping";
             if (_owned == status.SessionId && status.State == "Faulted" && _ownedWindow is { } failed)
             {
-                lock (_journalLock) { _journal.Blocks.Add(new(failed, "Failed", MicrophoneKey(status.SelectedDeviceId))); Trim(); Save(); }
+                lock (_journalLock) { _journal.Blocks.Add(new(failed, "Failed", MicrophoneKey(status.SelectedDeviceId), _mode)); Trim(); Save(); }
                 _owned = null;
             }
-            _owner = active ? status.SessionId == _owned ? "Schedule" : "Manual" : "None";
+            // A former mode's scheduled capture may still be flushing after ownership
+            // is revoked. It is busy, but must not be reported or adopted as manual.
+            _owner = active ? status.SessionId == _owned ? "Schedule" : _noise.IsScheduledSession(status.SessionId) ? "None" : "Manual" : "None";
             List<NoiseWindowBlock> blocks;
-            lock (_journalLock) blocks = [.. _journal.Blocks];
-            bool lease = _confirmedAt >= 0 && elapsed >= _confirmedAt && elapsed - _confirmedAt < _leaseMs;
+            lock (_journalLock) blocks = [.. _journal.Blocks.Where(b => b.Mode == _mode)];
+            bool lease = LeaseRemaining(elapsed) > 0;
             bool statisticsReady = _statisticsReady?.Invoke() != false;
-            var decision = NoiseScheduleEvaluator.Evaluate(new(_policy, reading, _eligible && _storeError is null && statisticsReady, lease,
-                !string.IsNullOrWhiteSpace(status.SelectedDeviceId), _exam(), _owner, status.State == "Stopping",
-                MicrophoneKey(status.SelectedDeviceId), blocks));
+            var input = new NoiseScheduleInput(_policy, reading, _eligible && (!_studyProbeRequired || _studyProbeComplete || _studySelected) && _storeError is null && statisticsReady, lease,
+                !string.IsNullOrWhiteSpace(status.SelectedDeviceId), _exam() || _mode == "Exam" && !_studySelected, _owner, status.State == "Stopping",
+                MicrophoneKey(status.SelectedDeviceId), blocks);
+            var priorityInput=input with {Owner="None",CaptureBusy=false};
+            NoiseScheduleDecision priorityDecision;
+            try{priorityDecision=_studySelected && _studySettings is not null?NoiseScheduleEvaluator.EvaluateStudy(priorityInput,_studySettings.ForMode(_mode)):NoiseScheduleEvaluator.Evaluate(priorityInput);}
+            catch(ArgumentException){priorityDecision=new("Wait","SCHOOL_CLOCK_UNAVAILABLE",null);}
+            _priority=priorityDecision.Action=="Start";
+            _noise.SetScheduledPriority(_priority);
+            NoiseScheduleDecision decision;
+            try { decision = _studySelected && _studySettings is not null ? NoiseScheduleEvaluator.EvaluateStudy(input, _studySettings.ForMode(_mode)) : NoiseScheduleEvaluator.Evaluate(input); }
+            catch (ArgumentException) { decision = new(_owner == "Schedule" ? "Stop" : "Wait", "SCHOOL_CLOCK_UNAVAILABLE", null); }
             _reason = _storeError ?? (!statisticsReady && _owner != "Manual" ? "STATISTICS_STORE_UNAVAILABLE" : decision.Reason);
             if (_reason == "WINDOW_ACTIVE" && status.State == "Starting") _reason = "CAPTURE_STARTING";
             if (decision.Action == "Keep" && _owned is { } continuing && _ownedWindow != decision.Window)
@@ -192,15 +229,17 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
             if (decision.Action == "Start")
             {
                 var id = Guid.NewGuid(); _ownedWindow = decision.Window;
-                lock (_journalLock) { _journal = _journal with { OwnedId = id, OwnedWindow = decision.Window }; Save(); }
+                lock (_journalLock) { _journal = _journal with { OwnedId = id, OwnedWindow = decision.Window, OwnedMode = _mode }; Save(); }
                 if (_storeError is not null) return;
+                if (_studySelected && _studyReportScope is not null && decision.Window is { } reportWindow)
+                    _studySession?.Invoke(id, new JsonObject { ["scope"] = _studyReportScope.DeepClone(), ["policyVersion"] = _version, ["mode"] = _mode, ["clockSource"] = _mode == "Exam" ? "Windows" : "ClassIsland", ["window"] = Window(reportWindow) });
                 var result = _noise.StartScheduled(id);
                 if (result.Outcome == "Accepted") { _owned = id; _owner = "Schedule"; _reason = "CAPTURE_STARTING"; }
                 else
                 {
                     if (result.ErrorCode is "NoiseBusy" or "NoiseStateChanged") { _reason = "CAPTURE_BUSY"; return; }
                     _reason = "WINDOW_FAILED";
-                    lock (_journalLock) { _journal.Blocks.Add(new(decision.Window!, "Failed", MicrophoneKey(status.SelectedDeviceId))); Trim(); Save(); }
+                    lock (_journalLock) { _journal.Blocks.Add(new(decision.Window!, "Failed", MicrophoneKey(status.SelectedDeviceId), _mode)); Trim(); Save(); }
                 }
             }
         }
@@ -218,13 +257,13 @@ public sealed class NoiseScheduleService : INpepNoiseSchedules, IAsyncDisposable
         lock (_sync)
         {
             var reading = _tracker.Read(TimeSpan.FromMilliseconds(Elapsed));
-            var windows = reading.Now is { Year: >= 2000 and <= 9998 } now ? SchoolNoiseSchedule.Windows(_policy, now) : new SchoolNoiseWindows(null, null);
+            var windows = reading.Now is { Year: >= 2000 and <= 9998 } now ? ScheduleWindows(now) : new SchoolNoiseWindows(null, null);
             return new() { ["capability"] = "noise.schedule", ["version"] = _version, ["source"] = _policy.Source,
                 ["owner"] = _owner, ["reason"] = _reason, ["schoolNow"] = reading.Now is { Year: >= 2000 and <= 9998 } n ? Stamp(n) : null,
                 ["clockReady"] = reading.CanStart, ["dateNeedsReview"] = reading.DateNeedsReview,
                 ["window"] = Window(windows.Current), ["next"] = Window(windows.Next),
                 ["sessionId"] = _owner == "Schedule" ? _owned?.ToString("D") : null,
-                ["leaseRemainingSeconds"] = _confirmedAt < 0 ? 0 : Math.Max(0, (int)Math.Ceiling((_leaseMs - (Elapsed - _confirmedAt)) / 1000)),
+                ["leaseRemainingSeconds"] = Math.Max(0, (int)Math.Ceiling(LeaseRemaining(Elapsed) / 1000)),
                 ["receipt"] = _receipt?.DeepClone() };
         }
     }

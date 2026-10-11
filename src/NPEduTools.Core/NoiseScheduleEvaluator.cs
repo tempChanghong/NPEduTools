@@ -9,7 +9,11 @@ public sealed record NoiseScheduleInput(EffectiveNoiseSchedule Policy, SchoolClo
 /// <summary>Decisions only. A later Host adapter owns effects, acknowledgements and persistence.</summary>
 public static class NoiseScheduleEvaluator
 {
-    public static NoiseScheduleDecision Evaluate(NoiseScheduleInput input)
+    public static NoiseScheduleDecision Evaluate(NoiseScheduleInput input) => Evaluate(input,
+        now => SchoolNoiseSchedule.Windows(input.Policy, now).Current);
+    public static NoiseScheduleDecision EvaluateStudy(NoiseScheduleInput input, StudySettings settings) => Evaluate(input,
+        now => SchoolStudySchedule.Windows(settings, now).Current);
+    private static NoiseScheduleDecision Evaluate(NoiseScheduleInput input, Func<DateTimeOffset, SchoolNoiseWindow?> current)
     {
         NoiseScheduleDecision Block(string reason, SchoolNoiseWindow? window = null) =>
             new(input.Owner == "Schedule" ? "Stop" : "Wait", reason, window);
@@ -22,7 +26,7 @@ public static class NoiseScheduleEvaluator
         if (input.ExamBlocked) return Block("EXAM_PAUSED");
         if (!input.Clock.Fresh || !input.Clock.CanStart || input.Clock.Now is null || input.Clock.DateNeedsReview)
             return Block("SCHOOL_CLOCK_UNAVAILABLE");
-        var window = SchoolNoiseSchedule.Windows(input.Policy, input.Clock.Now.Value).Current;
+        var window = current(input.Clock.Now.Value);
         if (window is null) return Block("OUTSIDE_WINDOW");
         if (input.Blocks.Any(b => b.Kind == "Skipped" && SchoolNoiseSchedule.Overlaps(b.Window, window)))
             return Block("WINDOW_SKIPPED", window);

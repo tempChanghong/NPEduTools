@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         _pipe = pipe;
         _upstream = upstream;
         InitializeComponent();
+        Closed += (_, _) => ShutdownExitWarning();
         DataContext = _model;
         if (initializeServices)
         {
@@ -58,7 +59,7 @@ public partial class MainWindow : Window
             if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording?.Detach(); };
+        Closed += (_, _) => { _lifetime.Cancel(); _studyMonitoringWindow?.Shutdown(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _studyWindow?.Shutdown();_manualStudyWindow?.Shutdown(); _studyWindow = null; _studyReportWindow?.Shutdown(); _studyReportWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording?.Detach(); };
         _model.PropertyChanged += (_, _) =>
         {
             // After success, the next live snapshot owns the quick panel status again.
@@ -124,19 +125,7 @@ public partial class MainWindow : Window
         }
         string executable = Path.Combine(AppContext.BaseDirectory, "Host", "NPEduTools.Host.exe");
         if (!File.Exists(executable)) throw new FileNotFoundException("Host bundle is missing.");
-        var start = new ProcessStartInfo(executable)
-        {
-            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
-            WorkingDirectory = Path.GetDirectoryName(executable)!
-        };
-        start.ArgumentList.Add("--pipe");
-        start.ArgumentList.Add(_pipe);
-        if (_upstream is not null)
-        {
-            start.ArgumentList.Add("--classisland-pipe");
-            start.ArgumentList.Add(_upstream);
-        }
-        using var process = Process.Start(start);
+        new NPEduTools.Core.GuardTasks(AppContext.BaseDirectory, _pipe, _upstream).Run("Host");
     }
 
     private void CloseClicked(object sender, RoutedEventArgs e) => Close();
@@ -198,7 +187,7 @@ public partial class MainWindow : Window
     {
         Hide();
         _quick?.Collapse(false);
-        _quick?.Show();
+        _quick?.ShowEntry();
         if (!_entryHint && _tray is not null)
         {
             _entryHint = true;
@@ -468,6 +457,15 @@ public partial class MainWindow : Window
             if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var modeHost))
             {
                 modeHost.Dispose();
+                // The click precedes management verification. Hiding the study display never sends this capability.
+                StudyExitState? exitState=null;
+                try {
+                    var begun=await ManagementRequestAsync(shutdownRequest with{Capability="study.exit.begin"});
+                    if(begun.ErrorCode is "UnknownCapability" or "STUDY_EXIT_UNSUPPORTED")await ManagementRequestAsync(shutdownRequest with{Capability="study.photos.exit-intent"});
+                    else if(begun.StudyExit is {State:"Failed"} failure){ShowStudyExitWarning(failure);HomeMessage.Text="退出验证未通过，后台继续运行。";return;}
+                    else if(begun.Outcome=="Rejected"){HomeMessage.Text=begun.Message;return;}
+                    else if(begun.StudyExit is {State:"Waiting"} waiting && waiting.AttemptId==shutdownRequest.RequestId)exitState=waiting;
+                }catch(Exception e2)when(IsManagementError(e2)){HomeMessage.Text="无法确认本次退出验证，后台继续运行。";return;}
                 var classroom = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classroom.status"));
                 if (classroom.ClassroomMode?.Busy == true)
                 {
@@ -475,9 +473,15 @@ public partial class MainWindow : Window
                     ShowClassroomMode();
                     return;
                 }
-                var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest);
+                var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest,exitState,ReadStudyExitAsync,ShowStudyExitWarning);
                 if (authorized is null) { HomeMessage.Text = "未验证，后台与录课设置保持原状态。"; return; }
                 shutdownRequest = authorized;
+                try
+                {
+                    using var photoWait = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+                    await HostClient.RequestAsync(_pipe, shutdownRequest with { Capability = "study.photos.flush", NoiseAuthorization = null, TimeoutMs = 6000 }, photoWait.Token);
+                }
+                catch (Exception e2) when (IsManagementError(e2)) { }
                 // Fence scheduled starts and journal authorized intent before touching automatic recording.
                 var prepared = await NoiseManagementDialog.Request(_pipe, shutdownRequest with { Capability = "noise.management.prepare-exit" });
                 if (prepared.Outcome != "Succeeded") { HomeMessage.Text = prepared.Message; return; }

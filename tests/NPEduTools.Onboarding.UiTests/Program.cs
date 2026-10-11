@@ -19,6 +19,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        bool manualStudyOnly = args.Length == 2 && args[1] == "--manual-study";
         bool examOnly = args.Length == 2 && args[1] == "--remote-exam";
         bool connectionOnly = args.Length == 2 && args[1] == "--school-connection";
         bool noiseOnly = args.Length == 2 && args[1] == "--noise-status";
@@ -27,6 +28,16 @@ internal static partial class Program
         bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
         bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
         bool classroomOnly = args.Length == 2 && args[1] == "--classroom-status";
+        bool studyMemoryOnly = args.Length == 2 && args[1] == "--study-display-memory";
+        bool studySoakOnly = args.Length == 2 && args[1] is "--study-display-soak" or "--study-display-soak-probe";
+        bool studyReportOnly = args.Length == 2 && args[1] == "--study-report";
+        bool studyExitOnly = args.Length == 2 && args[1] == "--study-exit";
+        bool studyDisplayOnly = args.Length == 2 && args[1] == "--study-display";
+        bool studyDevicesOnly = args.Length == 2 && args[1] == "--study-devices";
+        bool calibrationOnly = args.Length == 2 && args[1] == "--noise-calibration";
+        bool meterOnly = args.Length == 2 && args[1] is "--sound-meter-beta" or "--usb-reference";
+        bool usbReferenceOnly = args.Length == 2 && args[1] == "--usb-reference";
+        bool inputsOnly = args.Length == 2 && args[1] == "--input-controls";
         bool scheduledDisplayOnly = args.Length == 2 && args[1] == "--scheduled-display";
         bool preparationOnly = args.Length == 2 && args[1] == "--onboarding-preparation";
         bool touchOnly = args.Length == 2 && args[1] == "--touch-status";
@@ -37,7 +48,7 @@ internal static partial class Program
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
         bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
+        if (args.Length != 1 && !manualStudyOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -52,6 +63,30 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (manualStudyOnly) { RunManualStudyChecks(); WriteResult("PASSED", null); return 0; }
+            if (inputsOnly) { RunInputControlChecks(); WriteResult("PASSED", null); return 0; }
+            if (studyReportOnly) { RunStudyReportChecks(); WriteResult("PASSED", null); return 0; }
+            if (studyExitOnly) { RunStudyExitChecks(); WriteResult("PASSED", null); return 0; }
+            if (usbReferenceOnly) { RunUsbReferenceChecks(); WriteResult("PASSED", null); return 0; }
+            if (meterOnly) { RunSoundMeterChecks(); WriteResult("PASSED", null); return 0; }
+            if (calibrationOnly)
+            { RunNoiseCalibrationChecks(); WriteResult("PASSED", null); return 0; }
+            if (studySoakOnly)
+            {
+                RunStudySoakChecks(args[1] == "--study-display-soak-probe"); WriteResult("PASSED", null); return 0;
+            }
+            if (studyMemoryOnly)
+            {
+                RunStudyMemoryChecks(); WriteResult("PASSED", null); return 0;
+            }
+            if (studyDisplayOnly)
+            {
+                RunStudyDisplayChecks(); WriteResult("PASSED", null); return 0;
+            }
+            if (studyDevicesOnly)
+            {
+                RunStudyDeviceChecks(); WriteResult("PASSED", null); return 0;
+            }
             if (shortcutsOnly)
             {
                 RunShortcutRecoveryChecks();
@@ -227,7 +262,7 @@ internal static partial class Program
         window.Loaded += (_, _) =>
         {
             try { test(window); }
-            catch (Exception error) { failure = error; window.Close(); }
+            catch (Exception error) { failure = error; if (window is StudyWindow study) study.Shutdown(); else window.Close(); }
         };
         window.ShowDialog();
         if (failure is not null) throw failure;
@@ -243,12 +278,12 @@ internal static partial class Program
         throw new InvalidOperationException("Control missing: " + id);
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-    private static void PumpUntil(Func<bool> condition, string failure)
+    private static void PumpUntil(Func<bool> condition, string failure, double timeoutSeconds = 5)
     {
         var elapsed = Stopwatch.StartNew();
         var frame = new DispatcherFrame();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
-        timer.Tick += (_, _) => { if (condition() || elapsed.Elapsed > TimeSpan.FromSeconds(5)) frame.Continue = false; };
+        timer.Tick += (_, _) => { if (condition() || elapsed.Elapsed > TimeSpan.FromSeconds(timeoutSeconds)) frame.Continue = false; };
         timer.Start();
         try { Dispatcher.PushFrame(frame); }
         finally { timer.Stop(); }

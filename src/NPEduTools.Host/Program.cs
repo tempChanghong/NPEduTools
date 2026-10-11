@@ -147,14 +147,28 @@ await using var recording = new RecordingService(pipeName, dataDirectory, school
     () => classroomStore.State.AutomaticPaused, () => remoteExamStore.State.AutomaticPaused, runtimeGate);
 await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget(), runtimeGate);
 await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader), runtimeGate);
+var noiseManagement = new NoiseManagementStore(dataDirectory);
+NoiseService? meterNoise = null;
+var soundMeter = new SoundMeterService(() => OperatingSystem.IsWindows() ? new WindowsSoundMeterHid() : throw new PlatformNotSupportedException(),
+    noiseManagement.VerifyCalibration, () => meterNoise?.MeterUnavailable == true);
 await using var noise = new NoiseService(id => OperatingSystem.IsWindows()
     ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory,
-    management: new NoiseManagementStore(dataDirectory));
+    management: noiseManagement,
+    referenceCreate: id => OperatingSystem.IsWindows() ? WasapiNoiseCapture.CreateReference(id) : throw new PlatformNotSupportedException(),
+    referencePaused: () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
+    referenceMeterOpen: soundMeter.OpenReferenceAsync);
+meterNoise = noise;
+var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
+    ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
-await using var noiseSchedules = new NoiseScheduleService(noise, schoolClock.Snapshot,
-    () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
-    Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available);
+var schoolManagement=new SchoolManagementService(noise,studyDevices,Path.Combine(dataDirectory,"npep"));
+var studyClock = new StudyModeClock(() => classroom.Snapshot.Mode, schoolClock.Snapshot);
+Func<bool> studyPaused = () => classroom.Snapshot.Phase != "Idle" || runtimeGate.Switching || runtimeGate.ExamRequested;
+Func<bool> projecting = () => StudyProjection.Active(examAware.Snapshot());
+await using var noiseSchedules = new NoiseScheduleService(noise, studyClock.Snapshot, studyPaused,
+    Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available, mode: () => studyClock.Mode, studySession: noiseTransport.OwnStudySession);
 noiseTransport.ManagementWindow = noiseSchedules.ProtectionWindow;
+await using var studySettings = new StudySettingsService(studyClock.Snapshot, studyPaused, capture: noiseSchedules, mode: () => studyClock.Mode);
 var noiseDisplay = new NoiseDisplayService(() => {
     var (s, p) = noise.ManagementSnapshot();
     var w = p.Protected ? noiseSchedules.ProtectionWindow(s.SessionId) : null;
@@ -163,6 +177,23 @@ var noiseDisplay = new NoiseDisplayService(() => {
 }, () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
     Path.Combine(dataDirectory, "npep"));
 noiseTransport.Display = noiseDisplay;
+await using var manualStudy=new ManualStudyService(noise,studySettings.DisplaySnapshot,
+    ()=>noiseSchedules.ScheduledDue() || studyPaused(),
+    Path.Combine(dataDirectory,"manual-study"), projection: projecting,
+    displayLeadSeconds: () => new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(pipeName)).Read().DisplayLeadSeconds);
+var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
+    calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder, projection: projecting);
+await using var studyReport = new StudyReportService(studySettings.DisplaySnapshot, noise.StudyReportSnapshot,
+    observePolicy: (scope, version, session, policy) => noise.StudyThresholds(session, noise.ResolveCalibration(scope, version, policy)), projection: projecting);
+studySettings.PresentationObservation = studyDisplay.ObservePresentation;
+await using var studyPhotos = new StudyPhotoService(()=>manualStudy.Status().State is "Starting" or "Active"?manualStudy.PhotoSource():studySettings.DisplaySnapshot(), noise, studyDevices, StudyPhotoProcess.CaptureAsync,
+    new StudyPhotoJournal(Path.Combine(dataDirectory, "npep", "photos"), NpepPhotoProtection.Protect));
+studySettings.Photos = studyPhotos;
+await using var studyExit=new StudyExitService(studySettings.DisplaySnapshot,noise.Protection,studyPhotos,
+    new StudyExitJournal(Path.Combine(dataDirectory,"npep","exit-events"),NpepPhotoProtection.Protect),resume:studyDisplay.ResumeAfterExitWarning);
+await using var studyRecovery=new StudyRecoveryService(new GuardFiles(Path.Combine(dataDirectory,"guard")),studySettings.DisplaySnapshot,studyPhotos,
+    new StudyExitJournal(Path.Combine(dataDirectory,"npep","recovery-events"),NpepPhotoProtection.Protect),resume:studyDisplay.ResumeAfterExitWarning);
+studySettings.ExitEvents=new StudyExitEvents(studyExit,studyRecovery);
 await using var guard = new GuardHostSession(new GuardFiles(Path.Combine(dataDirectory, "guard")), () =>
 {
     var (state, protection) = noise.ManagementSnapshot();
@@ -170,9 +201,19 @@ await using var guard = new GuardHostSession(new GuardFiles(Path.Combine(dataDir
     return protection.Protected && state.State is "Active" or "Starting" && noiseSchedules.ProtectionWindow(state.SessionId) is not null &&
         schedule["clockReady"]?.GetValue<bool>() == true && schedule["leaseRemainingSeconds"]?.GetValue<int>() > 0 &&
         schedule["owner"]?.GetValue<string>() == "Schedule" && schedule["reason"]?.GetValue<string>() == "WINDOW_ACTIVE" &&
-        !classroom.Snapshot.AutomaticPaused && !remoteExamStore.State.AutomaticPaused && !runtimeGate.Switching && !runtimeGate.ExamRequested;
+        !studyPaused();
+}, noiseSchedules.GuardPlan, () =>
+{
+    if (!OperatingSystem.IsWindows()) return;
+    var tasks = new GuardTasks(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..")), pipeName, options.GetValueOrDefault("--classisland-pipe"));
+    if (!tasks.GuardRunning()) tasks.Run("Guard");
 });
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; if (guard.ExpectedStop()) shutdown.Cancel(); };
+bool PrepareGuardStop()
+{
+    var current=noise.Snapshot();
+    return guard.ExpectedStop(current.State is "Starting" or "Active" or "Stopping" && noiseSchedules.ProtectionWindow(current.SessionId) is not null);
+}
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; if (PrepareGuardStop()) shutdown.Cancel(); };
 var remoteExamActions = new RemoteExamActions(launch, examAware, recording, classroom, new WindowsRemoteExamPlatform());
 var remoteExam = new RemoteExamExecutor(remoteExamStore, runtimeGate, remoteExamActions);
 string npepVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "unknown";
@@ -180,11 +221,12 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
     () => new(Protocol.Version, Guid.Empty, "Succeeded", null, "已有本地缓存", SchoolClock: schoolClock.PeekSnapshot(),
         Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
-    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules);
+    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement);
+var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync, npep.PublishSeatingAsync);
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, guard.ExpectedStop).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads).RunAsync(shutdown.Token);
     // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
     if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
     await serving;

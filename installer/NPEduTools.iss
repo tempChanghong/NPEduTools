@@ -108,7 +108,7 @@ begin
 #ifdef InstallerTestId
     Query := 'SELECT Name, ExecutablePath FROM Win32_Process WHERE Name = ''NPEduTools.InstallerFixture-{#InstallerTestId}.exe''';
 #else
-    Query := 'SELECT Name, ExecutablePath FROM Win32_Process WHERE Name LIKE ''NPEduTools.%'' OR Name = ''ffmpeg.exe'' OR Name = ''ffprobe.exe''';
+    Query := 'SELECT Name, ExecutablePath FROM Win32_Process WHERE Name LIKE ''NPEduTools.%'' OR Name = ''svchost.exe'' OR Name = ''ffmpeg.exe'' OR Name = ''ffprobe.exe''';
 #endif
     Processes := Service.ExecQuery(Query);
     InstallPrefix := Lowercase(AddBackslash(ExpandConstant('{app}')));
@@ -121,6 +121,16 @@ begin
         Result := 'NPEduTools 组件仍在运行：' + Name + #13#10 +
           '请先停止并保存录课／监测，在托盘选择“停止后台并退出”，然后重试。仅关闭主窗口不会退出后台。';
         Exit;
+      end;
+      if Name = 'svchost.exe' then begin
+        { Never identify or stop a Windows service by basename. Only this bundle's path is ours. }
+        if not VarIsNull(Process.ExecutablePath) then begin
+          Path := Lowercase(Process.ExecutablePath);
+          if Path = InstallPrefix + 'app\guard\svchost.exe' then begin
+            Result := '此安装的自习守护仍在待命。请维护人员按 GUARD-MAINTENANCE.md 停止本安装的守护并撤销启动登记后重试。';
+            Exit;
+          end;
+        end;
       end;
       if (Name = 'ffmpeg.exe') or (Name = 'ffprobe.exe') then begin
         if VarIsNull(Process.ExecutablePath) then begin
@@ -142,12 +152,48 @@ begin
   end;
 end;
 
+function GuardianRegistrationProblem: String;
+var Service, Folder, Tasks, Task, Actions, Action: Variant;
+    Index, ActionIndex: Integer;
+    Name, Path, InstallPrefix: String;
+begin
+  Result := '';
+  try
+    Service := CreateOleObject('Schedule.Service');
+    Service.Connect;
+    Folder := Service.GetFolder('\');
+    Tasks := Folder.GetTasks(1);
+    InstallPrefix := Lowercase(AddBackslash(ExpandConstant('{app}')));
+    for Index := 1 to Tasks.Count do begin
+      Task := Tasks.Item(Index);
+      Name := Lowercase(Task.Name);
+      if Pos('npedutools.guard.', Name) = 1 then begin
+        Actions := Task.Definition.Actions;
+        for ActionIndex := 1 to Actions.Count do begin
+          Action := Actions.Item(ActionIndex);
+          { NPEduTools guard registrations contain executable actions only. An unexpected
+            action fails the inspection below instead of being silently ignored. }
+          Path := Lowercase(Action.Path);
+          if Path = InstallPrefix + 'app\guard\svchost.exe' then begin
+            Result := '此安装仍有自习守护启动登记。请维护人员按 GUARD-MAINTENANCE.md 撤销该实例登记后重试。';
+            Exit;
+          end;
+        end;
+      end;
+    end;
+  except
+    Log('Guardian registration inspection failed: ' + GetExceptionMessage);
+    Result := '无法核实守护启动登记，本次不继续。请检查任务计划程序服务及维护权限。';
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   OldVersion: String;
   Previous, Incoming: Int64;
 begin
   Result := InstallationProblem;
+  if Result = '' then Result := GuardianRegistrationProblem;
   if Result <> '' then Exit;
   if RegValueExists(VersionRoot, VersionKey, 'InstallerVersion') then begin
     if not RegQueryStringValue(VersionRoot, VersionKey, 'InstallerVersion', OldVersion) then begin
@@ -194,6 +240,7 @@ function InitializeUninstall: Boolean;
 var Problem: String;
 begin
   Problem := InstallationProblem;
+  if Problem = '' then Problem := GuardianRegistrationProblem;
   if Problem = '' then Problem := StartupProblem;
   Result := Problem = '';
   if not Result then SuppressibleMsgBox(Problem, mbError, MB_OK, IDOK);

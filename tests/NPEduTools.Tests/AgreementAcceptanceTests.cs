@@ -16,7 +16,7 @@ public sealed class AgreementAcceptanceTests : IDisposable
         Assert.Equal(3, Definitions.Count);
         foreach (var definition in Definitions)
         {
-            Assert.Contains("生效日期：2026年10月4日", definition.Text);
+            Assert.Contains("生效日期：2026年10月11日", definition.Text);
             Assert.DoesNotContain("审核稿", definition.Text);
             Assert.DoesNotContain("待补充", definition.Text);
             Assert.DoesNotContain("联系邮箱", definition.Text);
@@ -24,6 +24,8 @@ public sealed class AgreementAcceptanceTests : IDisposable
         }
         Assert.Contains("GNU GENERAL PUBLIC LICENSE", AgreementCatalog.License.Text);
         Assert.DoesNotContain(Definitions, d => d.Id == AgreementCatalog.License.Id);
+        Assert.Contains(Definitions, d => d.Text.Contains("学校私有部署") && d.Text.Contains("单张摄像头照片"));
+        Assert.Contains(Definitions, d => d.Text.Contains("永远不会向星火动力云端服务器上传任何原音频数据或摄像头采集信息"));
     }
 
     [Theory]

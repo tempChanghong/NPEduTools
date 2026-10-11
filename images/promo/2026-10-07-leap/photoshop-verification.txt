@@ -1,0 +1,89 @@
+Photoshop 27.9.1 opened Illustrator PSD
+Background bounds 100 px, 60 px, 2660 px, 1140 px
+Canvas 2560 x 1080
+09 / 地平线雾 · editable transparent gradients / ArtLayer
+08 / 星火动力品牌 / LayerSet
+  novark.ink / ArtLayer
+  星火动力 / ArtLayer
+  <编组> / ArtLayer
+07 / 产品标志 / LayerSet
+  NPEduTools / ArtLayer
+  <编组> / ArtLayer
+06 / 跃迁 · live MiSans Heavy type / LayerSet
+  <路径> / ArtLayer
+  跃迁 / ArtLayer
+  <编组> / LayerSet
+    <剪切组> / ArtLayer
+05 / 浮起的产品界面 · embedded screenshots / LayerSet
+  Real application screenshot / LayerSet
+    <剪切组> / ArtLayer
+    <路径> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+  Real application screenshot / LayerSet
+    <剪切组> / ArtLayer
+    <路径> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+  Real application screenshot / LayerSet
+    <剪切组> / ArtLayer
+    <路径> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+    <编组> / LayerSet
+      <剪切组> / ArtLayer
+04 / NPEDUTOOLS · glass outline typography / LayerSet
+  <编组> / ArtLayer
+  <编组> / LayerSet
+    <剪切组> / ArtLayer
+03 / 光轨 · editable paths / LayerSet
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <编组> / LayerSet
+    <剪切组> / ArtLayer
+  <路径> / ArtLayer
+  <路径> / ArtLayer
+  <编组> / LayerSet
+    <剪切组> / ArtLayer
+02 / 翡翠光场 · editable radial gradients / ArtLayer
+01 / 墨绿背景 / ArtLayer
+Layer objects 84 / editable type layers 4
+DONE

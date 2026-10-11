@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <!-- Scheduler launches must not create a console on the classroom display. Redirected
+       worker protocol streams remain available; use dotnet NPEduTools.Host.dll for CLI diagnostics. -->
+  <PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup>
   <ItemGroup><InternalsVisibleTo Include="NPEduTools.Tests" /></ItemGroup>
   <ItemGroup><PackageReference Include="NAudio.Wasapi" Version="2.2.1" /></ItemGroup>
+  <ItemGroup><Compile Include="../NPEduTools.Recorder/ProcessJob.cs" Link="Camera/ProcessJob.cs" />
+    <ProjectReference Include="../NPEduTools.Camera/NPEduTools.Camera.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../NPEduTools.Integrations.SecRandom/NPEduTools.Integrations.SecRandom.csproj" />
     <ProjectReference Include="../NPEduTools.Integrations.Npep/NPEduTools.Integrations.Npep.csproj" />
@@ -19,5 +24,9 @@
   <Target Name="CopyAdminBundle" AfterTargets="Build">
     <ItemGroup><AdminBundle Include="../NPEduTools.ClassIsland.Admin/bin/$(Configuration)/net10.0/**/*" /></ItemGroup>
     <Copy SourceFiles="@(AdminBundle)" DestinationFiles="@(AdminBundle->'$(OutDir)Admin/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyCameraBundle" AfterTargets="Build">
+    <ItemGroup><CameraBundle Include="../NPEduTools.Camera/bin/$(Configuration)/net10.0-windows/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(CameraBundle)" DestinationFiles="@(CameraBundle->'$(OutDir)Camera/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

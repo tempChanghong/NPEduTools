@@ -30,6 +30,7 @@ public partial class ScheduledNoiseWindow : Window
         WindowText.Text = display.Window is { } w ? $"学校时间 {w.Start:HH:mm} — {w.End:HH:mm} · {noise.DeviceName}" : "";
         LevelText.Text = NoiseSignalPresentation.Level(noise.CurrentDbfs);
         QualityText.Text = NoiseSignalPresentation.Quality(noise.Quality, noise.CurrentDbfs);
+        if (noise.Estimate is { } estimate) QualityText.Text += "\n" + NoiseSignalPresentation.Estimated(estimate.CurrentDbA) + " · " + NoiseSignalPresentation.EstimateReason(estimate);
         MessageText.Text = display.Message;
         ReturnButton.Content = $"返回作业板（{display.ReturnMinutes} 分钟）";
         ReturnButton.IsEnabled = !_returning;

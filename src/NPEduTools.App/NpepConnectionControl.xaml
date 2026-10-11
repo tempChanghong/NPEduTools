@@ -31,6 +31,14 @@
       <StackPanel Visibility="{Binding ShowServer, Converter={StaticResource VisibleWhenTrue}}" Margin="0,14,0,0">
         <TextBlock Text="{Binding ServerIdentity}" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" AutomationProperties.AutomationId="NpepServerIdentity" />
         <CheckBox IsChecked="{Binding ServerConfirmed}" IsEnabled="{Binding CanEdit}" Style="{StaticResource Switch}" Margin="0,8,0,8" AutomationProperties.AutomationId="NpepServerConfirmed"><TextBlock Text="我已与管理员核对这是学校的服务" TextWrapping="Wrap" /></CheckBox>
+        <StackPanel Visibility="{Binding HasClasses,Converter={StaticResource VisibleWhenTrue}}">
+          <TextBlock Text="选择学校、班级与大屏" Margin="0,8,0,6"/>
+          <ComboBox x:Name="RequestedClass" ItemsSource="{Binding Classes}" DisplayMemberPath="Name" SelectedValuePath="Id" IsEnabled="{Binding CanEdit}" MinHeight="38"/>
+          <Button Content="A · 向学校申请连接" Click="ApplyClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left" Margin="0,10,0,8"/>
+          <TextBlock Text="B · 学校已预授权：输入本班管理口令直接连接。正式服务须使用 HTTPS。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12"/>
+          <PasswordBox x:Name="ClassManagementSecret" MaxLength="128" MinHeight="38" Margin="0,8,0,8" IsEnabled="{Binding CanEdit}"/>
+          <Button Content="验证口令并连接" Click="PasswordClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left"/>
+        </StackPanel>
         <TextBlock Text="推荐：学校预先开放后，在对应班级大屏的 NPClassworks → 课堂工具 → 连接 NPEduTools 生成配对码，输入下面。无需管理员再次现场批准。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,8,0,8" />
         <TextBox Text="{Binding UserCode, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" MaxLength="16" AutomationProperties.Name="网页生成的8位配对码" AutomationProperties.AutomationId="NpepWebPairingCode" />
         <Button Content="使用网页配对码" Click="ClaimClicked" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,10,0,0" IsEnabled="{Binding CanClaim}" AutomationProperties.AutomationId="NpepClaim" />
@@ -60,6 +68,19 @@
       <Button Content="{Binding PauseLabel}" Click="PauseClicked" Visibility="{Binding ShowActive, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{Binding CanPause}" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepPause" />
       <Button Content="{Binding UnpairLabel}" Click="UnpairClicked" Visibility="{Binding ShowUnpair, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{Binding CanUnpair}" Style="{StaticResource Quiet}" Margin="0,0,0,8" AutomationProperties.AutomationId="NpepUnpair" />
     </WrapPanel>
+    <Expander Header="故障排查" Margin="0,10,0,0">
+      <StackPanel Margin="0,8,0,0">
+        <TextBlock Text="导出互联状态与已有本机缓存，后台不可用时也能记录缺失项。包含服务地址和归属编号，不含配对码、凭据、姓名、路径或录音；分享前请核对文件。此操作不会重新探测课程接口或控制软件。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
+        <WrapPanel Margin="0,8,0,0">
+          <Button Content="导出诊断摘要…" Click="ExportDiagnosticsClicked" IsEnabled="{Binding CanRefresh}" Style="{StaticResource Quiet}" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepExportDiagnostics" />
+          <Button Content="对照学校诊断摘要…" Click="CompareDiagnosticsClicked" IsEnabled="{Binding CanRefresh}" Style="{StaticResource Quiet}" Margin="0,0,0,8" AutomationProperties.AutomationId="NpepCompareDiagnostics" />
+        </WrapPanel>
+        <TextBlock Text="对照时选择学校运维概览导出的 JSON 文件，核对服务与大屏归属。结果只显示在这里，不上传文件，也不会修改设置。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
+        <Border x:Name="ComparisonPanel" Visibility="Collapsed" Background="#EAF6F2" CornerRadius="10" Padding="14" Margin="0,10,0,0">
+          <TextBlock x:Name="ComparisonMessage" TextWrapping="Wrap" LineHeight="23" FontSize="13" Foreground="#314A3E" AutomationProperties.AutomationId="NpepDiagnosticComparison" />
+        </Border>
+      </StackPanel>
+    </Expander>
     <TextBlock x:Name="LocalMessage" Style="{StaticResource OptionalText}" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
   </StackPanel>
 </UserControl>

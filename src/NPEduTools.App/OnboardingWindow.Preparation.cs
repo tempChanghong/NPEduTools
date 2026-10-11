@@ -7,7 +7,7 @@ public partial class OnboardingWindow
 {
     private bool _preparationBusy;
 
-    // These status reads never pair, configure startup, enumerate recording devices or open a microphone.
+    // Preparation reads and endpoint enumeration never start audio capture or activate a camera.
     private async Task RefreshPreparationAsync()
     {
         var visit = _state;
@@ -38,10 +38,10 @@ public partial class OnboardingWindow
                 var response = await RequestAsync("noise.status");
                 detail = response.Outcome == "Succeeded" && response.Noise is { } state
                     ? $"当前监测：{state.Message}\n" +
-                      (string.IsNullOrWhiteSpace(state.SelectedDeviceId) ? "尚未保存监测麦克风。请在噪音监测页选择并保存。" : "已保存监测麦克风。设备可用性和输入电平需要在监测页实测。")
+                      (string.IsNullOrWhiteSpace(state.SelectedDeviceId) ? "尚未保存监测麦克风。请在上方选择并保存。" : "已保存监测麦克风。设备可用性和输入电平需要在监测页实测。")
                     : "暂时无法读取监测状态，请检查后台连接。";
             }
-            if (CurrentVisit()) target.Text = detail;
+            if (CurrentVisit()) { target.Text = detail; if (step == "noise") await StudyDevices.RefreshAsync(); }
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {

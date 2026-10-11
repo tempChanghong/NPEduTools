@@ -60,7 +60,7 @@ internal static partial class Program
             owner.Show();
             var read = Read();
             var method = type.GetMethod(operation == "configure" ? "ConfigureAsync" : "AuthorizeAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
-            var action = (Task)method.Invoke(null, operation == "configure" ? [owner, pipe] : [owner, pipe, target])!;
+            var action = (Task)method.Invoke(null, operation == "configure" ? [owner, pipe] : [owner, pipe, target, null, null, null])!;
             PumpUntil(() => read.IsCompleted, "management owner status query did not arrive");
             var request = read.GetAwaiter().GetResult();
             Assert(request.Capability == "noise.management.status" && Protocol.Validate(request) is null, "management entry sent a mutation");
@@ -123,7 +123,7 @@ internal static partial class Program
         var type = typeof(NoiseWindow).Assembly.GetType("NPEduTools.App.NoiseManagementDialog")!;
         owner.Show();
         Window dialog;
-        try { dialog = (Window)type.GetConstructors(flags).Single().Invoke([owner, pipe, state, target]); }
+        try { dialog = (Window)type.GetConstructors(flags).Single().Invoke([owner, pipe, state, target, null, null]); }
         catch { owner.Close(); throw; }
         var submit = (Button)type.GetField("_submit", flags)!.GetValue(dialog)!;
         var message = (TextBlock)type.GetField("_message", flags)!.GetValue(dialog)!;

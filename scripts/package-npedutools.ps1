@@ -48,7 +48,8 @@ try {
         @{Project='NPEduTools.Host';Directory=(Join-Path $app 'Host')},
         @{Project='NPEduTools.Guard';Directory=(Join-Path $app 'Guard')},
         @{Project='NPEduTools.ClassIsland.Admin';Directory=(Join-Path $app 'Admin')},
-        @{Project='NPEduTools.Recorder';Directory=(Join-Path $work 'recorder')})
+        @{Project='NPEduTools.Recorder';Directory=(Join-Path $work 'recorder')},
+        @{Project='NPEduTools.Camera';Directory=(Join-Path $app 'Host/Camera')})
     foreach ($component in $components) {
         & $runner @('publish',("src/" + $component.Project),'--configuration','Release','--runtime','win-x64','--self-contained','true','--output',$component.Directory,
             '-m:1','-p:PublishTrimmed=false','-p:PublishSingleFile=false','-p:ExcludeRecordingTools=true',"-p:PackageLockDirectory=$locks")
@@ -83,6 +84,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/CLASSROOM-ACCEPTANCE.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/DEPENDENCIES.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/INSTALLER.md') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/GUARD-MAINTENANCE.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot $ReleaseNotesPath) -Destination (Join-Path $package 'RELEASE-NOTES.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-portable-package.ps1') -Destination $package
     @'

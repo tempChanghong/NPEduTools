@@ -20,25 +20,30 @@
 | 单次录课编辑刷新 | [课表回执与隔离输入检查](iterations/RECORDING-DATED-EDIT-REFRESH-20261008.md#验证) | 冲突提示刷新、草稿保留、显式保存与切换条目；不启动实际录课 |
 | 噪音状态界面 | [构建并运行隔离 WPF 检查](iterations/NOISE-STATUS-PRESENTATION-20261007.md#验证) | 当前／历史统计、断连与恢复、最小尺寸布局；不启动真实采集 |
 | 噪音监测协议恢复 | [协议与隔离监测页检查](iterations/NOISE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效设备／状态／操作回执、旧数据失效和轮询恢复；只用合成麦克风 |
+| 噪音后台访问恢复 | [访问拒绝与隔离窗口检查](iterations/NOISE-ACCESS-RECOVERY-20261009.md#验证) | 旧采样事实失效、只读恢复和管理显式重试；不修改实际管道权限或执行真实采集 |
 | 定时监测管理验证 | [协议与隔离弹窗检查](iterations/NOISE-MANAGEMENT-RECOVERY-20261007.md#验证) | 无效管理回执、授权范围及显式重试；不修改真实口令或停止监测 |
 | 自动录课状态界面 | [构建并运行隔离 WPF 检查](iterations/AUTOMATIC-RECORDING-STATUS-20261007.md#验证) | 设置验证、实际状态与操作反馈、记录和最小尺寸布局；不执行真实录课命令 |
 | 录课计划保存反馈 | [文件锁与隔离 WPF 检查](iterations/RECORDING-PLAN-SAVE-FEEDBACK-20261007.md#验证) | 计划写入失败、试运行记录写入失败及重开恢复；不启动真实录制 |
 | 自动录课命令恢复 | [模拟管道与隔离 WPF 控件检查](iterations/AUTOMATIC-RECORDING-RECEIPT-RECOVERY-20261007.md#验证) | 丢失／无效回执、明确拒绝及轮询恢复；不启动真实录制 |
 | 录制轮询协议恢复 | [协议与模拟管道检查](iterations/RECORDING-POLL-PROTOCOL-RECOVERY-20261007.md#验证) | 无效状态／租约回执、状态待核实及正常轮询恢复；不启动真实录制 |
 | 手动录制命令恢复 | [录制契约与模拟管道检查](iterations/MANUAL-RECORDING-RECEIPT-RECOVERY-20261007.md#验证) | 无效命令回执、解除等待、明确拒绝及轮询核实；不启动真实录制 |
+| 录制命令与轮询时序 | [挂起查询与模拟管道检查](iterations/RECORDING-COMMAND-ORDERING-20261009.md#验证) | 操作期间的旧查询／错误隔离、确认结果保留及新轮询恢复；不启动真实录制 |
 | 录制设置文件恢复 | [文件与隔离 WPF 检查](iterations/RECORDING-PREFERENCES-RECOVERY-20261007.md#验证) | 无效设置、原文件保留、正常保存及重开恢复；仅使用合成设备 |
 | 手动录课恢复 | [客户端与隔离 WPF 检查](iterations/MANUAL-RECORDING-RECOVERY-20261007.md#验证) | 断连、重新确认、旧查询时序与回执丢失；使用唯一模拟管道，不启动真实录制 |
 | 点名回执恢复 | [SecRandom 专项与隔离 WPF 检查](iterations/SECRANDOM-STATE-RECOVERY-20261007.md#验证) | 页面与侧栏失联、旧查询时序、历史回执和恢复；不执行真实抽取 |
 | 点名后台访问恢复 | [访问拒绝与隔离管道检查](iterations/SECRANDOM-ACCESS-RECOVERY-20261008.md#验证) | 轮询、页面与侧栏访问被拒绝后的失效与恢复；不执行真实抽取 |
 | 考试看板恢复 | [ExamAware 专项与隔离 WPF 检查](iterations/EXAMAWARE-STATE-RECOVERY-20261007.md#验证) | 方案与操作请求时序、失联恢复及配对导出失败；不操作真实软件或自启动 |
 | 考试看板快捷入口 | [协议与隔离事件检查](iterations/EXAMAWARE-QUICK-RECOVERY-20261007.md#验证) | 无效启动回执、管理页状态核实、正常接受及关闭时取消；不启动真实软件 |
+| 考试看板快捷访问恢复 | [访问拒绝与隔离按钮事件检查](iterations/EXAMAWARE-QUICK-ACCESS-20261009.md#验证) | 未处理异常、管理页未知状态及只读恢复；不修改权限或启动真实软件 |
 | 考试看板协议恢复 | [协议与隔离管理页检查](iterations/EXAMAWARE-PROTOCOL-RECOVERY-20261007.md#验证) | 无效状态／操作／配对回执、旧查询错误及只读恢复；不启动真实软件或写入真实配对 |
 | 本机课堂模式恢复 | [课堂模式专项与隔离 WPF 检查](iterations/CLASSROOM-STATE-RECOVERY-20261007.md#验证) | 断连、新旧查询顺序与过期配置检查；只读模拟请求，不切换真实软件或自启动 |
 | 主页课堂模式轮询 | [模拟协议与隔离主页检查](iterations/CLASSROOM-HOME-POLL-RECOVERY-20261007.md#验证) | 无效回执、旧模式失效和同一轮询恢复；不执行真实切换 |
 | 课堂模式协议恢复 | [协议与隔离管理页检查](iterations/CLASSROOM-PROTOCOL-RECOVERY-20261007.md#验证) | 无效查询／核实回执、旧查询错误与状态恢复；只读模拟请求，不执行真实切换 |
+| 课堂模式后台访问恢复 | [访问拒绝与隔离界面检查](iterations/CLASSROOM-ACCESS-RECOVERY-20261009.md#验证) | 主页／管理页旧模式失效、核实请求异常与只读恢复；不修改权限或执行真实切换 |
 | 定时监测返回回执 | [展示专项与隔离 WPF 检查](iterations/SCHEDULED-DISPLAY-RETURN-20261007.md#验证) | 原生备用页面的新旧会话、返回回执与失败重试；不启动采集或连接学校 |
 | 定时监测返回协议恢复 | [协议与隔离 WPF 检查](iterations/SCHEDULED-RETURN-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧会话隔离及显式重试；只发送模拟返回请求 |
 | 学校互联协议恢复 | [共享会话与隔离 WPF 检查](iterations/SCHOOL-CONNECTION-PROTOCOL-RECOVERY-20261007.md#验证) | 无效回执、旧状态失效和只读恢复；不连接真实学校或创建真实配对 |
+| 学校互联后台访问恢复 | [会话异常与隔离按钮事件检查](iterations/SCHOOL-CONNECTION-ACCESS-20261009.md#验证) | 访问拒绝、旧配对状态失效、草稿保留与双控件只读恢复；不连接真实学校 |
 | 远程考试检查恢复 | [按钮事件与隔离 WPF 检查](iterations/REMOTE-EXAM-INSPECTION-RECOVERY-20261007.md#验证) | 失败后未知状态、只读恢复与重新核实；不执行软件切换或解除暂停 |
 | 学校通知列表恢复 | [通知轮询与隔离 WPF 检查](iterations/NOTIFICATION-INBOX-RECOVERY-20261007.md#验证) | 未确认条目与分页失效、新列表及空列表恢复；只轮询模拟列表，不显示通知弹窗 |
 | 学校通知正文有效性 | [模拟计时与隔离字段检查](iterations/NOTIFICATION-VALIDITY-RECOVERY-20261007.md#验证) | 正文核对失败、保留期限与有效恢复；不显示弹窗或发送展示／关闭回执 |

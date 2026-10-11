@@ -1,0 +1,1 @@
+Source: ExamAware2 main 7979213fed918eaece7a5bf424e15f534778d7f2, renderer/public/audio. Files copied without modification, GPL-3.0, license included. Four event types use three existing cues. Automated verification is muted; human audibility and suitability remain to be checked.

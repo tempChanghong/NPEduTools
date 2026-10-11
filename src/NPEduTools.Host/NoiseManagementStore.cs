@@ -5,7 +5,7 @@ using NPEduTools.Contracts;
 namespace NPEduTools.Host;
 
 /// <summary>Local offline maintenance credential; distinct from the school PIN. Caller holds capture lock.</summary>
-public sealed class NoiseManagementStore
+public sealed partial class NoiseManagementStore
 {
     private readonly string _path;
     private readonly TimeProvider _time;
@@ -31,11 +31,13 @@ public sealed class NoiseManagementStore
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or FormatException)
         { _error = "MANAGEMENT_STORE_UNAVAILABLE"; }
+        finally { LoadSchool(); }
     }
     public bool Configured => _credential is not null && _error is null;
     public string? Error => _error;
     public string? Configure(string? oldSecret, string newSecret, bool protectedSession)
     {
+        if (_schoolScope is not null) return "SCHOOL_MANAGEMENT_REQUIRED";
         if (_error is not null) return _error;
         if (!NoiseManagementContract.SecretValid(newSecret)) return "INVALID_MANAGEMENT_SECRET";
         // Initial provisioning is not an escape hatch once a scheduled session has started.
@@ -48,7 +50,8 @@ public sealed class NoiseManagementStore
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             using (var file = new FileStream(_path + ".tmp", FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
             { JsonSerializer.Serialize(file, c); file.Flush(true); }
-            File.Move(_path + ".tmp", _path, true); _credential = c; _tickets.Clear(); return null;
+            File.Move(_path + ".tmp", _path, true); _credential = c; _tickets.Clear();
+            return File.Exists(SchoolPath) ? SaveSchool() : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { _error = "MANAGEMENT_STORE_UNAVAILABLE"; return _error; }
     }
@@ -67,6 +70,7 @@ public sealed class NoiseManagementStore
         }
         _failures = 0; return null;
     }
+    internal string? VerifyCalibration(string? secret) => Verify(secret);
     public (Guid? Ticket, string? Error) Issue(NoiseManagementCommand c, Guid instance, Guid session)
     {
         if (c.InstanceId != instance || c.SessionId != session) return (null, "NoiseStateChanged");

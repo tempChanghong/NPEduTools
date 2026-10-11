@@ -42,7 +42,7 @@ function Case([string]$Name, [scriptblock]$Action, [string]$ErrorPattern = '') {
     Write-Output "PASS: $Name"
 }
 try {
-    foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host'),@('app/Guard','NPEduTools.Guard'),@('app/Admin','NPEduTools.ClassIsland.Admin'),@('app/Recorder','NPEduTools.Recorder'),@('app/Host/Recorder','NPEduTools.Recorder'))) {
+    foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host'),@('app/Guard','svchost'),@('app/Admin','NPEduTools.ClassIsland.Admin'),@('app/Recorder','NPEduTools.Recorder'),@('app/Host/Recorder','NPEduTools.Recorder'),@('app/Host/Camera','NPEduTools.Camera'))) {
         foreach ($file in @(($component[1] + '.exe'),'coreclr.dll','hostfxr.dll','hostpolicy.dll')) { Put ($component[0] + '/' + $file) 'NOT EXECUTABLE: installer test fixture' }
         Put ($component[0] + '/' + $component[1] + '.runtimeconfig.json') '{"runtimeOptions":{"includedFrameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.11"}]}}'
     }

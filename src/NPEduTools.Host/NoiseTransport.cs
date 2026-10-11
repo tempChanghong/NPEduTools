@@ -16,6 +16,11 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
     private string? _error;
     private long _checkpointAt;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private readonly Dictionary<Guid, JsonObject> _studySessions = [];
+    internal void OwnStudySession(Guid id, JsonObject context)
+    {
+        lock (_sync) { _studySessions[id] = context.DeepClone().AsObject(); while (_studySessions.Count > 32) _studySessions.Remove(_studySessions.Keys.First()); }
+    }
     internal Func<Guid?, JsonObject?>? ManagementWindow { get; set; }
     internal NoiseDisplayService? Display { get; set; }
     public void BindDisplay(string? scope) => Display?.BindDisplay(scope);
@@ -39,7 +44,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         {
             if (File.Exists(_path))
             {
-                if (new FileInfo(_path).Length > 1048576) throw new InvalidDataException();
+                if (new FileInfo(_path).Length > 16777216) throw new InvalidDataException();
                 _store = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject ?? throw new InvalidDataException();
                 if (_store["reports"] is not JsonArray || _store["commands"] is not JsonArray) throw new InvalidDataException();
                 if (_store["scope"] is not null && (_store["scope"] is not JsonValue scope || !scope.TryGetValue<string>(out var scopeText) || scopeText.Length > 2048)) throw new InvalidDataException();
@@ -100,7 +105,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
             var s = _noise.Snapshot();
             if (_error is null && _store["scope"] is not null && !Excluded(s) && s.Summary is not null && s.State is "Active" or "Starting" or "Stopping" && Stopwatch.GetElapsedTime(_checkpointAt).TotalSeconds >= 30)
             {
-                _store["checkpoint"] = Report(s, "Interrupted"); _checkpointAt = Stopwatch.GetTimestamp();
+                _store["checkpoint"] = OwnedReport(s, "Interrupted"); _checkpointAt = Stopwatch.GetTimestamp();
                 try { Save(); } catch (Exception e) when (StorageError(e)) { _error = "NOISE_STORE_UNAVAILABLE"; }
             }
             var status = new JsonObject { ["instanceId"] = s.InstanceId.ToString("D"), ["revision"] = s.Revision,
@@ -108,16 +113,40 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
                 ["configured"] = !string.IsNullOrWhiteSpace(s.SelectedDeviceId) && _error is null,
                 ["startedAt"] = s.StartedAt is { } started ? Stamp(started) : null, ["currentDbfs"] = s.CurrentDbfs, ["quality"] = s.Quality,
                 ["summary"] = JsonSerializer.SerializeToNode(s.Summary, Json), ["algorithm"] = s.Algorithm, ["uploadError"] = _error };
+            if (s.Estimate is not null) status["estimate"] = JsonSerializer.SerializeToNode(s.Estimate, Json);
             return status;
         }
     }
     private static string? Short(string? value) => value is null ? null : new string(value.Where(c => !char.IsControl(c)).Take(200).ToArray());
     private static string Stamp(DateTimeOffset value) => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-    private static JsonObject Report(NoiseState s, string outcome) => new() {
-        ["sessionId"] = s.SessionId?.ToString("D"), ["startedAt"] = Stamp(s.StartedAt!.Value),
-        ["endedAt"] = Stamp(DateTimeOffset.UtcNow < s.StartedAt ? s.StartedAt.Value : DateTimeOffset.UtcNow),
+    internal static JsonObject Report(NoiseState s, string outcome)
+    {
+        var started = s.StartedAt!.Value;
+        var ended = started.AddSeconds(s.Summary!.ElapsedSeconds);
+        var observed = DateTimeOffset.UtcNow;
+        var report = new JsonObject {
+        ["sessionId"] = s.SessionId?.ToString("D"), ["startedAt"] = Stamp(started),
+        ["endedAt"] = Stamp(ended),
+        ["timing"] = new JsonObject { ["source"] = "Monotonic", ["observedEndedAt"] = Stamp(observed),
+            ["clockDiscontinuity"] = Math.Abs((observed - ended).TotalSeconds) > 2 },
         ["deviceName"] = Short(s.DeviceName), ["algorithm"] = s.Algorithm, ["summary"] = JsonSerializer.SerializeToNode(s.Summary, Json), ["outcome"] = outcome
-    };
+        };
+        if (s.Estimate is { } estimate) report["estimate"] = JsonSerializer.SerializeToNode(estimate with
+        { State = estimate.Reason is null ? "Stopped" : "Invalidated", CurrentDbA = null }, Json);
+        return report;
+    }
+    private JsonObject OwnedReport(NoiseState s,string outcome)
+    {
+        var report=Report(s,outcome);
+        if(_noise.IsManualStudy(s.SessionId)){report["sessionKind"]="Manual";if(s.SessionId is {} id)report["endReason"]=_noise.ManualStudyEndReason(id)??"Interrupted";}
+        if (s.SessionId is { } session && _studySessions.TryGetValue(session, out var context))
+        {
+            report["study"] = context.DeepClone();
+            if (_noise.StudyReportSnapshot() is { } statistics && statistics.SessionId == session)
+                report["study"]!["statistics"] = JsonSerializer.SerializeToNode(statistics, Protocol.Json);
+        }
+        return report;
+    }
     private void AddReport(JsonObject report)
     {
         NpepNoiseProtocol.Validate("report", report);
@@ -125,14 +154,16 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         if (!reports.Any(r => r!["sessionId"]!.GetValue<string>() == report["sessionId"]!.GetValue<string>())) reports.Add(report);
         while (reports.Count > 200) reports.RemoveAt(0);
         for (int i = reports.Count - 1; i >= 0; i--)
-            if (DateTimeOffset.UtcNow - DateTimeOffset.Parse(reports[i]!["endedAt"]!.GetValue<string>()) > TimeSpan.FromDays(14)) reports.RemoveAt(i);
+            if (DateTimeOffset.UtcNow - RetentionEnd(reports[i]!) > TimeSpan.FromDays(14)) reports.RemoveAt(i);
     }
+    private static DateTimeOffset RetentionEnd(JsonNode report) => DateTimeOffset.Parse(
+        (report["timing"]?["observedEndedAt"] ?? report["endedAt"])!.GetValue<string>());
     private void Complete(NoiseState s)
     {
         lock (_sync)
         {
             if (_error is not null || _store["scope"] is null || s.Summary is null || Excluded(s)) return;
-            try { AddReport(Report(s, s.State)); _store["checkpoint"] = null; Save(); }
+            try { AddReport(OwnedReport(s, s.State)); _store["checkpoint"] = null; Save(); }
             catch (Exception e) when (StorageError(e)) { _error = "NOISE_STORE_UNAVAILABLE"; }
         }
     }
@@ -144,9 +175,11 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
             if (_error is not null) return new();
             var reports = (JsonArray)_store["reports"]!; bool changed = false;
             for (int i = reports.Count - 1; i >= 0; i--)
-                if (DateTimeOffset.UtcNow - DateTimeOffset.Parse(reports[i]!["endedAt"]!.GetValue<string>()) > TimeSpan.FromDays(14)) { reports.RemoveAt(i); changed = true; }
+                if (DateTimeOffset.UtcNow - RetentionEnd(reports[i]!) > TimeSpan.FromDays(14)) { reports.RemoveAt(i); changed = true; }
             if (changed) Save();
-            return new(reports.Take(4).Select(r => r!.DeepClone()).ToArray());
+            var batch = new JsonArray(); int bytes = 0;
+            foreach (var report in reports.Take(4)) { int size = System.Text.Encoding.UTF8.GetByteCount(report!.ToJsonString()); if (batch.Count > 0 && bytes + size > 48000) break; batch.Add(report.DeepClone()); bytes += size; }
+            return batch;
         }
     }
     public JsonArray Receipts() { lock (_sync) return _error is null ? new(((JsonArray)_store["commands"]!).Where(c => c!["acked"]?.GetValue<bool>() != true).Take(8).Select(c => c!["receipt"]!.DeepClone()).ToArray()) : new(); }
