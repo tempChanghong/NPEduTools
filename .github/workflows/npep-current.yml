@@ -50,8 +50,8 @@ jobs:
       CALLER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       CALLER_EVENT: ${{ github.event_name }}
       DESKTOP_OVERRIDE: ${{ inputs.desktop_sha }}
-      WEB_OVERRIDE: ${{ inputs.web_sha }}
-      BACKEND_OVERRIDE: ${{ inputs.backend_sha }}
+      WEB_OVERRIDE: ${{ inputs.web_sha || (github.event_name == 'pull_request' && '129bf032210a45ff6ba3436b659f96a311843c3a') || '' }}
+      BACKEND_OVERRIDE: ${{ inputs.backend_sha || (github.event_name == 'pull_request' && '2a05f24654e4923f81a03d4824e123a5d141313a') || '' }}
       E2E_WEB_PORT: '14180'
       E2E_API_PORT: '14181'
     steps:
