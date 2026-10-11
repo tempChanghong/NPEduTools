@@ -15,6 +15,7 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
     private readonly TimeProvider _time;
     private readonly Action<string?>? _bindReports;
     private readonly Func<bool>? _statisticsReady;
+    private readonly Action<Guid, JsonObject>? _studySession;
     private readonly long _origin;
     private readonly string _path;
     private readonly object _sync = new(), _journalLock = new();
@@ -38,13 +39,13 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
     public bool ScheduledDue(){lock(_sync){Tick();return _priority;}}
     private JsonObject? _receipt;
     public NoiseScheduleService(NoiseService noise, Func<SchoolClockFrame> clock, Func<bool> exam,
-        string directory, TimeProvider? time = null, bool background = true, Action<string?>? bindReports = null, Func<bool>? statisticsReady = null, Func<string>? mode = null)
+        string directory, TimeProvider? time = null, bool background = true, Action<string?>? bindReports = null, Func<bool>? statisticsReady = null, Func<string>? mode = null, Action<Guid, JsonObject>? studySession = null)
     {
         _modeSource = mode ?? (() => "Daily");
         _noise = noise; _clock = clock; _exam = exam; _time = time ?? TimeProvider.System;
         _origin = _time.GetTimestamp(); _path = Path.Combine(directory, "noise-schedule-state.json");
         _bindReports = bindReports;
-        _statisticsReady = statisticsReady;
+        _statisticsReady = statisticsReady; _studySession = studySession;
         try
         {
             if (File.Exists(_path))
@@ -178,7 +179,7 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
         {
             var mode = _modeSource() == "Exam" ? "Exam" : "Daily";
             if (mode != _mode) { if (_owned is { } prior) _noise.StopScheduled(prior); _mode = mode; _tracker = new(); _studyConfirmedAt = -1; _confirmedAt = -1; _owned = null; _ownedWindow = null; _studyResumeReceipt = null; }
-            if (_studySelected) _policy = new(_studySettings?.Noise.Enabled == true ? "Class" : "Disabled", _studySettings?.ForMode(_mode).Schedule.Rules ?? []);
+            if (_studySelected) _policy = new(_studySettings?.Noise.Enabled == true ? _studySource : "Disabled", _studySettings?.ForMode(_mode).Schedule.Rules ?? []);
             double elapsed = Elapsed;
             if (_policy.Source is "Grade" or "Class") _tracker.Accept(_clock(), TimeSpan.FromMilliseconds(elapsed), 0);
             var reading = _tracker.Read(TimeSpan.FromMilliseconds(elapsed));
@@ -191,7 +192,9 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
                 lock (_journalLock) { _journal.Blocks.Add(new(failed, "Failed", MicrophoneKey(status.SelectedDeviceId), _mode)); Trim(); Save(); }
                 _owned = null;
             }
-            _owner = active ? status.SessionId == _owned ? "Schedule" : "Manual" : "None";
+            // A former mode's scheduled capture may still be flushing after ownership
+            // is revoked. It is busy, but must not be reported or adopted as manual.
+            _owner = active ? status.SessionId == _owned ? "Schedule" : _noise.IsScheduledSession(status.SessionId) ? "None" : "Manual" : "None";
             List<NoiseWindowBlock> blocks;
             lock (_journalLock) blocks = [.. _journal.Blocks.Where(b => b.Mode == _mode)];
             bool lease = LeaseRemaining(elapsed) > 0;
@@ -228,6 +231,8 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
                 var id = Guid.NewGuid(); _ownedWindow = decision.Window;
                 lock (_journalLock) { _journal = _journal with { OwnedId = id, OwnedWindow = decision.Window, OwnedMode = _mode }; Save(); }
                 if (_storeError is not null) return;
+                if (_studySelected && _studyReportScope is not null && decision.Window is { } reportWindow)
+                    _studySession?.Invoke(id, new JsonObject { ["scope"] = _studyReportScope.DeepClone(), ["policyVersion"] = _version, ["mode"] = _mode, ["clockSource"] = _mode == "Exam" ? "Windows" : "ClassIsland", ["window"] = Window(reportWindow) });
                 var result = _noise.StartScheduled(id);
                 if (result.Outcome == "Accepted") { _owned = id; _owner = "Schedule"; _reason = "CAPTURE_STARTING"; }
                 else

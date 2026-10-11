@@ -49,6 +49,16 @@ public sealed class StudyRecoveryTests
         f.Advance(30000);Assert.Equal("Completed",f.Recovery.Snapshot().State);Assert.Equal(1,f.Resumes);f.Recovery.Tick();Assert.Equal(1,f.Resumes);
     }
     [Fact]
+    public async Task Exam_recovery_requires_the_exam_guard_context()
+    {
+        await using var f=new Fixture();await f.Active();f.Lease();
+        f.State=f.State with{Mode="Exam",ClockSource="Windows"};
+        Assert.NotEqual("Failed",f.Recovery.Snapshot().State);Assert.Equal(0,f.Shots);
+        f.Files.Write("recovery.json",new GuardRecoveryEvent(f.Incident,f.Generation,new(10,100),new(20,200),f.Time.GetUtcNow(),f.Time.GetUtcNow().AddMinutes(90),GuardRecoveryEvent.Key("scope",f.State.Version!+":Exam")));
+        Assert.Equal("Failed",f.Recovery.Snapshot().State);
+        await f.Photos.FlushAsync(CancellationToken.None);Assert.Equal(1,f.Shots);
+    }
+    [Fact]
     public async Task Restart_keeps_original_warning_deadline_and_never_repeats_recovery_shot()
     {
         await using var f=new Fixture();await f.Active();f.Lease();f.Recovery.Tick();await f.Photos.FlushAsync(CancellationToken.None);f.Advance(10000);

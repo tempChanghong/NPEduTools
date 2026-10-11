@@ -34,7 +34,7 @@ public sealed class StudyRecoveryService : INpepStudyExitEvents,IAsyncDisposable
             var x=_sample();var s=x.State;var now=_time.GetUtcNow();
             if(_scope is null || x.Scope!=_scope || !x.Selected || s is not {PolicyState:"APPLIED",Phase:"Active",ClockReady:true,Version:not null,Window:not null,SchoolNow:not null,
                 Execution:{Owner:"Schedule",State:"Active",SignalFresh:true,SessionId:not null}})return;
-            if(_files.Read<GuardRecoveryEvent>("recovery.json") is not {} incident || !incident.Valid() || incident.ContextKey!=GuardRecoveryEvent.Key(_scope,s.Version) || incident.Generation!=_files.Read<GuardRegistration>("registration.json")?.Generation ||
+            if(_files.Read<GuardRecoveryEvent>("recovery.json") is not {} incident || !incident.Valid() || incident.ContextKey!=GuardRecoveryEvent.Key(_scope,s.Version + (s.Mode == "Exam" ? ":Exam" : "")) || incident.Generation!=_files.Read<GuardRegistration>("registration.json")?.Generation ||
                 now<incident.DetectedUtc || now>=incident.WindowEndUtc || now-incident.DetectedUtc>TimeSpan.FromMinutes(10) ||
                 Math.Abs((incident.WindowEndUtc-now-(s.Window.End-s.SchoolNow.Value)).TotalSeconds)>3 ||
                 _files.Stopped(incident.Generation) || _files.SessionEnding(incident.Generation))return;

@@ -34,7 +34,7 @@ public partial class MainWindow
                 } else if (probeSeating && studyResponse.Outcome == "Succeeded") _seatingUnsupportedAt = null;
                 var studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
                 if (_lifetime.IsCancellationRequested) break;
-                await PollStudyExitAsync();
+                await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
                 long manualAt=Stopwatch.GetTimestamp();
                 var manual=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.status"));
                 var manualAge=Stopwatch.GetElapsedTime(manualAt);

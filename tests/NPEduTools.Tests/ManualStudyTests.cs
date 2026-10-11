@@ -99,6 +99,8 @@ public sealed class ManualStudyTests
         await using var f=new Fixture();f.Start();await f.Active();f.Time.Ms=6000;f.Captures.Last().Sample();
         await f.Manual.DisposeAsync();Assert.Equal("Ended",f.Manual.Status().State);Assert.Equal("BackgroundExit",f.Manual.Status().Reason);
         Assert.Contains("BackgroundExit",File.ReadAllText(Assert.Single(Directory.GetFiles(f.Folder,"*.json"))));
+        Assert.Equal("Manual", f.Manual.Report().Data!.Mode);
+        Assert.Equal("Windows", f.Manual.Report().Data!.ClockSource);
     }
     [Fact]
     public async Task Restart_does_not_restore_a_manual_reservation_or_capture()

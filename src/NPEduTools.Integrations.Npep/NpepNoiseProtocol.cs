@@ -22,6 +22,26 @@ public static class NpepNoiseProtocol
     private static double? NullableNumber(JsonElement value, string name) => value.GetProperty(name).ValueKind == JsonValueKind.Null ? null : value.GetProperty(name).GetDouble();
     private static void ValidateEstimate(JsonElement value)
     {
+        if (value.TryGetProperty("study", out var study))
+        {
+            var window = study.GetProperty("window");
+            bool startValid = DateTime.TryParseExact(window.GetProperty("start").GetString(), "yyyy-MM-dd'T'HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start);
+            bool endValid = DateTime.TryParseExact(window.GetProperty("end").GetString(), "yyyy-MM-dd'T'HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var end);
+            if (!startValid || !endValid || start.Year < 2000 || end.Year > 9998 || end <= start || (end-start).TotalSeconds > 10800 ||
+                study.GetProperty("clockSource").GetString() != (study.GetProperty("mode").GetString() == "Exam" ? "Windows" : "ClassIsland")) throw new NpepException("INVALID_RESPONSE");
+            if (study.TryGetProperty("statistics", out var stats))
+            {
+                if (stats.GetProperty("sessionId").GetString() != value.GetProperty("sessionId").GetString() || stats.GetProperty("raw").GetProperty("unit").GetString() != "dBFS" ||
+                    stats.GetProperty("estimated").ValueKind != JsonValueKind.Null && stats.GetProperty("estimated").GetProperty("unit").GetString() != "estimated-dB(A)") throw new NpepException("INVALID_RESPONSE");
+                foreach (var channel in new[]{stats.GetProperty("raw"),stats.GetProperty("estimated")}.Where(c=>c.ValueKind!=JsonValueKind.Null))
+                    if (channel.GetProperty("highSeconds").GetDouble() > channel.GetProperty("thresholdSampledSeconds").GetDouble()+1e-6 ||
+                        channel.GetProperty("mediumSeconds").GetDouble() > channel.GetProperty("mediumThresholdSampledSeconds").GetDouble()+1e-6 ||
+                        channel.GetProperty("thresholdSampledSeconds").GetDouble() > channel.GetProperty("sampledSeconds").GetDouble()+1e-6 ||
+                        channel.GetProperty("mediumThresholdSampledSeconds").GetDouble() > channel.GetProperty("sampledSeconds").GetDouble()+1e-6 ||
+                        (NullableNumber(channel,"energyMean") is null)!=(NullableNumber(channel,"maximum") is null) ||
+                        NullableNumber(channel,"energyMean") > NullableNumber(channel,"maximum")+1e-6) throw new NpepException("INVALID_RESPONSE");
+            }
+        }
         if (value.TryGetProperty("summary", out var raw) && raw.ValueKind == JsonValueKind.Object)
         {
             double elapsedRaw = raw.GetProperty("elapsedSeconds").GetDouble(), sampledRaw = raw.GetProperty("sampledSeconds").GetDouble();

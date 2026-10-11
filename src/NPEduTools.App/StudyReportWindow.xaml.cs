@@ -35,7 +35,7 @@ public partial class StudyReportWindow : Window
             _data.Estimated?.SampledSeconds != d.Estimated?.SampledSeconds || !_data.Notes.SequenceEqual(d.Notes))
         {
             _data = d;
-            SessionTime.Text = $"{d.Window.Start:yyyy年M月d日}   {d.Window.Start:HH:mm} – {d.Window.End:HH:mm} · {(d.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")}";
+            SessionTime.Text = $"{d.Window.Start:yyyy年M月d日}   {d.Window.Start:HH:mm} – {d.Window.End:HH:mm} · {(d.Mode == "Manual" ? "手动自习 · Windows 时间" : d.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")}";
             Coverage.Text = $"{d.Coverage * 100:0.0}%";
             Sampled.Text = Duration(d.SampledSeconds);
             ReminderCount.Text = d.DisciplineReminders.ToString(CultureInfo.InvariantCulture);

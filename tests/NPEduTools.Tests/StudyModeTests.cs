@@ -17,6 +17,18 @@ public sealed class StudyModeTests
     }
     private static JsonObject Configuration() => JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures/study-device-cases.json")))![0]!["value"]!.DeepClone().AsObject();
     [Fact]
+    public void Empty_mode_still_validates_shared_thresholds_and_calendar()
+    {
+        var config = Configuration();
+        var settings = config["effective"]!["settings"]!.Deserialize<StudySettings>(Protocol.Json)! with
+        { Schedule = new("Asia/Shanghai", "", null, [], []) };
+        Assert.Null(SchoolStudySchedule.Validate(settings));
+        Assert.Equal("INVALID_NOISE", SchoolStudySchedule.Validate(settings with
+        { Noise = settings.Noise with { RedLineDbfs = -50, MediumLineDbfs = -30 } }));
+        Assert.Equal("INVALID_DATES", SchoolStudySchedule.Validate(settings with
+        { Schedule = new("Asia/Shanghai", "2026-10-13", "2026-10-12", [], []) }));
+    }
+    [Fact]
     public async Task Exam_uses_Windows_Beijing_fields_without_ClassIsland_and_never_inherits_daily()
     {
         var t = new Clock(); string mode = "Exam";

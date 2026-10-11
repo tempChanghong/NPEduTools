@@ -14,10 +14,11 @@ public static class SchoolStudySchedule
     {
         var s = settings.Schedule;
         if (settings.ExamSchedule is { } exam && Validate(settings with { Schedule = exam, ExamSchedule = null }) is { } examError) return examError;
-        if (s.Rules.Count == 0) return s.TimeZone == "Asia/Shanghai" && s.Exceptions.Count == 0 && (s.EffectiveFrom == "" || Date(s.EffectiveFrom, out _)) && (s.EffectiveTo is null || Date(s.EffectiveTo, out _)) ? null : "INVALID_DATES";
-        if (s.TimeZone != "Asia/Shanghai" || !Date(s.EffectiveFrom, out var from) ||
+        bool empty = s.Rules.Count == 0;
+        DateOnly from = default;
+        if (s.TimeZone != "Asia/Shanghai" || !(empty && s.EffectiveFrom == "" || Date(s.EffectiveFrom, out from)) ||
             s.EffectiveTo is not null && (!Date(s.EffectiveTo, out var to) || to < from)) return "INVALID_DATES";
-        if (SchoolNoiseSchedule.Validate(new("Override", s.Rules)) is { } rule) return rule;
+        if (!empty && SchoolNoiseSchedule.Validate(new("Override", s.Rules)) is { } rule) return rule;
         var dates = new HashSet<DateOnly>();
         foreach (var e in s.Exceptions)
             if (!Date(e.Date, out var day) || day < from || s.EffectiveTo is not null && day > Parse(s.EffectiveTo) ||

@@ -49,6 +49,8 @@ public sealed partial class NoiseScheduleService
         }
     }
     private StudySettings? _studySettings;
+    private string _studySource = "None";
+    private JsonObject? _studyReportScope;
     private double _studyConfirmedAt = -1;
     private const double StudyLeaseMs = NoiseScheduleLease.MaxLifetimeMs;
     private double _studyLeaseMs = StudyLeaseMs;
@@ -73,7 +75,7 @@ public sealed partial class NoiseScheduleService
                 throw new NpepException("SESSION_SUPERSEDED");
             Bind(scope, true);
             _studyProbeComplete = true;
-            string source = configuration["effective"]!.AsObject().Text("source");
+            string source = configuration["effective"]!.AsObject().Text("source"); _studySource = source;
             string version = configuration.Text("version");
             if (source == "None")
             {
@@ -87,6 +89,7 @@ public sealed partial class NoiseScheduleService
             }
             if (!_studySelected || _version != version) _studyConfirmedAt = -1;
             _confirmedAt = -1; _studySelected = true; _version = version;
+            _studyReportScope = new JsonObject { ["schoolId"] = configuration["scope"]!["schoolId"]!.DeepClone(), ["termId"] = configuration["scope"]!["termId"]!.DeepClone(), ["classId"] = configuration["scope"]!["classId"]!.DeepClone() };
             _studySettings = configuration["effective"]!["settings"]?.Deserialize<StudySettings>(Protocol.Json);
             _policy = new(_studySettings?.Noise.Enabled == true ? source : "Disabled", _studySettings?.Schedule.Rules ?? []);
             Tick();

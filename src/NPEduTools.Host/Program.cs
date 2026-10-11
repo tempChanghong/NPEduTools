@@ -166,7 +166,7 @@ var studyClock = new StudyModeClock(() => classroom.Snapshot.Mode, schoolClock.S
 Func<bool> studyPaused = () => classroom.Snapshot.Phase != "Idle" || runtimeGate.Switching || runtimeGate.ExamRequested;
 Func<bool> projecting = () => StudyProjection.Active(examAware.Snapshot());
 await using var noiseSchedules = new NoiseScheduleService(noise, studyClock.Snapshot, studyPaused,
-    Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available, mode: () => studyClock.Mode);
+    Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available, mode: () => studyClock.Mode, studySession: noiseTransport.OwnStudySession);
 noiseTransport.ManagementWindow = noiseSchedules.ProtectionWindow;
 await using var studySettings = new StudySettingsService(studyClock.Snapshot, studyPaused, capture: noiseSchedules, mode: () => studyClock.Mode);
 var noiseDisplay = new NoiseDisplayService(() => {

@@ -16,6 +16,11 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
     private string? _error;
     private long _checkpointAt;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private readonly Dictionary<Guid, JsonObject> _studySessions = [];
+    internal void OwnStudySession(Guid id, JsonObject context)
+    {
+        lock (_sync) { _studySessions[id] = context.DeepClone().AsObject(); while (_studySessions.Count > 32) _studySessions.Remove(_studySessions.Keys.First()); }
+    }
     internal Func<Guid?, JsonObject?>? ManagementWindow { get; set; }
     internal NoiseDisplayService? Display { get; set; }
     public void BindDisplay(string? scope) => Display?.BindDisplay(scope);
@@ -39,7 +44,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         {
             if (File.Exists(_path))
             {
-                if (new FileInfo(_path).Length > 1048576) throw new InvalidDataException();
+                if (new FileInfo(_path).Length > 16777216) throw new InvalidDataException();
                 _store = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject ?? throw new InvalidDataException();
                 if (_store["reports"] is not JsonArray || _store["commands"] is not JsonArray) throw new InvalidDataException();
                 if (_store["scope"] is not null && (_store["scope"] is not JsonValue scope || !scope.TryGetValue<string>(out var scopeText) || scopeText.Length > 2048)) throw new InvalidDataException();
@@ -134,6 +139,12 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
     {
         var report=Report(s,outcome);
         if(_noise.IsManualStudy(s.SessionId)){report["sessionKind"]="Manual";if(s.SessionId is {} id)report["endReason"]=_noise.ManualStudyEndReason(id)??"Interrupted";}
+        if (s.SessionId is { } session && _studySessions.TryGetValue(session, out var context))
+        {
+            report["study"] = context.DeepClone();
+            if (_noise.StudyReportSnapshot() is { } statistics && statistics.SessionId == session)
+                report["study"]!["statistics"] = JsonSerializer.SerializeToNode(statistics, Protocol.Json);
+        }
         return report;
     }
     private void AddReport(JsonObject report)
@@ -166,7 +177,9 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
             for (int i = reports.Count - 1; i >= 0; i--)
                 if (DateTimeOffset.UtcNow - RetentionEnd(reports[i]!) > TimeSpan.FromDays(14)) { reports.RemoveAt(i); changed = true; }
             if (changed) Save();
-            return new(reports.Take(4).Select(r => r!.DeepClone()).ToArray());
+            var batch = new JsonArray(); int bytes = 0;
+            foreach (var report in reports.Take(4)) { int size = System.Text.Encoding.UTF8.GetByteCount(report!.ToJsonString()); if (batch.Count > 0 && bytes + size > 48000) break; batch.Add(report.DeepClone()); bytes += size; }
+            return batch;
         }
     }
     public JsonArray Receipts() { lock (_sync) return _error is null ? new(((JsonArray)_store["commands"]!).Where(c => c!["acked"]?.GetValue<bool>() != true).Take(8).Select(c => c!["receipt"]!.DeepClone()).ToArray()) : new(); }

@@ -27,14 +27,14 @@ public partial class MainWindow
         _studyWindow?.HideDisplay();_manualStudyWindow?.HideDisplay();_exitWarning=new(this,state,state.Reason=="ProcessRecovery"?ReadRecoveryAsync:ReadStudyExitAsync);
         _exitWarning.Closed+=(_,_)=>{_exitWarning=null;};_exitWarning.Show();
     }
-    private async Task PollStudyExitAsync()
+    private async Task PollStudyExitAsync(bool projectionPriority = false)
     {
         if(_exitUnsupportedAt is {} at && Stopwatch.GetElapsedTime(at).TotalSeconds<60)return;
         var state=await ReadStudyExitAsync();
         if(state?.State!="Failed")state=await ReadRecoveryAsync()??state;
         if(state is null)return;
         _exitUnsupportedAt=null;
-        if(state.State=="Failed" && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())ShowStudyExitWarning(state);
-        else if(state.State!="Failed")_exitWarning?.Shutdown();
+        if(state.State=="Failed" && !projectionPriority && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())ShowStudyExitWarning(state);
+        else if(state.State!="Failed" || projectionPriority)_exitWarning?.Shutdown();
     }
 }

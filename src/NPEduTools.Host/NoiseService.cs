@@ -45,6 +45,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     private string? _selected = LoadSelection(directory);
     public event Action<NoiseState>? Completed;
     internal bool CaptureBusy { get { lock (_sync) return _session is { Work.IsCompleted: false }; } }
+    internal bool IsScheduledSession(Guid? id) { lock (_sync) return id is not null && _session is { Scheduled: true } s && s.Id == id; }
     // Keep the constructor parameter's original name for source compatibility; the runtime
     // gate protects both calibration workflows. Call it outside _sync to avoid lock inversion.
     private bool CalibrationRuntimePaused()
