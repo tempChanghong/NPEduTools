@@ -25,19 +25,24 @@ public sealed class SoundMeterService(Func<ISoundMeterHidBackend> backend, Func<
                 var devices = selectedBackend.Enumerate().Where(d => d.VendorId == Dly2202Protocol.VendorId &&
                     d.ProductId == Dly2202Protocol.ProductId && SoundMeterContract.Valid(new("read", "x", d.Path)))
                     .Take(8).Select(d => new SoundMeterDevice(d.Path,
-                        new string((d.Name ?? "DLY-2202").Where(c => !char.IsControl(c)).Take(200).ToArray()))).ToArray();
+                        new string((d.Name ?? "DLY-2202").Where(c => !char.IsControl(c)).Take(200).ToArray()),
+                        d.MetadataError, d.NativeErrorCode)).ToArray();
+                token.ThrowIfCancellationRequested();
                 return new(1, r.RequestId, "Succeeded", null, devices.Length == 0 ? "未发现兼容设备；未打开任何设备。" : "请选择需要测试的声级计。", SoundMeter: new(devices));
             }
             await using var reader = new Dly2202Reader(selectedBackend);
             await reader.ConnectAsync(r.SoundMeter.DevicePath!, token);
             var observation = await reader.ReadAsync(token);
+            token.ThrowIfCancellationRequested();
             var v = observation.Reading;
             var sample = new SoundMeterSample(v.Decibels, v.Weighting.ToString(), v.TimeWeighting.ToString(),
                 v.MaximumHold, v.LowBattery, v.Range, observation.RoundTrip.TotalMilliseconds, observation.InputReportLength, observation.OutputReportLength);
             return new(1, r.RequestId, "Succeeded", null,
                 "已读取一次并释放连接；这是仪表读数，不是校准成功，不自动保存为参考。", SoundMeter: new(Reading: sample));
         }
-        catch (SoundMeterException e) { return Reject("METER_" + e.Error.ToString().ToUpperInvariant(), Message(e.Error)); }
+        catch (SoundMeterException e) { return new(1, r.RequestId, "Rejected", "METER_" + e.Error.ToString().ToUpperInvariant(), Message(e.Error),
+            SoundMeter: e.Stage is null && e.InputReportLength is null && e.NativeErrorCode is null ? null :
+                new(Diagnostic: new(e.Stage, e.InputReportLength, e.OutputReportLength, e.NativeErrorCode))); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
         { return Reject("METER_UNAVAILABLE", "联机读取不可用，请关闭 SoundLab2、检查 USB 连接后重试；未使用旧读数。"); }
         finally { _gate.Release(); }

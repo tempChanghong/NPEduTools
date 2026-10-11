@@ -30,7 +30,8 @@ public sealed partial class Dly2202Tests
         public IReadOnlyList<SoundMeterHidDevice> Devices = [Device()];
         public Func<SoundMeterHidDevice, ISoundMeterHidConnection> Create = d => new Connection(d);
         public int Enumerations, Opens;
-        public IReadOnlyList<SoundMeterHidDevice> Enumerate() { Enumerations++; return Devices; }
+        public Action? OnEnumerate;
+        public IReadOnlyList<SoundMeterHidDevice> Enumerate() { Enumerations++; OnEnumerate?.Invoke(); return Devices; }
         public ISoundMeterHidConnection Open(SoundMeterHidDevice device) { Opens++; return Create(device); }
     }
 

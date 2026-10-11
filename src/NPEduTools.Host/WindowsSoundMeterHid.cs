@@ -47,7 +47,16 @@ public sealed class WindowsSoundMeterHid : ISoundMeterHidBackend
                         Dly2202Protocol.VendorId, Dly2202Protocol.ProductId));
                     continue;
                 }
-                var attributes = GetAttributes(handle);
+                Native.Attributes attributes;
+                try { attributes = GetAttributes(handle); }
+                catch (IOException e)
+                {
+                    // Preserve the candidate for explicit diagnostics, but do not let one
+                    // disconnected metadata handle hide all healthy subsequent devices.
+                    devices.Add(new(path, "设备信息未确认，读取时将重新核对身份", Dly2202Protocol.VendorId,
+                        Dly2202Protocol.ProductId, "AttributesUnavailable", (e.InnerException as Win32Exception)?.NativeErrorCode));
+                    continue;
+                }
                 if (attributes.VendorId != Dly2202Protocol.VendorId ||
                     attributes.ProductId != Dly2202Protocol.ProductId) continue;
                 var name = new StringBuilder(256);
@@ -84,7 +93,8 @@ public sealed class WindowsSoundMeterHid : ISoundMeterHidBackend
             var caps = GetCapabilities(handle);
             if (!Dly2202Protocol.SupportsReportLength(caps.InputLength) ||
                 !Dly2202Protocol.SupportsReportLength(caps.OutputLength))
-                throw new SoundMeterException(SoundMeterError.UnsupportedReport, "Unverified reference meter HID report lengths.");
+                throw new SoundMeterException(SoundMeterError.UnsupportedReport, "Unverified reference meter HID report lengths.",
+                    inputReportLength: caps.InputLength, outputReportLength: caps.OutputLength, stage: "Capabilities");
             // Disable stream buffering: one command must remain one HID report, even when input
             // and output report lengths differ.
             var stream = new FileStream(handle, FileAccess.ReadWrite, 1, isAsync: true);
@@ -182,7 +192,7 @@ public sealed class WindowsSoundMeterHid : ISoundMeterHidBackend
         [DllImport("hid.dll", ExactSpelling = true, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.U1)]
         internal static extern bool HidD_GetAttributes(SafeFileHandle handle, ref Attributes attributes);
-        [DllImport("hid.dll", ExactSpelling = true, SetLastError = true)]
+        [DllImport("hid.dll", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.U1)]
         internal static extern bool HidD_GetProductString(SafeFileHandle handle, [Out] StringBuilder buffer, int byteLength);
         [DllImport("hid.dll", ExactSpelling = true, SetLastError = true)]

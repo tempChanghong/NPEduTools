@@ -38,6 +38,8 @@ public partial class SoundMeterWindow : Window
             var response = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.meter.command", 4000, SoundMeter: command), deadline.Token);
             if (_lifetime.IsCancellationRequested) return;
             Message.Text = response.Message;
+            if (response.SoundMeter?.Diagnostic is { } diagnostic)
+                Mode.Text = $"阶段 {diagnostic.Stage ?? "未知"} · HID 输入/输出 {diagnostic.InputReportLength?.ToString() ?? "?"}/{diagnostic.OutputReportLength?.ToString() ?? "?"} 字节 · 系统错误 {diagnostic.NativeErrorCode?.ToString() ?? "无"}";
             if (response.Outcome != "Succeeded") return;
             if (action == "list") Devices.ItemsSource = response.SoundMeter?.Devices ?? [];
             else if (response.SoundMeter?.Reading is { } value)

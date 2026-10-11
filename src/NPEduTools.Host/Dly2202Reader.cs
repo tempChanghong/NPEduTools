@@ -2,7 +2,8 @@ using NPEduTools.Core;
 
 namespace NPEduTools.Host;
 
-public sealed record SoundMeterHidDevice(string Path, string Name, ushort VendorId, ushort ProductId);
+public sealed record SoundMeterHidDevice(string Path, string Name, ushort VendorId, ushort ProductId,
+    string? MetadataError = null, int? NativeErrorCode = null);
 
 /// <summary>Enumeration does not start acquisition. Open only the explicitly selected path.</summary>
 public interface ISoundMeterHidBackend
@@ -26,10 +27,15 @@ public enum SoundMeterError
     InvalidReading, TimedOut, Disconnected, BusyOrDenied
 }
 
-public sealed class SoundMeterException(SoundMeterError error, string message, Exception? inner = null)
+public sealed class SoundMeterException(SoundMeterError error, string message, Exception? inner = null,
+    int? inputReportLength = null, int? outputReportLength = null, string? stage = null, int? nativeErrorCode = null)
     : IOException(message, inner)
 {
     public SoundMeterError Error { get; } = error;
+    public int? InputReportLength { get; } = inputReportLength;
+    public int? OutputReportLength { get; } = outputReportLength;
+    public string? Stage { get; } = stage;
+    public int? NativeErrorCode { get; } = nativeErrorCode;
 }
 
 /// <summary>Host monotonic timestamps bracket this request; they are not instrument sample times.</summary>
@@ -80,11 +86,13 @@ public sealed class Dly2202Reader : IAsyncDisposable
             CloseConnection();
             var matches = _backend.Enumerate().Where(d =>
                 string.Equals(d.Path, devicePath, StringComparison.OrdinalIgnoreCase)).ToArray();
+            linked.Token.ThrowIfCancellationRequested(); // Synchronous enumeration may outlast the caller's deadline.
             if (matches.Length == 0) throw new SoundMeterException(SoundMeterError.DeviceNotFound,
                 "Selected reference meter was not found. No other device was selected.");
             if (matches.Length != 1) throw new SoundMeterException(SoundMeterError.AmbiguousDevice,
                 "Selected reference meter identity is ambiguous.");
             ValidateIdentity(matches[0], devicePath);
+            linked.Token.ThrowIfCancellationRequested();
             var connection = _backend.Open(matches[0]);
             try
             {
@@ -92,7 +100,8 @@ public sealed class Dly2202Reader : IAsyncDisposable
                 if (!Dly2202Protocol.SupportsReportLength(connection.InputReportLength) ||
                     !Dly2202Protocol.SupportsReportLength(connection.OutputReportLength))
                     throw new SoundMeterException(SoundMeterError.UnsupportedReport,
-                        "Device HID report lengths are not supported by the observed protocol.");
+                        "Device HID report lengths are not supported by the observed protocol.",
+                        inputReportLength: connection.InputReportLength, outputReportLength: connection.OutputReportLength, stage: "Capabilities");
                 linked.Token.ThrowIfCancellationRequested();
                 _connection = connection;
                 Volatile.Write(ref _connected, 1);
@@ -100,9 +109,11 @@ public sealed class Dly2202Reader : IAsyncDisposable
             catch { connection.Dispose(); throw; }
         }
         catch (UnauthorizedAccessException error)
-        { throw new SoundMeterException(SoundMeterError.BusyOrDenied, "Close SoundLab and check device access.", error); }
+        { throw new SoundMeterException(SoundMeterError.BusyOrDenied, "Close SoundLab and check device access.", error,
+            stage: "Open", nativeErrorCode: (error.InnerException as System.ComponentModel.Win32Exception)?.NativeErrorCode); }
         catch (IOException error) when (error is not SoundMeterException)
-        { throw new SoundMeterException(SoundMeterError.Disconnected, "Reference meter could not be opened.", error); }
+        { throw new SoundMeterException(SoundMeterError.Disconnected, "Reference meter could not be opened.", error,
+            stage: "Connect", nativeErrorCode: (error.InnerException as System.ComponentModel.Win32Exception)?.NativeErrorCode); }
         finally { _gate.Release(); }
     }
 

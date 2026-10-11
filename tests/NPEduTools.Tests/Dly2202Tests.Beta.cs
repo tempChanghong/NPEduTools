@@ -6,6 +6,39 @@ namespace NPEduTools.Tests;
 
 public sealed partial class Dly2202Tests
 {
+    [Fact]
+    public async Task CancellationDuringEnumerationNeverOpensOrReturnsSuccessfulDeviceList()
+    {
+        using var stop = new CancellationTokenSource();
+        var backend = new Backend { OnEnumerate = () => stop.Cancel() };
+        await using var reader = new Dly2202Reader(backend);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ConnectAsync("synthetic-meter", stop.Token));
+        Assert.Equal(0, backend.Opens); Assert.False(reader.IsConnected);
+        using var listStop = new CancellationTokenSource(); backend.OnEnumerate = () => listStop.Cancel();
+        var service = new SoundMeterService(() => backend, _ => null);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.HandleAsync(Meter("list"), listStop.Token));
+        Assert.Equal(0, backend.Opens);
+    }
+    [Fact]
+    public async Task CancellationDuringOpenClosesTheOnlySelectedConnection()
+    {
+        using var stop = new CancellationTokenSource(); var connection = new Connection(Device());
+        var backend = new Backend { Create = _ => { stop.Cancel(); return connection; } };
+        await using var reader = new Dly2202Reader(backend);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ConnectAsync("synthetic-meter", stop.Token));
+        Assert.True(connection.Disposed); Assert.False(reader.IsConnected); Assert.Empty(connection.Writes);
+    }
+    [Fact]
+    public async Task UnsupportedReportLengthsRemainVisibleWithoutAnyWriteOrReading()
+    {
+        var connection = new Connection(Device(), 17, 9);
+        var service = new SoundMeterService(() => new Backend { Create = _ => connection }, _ => null);
+        var result = await service.HandleAsync(Meter(), default);
+        Assert.Equal("METER_UNSUPPORTEDREPORT", result.ErrorCode); Assert.Null(result.SoundMeter!.Reading);
+        Assert.Equal(17, result.SoundMeter.Diagnostic!.InputReportLength); Assert.Equal(9, result.SoundMeter.Diagnostic.OutputReportLength);
+        Assert.Equal("Capabilities", result.SoundMeter.Diagnostic.Stage); Assert.Empty(connection.Writes); Assert.True(connection.Disposed);
+        Assert.DoesNotContain("admin", System.Text.Json.JsonSerializer.Serialize(result, Protocol.Json));
+    }
     private static HostRequest Meter(string action = "read", string secret = "admin") => new(1, Guid.NewGuid(), "noise.meter.command",
         SoundMeter: new(action, secret, action == "read" ? "synthetic-meter" : null));
 
