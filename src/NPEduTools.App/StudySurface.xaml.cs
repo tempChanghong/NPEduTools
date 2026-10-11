@@ -50,6 +50,8 @@ public partial class StudySurface : UserControl
     private readonly HashSet<Guid> _disciplineAttempts = [];
     private readonly Queue<Guid> _disciplineOrder = new();
     private string _edgeBand = "None";
+    private SchoolNoiseWindow? _progressWindow;
+    private int _progressStep = -1;
     private static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(187, 192, 196));
     private static readonly Brush Collecting = new SolidColorBrush(Color.FromRgb(148, 194, 163));
 
@@ -97,12 +99,11 @@ public partial class StudySurface : UserControl
         RemainingLabel.Text = "剩余时间";
         Remaining.Text = fresh && state.Phase == "Active" && state.Window is { } window && state.SchoolNow is { } now
             ? TimeSpan.FromSeconds(Math.Max(0, Math.Ceiling((window.End - now).TotalSeconds))).ToString(@"hh\:mm\:ss") : "—";
-        if (fresh) { ProgressFill.Width = 1470 * _timeline.Progress; ProgressPercent.Text = $"{Math.Floor(_timeline.Progress * 100):0}%"; }
-        ProgressCaption.Text = fresh ? "本时段时间进度" : "时间待同步 · 进度暂停";
+        RenderProgress(state, fresh);
         if(manual && !state.Manual!.HasPlannedEnd && state.Window is {} mw && state.SchoolNow is {} mn)
-        {WindowText.Text=$"{mw.Start:HH:mm} – 主动结束";RemainingLabel.Text="已进行";Remaining.Text=TimeSpan.FromSeconds(Math.Max(0,(mn-mw.Start).TotalSeconds)).ToString(@"hh\:mm\:ss");ProgressFill.Width=0;ProgressPercent.Text="";ProgressCaption.Text="实际采集最多三小时";}
+        {WindowText.Text=$"{mw.Start:HH:mm} – 主动结束";RemainingLabel.Text="已进行";Remaining.Text=TimeSpan.FromSeconds(Math.Max(0,(mn-mw.Start).TotalSeconds)).ToString(@"hh\:mm\:ss");}
         SessionNote.Text = _returnError ?? (state.Display?.StageAudioError is not null ? "阶段提示音暂不可用" :
-            state.Phase == "Preparing" ? "即将开始自习" : manual?"手动自习 · 学校定时自习优先":"自习安排由学校管理后台设置");
+            state.Phase == "Preparing" ? "即将开始自习" : manual?state.Manual!.HasPlannedEnd?"手动自习 · 学校定时自习优先":"实际采集最多三小时 · 学校定时自习优先":"自习安排由学校管理后台设置");
         bool capturing = fresh && state.Phase == "Active" && state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true } execution &&
             _noise is { State: "Active" } noise && (execution.Owner=="Schedule" || manual) && execution.SessionId == noise.SessionId &&
             (noise.Quality == "DigitalSilence" || noise.Quality is "Good" or "Clipping" && noise.CurrentDbfs is { } level && double.IsFinite(level));
@@ -145,6 +146,41 @@ public partial class StudySurface : UserControl
         RenderHomework(state, fresh);
         NoticeTime.Text = Clock.Text;
         _renderedAt = fresh ? _time.GetTimestamp() : null;
+    }
+    private void RenderProgress(StudyHostState state, bool fresh)
+    {
+        if (state.Window is not { } window || window.End <= window.Start || state.Manual is { HasPlannedEnd: false })
+        {
+            _progressWindow = null; _progressStep = -1;
+            ProgressInfo.Visibility = ProgressTrack.Visibility = ProgressFill.Visibility = Visibility.Collapsed;
+            ProgressPercent.Text = "";
+            return;
+        }
+        if (_progressWindow != window)
+        {
+            _progressWindow = window; _progressStep = -1;
+            ProgressFill.Visibility = Visibility.Collapsed;
+        }
+        ProgressInfo.Visibility = ProgressTrack.Visibility = Visibility.Visible;
+        ProgressCaption.Text = fresh ? "已完成" : "进度暂停";
+        ProgressInfo.ToolTip = fresh ? "本次自习的时间进度" : "时间待同步，保留最近一次确认的进度";
+        ProgressInfo.Opacity = ProgressFill.Opacity = fresh ? 1 : .6;
+        if (fresh)
+        {
+            // Quantize to 0.01% and reuse the fixed path; no animation, extra timer or per-frame geometry.
+            int step = (int)Math.Floor(Math.Clamp(_timeline.Progress, 0, 1) * 10000);
+            if (step != _progressStep)
+            {
+                _progressStep = step;
+                var bounds = ProgressTrack.Data.Bounds;
+                double perimeter = 2 * (bounds.Width + bounds.Height - 4 * 18) + 2 * Math.PI * 18;
+                var dashes = new DoubleCollection { perimeter * step / 10000 / ProgressFill.StrokeThickness, perimeter / ProgressFill.StrokeThickness };
+                dashes.Freeze();
+                ProgressFill.StrokeDashArray = step == 10000 ? null : dashes;
+                ProgressFill.Visibility = step == 0 ? Visibility.Collapsed : Visibility.Visible;
+            }
+        }
+        ProgressPercent.Text = _progressStep >= 0 ? $"{_progressStep / 100}%" : "—";
     }
     private void DrawTrend(bool capturing, bool estimated)
     {

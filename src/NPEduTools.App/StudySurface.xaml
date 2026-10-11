@@ -40,20 +40,25 @@
     <Border Canvas.Left="40" Canvas.Top="222" Width="1110" Height="268" Style="{StaticResource Panel}">
      <Grid><TextBlock x:Name="Clock" Text="--:--:--" FontFamily="/NPEduTools.App;component/Assets/Study/Fonts/#TCloudNumber" FontSize="245" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
     </Border>
-    <Border Canvas.Left="1190" Canvas.Top="222" Width="690" Height="268" Style="{StaticResource Panel}">
+    <Grid x:Name="SessionCard" Canvas.Left="1190" Canvas.Top="222" Width="690" Height="268">
+     <Border Style="{StaticResource Panel}"/>
+     <!-- One closed outline starts at twelve o'clock. Dash lengths use the actual rounded perimeter. -->
+     <Path x:Name="ProgressTrack" Data="M345,2 L670,2 A18,18 0 0 1 688,20 L688,248 A18,18 0 0 1 670,266 L20,266 A18,18 0 0 1 2,248 L2,20 A18,18 0 0 1 20,2 L345,2 Z"
+      Stroke="#263640" StrokeThickness="3" Visibility="Collapsed" IsHitTestVisible="False"/>
+     <Path x:Name="ProgressFill" Data="{Binding Data, ElementName=ProgressTrack}" Stroke="#789EAE" StrokeThickness="3"
+      StrokeDashCap="Round" Visibility="Collapsed" IsHitTestVisible="False"/>
      <StackPanel Margin="34,26,30,20">
-      <TextBlock Text="本次自习" FontSize="26" Foreground="{StaticResource Muted}" Margin="0,0,0,22"/>
+      <Grid Margin="0,0,0,22">
+       <TextBlock Text="本次自习" FontSize="26" Foreground="{StaticResource Muted}"/>
+       <StackPanel x:Name="ProgressInfo" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed">
+        <TextBlock x:Name="ProgressCaption" Text="已完成" FontSize="18" Foreground="#91A0A9" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBlock x:Name="ProgressPercent" FontSize="22" Foreground="#B4C5CE" FontWeight="Medium" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"/>
+       </StackPanel>
+      </Grid>
       <StackPanel Orientation="Horizontal"><TextBlock Text="自习时段" FontSize="29" Foreground="{StaticResource Muted}" Width="155"/><TextBlock x:Name="WindowText" FontSize="33"/></StackPanel>
       <StackPanel Orientation="Horizontal" Margin="0,23,0,0"><TextBlock x:Name="RemainingLabel" Text="剩余时间" FontSize="29" Foreground="{StaticResource Muted}" Width="155"/><TextBlock x:Name="Remaining" Text="—" FontSize="37" FontFamily="/NPEduTools.App;component/Assets/Study/Fonts/#TCloudNumber"/></StackPanel>
       <TextBlock x:Name="SessionNote" FontSize="18" Foreground="{StaticResource Muted}" Margin="0,17,0,0"/>
      </StackPanel>
-    </Border>
-    <Grid Canvas.Left="40" Canvas.Top="496" Width="1840" Height="25">
-     <TextBlock x:Name="ProgressCaption" Text="本时段时间进度" FontSize="17" Foreground="{StaticResource Muted}"/>
-     <Border Margin="200,10,170,0" Height="5" Background="#26323C" CornerRadius="2" VerticalAlignment="Top">
-      <Border x:Name="ProgressFill" Width="0" Height="5" HorizontalAlignment="Left" CornerRadius="2" Background="#8CC9D7"/>
-     </Border>
-     <TextBlock x:Name="ProgressPercent" Text="0%" FontSize="22" HorizontalAlignment="Right" Foreground="#CFE5EC"/>
     </Grid>
     <Border Canvas.Left="40" Canvas.Top="530" Width="1840" Height="402" Style="{StaticResource Panel}">
      <Grid Margin="32,23,32,26">
