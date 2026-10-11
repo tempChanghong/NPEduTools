@@ -8,19 +8,20 @@ namespace NPEduTools.Tests;
 public sealed class NpepConnectionProtocolTests
 {
     [Theory]
-    [InlineData("status", "request-id")]
-    [InlineData("status", "version")]
-    [InlineData("status", "zero-length")]
-    [InlineData("status", "empty-message")]
-    [InlineData("pair", "request-id")]
-    [InlineData("pair", "version")]
-    [InlineData("pair", "zero-length")]
-    [InlineData("pair", "empty-message")]
-    [InlineData("pause", "request-id")]
-    [InlineData("pause", "version")]
-    [InlineData("pause", "zero-length")]
-    [InlineData("pause", "empty-message")]
-    public async Task InvalidReceiptClearsFactsAndRecoveryNeverReplaysMutation(string operation, string invalid)
+    [InlineData("status", "request-id", 0)]
+    [InlineData("status", "version", 0)]
+    [InlineData("status", "zero-length", 0)]
+    [InlineData("status", "empty-message", 0)]
+    [InlineData("pair", "request-id", 0)]
+    [InlineData("pair", "version", 0)]
+    [InlineData("pair", "zero-length", 0)]
+    [InlineData("pair", "empty-message", 0)]
+    [InlineData("pause", "request-id", 0)]
+    [InlineData("pause", "version", 0)]
+    [InlineData("pause", "zero-length", 0)]
+    [InlineData("pause", "empty-message", 0)]
+    [InlineData("status", "empty-message", 100)]
+    public async Task InvalidReceiptClearsFactsAndRecoveryNeverReplaysMutation(string operation, string invalid, int disconnectDelayMs)
     {
         string pipe = "NPEduTools.Test.school-protocol." + Guid.NewGuid().ToString("N");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -33,6 +34,8 @@ public sealed class NpepConnectionProtocolTests
         var recovered = initial with { Revision = 2, State = operation == "pair" ? "PENDING" : initial.State,
             ReportingPaused = operation == "pause", Pairing = operation == "pair" ? new JsonObject { ["userCode"] = "TEST-2345" } : null };
         var requests = new List<HostRequest>();
+        var consumed = Enumerable.Range(0, 3).Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).ToArray();
+        var disconnected = Enumerable.Range(0, 3).Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).ToArray();
         var responder = Task.Run(async () =>
         {
             for (int step = 0; step < 3; step++)
@@ -49,12 +52,26 @@ public sealed class NpepConnectionProtocolTests
                 }
                 else await Protocol.WriteAsync(server, new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null,
                     "隔离有效回执", Npep: step == 0 ? initial : recovered), timeout.Token);
+                await consumed[step].Task.WaitAsync(timeout.Token);
+                if (disconnectDelayMs > 0) await Task.Delay(disconnectDelayMs, timeout.Token);
                 server.Disconnect();
+                disconnected[step].TrySetResult();
             }
         }, timeout.Token);
         try
         {
-            var session = new NpepConnectionSession((request, token) => HostClient.RequestAsync(pipe, request, token));
+            int exchange = 0;
+            var session = new NpepConnectionSession(async (request, token) =>
+            {
+                int step = exchange++;
+                try { return await HostClient.RequestAsync(pipe, request, token); }
+                finally
+                {
+                    // Complete this exchange before reusing the fixture pipe for the next refresh.
+                    consumed[step].TrySetResult();
+                    await disconnected[step].Task.WaitAsync(token);
+                }
+            });
             Assert.True(await session.RefreshAsync());
             session.Origin = origin; session.DeviceName = "隔离测试设备"; session.UserCode = "ABCD-2345";
             session.ServerConfirmed = session.BindingConfirmed = true;
