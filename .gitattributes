@@ -2,3 +2,6 @@
 third-party/licenses/* -text
 # Build recipes are hashed and executed by bash on Windows.
 scripts/build-recording-tools.sh text eol=lf
+# Preserve native artwork byte offsets and embedded editable data.
+images/promo/**/*.ai binary
+images/promo/**/*.psd binary

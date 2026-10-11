@@ -1,0 +1,9 @@
+Wordmark source: D:/Archives/文献集/NP/LOGO/星火动力中文字黑色.svg / uniform scale 2.94971101307111 / bounds 161.000000000002,1029,294.53807228084,967.000000000001
+07 / 产品标志 / moved left 64 px / 2 root objects
+06 / 跃迁 · live MiSans Heavy type / moved left 64 px / 3 root objects
+04 / NPEDUTOOLS · glass outline typography / moved left 64 px / 2 root objects
+Text novark.ink / bounds 2318.9921875,1018.6259765625,2476.1708984375,978.4375
+Text NPEduTools / bounds 186.625,382.30078125,435.78662109375,328.255859375
+Text 跃迁 / bounds 66,831,808.998046875,494.9990234375
+Text 跃迁 / bounds 89.2490234375,818.02197265625,799.4090234375,568.18197265625
+DONE / 9 layers / 4 live text frames
