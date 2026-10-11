@@ -48,11 +48,12 @@ public sealed partial class StudyWindow : Window
         _surface = new(HideAsync, () => { HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync); Content = _surface;
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; _surface.ReturnError("请长按“临时使用电脑”收起展示。"); } };
     }
-    public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default)
+    public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default, StudyPhotoState? photos = null)
     {
         if (_state?.Display?.InstanceId != state.Display?.InstanceId || _state?.Window != state.Window || _state?.Version != state.Version)
         { _hideRequest = null; _surface.ReturnError(null); }
         _state = state; _surface.Apply(state, noise, transportAge);
+        _surface.ApplyPhotos(photos);
         UpdateHomework(state); UpdateSeating(state);
     }
     public void HideDisplay() { Hide(); _surface.Suspend(); _homeworkRead?.Cancel(); _seatingRead?.Cancel(); }

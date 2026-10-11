@@ -72,7 +72,7 @@
     <Button x:Name="ManageButton" Canvas.Left="266" Canvas.Top="970" Width="144" Height="77" Style="{StaticResource Tool}" Click="ManageClicked" Content="监测管理"/>
     <Button x:Name="SeatingButton" Canvas.Left="432" Canvas.Top="970" Width="210" Height="77" Style="{StaticResource Tool}" Content="查看自习座位表" IsEnabled="False" Click="OpenSeatingClicked"/>
     <TextBlock x:Name="SeatingStatus" Canvas.Left="665" Canvas.Top="991" Width="255" FontSize="17" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
-    <Border Canvas.Left="944" Canvas.Top="994" Width="32" Height="25" BorderBrush="#64717D" BorderThickness="2" CornerRadius="4" IsHitTestVisible="False" ToolTip="摄像头状态位置预留 · 未接入">
+    <Border x:Name="CameraIndicator" Canvas.Left="944" Canvas.Top="994" Width="32" Height="25" BorderBrush="#64717D" BorderThickness="2" CornerRadius="4" ToolTip="摄像头状态待确认">
      <Ellipse Width="11" Height="11" Stroke="#64717D" StrokeThickness="2"/>
     </Border>
     <Grid Canvas.Left="1000" Canvas.Top="975" Width="880" Height="67">

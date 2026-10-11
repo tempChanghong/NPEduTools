@@ -13,6 +13,18 @@ namespace NPEduTools.App;
 
 public partial class StudySurface : UserControl
 {
+    public void ApplyPhotos(StudyPhotoState? photos)
+    {
+        CameraIndicator.ToolTip = photos is null ? "摄像头状态待确认" : photos.State switch {
+            "Capturing" => "正在处理单张照片",
+            "Ready" => "单张取图策略已启用 · 不连续录制",
+            "WaitingPermission" => "正在等待服务器照片许可",
+            "Faulted" => "照片功能暂不可用 · 噪音采样继续",
+            _ => "当前无需单张取图"
+        };
+        if (photos is { Pending: > 0 }) CameraIndicator.ToolTip += $" · 待上传 {photos.Pending} 张";
+        CameraIndicator.BorderBrush = photos?.State is "Capturing" or "Ready" ? Brushes.LightSlateGray : Brushes.DimGray;
+    }
     private readonly StudyPresentationTimeline _timeline;
     private readonly StudyReminderAudio _audio;
     private readonly Func<Task> _hide;

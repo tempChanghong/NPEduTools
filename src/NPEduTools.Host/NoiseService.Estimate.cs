@@ -97,6 +97,7 @@ public sealed partial class NoiseService
             s.EstimateQuality = valid ? "Active" : !settled ? "WarmingUp" : "NoData";
             if (valid)
             {
+                ReportEstimated(s, f, energy, value);
                 s.EstimateSampled += f.Seconds; s.EstimateEnergy += energy * f.Seconds;
                 s.EstimateMaximum = s.EstimateMaximum is { } max ? Math.Max(max, value) : value;
             }

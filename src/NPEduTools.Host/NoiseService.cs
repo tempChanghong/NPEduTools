@@ -185,6 +185,9 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         public INoiseCaptureMetadata? Metadata;
         public string? Signature;
         public StudyNoise? ThresholdPolicy;
+        public readonly StudyReportAccumulator ReportRaw = new("dBFS");
+        public readonly StudyReportAccumulator ReportEstimated = new("estimated-dB(A)");
+        public int DisciplineReminders;
         public NoiseReferenceProfile? EstimateProfile;
         public string? EstimateProfileId;
         public IReferenceNoiseCapture? EstimateCapture;
@@ -366,8 +369,9 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             }
         }
     }
-    private static void Accumulate(Session s, NoiseFrame frame)
+    private void Accumulate(Session s, NoiseFrame frame)
     {
+        ReportRaw(s, frame);
         s.Sampled += frame.Seconds; s.Energy += frame.MeanSquare * frame.Seconds;
         s.Clipped += frame.ClippedRatio * frame.Seconds; s.Peak = Math.Max(s.Peak, frame.Peak); s.Frames++;
     }

@@ -48,7 +48,8 @@ try {
         @{Project='NPEduTools.Host';Directory=(Join-Path $app 'Host')},
         @{Project='NPEduTools.Guard';Directory=(Join-Path $app 'Guard')},
         @{Project='NPEduTools.ClassIsland.Admin';Directory=(Join-Path $app 'Admin')},
-        @{Project='NPEduTools.Recorder';Directory=(Join-Path $work 'recorder')})
+        @{Project='NPEduTools.Recorder';Directory=(Join-Path $work 'recorder')},
+        @{Project='NPEduTools.Camera';Directory=(Join-Path $app 'Host/Camera')})
     foreach ($component in $components) {
         & $runner @('publish',("src/" + $component.Project),'--configuration','Release','--runtime','win-x64','--self-contained','true','--output',$component.Directory,
             '-m:1','-p:PublishTrimmed=false','-p:PublishSingleFile=false','-p:ExcludeRecordingTools=true',"-p:PackageLockDirectory=$locks")

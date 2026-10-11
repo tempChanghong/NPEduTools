@@ -16,7 +16,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
     Func<bool>? prepareStop = null, StudySettingsService? study = null, StudyDisplayService? studyDisplay = null, StudyDeviceService? studyDevices = null,
-    SoundMeterService? soundMeter = null)
+    SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -56,7 +56,10 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     continue;
                 }
                 if (error is not null)
+                {
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
+                    if(error=="InvalidNoiseManagementCommand")studyExit?.ObserveAuthorization(request,response);
+                }
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
                 else if (request.Capability == "noise.meter.command")
@@ -81,10 +84,27 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     response = study is not null && studyDisplay is not null ? study.ReceiveSeating(request, studyDisplay.Snapshot()) : new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "座位表展示尚未接入。");
                 else if (request.Capability == "study.homework")
                     response = study?.ReadHomework(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "作业读取尚未接入。");
-                else if (request.Capability == "study.status.seating")
+                else if (request.Capability == "study.report.status")
+                    response = studyReport is null ? new(1, request.RequestId, "Rejected", "STUDY_REPORT_UNSUPPORTED", "自习报告尚未接入。")
+                        : new(1, request.RequestId, "Succeeded", null, "本机自习报告；不代表服务器上传回执。", StudyReport: studyReport.Snapshot());
+                else if(request.Capability is "study.exit.begin" or "study.exit.status")
+                    response=studyExit is null?new(1,request.RequestId,"Rejected","STUDY_EXIT_UNSUPPORTED","自习退出验证尚未接入。")
+                        : request.Capability=="study.exit.begin"?studyExit.Begin(request):new(1,request.RequestId,"Succeeded",null,"本次自习退出验证状态。",StudyExit:studyExit.Snapshot());
+                else if (request.Capability == "study.photos.exit-intent")
+                    response = studyPhotos?.ExitIntent(request) ?? new(1, request.RequestId, "Rejected", "STUDY_PHOTOS_UNSUPPORTED", "照片功能尚未接入。");
+                else if (request.Capability == "study.photos.flush")
+                {
+                    try { if (studyPhotos is not null) await studyPhotos.FlushAsync(token); }
+                    catch (TimeoutException) { }
+                    response = new(1, request.RequestId, "Succeeded", null, "取图等待已结束；不等待网络上传。");
+                }
+                else if (request.Capability is "study.status.seating" or "study.status.photos")
+                {
                     response = study is null ? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "自习展示尚未接入。")
                         : studyDisplay is not null ? studyDisplay.Handle(request with { Capability = "study.status" }) with { Noise = noise?.Snapshot() }
                         : new(1, request.RequestId, "Succeeded", null, "学校自习状态。", Study: study.Snapshot());
+                    if (request.Capability == "study.status.photos") response = response with { StudyPhotos = studyPhotos?.Snapshot() };
+                }
                 else if (request.Capability is "study.status" or "study.hide" or "study.reminder" or "study.presentation")
                 {
                     response = study is null ? new(Protocol.Version, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "请更新后台以读取自习配置。")
@@ -106,7 +126,16 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                         new(1, request.RequestId, "Rejected", "CALIBRATION_UNSUPPORTED", "请更新后台以使用快速校准。");
                 }
                 else if (request.Capability.StartsWith("noise.management.", StringComparison.Ordinal))
-                    response = noise?.ManagementHandle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台。");
+                {
+                    if(request.NoiseManagement is {} command && studyExit?.CanAuthorize(command)==false || request.Capability=="noise.management.prepare-exit" && studyExit?.CanComplete(request.RequestId)==false)
+                        response=new(1,request.RequestId,"Rejected","EXIT_VERIFICATION_FAILED","本次退出验证已经结束；未停止后台。");
+                    else {
+                        response = noise?.ManagementHandle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "NoiseUnavailable", "请重启新版后台。");
+                        studyExit?.ObserveAuthorization(request,response);
+                        if(request.NoiseManagement?.Action=="authorize" && request.NoiseManagement.TargetRequestId is {} target && studyExit?.CanComplete(target)==false && response.Outcome=="Succeeded")
+                            response=new(1,request.RequestId,"Rejected","EXIT_VERIFICATION_FAILED","本次退出验证已经超时；未停止后台。");
+                    }
+                }
                 else if (request.Capability.StartsWith("noise.display.", StringComparison.Ordinal))
                     response = noiseDisplay?.Handle(request) ?? new(Protocol.Version, request.RequestId, "Rejected", "DISPLAY_UNSUPPORTED", "请重启新版后台。");
                 else if (request.Capability is not ("noise.command" or "host.stop") && Protocol.NoiseInterruption(request) &&
@@ -127,6 +156,10 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                         Automatic: recording?.Automatic, ExamAware: examAware?.Snapshot(), ClassroomMode: classroom?.Snapshot);
                 else if (request.Capability == "host.stop" && runtimeGate is not null && shutdownReservation is null)
                     response = new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy", "正在切换运行环境，后台暂不能停止。");
+                else if(request.Capability=="host.stop" && studyExit?.CanComplete(request.RequestId)==false)
+                    response=studyExit.Snapshot().State=="Waiting"
+                        ? new(1,request.RequestId,"Rejected","EXIT_VERIFICATION_REQUIRED","请先完成本次管理验证；后台继续运行。")
+                        : new(1,request.RequestId,"Rejected","EXIT_VERIFICATION_FAILED","本次退出验证未通过；后台继续运行。");
                 else if (request.Capability == "host.stop" && noise?.AuthorizeInterruption(request) is { } exitDenied)
                     response = exitDenied;
                 else if (request.Capability == "host.stop" && classroom is not null && !classroom.BeginShutdown())

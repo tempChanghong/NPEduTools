@@ -14,6 +14,8 @@ public sealed partial class NpepRuntime
         InitializeStudySeating(study);
         InitializeStudyHomework(study);
         InitializeStudyPresentation(study);
+        InitializeStudyPhotos(study);
+        InitializeStudyExit(study);
         _studyLoop = Task.Run(async () =>
         {
             try

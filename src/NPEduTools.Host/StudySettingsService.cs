@@ -8,7 +8,7 @@ using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Host;
 
 /// <summary>Computes phases and hands confirmed execution to the sole scheduled owner. Owns no microphone or display.</summary>
-public sealed partial class StudySettingsService : INpepStudySettings, IAsyncDisposable
+public sealed partial class StudySettingsService : INpepStudySettings, INpepStudyPhotos, INpepStudyExitEvents, IAsyncDisposable
 {
     public static readonly TimeSpan MaxConfigurationAge = TimeSpan.FromSeconds(15);
     private readonly object _sync = new();
@@ -25,6 +25,20 @@ public sealed partial class StudySettingsService : INpepStudySettings, IAsyncDis
     private StudySettings? _settings;
     private TimeSpan? _confirmedAt;
     private StudyHostState _state = Empty("WAITING_CONFIGURATION");
+    public INpepStudyPhotos? Photos { get; set; }
+    public bool SupportsPhotos => Photos is not null;
+    public void BindPhotos(string? scope) => Photos?.BindPhotos(scope);
+    public JsonObject? PhotoLeaseRequest() => Photos?.PhotoLeaseRequest();
+    public void ConfirmPhotoLease(JsonObject response, TimeSpan roundTrip) => Photos?.ConfirmPhotoLease(response, roundTrip);
+    public StudyPhotoPacket? PendingPhoto() => Photos?.PendingPhoto();
+    public void PhotoStored(Guid eventId) => Photos?.PhotoStored(eventId);
+    public void PhotoFailed(string code, Guid? eventId = null) => Photos?.PhotoFailed(code, eventId);
+    public INpepStudyExitEvents? ExitEvents {get;set;}
+    public bool SupportsExitEvents=>ExitEvents is not null;
+    public void BindExit(string? scope)=>ExitEvents?.BindExit(scope);
+    public StudyExitPacket? PendingExit()=>ExitEvents?.PendingExit();
+    public void ExitStored(Guid id)=>ExitEvents?.ExitStored(id);
+    public void ExitFailed(string code,Guid? id=null)=>ExitEvents?.ExitFailed(code,id);
     private static StudyHostState Empty(string reason) => new(null, "UNAVAILABLE", "NOT_INTEGRATED", "NOT_INTEGRATED",
         "Blocked", reason, false, null, null, null, null);
 
@@ -50,6 +64,9 @@ public sealed partial class StudySettingsService : INpepStudySettings, IAsyncDis
             ClearHomework(); ClearSeating(); _seatingRevisionVersion = null; _highestSeatingRevision = 0;
             _tracker = new(); _error = scope is null ? "NOT_ELIGIBLE" : "WAITING_CONFIGURATION"; _state = Empty(_error);
         }
+        // Photo callbacks must stay outside _sync: capture samples this service under its own lock.
+        Photos?.BindPhotos(scope);
+        ExitEvents?.BindExit(scope);
     }
     public void ApplyStudy(JsonObject configuration)
     {
@@ -66,6 +83,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, IAsyncDis
             _capture?.SelectStudy(configuration, _scope);
         }
         Tick();
+        if (configuration["effective"]?["settings"]?["photos"]?["enabled"]?.GetValue<bool>() != true) Photos?.PhotoFailed("PHOTOS_DISABLED");
     }
     public void StudyFailed(string code)
     {

@@ -176,8 +176,16 @@ var noiseDisplay = new NoiseDisplayService(() => {
     Path.Combine(dataDirectory, "npep"));
 noiseTransport.Display = noiseDisplay;
 var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
-    calibratedThresholds: noise.ResolveCalibration);
+    calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder);
+await using var studyReport = new StudyReportService(studySettings.DisplaySnapshot, noise.StudyReportSnapshot,
+    observePolicy: (scope, version, session, policy) => noise.StudyThresholds(session, noise.ResolveCalibration(scope, version, policy)));
 studySettings.PresentationObservation = studyDisplay.ObservePresentation;
+await using var studyPhotos = new StudyPhotoService(studySettings.DisplaySnapshot, noise, studyDevices, StudyPhotoProcess.CaptureAsync,
+    new StudyPhotoJournal(Path.Combine(dataDirectory, "npep", "photos"), NpepPhotoProtection.Protect));
+studySettings.Photos = studyPhotos;
+await using var studyExit=new StudyExitService(studySettings.DisplaySnapshot,noise.Protection,studyPhotos,
+    new StudyExitJournal(Path.Combine(dataDirectory,"npep","exit-events"),NpepPhotoProtection.Protect),resume:studyDisplay.ResumeAfterExitWarning);
+studySettings.ExitEvents=studyExit;
 await using var guard = new GuardHostSession(new GuardFiles(Path.Combine(dataDirectory, "guard")), () =>
 {
     var (state, protection) = noise.ManagementSnapshot();
@@ -199,7 +207,7 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, guard.ExpectedStop, studySettings, studyDisplay, studyDevices, soundMeter).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, guard.ExpectedStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport).RunAsync(shutdown.Token);
     // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
     if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
     await serving;

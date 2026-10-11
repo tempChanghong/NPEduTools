@@ -5,7 +5,7 @@ namespace NPEduTools.Host;
 /// <summary>Presentation only. A monotonic Host deadline survives App restarts, but never resumes capture.</summary>
 public sealed partial class StudyDisplayService(Func<(string? Scope, bool Selected, StudyHostState State)> sample, TimeProvider? time = null,
     Func<Guid?, StudyNoise?, (string Band, bool Qualified)>? thresholds = null, string? directory = null,
-    Func<string?, string?, StudyNoise, StudyNoise>? calibratedThresholds = null)
+    Func<string?, string?, StudyNoise, StudyNoise>? calibratedThresholds = null, Action<Guid>? disciplineClaimed = null)
 {
     private readonly object _sync = new();
     private readonly TimeProvider _time = time ?? TimeProvider.System;
@@ -19,6 +19,10 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
     private readonly HashSet<Guid> _requests = [];
     private readonly Queue<Guid> _requestOrder = new();
     private double Remaining => _hiddenUntil is { } until ? Math.Max(0, (until - _time.GetTimestamp()) / (double)_time.TimestampFrequency) : 0;
+    public void ResumeAfterExitWarning(StudyHostState expected)
+    {
+        lock(_sync){var current=Snapshot();if(current.PolicyState=="APPLIED" && current.Phase=="Active" && current.ClockReady && current.Version==expected.Version && current.Window==expected.Window){_hiddenUntil=null;_hiddenWindow=null;}}
+    }
 
     public StudyHostState Snapshot()
     {
