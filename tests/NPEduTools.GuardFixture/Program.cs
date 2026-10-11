@@ -50,11 +50,19 @@ if (Path.GetFileName(Environment.ProcessPath)!.Equals("NPEduTools.App.exe", Stri
     var r = files.Read<GuardRegistration>("registration.json") ?? new(Guid.NewGuid(), GuardProcess.Current(), null, Path.GetDirectoryName(Environment.ProcessPath!));
     files.Write("registration.json", r with { App = GuardProcess.Current() });
     files.Write("fixture-app-args.json", args);
-    await Task.Delay(Timeout.Infinite);
+    var tasks = new GuardTasks(Path.GetDirectoryName(Environment.ProcessPath!)!, args[1], null);
+    while (true)
+    {
+        await Task.Delay(1000);
+        if (!files.Stopped(r.Generation) && !files.SessionEnding(r.Generation) && !tasks.GuardRunning())
+            try { tasks.Run("Guard"); } catch (Exception e) when (GuardTasks.StartupError(e)) { }
+    }
 }
 else
 {
-    await using var host = new GuardHostSession(files, () => true); // Synthetic scheduled lease; no microphone or network.
+    var tasks = new GuardTasks(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, "..")), args[1], null);
+    await using var host = new GuardHostSession(files, () => files.Read<string>("fixture-mode.json") != "Standby", ensureGuard: () =>
+    { if (OperatingSystem.IsWindows() && !tasks.GuardRunning()) tasks.Run("Guard"); }); // Synthetic scheduled lease; no microphone or network.
     await Task.Delay(Timeout.Infinite);
 }
 return 0;

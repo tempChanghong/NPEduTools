@@ -84,6 +84,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/CLASSROOM-ACCEPTANCE.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/DEPENDENCIES.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/INSTALLER.md') -Destination $package
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/GUARD-MAINTENANCE.md') -Destination $package
     Copy-Item -LiteralPath (Join-Path $projectRoot $ReleaseNotesPath) -Destination (Join-Path $package 'RELEASE-NOTES.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-portable-package.ps1') -Destination $package
     @'

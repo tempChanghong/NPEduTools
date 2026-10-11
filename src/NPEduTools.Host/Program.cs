@@ -194,6 +194,11 @@ await using var guard = new GuardHostSession(new GuardFiles(Path.Combine(dataDir
         schedule["clockReady"]?.GetValue<bool>() == true && schedule["leaseRemainingSeconds"]?.GetValue<int>() > 0 &&
         schedule["owner"]?.GetValue<string>() == "Schedule" && schedule["reason"]?.GetValue<string>() == "WINDOW_ACTIVE" &&
         !classroom.Snapshot.AutomaticPaused && !remoteExamStore.State.AutomaticPaused && !runtimeGate.Switching && !runtimeGate.ExamRequested;
+}, noiseSchedules.GuardPlan, () =>
+{
+    if (!OperatingSystem.IsWindows()) return;
+    var tasks = new GuardTasks(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..")), pipeName, options.GetValueOrDefault("--classisland-pipe"));
+    if (!tasks.GuardRunning()) tasks.Run("Guard");
 });
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; if (guard.ExpectedStop()) shutdown.Cancel(); };
 var remoteExamActions = new RemoteExamActions(launch, examAware, recording, classroom, new WindowsRemoteExamPlatform());

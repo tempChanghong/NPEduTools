@@ -2,11 +2,12 @@ using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Runtime.InteropServices;
 using NPEduTools.Core;
+using Xunit.Abstractions;
 
 namespace NPEduTools.Tests;
 
 [SupportedOSPlatform("windows")]
-public sealed class GuardProcessTests
+public sealed class GuardProcessTests(ITestOutputHelper output)
 {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string? className, string caption);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
@@ -19,6 +20,7 @@ public sealed class GuardProcessTests
         string bundle = Path.Combine(Path.GetTempPath(), "NPEduTools.GuardProcessTests", Guid.NewGuid().ToString("N"));
         var files = GuardFiles.ForPipe(pipe);
         Process? app = null, host = null, guard = null;
+        GuardTasks? tasks = null;
         var recovered = new List<GuardProcess>();
         try
         {
@@ -27,26 +29,41 @@ public sealed class GuardProcessTests
             Copy(Path.Combine(AppContext.BaseDirectory, "GuardExecutable"), Path.Combine(bundle, "Guard"));
             File.Copy(Path.Combine(bundle, "NPEduTools.GuardFixture.exe"), Path.Combine(bundle, "NPEduTools.App.exe"));
             File.Copy(Path.Combine(bundle, "Host", "NPEduTools.GuardFixture.exe"), Path.Combine(bundle, "Host", "NPEduTools.Host.exe"));
-            app = Start(Path.Combine(bundle, "NPEduTools.App.exe"), pipe);
+            tasks = new GuardTasks(bundle, pipe, null);
+            tasks.Register(highest: false); // Current-user synthetic tasks; no installed App or sensors.
+            tasks.Run("App");
             await Until(() => files.Read<GuardRegistration>("registration.json") is not null);
-            host = Start(Path.Combine(bundle, "Host", "NPEduTools.Host.exe"), pipe);
-            guard = Start(Path.Combine(bundle, "Guard", "NPEduTools.Guard.exe"), pipe);
+            app = Process.GetProcessById(files.Read<GuardRegistration>("registration.json")!.App.Id);
+            tasks.Run("Host");
+            await Until(() => files.Read<GuardLease>("lease.json") is not null);
+            host = Process.GetProcessById(files.Read<GuardLease>("lease.json")!.Host.Id);
+            tasks.Run("Guard");
+            await Until(() => files.Read<GuardStatus>("status.json") is { GuardPid: > 0 });
+            guard = Process.GetProcessById(files.Read<GuardStatus>("status.json")!.GuardPid);
             await Until(() => files.Read<GuardStatus>("status.json")?.Phase == "Armed");
             var registration = files.Read<GuardRegistration>("registration.json")!;
             var processes = new GuardProcesses(Path.Combine(bundle, "NPEduTools.App.exe"), Path.Combine(bundle, "Host", "NPEduTools.Host.exe"), pipe, null);
             var originalHost = files.Read<GuardLease>("lease.json")!.Host;
             Assert.True(processes.Matches(originalHost, false));
             Assert.False(processes.Matches(originalHost with { StartedUtcTicks = originalHost.StartedUtcTicks + 1 }, false));
-            host.Kill(); await host.WaitForExitAsync();
+            host.Kill(entireProcessTree: true); await host.WaitForExitAsync();
             await Until(() => files.Read<GuardLease>("lease.json")?.Host is { } p && p != originalHost && processes.Matches(p, false));
             recovered.Add(files.Read<GuardLease>("lease.json")!.Host);
+            using (var freshHost = Process.GetProcessById(recovered[^1].Id))
+                Assert.NotEqual(guard.Id, Parent(freshHost)); // Recovery is owned by Task Scheduler.
             Assert.False(app.HasExited); // Actual independent guard survives its monitored Host's death.
-            app.Kill(); await app.WaitForExitAsync();
+            app.Kill(entireProcessTree: true); await app.WaitForExitAsync();
             await Until(() => files.Read<GuardRegistration>("registration.json")?.App is { } p && p != registration.App && processes.Matches(p, true) &&
                 files.Read<string[]>("fixture-app-args.json")?.Contains("--guard-recovery") == true && files.Read<GuardStatus>("status.json")?.Restarts == 2);
             recovered.Add(files.Read<GuardRegistration>("registration.json")!.App);
             Assert.Contains("--guard-recovery", files.Read<string[]>("fixture-app-args.json")!);
             Assert.Equal(2, files.Read<GuardStatus>("status.json")!.Restarts);
+            using (var freshApp = Process.GetProcessById(recovered[^1].Id)) Assert.NotEqual(guard.Id, Parent(freshApp));
+            Assert.NotEqual(app.Id, Parent(guard)); Assert.NotEqual(host.Id, Parent(guard));
+            int oldGuard = guard.Id;
+            guard.Kill(entireProcessTree: true); await guard.WaitForExitAsync(); guard.Dispose(); guard = null;
+            await Until(() => files.Read<GuardStatus>("status.json") is { } s && s.GuardPid != oldGuard && s.Phase == "Armed");
+            guard = Process.GetProcessById(files.Read<GuardStatus>("status.json")!.GuardPid);
             if (sessionEnding)
             {
                 var window = FindWindow(null, "NPEduTools Guard " + pipe);
@@ -73,6 +90,7 @@ public sealed class GuardProcessTests
         }
         finally
         {
+            if (files.Read<GuardRegistration>("registration.json") is { } finalRegistration) files.Stop(finalRegistration.Generation, "Maintenance");
             if (guard is { HasExited: false }) { guard.Kill(); await guard.WaitForExitAsync(); }
             foreach (var identity in recovered.Concat(new[] { files.Read<GuardLease>("lease.json")?.Host, files.Read<GuardRegistration>("registration.json")?.App }.OfType<GuardProcess>()).Distinct())
             {
@@ -82,16 +100,59 @@ public sealed class GuardProcessTests
             }
             foreach (var p in new[] { app, host }) { if (p is { HasExited: false }) { p.Kill(); await p.WaitForExitAsync(); } p?.Dispose(); }
             guard?.Dispose();
+            tasks?.Unregister();
             await DeleteFixtureDirectory(bundle, Path.Combine(Path.GetTempPath(), "NPEduTools.GuardProcessTests"));
             string instanceDirectory = GuardFiles.DataDirectory(pipe);
             await DeleteFixtureDirectory(instanceDirectory, Path.Combine(Path.GetTempPath(), "NPEduTools", "instances"));
         }
     }
-    private static Process Start(string executable, string pipe)
+    [DllImport("ntdll.dll")] private static extern int NtQueryInformationProcess(IntPtr process, int information, out BasicInformation value, int length, out int returned);
+    [StructLayout(LayoutKind.Sequential)] private struct BasicInformation
+    { public IntPtr ExitStatus, Peb, Affinity, Priority, Pid, ParentPid; }
+    private static int Parent(Process process)
     {
-        var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
-        start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipe);
-        return Process.Start(start)!;
+        Assert.Equal(0, NtQueryInformationProcess(process.Handle, 0, out var info, Marshal.SizeOf<BasicInformation>(), out _));
+        return checked((int)info.ParentPid);
+    }
+    [Fact]
+    public async Task Standby_guard_is_restarted_by_scheduler_even_when_app_and_host_are_both_gone()
+    {
+        string pipe = "NPEduTools.Test.Guard." + Guid.NewGuid().ToString("N");
+        string bundle = Path.Combine(Path.GetTempPath(), "NPEduTools.GuardProcessTests", Guid.NewGuid().ToString("N"));
+        var files = GuardFiles.ForPipe(pipe); var tasks = new GuardTasks(bundle, pipe, null);
+        Process? app = null, host = null, guard = null;
+        try
+        {
+            Copy(Path.Combine(AppContext.BaseDirectory, "GuardFixture"), bundle);
+            Copy(Path.Combine(AppContext.BaseDirectory, "GuardFixture"), Path.Combine(bundle, "Host"));
+            Copy(Path.Combine(AppContext.BaseDirectory, "GuardExecutable"), Path.Combine(bundle, "Guard"));
+            File.Copy(Path.Combine(bundle, "NPEduTools.GuardFixture.exe"), Path.Combine(bundle, "NPEduTools.App.exe"));
+            File.Copy(Path.Combine(bundle, "Host", "NPEduTools.GuardFixture.exe"), Path.Combine(bundle, "Host", "NPEduTools.Host.exe"));
+            files.Write("fixture-mode.json", "Standby"); tasks.Register(false); tasks.Run("App");
+            await Until(() => files.Read<GuardRegistration>("registration.json") is not null);
+            app = Process.GetProcessById(files.Read<GuardRegistration>("registration.json")!.App.Id);
+            tasks.Run("Host"); await Until(() => files.Read<GuardLease>("lease.json") is not null);
+            host = Process.GetProcessById(files.Read<GuardLease>("lease.json")!.Host.Id);
+            tasks.Run("Guard"); await Until(() => files.Read<GuardStatus>("status.json")?.Phase == "Watching");
+            guard = Process.GetProcessById(files.Read<GuardStatus>("status.json")!.GuardPid);
+            app.Kill(true); host.Kill(true); await app.WaitForExitAsync(); await host.WaitForExitAsync();
+            await Task.Delay(3000); Assert.False(guard.HasExited);
+            int firstGuard = guard.Id; guard.Kill(true); await guard.WaitForExitAsync(); guard.Dispose(); guard = null;
+            // The one-minute fallback is real Task Scheduler recovery, with no surviving app watcher.
+            await Until(() => files.Read<GuardStatus>("status.json") is { } s && s.GuardPid != firstGuard && s.Phase == "Watching", 95000);
+            guard = Process.GetProcessById(files.Read<GuardStatus>("status.json")!.GuardPid); guard.Refresh();
+            Assert.True(app.HasExited); Assert.True(host.HasExited); Assert.NotEqual(app.Id, Parent(guard));
+            output.WriteLine($"Synthetic standby guard: workingSet={guard.WorkingSet64}, privateBytes={guard.PrivateMemorySize64}, parentPid={Parent(guard)}; no sensors or network.");
+        }
+        finally
+        {
+            if (files.Read<GuardRegistration>("registration.json") is { } r) files.Stop(r.Generation, "Maintenance");
+            tasks.Unregister();
+            foreach (var p in new[] { guard, app, host })
+            { if (p is { HasExited: false }) { p.Kill(); await p.WaitForExitAsync(); } p?.Dispose(); }
+            await DeleteFixtureDirectory(bundle, Path.Combine(Path.GetTempPath(), "NPEduTools.GuardProcessTests"));
+            await DeleteFixtureDirectory(GuardFiles.DataDirectory(pipe), Path.Combine(Path.GetTempPath(), "NPEduTools", "instances"));
+        }
     }
     private static void Copy(string source, string target)
     {

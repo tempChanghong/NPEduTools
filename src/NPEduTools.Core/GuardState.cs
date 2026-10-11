@@ -34,6 +34,8 @@ public sealed class GuardFiles(string directory)
             if (value is GuardRegistration r && (r.Generation == Guid.Empty || !Valid(r.App) ||
                 r.Upstream is { } upstream && (upstream.Length is 0 or > 200 || upstream.IndexOfAny(['/', '\\', ':']) >= 0 || upstream.StartsWith("--", StringComparison.Ordinal)))) return null;
             if (value is GuardLease lease && (lease.Generation == Guid.Empty || !Valid(lease.Host) || lease.Sequence <= 0)) return null;
+            if (value is GuardWakePlan plan && !plan.Valid()) return null;
+            if (value is GuardExpectedExit exit && (exit.Generation == Guid.Empty || !Valid(exit.Host) || exit.SkipUntilUtc is { Offset: var offset } && offset != TimeSpan.Zero)) return null;
             return value;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { return null; }
@@ -51,6 +53,14 @@ public sealed class GuardFiles(string directory)
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
     public bool Stopped(Guid generation) => Read<GuardStop>("stop.json")?.Generation == generation;
+    public string? StopReason(Guid generation) => Read<GuardStop>("stop.json") is { } s && s.Generation == generation ? s.Reason : null;
+    public void ResumeLogin(Guid generation)
+    {
+        // Only the separate logon-trigger action calls this, never a mutual restart.
+        if (StopReason(generation) == "WindowsSessionEnding")
+        { File.Delete(Path.Combine(directory, "stop.json")); SessionQuery(generation, false); }
+        else if (!Stopped(generation)) SessionQuery(generation, false);
+    }
     public bool SessionEnding(Guid generation) => Read<GuardSessionQuery>("session-query.json") is { Pending: true } query && query.Generation == generation;
     public void SessionQuery(Guid generation, bool pending) => Write("session-query.json", new GuardSessionQuery(generation, pending));
     public void Stop(Guid generation, string reason) => Write("stop.json", new GuardStop(generation, reason));
@@ -66,25 +76,30 @@ public sealed class GuardRecoveryPolicy
     private double _armedAt = double.NegativeInfinity, _due = double.PositiveInfinity;
     private GuardProcess? _host;
     private long _sequence = -1;
+    private double _limitedAt = double.PositiveInfinity;
+    private int _burst;
     public int Restarts { get; private set; }
-    public bool Limited => Restarts >= 3;
-    public void Observe(GuardLease lease, double seconds)
+    public bool Limited => _burst >= 3;
+    public bool Observe(GuardLease lease, double seconds)
     {
-        if (lease.Sequence <= 0 || lease.Host is null || lease.Host.Id <= 0 || lease.Host.StartedUtcTicks <= 0) return;
-        if (_host == lease.Host && lease.Sequence <= _sequence) return; // Old files never renew eligibility.
+        if (lease.Sequence <= 0 || lease.Host is null || lease.Host.Id <= 0 || lease.Host.StartedUtcTicks <= 0) return false;
+        if (_host == lease.Host && lease.Sequence <= _sequence) return false; // Old files never renew eligibility.
         _host = lease.Host; _sequence = lease.Sequence;
         _armedAt = lease.Armed ? seconds : double.NegativeInfinity;
         if (!lease.Armed) _due = double.PositiveInfinity;
+        return true;
     }
     public bool Armed(double seconds) => seconds >= _armedAt && seconds - _armedAt <= 30;
     public void Suspend() { _armedAt = double.NegativeInfinity; _due = double.PositiveInfinity; }
-    public bool MayRestart(bool processMissing, bool interactive, double seconds)
+    public bool MayRestart(bool processMissing, bool interactive, double seconds, bool scheduledWake = false)
     {
-        if (!processMissing || !interactive || !Armed(seconds) || Limited) { _due = double.PositiveInfinity; return false; }
-        if (double.IsPositiveInfinity(_due)) _due = seconds + new[] { 2d, 5d, 15d }[Restarts];
+        if (Limited && seconds - _limitedAt >= 300) { _burst = 0; _limitedAt = double.PositiveInfinity; }
+        if (!processMissing || !interactive || !(Armed(seconds) || scheduledWake) || Limited) { _due = double.PositiveInfinity; return false; }
+        if (double.IsPositiveInfinity(_due)) _due = seconds + new[] { 2d, 5d, 15d }[_burst];
+        if (_burst == 2 && seconds >= _due) _limitedAt = seconds;
         return seconds >= _due;
     }
-    public void Attempted() { Restarts++; _due = double.PositiveInfinity; }
+    public void Attempted() { Restarts++; _burst++; _due = double.PositiveInfinity; }
 }
 
 public interface IGuardProcesses
@@ -94,6 +109,7 @@ public interface IGuardProcesses
     GuardProcess Start(bool app);
 }
 
+[SupportedOSPlatform("windows")]
 public sealed class GuardProcesses(string appPath, string hostPath, string pipe, string? upstream) : IGuardProcesses
 {
     public bool IsAlive(GuardProcess identity)
@@ -120,13 +136,15 @@ public sealed class GuardProcesses(string appPath, string hostPath, string pipe,
     }
     public GuardProcess Start(bool app)
     {
-        string target = app ? appPath : hostPath;
-        var start = new ProcessStartInfo(target) { UseShellExecute = false, CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Path.GetDirectoryName(target)! };
-        start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipe);
-        if (upstream is not null) { start.ArgumentList.Add("--classisland-pipe"); start.ArgumentList.Add(upstream); }
-        if (app) start.ArgumentList.Add("--guard-recovery");
-        using var p = Process.Start(start) ?? throw new IOException("Guard child did not start.");
-        return new(p.Id, p.StartTime.ToUniversalTime().Ticks);
+        new GuardTasks(Path.GetDirectoryName(appPath)!, pipe, upstream).Run(app ? "App" : "Host");
+        var files = GuardFiles.ForPipe(pipe);
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            var identity = app ? files.Read<GuardRegistration>("registration.json")?.App : files.Read<GuardLease>("lease.json")?.Host;
+            if (identity is not null && Matches(identity, app)) return identity;
+            Thread.Sleep(50);
+        }
+        throw new IOException("独立启动已请求，但未收到新进程的身份确认。");
     }
 }

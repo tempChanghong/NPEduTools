@@ -12,7 +12,7 @@
 
 App 构建会复制所需的 Host、Guard、Admin 和 Recorder 目录，不要单独移动 App EXE。开发机录制组件准备与随包源码见 [FFmpeg 构建](FFMPEG-BUNDLED-BUILD.md)；发行包的内置组件要求见[第三方材料](THIRD-PARTY-MATERIALS.md)。
 
-调试受保护定时监测前，先使用托盘的正常停止后台与退出入口，并完成管理验证。只关闭窗口会继续工作，直接终止 App／Host 可能触发 Guard 恢复。[守护实施记录](iterations/SCHEDULED-NOISE-GUARD-20261004.md)说明保护范围。
+调试受保护定时监测前，先使用托盘的正常停止后台与退出入口，并完成管理验证。守护现在会继续待命，换目录或维护前还需按 [守护维护说明](GUARD-MAINTENANCE.md)撤销本实例的独立启动登记。只关闭窗口会继续工作，学校自习准备／监测时段直接终止 App／Host 可能触发恢复。当前范围见 [生命周期实施卡](iterations/STUDY-GUARD-LIFECYCLE-20261011.md)。
 
 ## 本地检查
 

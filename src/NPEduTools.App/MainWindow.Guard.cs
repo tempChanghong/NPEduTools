@@ -16,22 +16,35 @@ public partial class MainWindow
             var registration = existing ? files.Read<GuardRegistration>("registration.json") : null;
             if (existing && (registration is null || files.Stopped(registration.Generation)))
                 throw new IOException("旧守护正在停止，请稍后重新打开。");
-            if (existing && registration!.Upstream != _upstream) throw new IOException("现有守护的 ClassIsland 测试端点不同，请先退出原实例。");
+            if (existing && registration!.Upstream != _upstream) throw new IOException("现有守护的 ClassIsland 测试端点不同，请维护人员先撤销旧守护登记。");
             if (existing && !string.Equals(registration!.BundleDirectory, Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory), StringComparison.OrdinalIgnoreCase))
-                throw new IOException("现有守护来自另一应用目录，请先正常退出原实例后再使用当前版本。");
+                throw new IOException("现有守护来自另一应用目录，请维护人员按 GUARD-MAINTENANCE.md 停止旧守护并撤销登记后切换目录。");
             registration = registration is null ? new(Guid.NewGuid(), GuardProcess.Current(), _upstream, Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory))
                 : registration with { App = GuardProcess.Current() };
             files.Write("registration.json", registration);
-            if (!existing)
+            var tasks = new GuardTasks(AppContext.BaseDirectory, _pipe, _upstream);
+            tasks.Register();
+            if (!existing) tasks.Run("Guard");
+            _ = GuardWatchAsync(tasks, files, registration.Generation);
+        }
+        catch (Exception e) when (GuardTasks.StartupError(e))
+        { HomeMessage.Text = "定时监测守护未启动：" + e.Message; }
+    }
+    private async Task GuardWatchAsync(GuardTasks tasks, GuardFiles files, Guid generation)
+    {
+        try
+        {
+            while (!_lifetime.IsCancellationRequested)
             {
-                string executable = Path.Combine(AppContext.BaseDirectory, "Guard", "NPEduTools.Guard.exe");
-                var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Path.GetDirectoryName(executable)! };
-                start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(_pipe);
-                using var process = Process.Start(start);
+                await Task.Delay(5000, _lifetime.Token);
+                if (files.Stopped(generation) || files.Read<GuardRegistration>("registration.json")?.Generation != generation) return;
+                if (!files.SessionEnding(generation))
+                {
+                    try { if (!tasks.GuardRunning()) tasks.Run("Guard"); }
+                    catch (Exception e) when (GuardTasks.StartupError(e)) { HomeMessage.Text = "守护恢复请求失败：" + e.Message; }
+                }
             }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
-        { HomeMessage.Text = "定时监测守护未启动：" + e.Message; }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
     }
 }

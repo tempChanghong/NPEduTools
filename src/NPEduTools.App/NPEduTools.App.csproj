@@ -38,7 +38,7 @@
     <MSBuild Projects="../NPEduTools.Guard/NPEduTools.Guard.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);TargetFramework=net10.0-windows">
       <Output TaskParameter="TargetOutputs" ItemName="GuardTarget" />
     </MSBuild>
-    <ItemGroup><GuardBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardTarget.Identity)'))/**/*" /></ItemGroup>
+    <ItemGroup><GuardBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardTarget.Identity)'))/**/*" Exclude="$([System.IO.Path]::GetDirectoryName('%(GuardTarget.Identity)'))/NPEduTools.Guard.*" /></ItemGroup>
     <Copy SourceFiles="@(GuardBundle)" DestinationFiles="@(GuardBundle->'$(OutDir)Guard/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="CopyAdminBundle" AfterTargets="Build">

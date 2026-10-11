@@ -26,7 +26,7 @@
     </MSBuild>
     <ItemGroup>
       <GuardFixtureBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardFixtureTarget.Identity)'))/**/*" />
-      <GuardExecutableBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardExecutableTarget.Identity)'))/**/*" />
+      <GuardExecutableBundle Include="$([System.IO.Path]::GetDirectoryName('%(GuardExecutableTarget.Identity)'))/**/*" Exclude="$([System.IO.Path]::GetDirectoryName('%(GuardExecutableTarget.Identity)'))/NPEduTools.Guard.*" />
     </ItemGroup>
     <Copy SourceFiles="@(GuardFixtureBundle)" DestinationFiles="@(GuardFixtureBundle->'$(OutDir)GuardFixture/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(GuardExecutableBundle)" DestinationFiles="@(GuardExecutableBundle->'$(OutDir)GuardExecutable/%(RecursiveDir)%(Filename)%(Extension)')" />

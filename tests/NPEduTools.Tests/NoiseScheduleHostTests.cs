@@ -20,6 +20,8 @@ public sealed partial class NoiseScheduleHostTests
     private sealed class Clock : TimeProvider
     {
         public long Ms;
+        public DateTimeOffset? UtcBase;
+        public override DateTimeOffset GetUtcNow() => UtcBase?.AddMilliseconds(Ms) ?? base.GetUtcNow();
         public override long TimestampFrequency => 1000;
         public override long GetTimestamp() => Ms;
         // Scheduler tests drive time explicitly; NoiseService's separate watchdog is

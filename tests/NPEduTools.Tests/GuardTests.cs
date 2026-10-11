@@ -29,7 +29,7 @@ public sealed class GuardTests : IDisposable
         if (armed) Assert.False(_processes.Launches[0]);
     }
     [Theory]
-    [InlineData("Maintenance")] [InlineData("Upgrade")] [InlineData("WindowsSessionEnding")] [InlineData("HostNormalStop")]
+    [InlineData("Maintenance")] [InlineData("Upgrade")] [InlineData("WindowsSessionEnding")]
     public void Expected_stop_survives_process_death_and_guard_reload(string reason)
     {
         Lease(true); _supervisor.Tick(0, true); _files.Stop(_registration.Generation, reason);
@@ -128,6 +128,23 @@ public sealed class GuardTests : IDisposable
         _processes.Alive.Clear(); Assert.False(_supervisor.Tick(1, true)); Assert.Empty(_processes.Launches);
     }
     [Fact]
+    public void Shutdown_callback_during_scheduler_launch_cannot_be_overwritten_by_recovering_status()
+    {
+        Lease(true); _supervisor.Tick(0, true); _processes.Alive.Remove(new(20, 200));
+        _processes.DuringStart = () => _supervisor.Finish("WindowsSessionEnding");
+        _supervisor.Tick(1, true); Assert.False(_supervisor.Tick(3, true));
+        Assert.Equal("Stopped", Status.Phase);
+    }
+    [Fact]
+    public void Canceled_login_shutdown_marker_is_cleared_only_by_the_logon_entry_and_maintenance_is_retained()
+    {
+        _files.Stop(_registration.Generation, "WindowsSessionEnding"); _files.SessionQuery(_registration.Generation, true);
+        _files.ResumeLogin(_registration.Generation);
+        Assert.False(_files.Stopped(_registration.Generation)); Assert.False(_files.SessionEnding(_registration.Generation));
+        _files.Stop(_registration.Generation, "Maintenance"); _files.ResumeLogin(_registration.Generation);
+        Assert.True(_files.Stopped(_registration.Generation));
+    }
+    [Fact]
     public void App_session_query_pauses_launch_and_cancel_keeps_guard_available()
     {
         Lease(true); _supervisor.Tick(0, true);
@@ -147,7 +164,9 @@ public sealed class GuardTests : IDisposable
         armed = false;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         while (_files.Read<GuardLease>("lease.json")!.Armed) await Task.Delay(20, deadline.Token);
-        Assert.True(session.ExpectedStop()); Assert.True(_files.Stopped(_registration.Generation));
+        Assert.True(session.ExpectedStop()); Assert.False(_files.Stopped(_registration.Generation));
+        Assert.False(_files.Read<GuardLease>("lease.json")!.Armed);
+        Assert.NotNull(_files.Read<GuardExpectedExit>("expected-exit.json"));
     }
     [Fact]
     public void Malformed_and_oversized_records_are_not_trusted()
@@ -172,12 +191,13 @@ public sealed class GuardTests : IDisposable
         public HashSet<GuardProcess> Alive { get; } = [];
         public List<bool> Launches { get; } = [];
         public bool Fail { get; set; }
+        public Action? DuringStart { get; set; }
         public GuardProcess Last { get; private set; } = new(30, 300);
         public bool Matches(GuardProcess p, bool app) => Alive.Contains(p);
         public bool IsAlive(GuardProcess p) => Alive.Contains(p);
         public GuardProcess Start(bool app)
         {
-            Launches.Add(app); if (Fail) throw new IOException("Synthetic startup failure.");
+            Launches.Add(app); DuringStart?.Invoke(); if (Fail) throw new IOException("Synthetic startup failure.");
             Last = new(30 + Launches.Count, 300 + Launches.Count); Alive.Add(Last); return Last;
         }
     }

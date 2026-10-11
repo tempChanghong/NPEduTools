@@ -125,19 +125,7 @@ public partial class MainWindow : Window
         }
         string executable = Path.Combine(AppContext.BaseDirectory, "Host", "NPEduTools.Host.exe");
         if (!File.Exists(executable)) throw new FileNotFoundException("Host bundle is missing.");
-        var start = new ProcessStartInfo(executable)
-        {
-            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
-            WorkingDirectory = Path.GetDirectoryName(executable)!
-        };
-        start.ArgumentList.Add("--pipe");
-        start.ArgumentList.Add(_pipe);
-        if (_upstream is not null)
-        {
-            start.ArgumentList.Add("--classisland-pipe");
-            start.ArgumentList.Add(_upstream);
-        }
-        using var process = Process.Start(start);
+        new NPEduTools.Core.GuardTasks(AppContext.BaseDirectory, _pipe, _upstream).Run("Host");
     }
 
     private void CloseClicked(object sender, RoutedEventArgs e) => Close();
