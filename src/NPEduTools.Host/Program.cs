@@ -161,6 +161,7 @@ meterNoise = noise;
 var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
     ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
+var schoolManagement=new SchoolManagementService(noise,studyDevices,Path.Combine(dataDirectory,"npep"));
 await using var noiseSchedules = new NoiseScheduleService(noise, schoolClock.Snapshot,
     () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
     Path.Combine(dataDirectory, "npep"), bindReports: noiseTransport.Bind, statisticsReady: () => noiseTransport.Available);
@@ -218,7 +219,7 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
     () => new(Protocol.Version, Guid.Empty, "Succeeded", null, "已有本地缓存", SchoolClock: schoolClock.PeekSnapshot(),
         Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
-    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings);
+    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement);
 var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync, npep.PublishSeatingAsync);
 try
 {

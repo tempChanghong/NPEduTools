@@ -63,7 +63,7 @@ public sealed partial class NpepDevice : IDisposable
     public async Task<JsonObject> ClaimScreenPairingAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string userCode, CancellationToken token = default)
         => await BeginCoreAsync(origin, confirmedInfo, deviceName, appVersion, userCode, token);
 
-    private async Task<JsonObject> BeginCoreAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string? userCode, CancellationToken token)
+    private async Task<JsonObject> BeginCoreAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string? userCode, CancellationToken token, string? classBinding = null, string? managementSecret = null)
     {
         await _gate.WaitAsync(token);
         try
@@ -83,9 +83,15 @@ public sealed partial class NpepDevice : IDisposable
             request["pairingSecret"] = secret;
             request["requestedCapabilities"] = new JsonArray("device.status");
             if (userCode is not null) request["userCode"] = userCode;
-            NpepProtocol.Validate(userCode is null ? "createPairing" : "claimScreenPairing", request);
+            if(classBinding is not null)request["screenBindingId"]=classBinding;
+            if(managementSecret is not null)
+            {
+                if(new Uri(api.Origin).Scheme!="https" && !new Uri(api.Origin).IsLoopback)throw new NpepException("HTTPS_REQUIRED");
+                request["secret"]=managementSecret;
+            }
+            NpepProtocol.Validate(classBinding is not null ? managementSecret is null ? "applyClassPairing" : "passwordClassPairing" : userCode is null ? "createPairing" : "claimScreenPairing", request);
             Save(new() { ["stage"] = "CREATING", ["origin"] = api.Origin, ["info"] = actual.Copy(),
-                ["create"] = request, ["pairingSecret"] = secret, ["source"] = userCode is null ? "ADMIN" : "SCREEN" });
+                ["create"] = request, ["pairingSecret"] = secret, ["requestedBindingId"]=classBinding,["source"] = classBinding is not null ? managementSecret is null ? "CLASS_APPLY" : "CLASS_PASSWORD" : userCode is null ? "ADMIN" : "SCREEN" });
             return await ResumeCreateCoreAsync(token);
         }
         finally { _gate.Release(); }
@@ -100,9 +106,11 @@ public sealed partial class NpepDevice : IDisposable
     {
         if (Required().Text("stage") != "CREATING") throw new NpepException("PAIRING_STATE_CONFLICT");
         using var api = Api();
-        bool screen = Required()["source"]?.GetValue<string>() == "SCREEN";
-        var pairing = await api.SendAsync(screen ? "pairings/claim" : "pairings", "createdPairingResponse", (JsonObject)Required()["create"]!, screen ? "claimScreenPairing" : "createPairing", token: token);
-        var next = Required().Copy(); next["pairing"] = pairing; next["stage"] = "PENDING"; Save(next);
+        string source=Required()["source"]?.GetValue<string>()??"ADMIN";
+        string path=source switch{"SCREEN"=>"pairings/claim","CLASS_APPLY"=>"pairings/apply","CLASS_PASSWORD"=>"pairings/password",_=>"pairings"};
+        string definition=source switch{"SCREEN"=>"claimScreenPairing","CLASS_APPLY"=>"applyClassPairing","CLASS_PASSWORD"=>"passwordClassPairing",_=>"createPairing"};
+        var pairing = await api.SendAsync(path,"createdPairingResponse",(JsonObject)Required()["create"]!,definition,token:token);
+        var next = Required().Copy(); next["pairing"] = pairing; next["stage"] = "PENDING"; next["create"]!.AsObject().Remove("secret"); Save(next);
         return View();
     }
     public async Task<JsonObject> PollApprovalAsync(CancellationToken token = default)

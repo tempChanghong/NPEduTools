@@ -20,17 +20,18 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private CancellationTokenSource? _network;
     private JsonObject? _verified;
     private string? _verifiedOrigin;
+    private JsonObject? _catalogue;
     private long _attemptAt, _receivedAt;
     private double _delay;
     private int _failures;
     private bool _blocked, _disposed;
     private NpepCommand? _tlsRetryCommand;
 
-    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null)
-        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study) { }
-    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null)
+    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null)
+        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study, schoolManagement) { }
+    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null)
     {
-        _sample = sample; _appVersion = appVersion;
+        _sample = sample; _appVersion = appVersion; _schoolManagement = schoolManagement;
         try
         {
             _device = factory();
@@ -65,7 +66,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             var result = _state;
             if (result.Connection == "ONLINE" && Stopwatch.GetElapsedTime(_receivedAt) >= TimeSpan.FromSeconds(60))
                 result = result with { Connection = "OFFLINE", Message = "最近 60 秒未收到新的上报回执；显示的是上次观测。" };
-            return result with { Server = result.Server?.Copy(), Pairing = result.Pairing?.Copy(), Approval = result.Approval?.Copy() };
+            return result with { Server = result.Server?.Copy(), Pairing = result.Pairing?.Copy(), Approval = result.Approval?.Copy(),Catalogue=_catalogue?.Copy() };
         }
     }
 
@@ -123,10 +124,17 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         {
             case "inspect":
                 if (_device!.View().Text("state") != "UNPAIRED") throw new NpepException("PAIRING_ALREADY_EXISTS");
-                _verified = null; _verifiedOrigin = null;
+                _verified = null; _verifiedOrigin = null; _catalogue=null;
                 var info = await _device.InspectServerAsync(c.Origin!, token);
                 _verified = info; _verifiedOrigin = NpepApi.ValidateOrigin(c.Origin!);
+                try{_catalogue=await _device.ClassCatalogueAsync(c.Origin!,token);}catch(NpepException e)when(e.Status is 404 or 426){_catalogue=null;}
                 Publish("VERIFIED", "服务可连接。请核对服务地址与实例标识，再输入网页配对码或创建配对申请。"); break;
+            case "apply-class":
+            case "password-class":
+                if(_verified is null || NpepApi.ValidateOrigin(c.Origin!)!=_verifiedOrigin || c.ServerInstanceId!=_verified.Text("serverInstanceId") || c.DeploymentEpoch!=_verified.Text("deploymentEpoch"))throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
+                await _device!.BeginClassAsync(c.Origin!,_verified,c.DeviceName!,_appVersion,c.ScreenBindingId!,c.ManagementSecret,token);
+                await _device.PollApprovalAsync(token);await _device.ConfirmRequestedClassAsync(token);
+                Publish("WAITING",c.Action=="apply-class"?"已申请指定班级；等待学校管理员批准并设置口令。":"已核对预授权口令，正在连接。");break;
             case "pair":
             case "claim":
                 if (_verified is null || NpepApi.ValidateOrigin(c.Origin!) != _verifiedOrigin ||
@@ -143,7 +151,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                     Publish("WAITING", "请学校管理员在 NPClassworks 中输入配对码，选择对应班级的大屏。");
                 }
                 break;
-            case "poll": await _device!.PollApprovalAsync(token); Publish("WAITING", "审批信息已更新，请核对后在本机确认。"); break;
+            case "poll": await _device!.PollApprovalAsync(token); await _device.ConfirmRequestedClassAsync(token); Publish("WAITING", "审批信息已更新，请核对后在本机确认。"); break;
             case "confirm": await _device!.ConfirmAsync(c.ApprovalId!, token); Publish("CONNECTING", "配对完成，正在发送首次状态。"); break;
             case "recover": await _device!.RecoverConfirmationAsync(token); Publish("CONNECTING", "已恢复原配对，正在连接。"); break;
             case "resume-create": await _device!.ResumeCreateAsync(token); Publish("WAITING", "已恢复原配对申请。"); break;
@@ -151,6 +159,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             case "resume": await _device!.SetReportingPausedAsync(false, token); Publish("CONNECTING", "正在恢复通知接收与状态上报。"); break;
             case "unpair":
                 string outcome = await _device!.UnpairAsync(token);
+                _schoolManagement?.BindSchool(null);
                 _verified = null; _verifiedOrigin = null; _receivedAt = 0;
                 Publish("DISABLED", outcome == "LOCAL_ONLY" ? "本机已解绑，但无法确认远端撤销。请学校管理员检查并撤销该设备。" : "已解除绑定并停止上报。", outcome == "LOCAL_ONLY" ? "LOCAL_ONLY" : null); break;
         }
@@ -185,9 +194,12 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 {
                     attempted = true;
                     await _device.PollApprovalAsync(_network.Token);
+                    await _device.ConfirmRequestedClassAsync(_network.Token);
                     Publish("WAITING", _device.View().Text("state") == "APPROVED" ? "学校已授权。请核对学校、班级和大屏，再点击确认连接。" : view["pairingSource"]?.GetValue<string>() == "SCREEN" ? "正在读取学校预授权…" : "等待学校管理员批准…");
                     _delay = 5; _failures = 0;
                 }
+                else if(stage=="APPROVED" && view["pairingSource"]?.GetValue<string>() is "CLASS_APPLY" or "CLASS_PASSWORD")
+                {attempted=true;await _device.ConfirmRequestedClassAsync(_network.Token);Publish("CONNECTING","指定班级授权已确认，正在连接。");_delay=0;}
                 else if (stage == "ACTIVE" && view["reportingPaused"]?.GetValue<bool>() != true)
                 {
                     attempted = true;

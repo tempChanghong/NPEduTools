@@ -25,7 +25,11 @@ public sealed partial class NpepRuntime
                     try
                     {
                         if (Snapshot() is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
+                        {
+                            try { await SchoolManagementCycleAsync(_lifetime.Token); }
+                            catch(Exception e) when(Handled(e) || e is InvalidDataException) { /* Keep the durable school credential on transport loss. */ }
                             await StudyCycleAsync(study, _lifetime.Token);
+                        }
                         else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } or { Busy: true }) study.BindStudy(null);
                         else study.StudyFailed("STUDY_OFFLINE");
                     }

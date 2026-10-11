@@ -62,7 +62,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
 
     public NoiseProtectionState Protection()
     {
-        lock (_sync) return new(ScheduledLive, management?.Configured == true, _instance, _session?.Id, management?.Error);
+        lock (_sync) return new(ScheduledLive, management?.Configured == true, _instance, _session?.Id, management?.Error,
+            ManagementSource: management?.Source ?? "Local", CredentialRevision: management?.SchoolRevision ?? 0);
     }
     internal (NoiseState Noise, NoiseProtectionState Protection) ManagementSnapshot()
     { lock (_sync) return (Snapshot(), Protection()); }
@@ -82,6 +83,11 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
 
     public HostResponse ManagementHandle(HostRequest r)
     {
+        if(r.NoiseManagement is {Action:"unlock"} unlock && Protocol.Validate(r) is null)
+        {
+            string? error=EquipmentUnlock?.Invoke(unlock.Secret!) ?? "SCHOOL_MANAGEMENT_UNAVAILABLE";
+            lock(_sync) return ManagementReply(r,error=="UNLOCKED"?null:error);
+        }
         lock (_sync)
         {
             if (Protocol.Validate(r) is { } invalid) return ManagementReply(r, invalid);
@@ -236,6 +242,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             }
             if (_cleanupFailed)
                 return Reply(request, "Rejected", "NoiseCleanupRequired", "上次麦克风未能确认释放，请重启后台后再试。");
+            if(EquipmentLocked && (cmd.Action == "select" || cmd.Action == "start" && cmd.DeviceId != _selected))
+                return Reply(request,"Rejected","EQUIPMENT_LOCKED","学校已锁定采集设备，请先通过学校管理口令解锁。");
             if (_session is { Work.IsCompleted: false })
                 return Reply(request, "Rejected", "NoiseBusy", "已有监测或麦克风尚未释放，请先停止并等待完成。");
             try { Select(cmd.DeviceId!); }

@@ -87,7 +87,7 @@ public sealed partial class RuntimeTests
     {
         using var dir = new TestDirectory(); var entered = new TaskCompletionSource(); var release = new TaskCompletionSource(); var server = new FakeServer();
         await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new NpepApi(origin, new Handler(async request =>
-        { entered.SetResult(); await release.Task; return await server.Send(request); }))), "test", Sample);
+        { entered.TrySetResult(); await release.Task; return await server.Send(request); }))), "test", Sample);
         var request = new HostRequest(1, Guid.NewGuid(), "npep.command", Npep: new("inspect", runtime.Snapshot().Revision, "https://npep.test"));
         try
         {
@@ -100,7 +100,7 @@ public sealed partial class RuntimeTests
         }
         finally { release.SetResult(); }
         await Until(() => !runtime.Snapshot().Busy);
-        Assert.Single(server.Requests);
+        Assert.Equal(new[]{"info","admission/catalog"},server.Requests.Select(r=>r.Path));
     }
     [Fact]
     public async Task RevokedDeviceStopsBackgroundReportingWithoutReclaimingSession()

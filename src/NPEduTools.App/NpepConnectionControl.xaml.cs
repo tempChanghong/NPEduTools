@@ -53,6 +53,13 @@ public partial class NpepConnectionControl : UserControl
     private async void InspectClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.InspectAsync(); }
     private async void PairClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.PairAsync(); }
     private async void ClaimClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.ClaimAsync(); }
+    private async void ApplyClassClicked(object sender,RoutedEventArgs e)
+    {if(_session is {} session && !await session.ConnectClassAsync(RequestedClass.SelectedValue as string,null))LocalMessage.Text="请选择申请连接的班级并核对学校服务。";}
+    private async void PasswordClassClicked(object sender,RoutedEventArgs e)
+    {
+        string secret=ClassManagementSecret.Password;ClassManagementSecret.Clear();
+        if(_session is {} session && !await session.ConnectClassAsync(RequestedClass.SelectedValue as string,secret))LocalMessage.Text="请选择预授权班级，输入8至128位管理口令并核对学校服务。";
+    }
     private async void ConfirmClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.ConfirmAsync(); }
     private async void RecoverClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RecoverAsync(); }
     private async void PauseClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.PauseOrResumeAsync(); }

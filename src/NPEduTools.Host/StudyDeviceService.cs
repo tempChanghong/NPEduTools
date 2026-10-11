@@ -16,6 +16,23 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
     private string? _error;
     private bool _loaded;
     private bool _configurationError;
+    internal bool EquipmentLocked {get;set;}
+    private bool _schoolSelection;
+    internal string? SelectSchoolCamera(string? id)
+    {
+        lock(_sync)
+        {
+            if(id==_selected)return null;
+            _schoolSelection=true;
+            try
+            {
+                var state=Snapshot();
+                var reply=Handle(new(1,Guid.NewGuid(),"study.devices.select",StudyCamera:new(id is null?"clear":"select",state.InstanceId,state.Revision,id)));
+                return reply.Outcome=="Succeeded"?null:reply.ErrorCode is "StudyDevicesBusy"?"EQUIPMENT_PENDING":"EQUIPMENT_UNAVAILABLE";
+            }
+            finally{_schoolSelection=false;}
+        }
+    }
     private void RefreshCatalog()
     {
         int bytes = 0;
@@ -48,7 +65,7 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
             var device = _devices.FirstOrDefault(d => d.Id == _selected);
             return new(_instance, _revision, _selected, device?.Name,
                 _selected is null || !_enumerated || _error is not null ? null : device is not null, _devices,
-                _configurationError ? "CameraConfigurationUnavailable" : _error);
+                _configurationError ? "CameraConfigurationUnavailable" : _error,EquipmentLocked);
         }
     }
     public HostResponse Handle(HostRequest request)
@@ -71,6 +88,7 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
                 { _devices = []; _enumerated = false; _error = "CameraDevicesUnavailable"; return Reply(_error, "摄像头列表暂不可用；原选择保留。"); }
             }
             if (request.Capability != "study.devices.select" || request.StudyCamera is not { } c) return Reply("UnknownCapability");
+            if(EquipmentLocked && !_schoolSelection)return Reply("EQUIPMENT_LOCKED","学校已锁定采集设备，请先通过学校管理口令解锁。");
             if (c.InstanceId != _instance || c.Revision != _revision) return Reply("CameraStateChanged", "设备设置已变化，请刷新后再保存。");
             if (_configurationError) return Reply("CameraConfigurationUnavailable", "摄像头配置文件无法读取，原文件已保留；请检查配置目录。");
             if (captureBusy?.Invoke() == true) return Reply("StudyDevicesBusy", "正在监测，设备选择未更改；请在结束后设置。");

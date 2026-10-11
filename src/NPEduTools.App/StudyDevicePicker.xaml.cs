@@ -82,9 +82,11 @@ public partial class StudyDevicePicker : UserControl
     {
         if (DeviceRefresh is null) return;
         DeviceRefresh.IsEnabled = !_busy;
-        StudyMicrophone.IsEnabled = StudyCamera.IsEnabled = !_busy && _connected && Idle;
-        SaveMicrophone.IsEnabled = !_busy && _connected && Idle && StudyMicrophone.SelectedValue is string mic && _microphones.Any(d => d.Id == mic);
-        SaveCamera.IsEnabled = !_busy && _connected && Idle && _camera is not null && _camera.Error is null &&
+        bool locked=_camera?.Locked==true;
+        EquipmentLockPanel.Visibility=locked?Visibility.Visible:Visibility.Collapsed;
+        StudyMicrophone.IsEnabled = StudyCamera.IsEnabled = !_busy && _connected && Idle && !locked;
+        SaveMicrophone.IsEnabled = !_busy && _connected && Idle && !locked && StudyMicrophone.SelectedValue is string mic && _microphones.Any(d => d.Id == mic);
+        SaveCamera.IsEnabled = !_busy && _connected && Idle && !locked && _camera is not null && _camera.Error is null &&
             StudyCamera.SelectedValue is string cam && (cam.Length == 0 || _camera.Cameras.Any(d => d.Id == cam));
     }
     public async Task<bool> CheckReadyAsync()
@@ -148,4 +150,20 @@ public partial class StudyDevicePicker : UserControl
     }).ToArray();
     private void ChoiceChanged(object sender, SelectionChangedEventArgs e) { if (!_rendering) UpdateButtons(); }
     private async void RefreshClicked(object sender, RoutedEventArgs e) => await RefreshAsync();
+    private async void UnlockClicked(object sender,RoutedEventArgs e)
+    {
+        if(_pipe is null||_busy)return;
+        string secret=EquipmentSecret.Password;EquipmentSecret.Clear();
+        if(!NoiseManagementContract.SecretValid(secret)){DeviceMessage.Text="请输入8至128位学校管理口令。";return;}
+        var token=Begin();long generation=_generation;
+        try
+        {
+            var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"noise.management.command",NoiseManagement:new("unlock",Secret:secret)),token);
+            if(generation!=_generation)return;
+            DeviceMessage.Text=reply.Outcome=="Succeeded"?"设备已解锁，学校再次锁定前可在监测结束后更换。":reply.Message;
+        }
+        catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){DeviceMessage.Text="解锁结果未确认，请刷新检查。";}
+        finally{if(generation==_generation){_busy=false;UpdateButtons();}}
+        if(generation==_generation)await RefreshAsync();
+    }
 }

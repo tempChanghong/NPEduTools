@@ -52,13 +52,14 @@ internal sealed class FakeServer
         var body = request.Content is null ? null : JsonNode.Parse(await request.Content.ReadAsStringAsync()) as JsonObject;
         Requests.Add((path, body?.Copy()));
         // This fixture models an unchanged N1 server. N2 must degrade without breaking status reporting.
-        if (path is "device/notifications" or "device/notification-receipts")
+        if (path is "device/notifications" or "device/notification-receipts" or "admission/catalog")
             return new(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
         Assert.Equal("0.1", request.Headers.GetValues("X-NPEP-Version").Single());
         if (body is not null) Assert.Equal(body.Text("requestId"), request.Headers.GetValues("X-Request-Id").Single());
         if (path == "info") return Fixtures.Reply(request, Info.Copy());
-        if (path is "pairings" or "pairings/claim")
+        if (path is "pairings" or "pairings/claim" or "pairings/apply" or "pairings/password")
         {
+            if(path is "pairings/apply" or "pairings/password")NpepProtocol.Validate(path=="pairings/apply"?"applyClassPairing":"passwordClassPairing",body!);
             if (path == "pairings/claim") NpepProtocol.Validate("claimScreenPairing", body!);
             if (Create is not null) Assert.True(NpepProtocol.Equal(Create, body));
             Create = body;
