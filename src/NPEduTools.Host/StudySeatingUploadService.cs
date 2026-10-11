@@ -62,9 +62,9 @@ public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> 
             }
             return new(1, request.RequestId, "Succeeded", null, result.State == "Saved" ? "自习座位表已保存到服务器。" : "已读取本班当前版本。", SeatingUpload: result);
         }
-        catch (Exception e) when (e is NpepException or IOException or UnauthorizedAccessException or InvalidDataException or FormatException)
+        catch (Exception e) when (e is NpepException or HttpRequestException or IOException or UnauthorizedAccessException or InvalidDataException or FormatException)
         {
-            return new(1, request.RequestId, "Rejected", e is NpepException n ? n.Code : publicationAttempted ? "UPLOAD_PENDING" : "INVALID_IMAGE", "未确认上传成功，请保留草稿并核对当前版本。");
+            return new(1, request.RequestId, "Rejected", e is NpepException n ? n.Code : publicationAttempted ? "UPLOAD_PENDING" : e is HttpRequestException ? "UPLOAD_UNAVAILABLE" : "INVALID_IMAGE", "未确认上传成功，请保留草稿并核对当前版本。");
         }
         finally { _gate.Release(); }
     }

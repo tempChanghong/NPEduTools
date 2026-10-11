@@ -7,6 +7,36 @@ using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Tests;
 public sealed class StudySeatingUploadTests
 {
+    private sealed class NoSchoolRead : ILessonStatusReader
+    { public Task<StatusResult> ReadAsync(StatusQuery query, CancellationToken token) => throw new InvalidOperationException("No real school or device reads"); }
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Network_failure_during_status_or_upload_must_not_stop_the_Host_pipe(bool uploading)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        string pipe="NPEduTools.Test.seating-network."+Guid.NewGuid().ToString("N");
+        Guid id=Guid.NewGuid(); byte[] bytes=Image();
+        var service=new StudySeatingUploadService(pipe,Policy,
+            (_,_)=>uploading?Task.FromResult(new NpepSeatingUploadScope(new(),Scope())):Task.FromException<NpepSeatingUploadScope>(new HttpRequestException("Synthetic connection reset; no external server")),
+            (_,_,_,_,_)=>Task.FromException<JsonObject>(new HttpRequestException("Synthetic connection reset after send; no external server")));
+        using var lifetime=new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var running=new PipeServer(pipe,new NoSchoolRead(),_=>{},seatingUploads:service).RunAsync(lifetime.Token);
+        try {
+            var request=new HostRequest(1,Guid.NewGuid(),"study.seating.upload.status");
+            if (uploading) {
+                var status=await HostClient.RequestAsync(pipe,request,lifetime.Token);
+                StudySeatingTransfer.Write(pipe,id,bytes); request=Command(status.SeatingUpload!,id,bytes);
+            }
+            var response=await HostClient.RequestAsync(pipe,request,lifetime.Token);
+            Assert.Equal("Rejected",response.Outcome);
+            Assert.Equal(uploading?"UPLOAD_PENDING":"UPLOAD_UNAVAILABLE",response.ErrorCode);
+            Assert.Equal("Succeeded",(await HostClient.RequestAsync(pipe,"host.ping",lifetime.Token)).Outcome);
+            Assert.False(running.IsCompleted);
+        } finally {
+            lifetime.Cancel(); StudySeatingTransfer.Delete(pipe,id);
+            try { await running; } catch(OperationCanceledException) { }
+        }
+    }
     private static readonly string Version=new('a',64);
     private sealed class Clock:TimeProvider {public long Ms;public override long TimestampFrequency=>1000;public override long GetTimestamp()=>Ms;}
     private static StudyHostState Policy()=>new(Version,"APPLIED","","","Outside","",false,null,null,null,
