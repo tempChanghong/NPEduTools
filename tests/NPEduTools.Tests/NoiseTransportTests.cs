@@ -7,6 +7,37 @@ using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Tests;
 public sealed class NoiseTransportTests
 {
+    [Theory]
+    [InlineData(-3600)]
+    [InlineData(3600)]
+    [InlineData(0)]
+    public void ReportUsesMonotonicDurationAndSeparatesObservedWallClock(double jumpSeconds)
+    {
+        var started = DateTimeOffset.UtcNow.AddSeconds(jumpSeconds - 60);
+        var s = new NoiseState(Guid.NewGuid(), 1, "Stopped", "synthetic clock", "mic", "fake", started, null,
+            "Good", new(60, 60, 1, -30, -20, 0, 600), [], SessionId: Guid.NewGuid());
+        var report = NoiseTransport.Report(s, "Stopped");
+        NpepNoiseProtocol.Validate("report", report);
+        Assert.Equal(60, (DateTimeOffset.Parse(report["endedAt"]!.GetValue<string>()) - DateTimeOffset.Parse(report["startedAt"]!.GetValue<string>())).TotalSeconds, 3);
+        Assert.Equal(jumpSeconds != 0, report["timing"]!["clockDiscontinuity"]!.GetValue<bool>());
+        Assert.Equal("Monotonic", report["timing"]!["source"]!.GetValue<string>());
+    }
+    [Fact]
+    public void RawSummaryProtocolRejectsImpossibleStatisticsButAllowsDigitalSilenceAndSampleOverrun()
+    {
+        var s = new NoiseState(Guid.NewGuid(), 1, "Stopped", "synthetic", "mic", "fake", DateTimeOffset.UtcNow, null,
+            "Good", new(60, 30, .5, -30, -20, 0, 300), [], SessionId: Guid.NewGuid());
+        var valid = NoiseTransport.Report(s, "Stopped");
+        foreach (var patch in new (string Key, JsonNode? Value)[] { ("sampledSeconds", JsonValue.Create(0)), ("frames", JsonValue.Create(0)),
+            ("coverage", JsonValue.Create(1)), ("peakDbfs", JsonValue.Create(-80)), ("energyMeanDbfs", null), ("clippedPercent", JsonValue.Create(90)) })
+        {
+            var bad = (JsonObject)valid.DeepClone(); bad["summary"]![patch.Key] = patch.Value;
+            Assert.Throws<NpepException>(() => NpepNoiseProtocol.Validate("report", bad));
+        }
+        foreach (var summary in new NoiseSummary[] { new(60, 30, .5, null, null, 0, 300), new(60, 60.01, 1, -30, -20, 0, 300),
+            new(60, 0, 0, null, null, 0, 0), new(60, 30, .5, -30, 0, 90, 300) })
+            NpepNoiseProtocol.Validate("report", NoiseTransport.Report(s with { Summary = summary }, "Stopped"));
+    }
     private sealed class Capture : INoiseCapture
     {
         public string DeviceName => "Synthetic mic";

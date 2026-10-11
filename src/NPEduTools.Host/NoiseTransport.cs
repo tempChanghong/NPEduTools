@@ -114,11 +114,16 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
     }
     private static string? Short(string? value) => value is null ? null : new string(value.Where(c => !char.IsControl(c)).Take(200).ToArray());
     private static string Stamp(DateTimeOffset value) => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-    private static JsonObject Report(NoiseState s, string outcome)
+    internal static JsonObject Report(NoiseState s, string outcome)
     {
+        var started = s.StartedAt!.Value;
+        var ended = started.AddSeconds(s.Summary!.ElapsedSeconds);
+        var observed = DateTimeOffset.UtcNow;
         var report = new JsonObject {
-        ["sessionId"] = s.SessionId?.ToString("D"), ["startedAt"] = Stamp(s.StartedAt!.Value),
-        ["endedAt"] = Stamp(DateTimeOffset.UtcNow < s.StartedAt ? s.StartedAt.Value : DateTimeOffset.UtcNow),
+        ["sessionId"] = s.SessionId?.ToString("D"), ["startedAt"] = Stamp(started),
+        ["endedAt"] = Stamp(ended),
+        ["timing"] = new JsonObject { ["source"] = "Monotonic", ["observedEndedAt"] = Stamp(observed),
+            ["clockDiscontinuity"] = Math.Abs((observed - ended).TotalSeconds) > 2 },
         ["deviceName"] = Short(s.DeviceName), ["algorithm"] = s.Algorithm, ["summary"] = JsonSerializer.SerializeToNode(s.Summary, Json), ["outcome"] = outcome
         };
         if (s.Estimate is { } estimate) report["estimate"] = JsonSerializer.SerializeToNode(estimate with
@@ -132,8 +137,10 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         if (!reports.Any(r => r!["sessionId"]!.GetValue<string>() == report["sessionId"]!.GetValue<string>())) reports.Add(report);
         while (reports.Count > 200) reports.RemoveAt(0);
         for (int i = reports.Count - 1; i >= 0; i--)
-            if (DateTimeOffset.UtcNow - DateTimeOffset.Parse(reports[i]!["endedAt"]!.GetValue<string>()) > TimeSpan.FromDays(14)) reports.RemoveAt(i);
+            if (DateTimeOffset.UtcNow - RetentionEnd(reports[i]!) > TimeSpan.FromDays(14)) reports.RemoveAt(i);
     }
+    private static DateTimeOffset RetentionEnd(JsonNode report) => DateTimeOffset.Parse(
+        (report["timing"]?["observedEndedAt"] ?? report["endedAt"])!.GetValue<string>());
     private void Complete(NoiseState s)
     {
         lock (_sync)
@@ -151,7 +158,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
             if (_error is not null) return new();
             var reports = (JsonArray)_store["reports"]!; bool changed = false;
             for (int i = reports.Count - 1; i >= 0; i--)
-                if (DateTimeOffset.UtcNow - DateTimeOffset.Parse(reports[i]!["endedAt"]!.GetValue<string>()) > TimeSpan.FromDays(14)) { reports.RemoveAt(i); changed = true; }
+                if (DateTimeOffset.UtcNow - RetentionEnd(reports[i]!) > TimeSpan.FromDays(14)) { reports.RemoveAt(i); changed = true; }
             if (changed) Save();
             return new(reports.Take(4).Select(r => r!.DeepClone()).ToArray());
         }
