@@ -12,6 +12,7 @@ public sealed partial class StudyWindow : Window
     private readonly bool _manual;
     private readonly StudySurface _surface;
     private StudyHostState? _state;
+    private StudySeatingUploadWindow? _seatingUpload;
     private bool _shutdown;
     private Guid? _hideRequest;
     private readonly Guid _appInstance = Guid.NewGuid();
@@ -47,24 +48,34 @@ public sealed partial class StudyWindow : Window
         Left = Top = 0; Width = SystemParameters.PrimaryScreenWidth; Height = SystemParameters.PrimaryScreenHeight;
         ShowInTaskbar = false; Topmost = true; Title = manual?"NPEduTools · 手动自习":"NPEduTools · 学校自习";
         _surface = new(HideAsync, () => { HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
-        if (!manual) _surface.SeatingUploadRequested += () => new StudySeatingUploadWindow(_pipe) { Owner=this, Topmost=true }.ShowDialog();
+        if (!manual) _surface.SeatingUploadRequested += OpenSeatingUpload;
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; _surface.ReturnError("请长按“临时使用电脑”收起展示。"); } };
     }
     public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default, StudyPhotoState? photos = null)
     {
         if (_state?.Display?.InstanceId != state.Display?.InstanceId || _state?.Window != state.Window || _state?.Version != state.Version)
-        { _hideRequest = null; _surface.ReturnError(null); }
+        { DismissSeatingUpload(); _hideRequest = null; _surface.ReturnError(null); }
+        if (!state.ClockReady || state.PolicyState != "APPLIED" || state.Phase is not ("Preparing" or "Active")) DismissSeatingUpload();
         _state = state; _surface.Apply(state, noise, transportAge);
         _surface.ApplyPhotos(photos);
         UpdateHomework(state); if(!_manual)UpdateSeating(state);
     }
-    public void HideDisplay() { Hide(); _surface.Suspend(); _homeworkRead?.Cancel(); _seatingRead?.Cancel(); }
+    private void OpenSeatingUpload()
+    {
+        if (_shutdown || _manual || !IsVisible) return;
+        if (_seatingUpload is { } existing) { existing.Activate(); return; }
+        var dialog=new StudySeatingUploadWindow(_pipe) { Owner=this, Topmost=true }; _seatingUpload=dialog;
+        try { dialog.ShowDialog(); }
+        finally { if (ReferenceEquals(_seatingUpload,dialog)) _seatingUpload=null; dialog.Dismiss(); }
+    }
+    private void DismissSeatingUpload() { var dialog=_seatingUpload; _seatingUpload=null; dialog?.Dismiss(); }
+    public void HideDisplay() { DismissSeatingUpload(); Hide(); _surface.Suspend(); _homeworkRead?.Cancel(); _seatingRead?.Cancel(); }
     public void ShowDisplay()
     {
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (!IsVisible) Show();
     }
-    public void Shutdown() { _shutdown = true; _homeworkRead?.Cancel(); _seatingRead?.Cancel(); _seatingKey = null; _surface.ClearSeating(); _surface.Stop(); Close(); }
+    public void Shutdown() { _shutdown = true; DismissSeatingUpload(); _homeworkRead?.Cancel(); _seatingRead?.Cancel(); _seatingKey = null; _surface.ClearSeating(); _surface.Stop(); Close(); }
     private void UpdateHomework(StudyHostState state)
     {
         if (state.Homework is not { State: "READY", SnapshotId: { } id, Chunks: > 0 and <= 128 } homework)

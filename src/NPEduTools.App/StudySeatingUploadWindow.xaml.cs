@@ -13,13 +13,18 @@ public partial class StudySeatingUploadWindow : Window
     private StudySeatingUploadState? _scope;
     private StudySeatingDraft? _draft;
     private StudySeatingUploadCommand? _command;
-    private bool _busy, _uncertain, _closed;
+    private bool _busy, _uncertain, _closed, _dismissed;
     public StudySeatingUploadWindow(string pipe)
     {
         _pipe=pipe; InitializeComponent();
         Loaded += async (_,_) => await RefreshAsync();
-        Closing += (_,e) => { if (_busy) e.Cancel=true; };
+        Closing += (_,e) => { if (_busy && !_dismissed) e.Cancel=true; };
         Closed += (_,_) => { _closed=true; _lifetime.Cancel(); RemoveTransfer(); Preview.Source=null; _draft=null; _lifetime.Dispose(); };
+    }
+    public void Dismiss()
+    {
+        if (_closed) return;
+        _dismissed=true; _lifetime.Cancel(); Close();
     }
     private void RemoveTransfer()
     { if (_command is {} command) StudySeatingTransfer.Delete(_pipe,command.UploadId); _command=null; }
