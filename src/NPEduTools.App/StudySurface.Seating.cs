@@ -3,6 +3,7 @@ using System.Windows.Media.Imaging;
 namespace NPEduTools.App;
 public partial class StudySurface
 {
+    public event Action? SeatingUploadRequested;
     private BitmapSource? _seatingImage, _pendingSeating;
     private string? _seatingScope, _seatingHash, _pendingSeatingHash;
     private int _seatingRevision, _pendingSeatingRevision;
@@ -17,24 +18,31 @@ public partial class StudySurface
         _seatingImage = _pendingSeating = null; _seatingHash = _pendingSeatingHash = _seatingScope = null; _seatingRevision = _pendingSeatingRevision = 0;
         SeatingImage.Source = null; SeatingOverlay.Visibility = Visibility.Collapsed; SeatingButton.IsEnabled = false;
         SeatingStatus.Text = "自习座位表暂不可用"; SeatingUpdate.Text = "";
+        RenderSeating();
     }
     public void ApplySeating(string hash, int revision, BitmapSource image)
     {
         if (HasSeating(hash, revision)) return;
         if (SeatingOverlay.Visibility == Visibility.Visible && _seatingImage is not null) {
             _pendingSeating = image; _pendingSeatingHash = hash; _pendingSeatingRevision = revision;
-            SeatingUpdate.Text = "新自习座位表已就绪 · 关闭后切换";
-        } else { _seatingImage = image; _seatingHash = hash; _seatingRevision = revision; }
+            SeatingUpdate.Text = "新图就绪 · 关闭后切换";
+        } else {
+            _seatingImage = image; _seatingHash = hash; _seatingRevision = revision;
+            if (SeatingOverlay.Visibility == Visibility.Visible) SeatingImage.Source = image;
+        }
         RenderSeating(); // Never opens the overlay, including initial download and replacement.
     }
     private void RenderSeating()
     {
-        SeatingButton.IsEnabled = !_paused && _timeline.Fresh && _seatingImage is not null && StageNotice.Visibility != Visibility.Visible;
+        bool allowed = !_paused && _timeline.Fresh && _timeline.State is { Manual: null, PolicyState: "APPLIED", Phase: "Preparing" or "Active" } && StageNotice.Visibility != Visibility.Visible;
+        SeatingButton.IsEnabled = UploadSeating.IsEnabled = allowed;
+        SeatingZoom.IsEnabled = allowed && _seatingImage is not null;
+        SeatingEmpty.Visibility = _seatingImage is null ? Visibility.Visible : Visibility.Collapsed;
         SeatingStatus.Text = _seatingImage is null ? "自习座位表暂不可用" : _pendingSeating is not null ? "新图就绪 · 关闭后切换" : $"自习座位表 · 版本 {_seatingRevision}";
     }
     private void OpenSeatingClicked(object sender, RoutedEventArgs e)
     {
-        if (!SeatingButton.IsEnabled || _seatingImage is null) return;
+        if (!SeatingButton.IsEnabled) return;
         SeatingImage.Source = _seatingImage; _seatingZoom = false; SeatingImage.Width = 1840; SeatingImage.Height = 900;
         SeatingZoom.Content = "放大"; SeatingScroll.ScrollToHome(); SeatingOverlay.Visibility = Visibility.Visible;
     }
@@ -46,6 +54,7 @@ public partial class StudySurface
         RenderSeating();
     }
     private void CloseSeatingClicked(object sender, RoutedEventArgs e) => CloseSeatingView();
+    private void UploadSeatingClicked(object sender, RoutedEventArgs e) { if (UploadSeating.IsEnabled) SeatingUploadRequested?.Invoke(); }
     private void ZoomSeatingClicked(object sender, RoutedEventArgs e)
     {
         _seatingZoom = !_seatingZoom; SeatingImage.Width = _seatingZoom ? 3680 : 1840; SeatingImage.Height = _seatingZoom ? 1800 : 900;

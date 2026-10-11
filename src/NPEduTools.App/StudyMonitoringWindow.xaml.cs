@@ -48,6 +48,7 @@ public partial class StudyMonitoringWindow : Window
     }
     private async void RefreshClicked(object sender, RoutedEventArgs e) => await ReadAsync();
     private void NoiseClicked(object sender, RoutedEventArgs e) => _noise();
+    private void SeatingClicked(object sender, RoutedEventArgs e) => new StudySeatingUploadWindow(_pipe) { Owner = this }.ShowDialog();
     private void CalibrationClicked(object sender, RoutedEventArgs e) => new NoiseCalibrationWindow(_pipe) { Owner = this }.ShowDialog();
     private void ReferenceClicked(object sender, RoutedEventArgs e) => new NoiseReferenceWindow(_pipe) { Owner = this }.ShowDialog();
     private void MeterClicked(object sender, RoutedEventArgs e) => new SoundMeterWindow(_pipe) { Owner = this }.ShowDialog();

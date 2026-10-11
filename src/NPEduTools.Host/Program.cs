@@ -219,10 +219,11 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
         Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
     new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings);
+var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync, npep.PublishSeatingAsync);
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads).RunAsync(shutdown.Token);
     // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
     if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
     await serving;

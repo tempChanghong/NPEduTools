@@ -16,6 +16,19 @@ internal static class SeatingHttpAcceptance
         using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(30));using var api=new NpepApi(uri.GetLeftPart(UriPartial.Authority));
         var context=fixture["context"]!.DeepClone().AsObject();var version=fixture["version"]!.GetValue<string>();string bearer=fixture["bearer"]!.GetValue<string>();
         JsonObject ManifestBody()=>new(){["requestId"]=Guid.NewGuid().ToString(),["context"]=context.DeepClone(),["version"]=version,["observation"]=null,["downloaded"]=null};
+        var uploadChecks=new List<string>();
+        if(fixture["uploadImage"] is {} uploadImage) {
+            var png=await File.ReadAllBytesAsync(uploadImage.GetValue<string>(),deadline.Token);
+            if(png.Length>2097152)throw new InvalidDataException();
+            var statusBody=new JsonObject{["requestId"]=Guid.NewGuid().ToString(),["context"]=context.DeepClone(),["version"]=version};
+            var status=await api.SeatingWriteAsync(bearer,statusBody,false,deadline.Token);
+            var body=new JsonObject{["requestId"]=Guid.NewGuid().ToString(),["context"]=context.DeepClone(),["version"]=version,
+                ["expectedRevision"]=status["revision"]!.DeepClone(),["image"]=Convert.ToBase64String(png)};
+            var saved=await api.SeatingWriteAsync(bearer,body,true,deadline.Token);
+            var replay=await api.SeatingWriteAsync(bearer,body,true,deadline.Token);
+            if(!JsonNode.DeepEquals(saved,replay)||saved["hash"]!.GetValue<string>()!=Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(png)))throw new InvalidDataException();
+            uploadChecks.Add("Actual native-normalized PNG -> native HTTP adapter -> Express image parser and bound-class publication -> idempotent replay");
+        }
         var manifest=await api.SeatingAsync(bearer,ManifestBody(),false,deadline.Token);var asset=manifest["asset"]!.AsObject();
         using var buffer=new MemoryStream();int count=asset["chunks"]!.GetValue<int>();string hash=asset["hash"]!.GetValue<string>();int revision=manifest["revision"]!.GetValue<int>();
         for(int i=0;i<count;i++) {
@@ -44,6 +57,7 @@ internal static class SeatingHttpAcceptance
             var old=await HostClient.RequestAsync(pipe,new HostRequest(1,Guid.NewGuid(),"study.status"),deadline.Token);
             var modern=await HostClient.RequestAsync(pipe,new HostRequest(1,Guid.NewGuid(),"study.status.seating"),deadline.Token);
             if(old.Study?.Seating is not null||modern.Study?.Seating?.Hash!=hash)throw new InvalidDataException("Old/new local protocol isolation failed");
+            checks.AddRange(uploadChecks);
             checks.Add("Actual loopback Express 0.14 -> native HTTP adapter -> Host image cache/read handlers -> private Named Pipe fixture; legacy metadata omitted");
             using var decoded=new MemoryStream();for(int i=0;i<count;i++) {
                 var response=await HostClient.RequestAsync(pipe,new HostRequest(1,Guid.NewGuid(),"study.seating",StudySeating:new(version,revision,hash,i)),deadline.Token);

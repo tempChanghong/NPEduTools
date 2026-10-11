@@ -98,13 +98,15 @@
        <TextBlock Text="{Binding Text, ElementName=Clock}" FontSize="44" FontFamily="{Binding FontFamily, ElementName=Clock}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
         <TextBlock x:Name="SeatingUpdate" FontSize="20" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,30,0"/>
+        <Button x:Name="UploadSeating" Content="上传／更换" Width="150" Height="64" Style="{StaticResource Tool}" Click="UploadSeatingClicked" Margin="0,0,20,0"/>
         <Button x:Name="SeatingZoom" Content="放大" Width="110" Height="64" Style="{StaticResource Tool}" Click="ZoomSeatingClicked" Margin="0,0,20,0"/>
         <Button x:Name="CloseSeating" Content="关闭自习座位表" Width="190" Height="64" Style="{StaticResource Tool}" Click="CloseSeatingClicked"/>
        </StackPanel>
       </Grid>
-      <ScrollViewer Grid.Row="1" x:Name="SeatingScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-       <Image x:Name="SeatingImage" Stretch="Uniform" Width="1840" Height="900"/>
-      </ScrollViewer>
+      <Grid Grid.Row="1">
+       <ScrollViewer x:Name="SeatingScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"><Image x:Name="SeatingImage" Stretch="Uniform" Width="1840" Height="900"/></ScrollViewer>
+       <TextBlock x:Name="SeatingEmpty" Text="暂无可查看的自习座位表 · 可上传到本机绑定班级" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="32" Foreground="{StaticResource Muted}" Visibility="Collapsed"/>
+      </Grid>
      </Grid>
     </Border>
     <Grid x:Name="NoiseEdge" Canvas.Left="0" Canvas.Top="0" Width="1920" Height="1080" Visibility="Collapsed" IsHitTestVisible="False">

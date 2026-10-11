@@ -47,6 +47,7 @@ public sealed partial class StudyWindow : Window
         Left = Top = 0; Width = SystemParameters.PrimaryScreenWidth; Height = SystemParameters.PrimaryScreenHeight;
         ShowInTaskbar = false; Topmost = true; Title = manual?"NPEduTools · 手动自习":"NPEduTools · 学校自习";
         _surface = new(HideAsync, () => { HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
+        if (!manual) _surface.SeatingUploadRequested += () => new StudySeatingUploadWindow(_pipe) { Owner=this, Topmost=true }.ShowDialog();
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; _surface.ReturnError("请长按“临时使用电脑”收起展示。"); } };
     }
     public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default, StudyPhotoState? photos = null)

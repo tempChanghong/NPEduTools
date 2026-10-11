@@ -10,6 +10,7 @@
    <TextBlock x:Name="StudyPresentation" Foreground="#61786B" TextWrapping="Wrap"/>
    <TextBlock Text="默认时段为北京时间 19:00–21:30；实际班级、日期、星期和例外日以学校后台配置为准。全屏页按有效安排自动进入；长按收起最多三分钟，收起不停止定时采集。" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,14,0,0"/>
    <Button Content="查看当前采样、统计与管理保护" Click="NoiseClicked" HorizontalAlignment="Left" Padding="14,8" Margin="0,14,0,0"/>
+   <Button Content="上传／更换本班自习座位表" Click="SeatingClicked" HorizontalAlignment="Left" Padding="14,8" Margin="0,12,0,0"/>
   </StackPanel></Border>
   <Border Background="White" CornerRadius="16" Padding="24"><StackPanel>
    <local:StudyDevicePicker x:Name="Devices"/>

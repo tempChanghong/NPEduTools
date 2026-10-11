@@ -47,7 +47,7 @@ internal static partial class Program
             Assert(overlay.Visibility==Visibility.Collapsed,"homework timer opened seat image");
             button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));surface.Suspend();Assert(overlay.Visibility==Visibility.Collapsed,"temporary hide retained an open seat view");
             surface.Apply(state,null);Assert(overlay.Visibility==Visibility.Collapsed,"return reopened seat image");
-            surface.ClearSeating();Assert(surface.SeatingHash is null && !button.IsEnabled,"withdraw did not clear rendered image");
+            surface.ClearSeating();Assert(surface.SeatingHash is null && button.IsEnabled && overlay.Visibility==Visibility.Collapsed && ((Image)surface.FindName("SeatingImage")).Source is null,"withdraw did not clear rendered image or retain explicit upload entry");
             surface.Stop();Checks.Add("Seating WPF: button-only open, old image held until close, no rotation/return auto-open, withdrawal clears");window.Close();
         }); } finally {surface.Stop();window.Close();}
     }

@@ -16,7 +16,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
     Func<bool>? prepareStop = null, StudySettingsService? study = null, StudyDisplayService? studyDisplay = null, StudyDeviceService? studyDevices = null,
-    SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null, ManualStudyService? manualStudy=null, StudyRecoveryService? studyRecovery=null)
+    SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null, ManualStudyService? manualStudy=null, StudyRecoveryService? studyRecovery=null, StudySeatingUploadService? seatingUploads=null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -78,6 +78,13 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 }
                 else if (request.Capability.StartsWith("study.devices.", StringComparison.Ordinal))
                     response = studyDevices?.Handle(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "请更新后台以设置自习设备。");
+                else if (request.Capability is "study.seating.upload.status" or "study.seating.upload")
+                {
+                    using var seatingDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    seatingDeadline.CancelAfter(request.TimeoutMs);
+                    response = seatingUploads is null ? new(1, request.RequestId, "Rejected", "SEATING_UPLOAD_UNSUPPORTED", "请更新后台以上传自习座位表。")
+                        : await seatingUploads.HandleAsync(request, seatingDeadline.Token);
+                }
                 else if (request.Capability == "study.seating")
                     response = study?.ReadSeating(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "座位表读取尚未接入。");
                 else if (request.Capability == "study.seating.presentation")

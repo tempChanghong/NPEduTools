@@ -31,7 +31,7 @@ public sealed partial class NpepApi
         NpepStudyProtocol.Validate("resumeExchangeRequest", body);
         return StudyAsync("device/study-settings/resume-exchange", "resumeExchangeResponse", bearer, body, token, "0.11");
     }
-    private async Task<JsonObject> StudyAsync(string path, string definition, string bearer, JsonObject? body, CancellationToken token, string version = "0.10", int deadlineSeconds = 8)
+    private async Task<JsonObject> StudyAsync(string path, string definition, string bearer, JsonObject? body, CancellationToken token, string version = "0.10", int deadlineSeconds = 8, int requestLimit = 65536)
     {
         string requestId = body?.Text("requestId") ?? NpepProtocol.Id();
         using var request = new HttpRequestMessage(body is null ? HttpMethod.Get : HttpMethod.Post, path);
@@ -40,7 +40,7 @@ public sealed partial class NpepApi
         if (body is not null)
         {
             var bytes = System.Text.Encoding.UTF8.GetBytes(body.ToJsonString());
-            if (bytes.Length > 65536) throw new NpepException("PAYLOAD_TOO_LARGE");
+            if (bytes.Length > requestLimit) throw new NpepException("PAYLOAD_TOO_LARGE");
             request.Content = new ByteArrayContent(bytes); request.Content.Headers.ContentType = new("application/json");
         }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(deadlineSeconds));
