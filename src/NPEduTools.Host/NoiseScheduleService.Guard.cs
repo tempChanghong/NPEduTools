@@ -19,7 +19,7 @@ public sealed partial class NoiseScheduleService
             if (reading.CanStart && reading.Now is { Year: >= 2000 and <= 9998 } observed)
             {
                 var w = ScheduleWindows(observed);
-                var current = w.Current ?? (w.Next?.Start.AddMinutes(-2) <= observed ? w.Next : null);
+                var current = w.Current ?? (w.Next?.Start.AddSeconds(-StudyPresentationTiming.ScheduledDisplayLeadSeconds) <= observed ? w.Next : null);
                 if (current is not null) suppress = utc + (current.End - observed);
             }
             bool paused = _exam();
@@ -34,11 +34,11 @@ public sealed partial class NoiseScheduleService
                     var window = windows.Current ?? windows.Next;
                     if (window is null || window.End - schoolNow > TimeSpan.FromDays(399)) break;
                     var start = utc + (window.Start - schoolNow); var end = utc + (window.End - schoolNow);
-                    if (window.Start.AddMinutes(-2) <= schoolNow && schoolNow < window.End) suppress = end;
+                    if (window.Start.AddSeconds(-StudyPresentationTiming.ScheduledDisplayLeadSeconds) <= schoolNow && schoolNow < window.End) suppress = end;
                     bool skipped;
                     lock (_journalLock) skipped = _journal.Blocks.Any(b => b.Mode == _mode && b.Kind == "Skipped" && SchoolNoiseSchedule.Overlaps(b.Window, window));
                     // A current exam blocks current/preparing wake, but future slots remain launch hints.
-                    if (!skipped && (!paused || window.Start.AddMinutes(-2) > schoolNow)) hints.Add(new(start, end));
+                    if (!skipped && (!paused || window.Start.AddSeconds(-StudyPresentationTiming.ScheduledDisplayLeadSeconds) > schoolNow)) hints.Add(new(start, end));
                     cursor = window.End;
                 }
             }

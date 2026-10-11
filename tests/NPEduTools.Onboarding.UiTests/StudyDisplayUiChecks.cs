@@ -78,7 +78,7 @@ internal static partial class Program
                 Snapshot(window, "study-preparing.png");
                 for (int second = 1; second <= 119; second++)
                 { clock.Ms += 1000; surface.Apply(state with { SchoolNow = state.Window!.Start.AddSeconds(second - 120) }, noise); }
-                Assert(Element<Border>("StageNotice").Visibility == Visibility.Visible && audio.Requests == 1, "preparation faded or repeated sound");
+                Assert(Element<Border>("StageNotice").Visibility == Visibility.Collapsed && audio.Requests == 1, "expired preparation remained or repeated sound");
                 clock.Ms += 1000; state = state with { Phase = "Active", SchoolNow = state.Window!.Start }; surface.Apply(state, noise);
                 Assert(Element<TextBlock>("NoticeTitle").Text == "自习开始" && ((SolidColorBrush)Element<Border>("StageNotice").Background).Color.R == 255, "start did not replace preparation with red");
                 PumpUntil(() => Element<StackPanel>("NoticeCopy").Opacity == 1, "start intro did not settle"); Snapshot(window, "study-start.png");
@@ -121,7 +121,7 @@ internal static partial class Program
                 System.IO.File.WriteAllText(System.IO.Path.Combine(_output, "memory-fixture.json"), System.Text.Json.JsonSerializer.Serialize(new
                 { workingSetBytes = memory.WorkingSet64, privateBytes = memory.PrivateMemorySize64, managedHeapBytes = GC.GetTotalMemory(false),
                     kind = "isolated-wpf-test-process-after-screenshots", fullApp = false, browserRuntime = false, realDevices = false }));
-                Checks.Add("Study WPF: full preparation, red start 5s, green end 5s, reference font/audio muted, real progress, three modes, session/freshness fences, long hold and cancel; no real Host/devices");
+                Checks.Add("Study WPF: preparation ten seconds, red start 5s, green end 5s, reference font/audio muted, real progress, three modes, session/freshness fences, long hold and cancel; no real Host/devices");
                 window.Close();
             });
         }

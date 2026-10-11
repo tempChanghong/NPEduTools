@@ -48,7 +48,7 @@ public sealed class StudyModeTests
             { Schedule = new("Asia/Shanghai", "", null, [], []) }, service.Snapshot().SchoolNow!.Value).Current);
     }
     [Theory]
-    [InlineData("Preparing", -30)] [InlineData("Active", 1)] [InlineData("Ended", 1)]
+    [InlineData("Preparing", -119)] [InlineData("Active", 1)] [InlineData("Ended", 1)]
     public void Projection_mutes_stage_once_and_never_replays_after_projection(string phase, int seconds)
     {
         var window = new SchoolNoiseWindow(DateTimeOffset.Parse("2026-10-12T19:00:00Z"), DateTimeOffset.Parse("2026-10-12T21:30:00Z"));

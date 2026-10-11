@@ -422,6 +422,14 @@
             </DockPanel></Border>
             </StackPanel>
             <StackPanel x:Name="TeachingSettingsPanel" Visibility="Collapsed">
+            <Border Style="{StaticResource Surface}"><StackPanel>
+              <TextBlock Text="手动自习展示" FontSize="16" FontWeight="SemiBold" />
+              <TextBlock Text="有开始时间时提前打开展示；麦克风和阈值拍照仍到点开始。无需管理口令，不改变学校定时安排。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,12" />
+              <StackPanel Orientation="Horizontal"><TextBlock Text="提前分钟" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <TextBox x:Name="ManualDisplayLead" Text="2" Width="96" VerticalContentAlignment="Center" AutomationProperties.AutomationId="ManualDisplayLead" />
+                <Button x:Name="SaveManualDisplayLeadButton" Content="保存" Click="SaveManualDisplayLead" Margin="12,0,0,0" AutomationProperties.AutomationId="SaveManualDisplayLead" /></StackPanel>
+              <TextBlock x:Name="ManualDisplayLeadMessage" Text="默认 2 分钟 · 已有预约不会被设置变化打断" FontSize="12" Foreground="#147D68" TextWrapping="Wrap" Margin="0,12,0,0" />
+            </StackPanel></Border>
             <Border Style="{StaticResource Surface}">
               <StackPanel>
                 <TextBlock Text="PowerPoint 触摸翻页" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />

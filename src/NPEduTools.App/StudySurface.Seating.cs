@@ -7,7 +7,8 @@ public partial class StudySurface
     private BitmapSource? _seatingImage, _pendingSeating;
     private string? _seatingScope, _seatingHash, _pendingSeatingHash;
     private int _seatingRevision, _pendingSeatingRevision;
-    private bool _seatingZoom;
+    private bool _seatingZoom, _seatingAutomatic;
+    private readonly NPEduTools.Core.StudySeatingAutoDisplay _autoSeating = new();
     public string? SeatingHash => _seatingHash;
     public int SeatingRevision => _seatingRevision;
     public bool SeatingVisible => SeatingOverlay.Visibility == Visibility.Visible && StageNotice.Visibility != Visibility.Visible && FreshRenderAgeMs is not null;
@@ -30,7 +31,7 @@ public partial class StudySurface
             _seatingImage = image; _seatingHash = hash; _seatingRevision = revision;
             if (SeatingOverlay.Visibility == Visibility.Visible) SeatingImage.Source = image;
         }
-        RenderSeating(); // Never opens the overlay, including initial download and replacement.
+        RenderAutomaticSeating(); RenderSeating(); // A downloaded image opens only inside the initial scheduled seat window.
     }
     private void RenderSeating()
     {
@@ -43,17 +44,32 @@ public partial class StudySurface
     private void OpenSeatingClicked(object sender, RoutedEventArgs e)
     {
         if (!SeatingButton.IsEnabled) return;
+        _autoSeating.ManualChoice(); _seatingAutomatic = false;
+        ShowSeatingView();
+    }
+    private void ShowSeatingView()
+    {
         SeatingImage.Source = _seatingImage; _seatingZoom = false; SeatingImage.Width = 1840; SeatingImage.Height = 900;
         SeatingZoom.Content = "放大"; SeatingScroll.ScrollToHome(); SeatingOverlay.Visibility = Visibility.Visible;
     }
+    private void RenderAutomaticSeating()
+    {
+        if (_timeline.State is not { } state) return;
+        bool wanted = !_paused && _timeline.Fresh && _autoSeating.WantsImage(state);
+        if (_seatingAutomatic && !wanted) { _seatingAutomatic = false; CloseSeatingView(); }
+        else if (wanted && _seatingImage is not null && SeatingOverlay.Visibility != Visibility.Visible) {
+            _seatingAutomatic = true; ShowSeatingView();
+        }
+    }
     private void CloseSeatingView()
     {
+        _seatingAutomatic = false;
         SeatingOverlay.Visibility = Visibility.Collapsed; SeatingImage.Source = null;
         if (_pendingSeating is { } next) { _seatingImage = next; _seatingHash = _pendingSeatingHash; _seatingRevision = _pendingSeatingRevision; }
         _pendingSeating = null; _pendingSeatingHash = null; _pendingSeatingRevision = 0; SeatingUpdate.Text = "";
         RenderSeating();
     }
-    private void CloseSeatingClicked(object sender, RoutedEventArgs e) => CloseSeatingView();
+    private void CloseSeatingClicked(object sender, RoutedEventArgs e) { _autoSeating.ManualChoice(); CloseSeatingView(); }
     private void UploadSeatingClicked(object sender, RoutedEventArgs e) { if (UploadSeating.IsEnabled) SeatingUploadRequested?.Invoke(); }
     private void ZoomSeatingClicked(object sender, RoutedEventArgs e)
     {

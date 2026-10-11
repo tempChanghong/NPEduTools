@@ -52,10 +52,10 @@ public sealed class GuardWakeTests : IDisposable
     [Fact]
     public void Preparation_boundary_wakes_app_and_host_independently_and_end_is_exclusive()
     {
-        var start = _clock.Utc.AddMinutes(5); var end = start.AddHours(1);
+        var start = _clock.Utc.AddMinutes(6); var end = start.AddHours(1);
         Publish(Plan(new GuardWakeWindow(start, end))); _guard.Tick(0, true); Assert.Empty(_processes.Starts);
-        _clock.Utc = start.AddMinutes(-2).AddTicks(-1); _guard.Tick(1, true); Assert.Empty(_processes.Starts);
-        _clock.Utc = start.AddMinutes(-2); _guard.Tick(2, true); _guard.Tick(4, true);
+        _clock.Utc = start.AddMinutes(-5).AddTicks(-1); _guard.Tick(1, true); Assert.Empty(_processes.Starts);
+        _clock.Utc = start.AddMinutes(-5); _guard.Tick(2, true); _guard.Tick(4, true);
         Assert.Equal(new[] { true }, _processes.Starts);
         _guard.Tick(5, true); _guard.Tick(10, true); Assert.Equal(new[] { true, false }, _processes.Starts);
         _processes.Alive.Clear(); _clock.Utc = end; _guard.Tick(11, true); _guard.Tick(40, true);

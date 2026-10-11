@@ -41,8 +41,9 @@ public sealed class StudySettingsTests
         public bool Exam, Frozen;
         private readonly Guid _connection = Guid.NewGuid(), _bridge = Guid.NewGuid();
         private long _sequence;
-        public Fixture()
+        public Fixture(DateTimeOffset? start = null)
         {
+            if (start is { } initial) Base = initial;
             Service = new(() => new(_connection,_bridge,++_sequence,0,Base.AddMilliseconds(Frozen?0:Time.Ms),0,"Advancing","synthetic school time"),()=>Exam,Time,false);
             Service.BindStudy(Config["identity"]!.ToJsonString()); Service.ApplyStudy(Config);
         }
@@ -59,6 +60,14 @@ public sealed class StudySettingsTests
         Assert.Equal("NOT_INTEGRATED",active.CaptureState);Assert.Equal("NOT_INTEGRATED",active.PresentationState);
         for(int i=0;i<18000;i++)f.Tick();
         Assert.Equal("Outside",f.Service.Snapshot().Phase);Assert.Null(f.Service.Snapshot().Window);
+    }
+    [Fact]
+    public async Task Display_eligibility_begins_five_minutes_early_with_no_capture_claim()
+    {
+        await using var f = new Fixture(new(2026,10,12,18,54,58,TimeSpan.Zero));
+        f.Tick();f.Tick();f.Tick();Assert.Equal("Outside",f.Service.Snapshot().Phase);
+        f.Tick();var state=f.Service.Snapshot();Assert.Equal("Preparing",state.Phase);
+        Assert.Equal("NOT_INTEGRATED",state.CaptureState);Assert.Null(state.Execution);
     }
     [Fact]
     public async Task Clock_freeze_expiry_pause_and_scope_change_never_use_Windows_time()

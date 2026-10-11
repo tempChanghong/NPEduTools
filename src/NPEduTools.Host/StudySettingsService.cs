@@ -118,7 +118,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
             try
             {
                 var windows = SchoolStudySchedule.Windows(_settings!.ForMode(_mode), now);
-                bool prepare = windows.Current is null && windows.Next is { } next && now >= next.Start.AddSeconds(-120);
+                bool prepare = windows.Current is null && windows.Next is { } next && now >= next.Start.AddSeconds(-StudyPresentationTiming.ScheduledDisplayLeadSeconds);
                 _state = _state with { Phase = windows.Current is not null ? "Active" : prepare ? "Preparing" : "Outside",
                     Reason = windows.Current is not null ? "WINDOW_ACTIVE" : prepare ? "PREPARING" : "OUTSIDE_WINDOW",
                     Window = windows.Current ?? (prepare ? windows.Next : null), Next = windows.Next };

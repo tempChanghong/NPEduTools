@@ -96,7 +96,7 @@ public static class NpepStudyProtocol
                 var now = DateTime.ParseExact(status.Text("schoolNow"), "yyyy-MM-dd'T'HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
                 var start = DateTime.ParseExact(w.Text("start"), "yyyy-MM-dd'T'HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
                 var end = DateTime.ParseExact(w.Text("end"), "yyyy-MM-dd'T'HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
-                if (status.Text("phase") == "Active" ? now < start || now >= end : now >= start || (start - now).TotalSeconds > 120)
+                if (status.Text("phase") == "Active" ? now < start || now >= end : now >= start || (start - now).TotalSeconds > StudyPresentationTiming.ScheduledDisplayLeadSeconds)
                     throw new NpepException("INVALID_RESPONSE");
             }
         }

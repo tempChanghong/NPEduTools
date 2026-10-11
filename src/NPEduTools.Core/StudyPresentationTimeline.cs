@@ -15,8 +15,7 @@ public sealed class StudyPresentationTimeline(TimeProvider? time = null)
     public StudyHostState? State => _state;
     public bool Fresh => _state is { PolicyState: "APPLIED", ClockReady: true, SchoolNow: not null } &&
         _received is { } at && _time.GetElapsedTime(at) < TimeSpan.FromSeconds(1.5);
-    public string? Notice => Fresh && (_notice == "Preparing" && _state?.Phase == "Preparing" ||
-        _noticeUntil is { } until && _time.GetTimestamp() < until) ? _notice : null;
+    public string? Notice => Fresh && (_noticeUntil is { } until && _time.GetTimestamp() < until) ? _notice : null;
     public double Progress => Fresh && _state?.Window is { } w && _state.SchoolNow is { } now
         ? Math.Clamp((now - w.Start).TotalSeconds / (w.End - w.Start).TotalSeconds, 0, 1) : 0;
     public void Apply(StudyHostState state, TimeSpan transportAge = default)
@@ -32,24 +31,20 @@ public sealed class StudyPresentationTimeline(TimeProvider? time = null)
         if (_notice != state.Phase && !(_notice == "Discipline" && state.Phase == "Active" &&
             state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true })) ClearNotice();
         string key = $"{window.Start:O}|{window.End:O}|{state.Phase}";
+        double duration = StudyPresentationTiming.NoticeRemaining(state) - transportAge.TotalSeconds;
+        if (duration <= 0) { if (_notice == state.Phase) ClearNotice(); return; }
         if (!_seen.Add(key))
         {
-            // Restore the persistent preparation visual after a priority window or brief disconnect,
-            // while retaining the once-per-window audio fence.
-            if (state.Phase == "Preparing") _notice = "Preparing";
+            // Reopen only the unexpired preparation visual, never repeat its audio.
+            if (state.Phase == "Preparing" && _notice is null) {
+                _notice = "Preparing";
+                _noticeUntil = _time.GetTimestamp() + (long)(duration * _time.TimestampFrequency);
+            }
             return;
         }
         _order.Enqueue(key); if (_order.Count > 128) _seen.Remove(_order.Dequeue());
-        double duration = state.Phase switch
-        {
-            "Preparing" => (window.Start - state.SchoolNow!.Value).TotalSeconds,
-            "Active" => 5 - (state.SchoolNow!.Value - window.Start).TotalSeconds - transportAge.TotalSeconds,
-            _ => 5 - (state.SchoolNow!.Value - window.End).TotalSeconds - transportAge.TotalSeconds
-        };
-        // A refreshed App halfway through a study session does not announce a new start.
-        if (duration <= 0) return;
         _notice = _cue = state.Phase;
-        _noticeUntil = state.Phase == "Preparing" ? null : _time.GetTimestamp() + (long)(Math.Min(5, duration) * _time.TimestampFrequency);
+        _noticeUntil = _time.GetTimestamp() + (long)(duration * _time.TimestampFrequency);
     }
     public string? TakeCue() { var cue = _cue; _cue = null; return cue; }
     public bool BeginDiscipline()

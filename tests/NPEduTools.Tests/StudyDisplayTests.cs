@@ -136,7 +136,7 @@ public sealed class StudyDisplayTests
         Assert.InRange(service.Handle(Hide(service.Snapshot())).Study!.Display!.HiddenRemainingSeconds, 1, 180);
     }
     [Fact]
-    public void Preparation_remains_until_exact_start_then_start_and_end_have_five_second_windows()
+    public void Preparation_is_ten_seconds_then_start_and_end_have_five_second_windows()
     {
         var clock = new Clock(); var timeline = new StudyPresentationTimeline(clock);
         var state = State("Preparing", -120) with { Display = new(Guid.NewGuid(), true, true, 0) };
@@ -144,7 +144,7 @@ public sealed class StudyDisplayTests
         for (int second = 1; second <= 119; second++)
         {
             clock.Ms = second * 1000; timeline.Apply(state with { SchoolNow = Window.Start.AddSeconds(second - 120) });
-            Assert.Equal("Preparing", timeline.Notice); Assert.Null(timeline.TakeCue());
+            Assert.Equal(second < 10 ? "Preparing" : null, timeline.Notice); Assert.Null(timeline.TakeCue());
         }
         clock.Ms = 120000; state = state with { Phase = "Active", SchoolNow = Window.Start }; timeline.Apply(state);
         Assert.Equal("Active", timeline.Notice); Assert.Equal("Active", timeline.TakeCue());
@@ -177,7 +177,7 @@ public sealed class StudyDisplayTests
     {
         var clock = new Clock(); var timeline = new StudyPresentationTimeline(clock); var state = State("Preparing", -120);
         timeline.Apply(state); Assert.Equal("Preparing", timeline.TakeCue()); timeline.Suspend();
-        clock.Ms = 10000; timeline.Apply(state with { SchoolNow = Window.Start.AddSeconds(-110) });
+        clock.Ms = 5000; timeline.Apply(state with { SchoolNow = Window.Start.AddSeconds(-115) });
         Assert.Equal("Preparing", timeline.Notice); Assert.Null(timeline.TakeCue());
     }
     [Fact]

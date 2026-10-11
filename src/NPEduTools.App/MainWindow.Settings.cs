@@ -20,6 +20,7 @@ public partial class MainWindow
         ConnectionsSettingsTab.Tag = category == "Connections" ? "active" : null;
         NpepSettingsTab.Tag = category == "Npep" ? "active" : null;
         SettingsScroll.ScrollToTop();
+        if (category == "Teaching") ReadManualStudyPreferences();
         if (category == "Connections") _ = RefreshAdminAsync();
         if (category == "Npep") _ = RefreshNpepAsync();
     }

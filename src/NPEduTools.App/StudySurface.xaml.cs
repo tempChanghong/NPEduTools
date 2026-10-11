@@ -93,7 +93,8 @@ public partial class StudySurface : UserControl
         HoldHint.Text=manual?state.Manual!.HideSeconds is {} seconds?$"长按 2 秒 · {seconds/60.0:g} 分钟后返回":"长按 2 秒 · 不自动返回":"长按 2 秒 · 最多 3 分钟";
         Clock.Text = state.SchoolNow?.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "--:--:--";
         Clock.Foreground = fresh ? Brushes.White : Muted;
-        DateSource.Text = state.SchoolNow is { } date ? $"{date.ToString("M月d日 dddd", CultureInfo.GetCultureInfo("zh-CN"))} · {(manual?"Windows 本机时间":"ClassIsland 学校时间")}" : "等待 ClassIsland 学校时间";
+        string clockSource = manual || state.ClockSource == "Windows" ? "Windows 本机时间" : "ClassIsland 学校时间";
+        DateSource.Text = state.SchoolNow is { } date ? $"{date.ToString("M月d日 dddd", CultureInfo.GetCultureInfo("zh-CN"))} · {clockSource}" : "等待" + clockSource;
         PhaseText.Text = !fresh ? (manual?"本机状态待同步":"学校时间待同步") : state.Phase switch { "Preparing" => "准备开始", "Active" => "自习进行中", "Ended" => "本次自习结束", _ => "自习暂停" };
         WindowText.Text = state.Window is { } w ? $"{w.Start:HH:mm} – {w.End:HH:mm}" : "—";
         RemainingLabel.Text = "剩余时间";
@@ -142,7 +143,7 @@ public partial class StudySurface : UserControl
             _ = PlayDisciplineAsync(state, id);
         }
         if (!fresh) _audio.Stop();
-        RenderSeating();
+        RenderAutomaticSeating(); RenderSeating();
         RenderHomework(state, fresh);
         NoticeTime.Text = Clock.Text;
         _renderedAt = fresh ? _time.GetTimestamp() : null;

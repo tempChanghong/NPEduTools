@@ -11,7 +11,7 @@ public sealed record GuardWakePlan(Guid Generation, GuardProcess Host, DateTimeO
         Windows.All(w => w is not null && w.StartUtc.Offset == TimeSpan.Zero && w.EndUtc.Offset == TimeSpan.Zero &&
             w.EndUtc > w.StartUtc && w.EndUtc - w.StartUtc <= TimeSpan.FromHours(3) &&
             w.StartUtc >= IssuedUtc.AddHours(-3) && w.EndUtc <= IssuedUtc.AddDays(400)) &&
-        (CurrentEndUtc is null || CurrentEndUtc.Value.Offset == TimeSpan.Zero && CurrentEndUtc <= IssuedUtc.AddHours(3).AddMinutes(2));
-    public GuardWakeWindow? Due(DateTimeOffset utc) => IssuedUtc <= utc.AddSeconds(5) ? Windows.FirstOrDefault(w => w.StartUtc.AddMinutes(-2) <= utc && utc < w.EndUtc) : null;
+        (CurrentEndUtc is null || CurrentEndUtc.Value.Offset == TimeSpan.Zero && CurrentEndUtc <= IssuedUtc.AddHours(3).AddSeconds(StudyPresentationTiming.ScheduledDisplayLeadSeconds));
+    public GuardWakeWindow? Due(DateTimeOffset utc) => IssuedUtc <= utc.AddSeconds(5) ? Windows.FirstOrDefault(w => w.StartUtc.AddSeconds(-StudyPresentationTiming.ScheduledDisplayLeadSeconds) <= utc && utc < w.EndUtc) : null;
 }
 public sealed record GuardExpectedExit(Guid Generation, GuardProcess Host, DateTimeOffset? SkipUntilUtc);

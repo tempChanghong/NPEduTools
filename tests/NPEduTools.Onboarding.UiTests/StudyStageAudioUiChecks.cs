@@ -30,7 +30,7 @@ internal static partial class Program
             Exercise(window, _ =>
             {
                 window.Apply(state, null); PumpUntil(() => claims == 1, "preparation claim missing");
-                state = state with { Display = state.Display! with { InstanceId = Guid.NewGuid() }, SchoolNow = state.Window!.Start.AddSeconds(-60) };
+                state = state with { Display = state.Display! with { InstanceId = Guid.NewGuid() }, SchoolNow = state.Window!.Start.AddSeconds(-115) };
                 window.Apply(state, null); PumpUntil(() => claims == 2, "reconstructed Host stage claim missing");
                 Assert(stage.Visibility == Visibility.Visible && ((TextBlock)surface.FindName("NoticeTitle")).Text == "准备开始" && StudyAudio(surface).Requests == 0,
                     "suppressed preparation removed persistent visual or played again");
@@ -40,7 +40,7 @@ internal static partial class Program
                 clock.Ms = 4000; window.Apply(state with { SchoolNow = state.Window!.Start.AddSeconds(5) }, ThresholdNoise(state));
                 Assert(stage.Visibility == Visibility.Collapsed && StudyAudio(surface).Requests == 1, "reconnection extended the absolute five-second start window");
                 PumpUntil(() => server.IsCompleted, "stage recovery pipe did not settle"); server.GetAwaiter().GetResult();
-                Checks.Add("Study stage audio recovery: actual WPF/Named Pipe suppression across Host epoch, preparation visual persists, independent start sound and absolute 5s window; muted");
+                Checks.Add("Study stage audio recovery: actual WPF/Named Pipe suppression across Host epoch, preparation visual recovers only within ten-second window, independent start sound and absolute 5s window; muted");
                 window.Shutdown();
             });
         }

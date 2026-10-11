@@ -21,6 +21,8 @@ public sealed class ManualStudyService : IAsyncDisposable
     private Guid? _session;
     private DateTimeOffset? _start,_end;
     private bool _hasEnd;
+    private readonly Func<int> _lead;
+    private int _displayLeadSeconds = 120;
     private int? _hide=600;
     private string? _device,_reason,_reportError;
     private string _phase="Idle";
@@ -29,14 +31,15 @@ public sealed class ManualStudyService : IAsyncDisposable
     private readonly Dictionary<Guid,(ManualStudyCommand? Command,HostResponse Response)> _requests=[];
     public StudyDisplayService Display {get;}
     public ManualStudyService(NoiseService noise,Func<(string? Scope,bool Selected,StudyHostState State)> school,
-        Func<bool> blocked,string directory,TimeProvider? time=null,bool background=true,Func<bool>? projection=null)
+        Func<bool> blocked,string directory,TimeProvider? time=null,bool background=true,Func<bool>? projection=null, Func<int>? displayLeadSeconds=null)
     {
+        _lead = displayLeadSeconds ?? (() => 120);
         _noise=noise;_school=school;_blocked=blocked;_directory=directory;_time=time??TimeProvider.System;
         Display=new(Source,_time,noise.StudyThresholds,Path.Combine(directory,"reminders"),(scope,v,p)=>noise.ResolveCalibration(_school().Scope,_school().State.Version,p),noise.RecordStudyReminder,projection);
         noise.Completed+=Completed;
         _loop=background?Task.Run(async()=>{try{while(!_stop.IsCancellationRequested){Tick();await Task.Delay(TimeSpan.FromMilliseconds(200),_time,_stop.Token);}}catch(OperationCanceledException)when(_stop.IsCancellationRequested){} }):Task.CompletedTask;
     }
-    public ManualStudyState Status() {lock(_sync)return new(_instance,_revision,_session,_phase,_reportError??_reason,_start,_end,_hasEnd,_hide);}
+    public ManualStudyState Status() {lock(_sync)return new(_instance,_revision,_session,_phase,_reportError??_reason,_start,_end,_hasEnd,_hide,_displayLeadSeconds);}
     private HostResponse Reply(HostRequest r,string outcome="Succeeded",string? error=null,string message="手动自习状态。")=>
         new(1,r.RequestId,outcome,error,message,Noise:_noise.Snapshot(),ManualStudy:Status());
     public HostResponse Handle(HostRequest r)
@@ -58,6 +61,13 @@ public sealed class ManualStudyService : IAsyncDisposable
                     return Reply(r,"Rejected","MANUAL_TIME_INVALID","结束须晚于开始，实际采集最多三小时；请检查日期、时间和返回设置。");
                 if(_phase is "Waiting" or "Preparing" or "Active" or "Starting" or "Stopping" || _noise.CaptureBusy || _blocked())
                     return Reply(r,"Rejected","MANUAL_BUSY","当前设备忙碌或学校定时自习优先；没有创建手动会话。");
+                int lead;
+                try { lead = _lead(); }
+                catch(Exception e) when(e is IOException or UnauthorizedAccessException or JsonException) {
+                    return Reply(r,"Rejected","MANUAL_PREFERENCES_UNAVAILABLE","手动自习展示设置无法读取；原文件保留，请在设置页重新确认。");
+                }
+                if (lead is < 0 or > 1800) return Reply(r,"Rejected","MANUAL_PREFERENCES_UNAVAILABLE","展示提前时间无效。");
+                _displayLeadSeconds = Math.Min(lead, (int)Math.Ceiling(Math.Max(0, (start - now).TotalSeconds)));
                 _session=Guid.NewGuid();_start=start;_end=end;_hasEnd=c.EndUtc is not null;_hide=c.HideSeconds;_device=c.DeviceId;
                 _reason=_reportError=null;_report=null;_phase="Waiting";_revision++;
                 Tick();
@@ -81,7 +91,7 @@ public sealed class ManualStudyService : IAsyncDisposable
             {
                 if(_blocked()){_phase="Cancelled";_reason="ScheduledTakeover";_revision++;return;}
                 if(now>=_end){_phase="Cancelled";_reason="MissedStart";_revision++;return;}
-                _phase=now>=_start!.Value.AddMinutes(-2)?"Preparing":"Waiting";
+                _phase=now>=_start!.Value.AddSeconds(-_displayLeadSeconds)?"Preparing":"Waiting";
                 if(now>=_start)
                 {
                     var reply=_noise.StartManualStudy(_session!.Value,_device!,Math.Min(10800,(_end!.Value-now).TotalSeconds));

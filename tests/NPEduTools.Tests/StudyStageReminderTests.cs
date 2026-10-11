@@ -27,7 +27,7 @@ public sealed class StudyStageReminderTests
             var start = new DateTimeOffset(2026, 10, 12, 19, 0, 0, TimeSpan.Zero);
             var window = new SchoolNoiseWindow(start, start.AddMinutes(150));
             State = new(new string('a', 64), "APPLIED", "NOT_INTEGRATED", "ACTIVE", phase, "fixture", true,
-                phase == "Preparing" ? start.AddSeconds(-60) : phase == "Ended" ? window.End : start.AddSeconds(1),
+                phase == "Preparing" ? start.AddSeconds(-120) : phase == "Ended" ? window.End : start.AddSeconds(1),
                 window, null, null);
         }
         public StudyDisplayService Host() => new(() => (Scope, Selected, State), directory: Directory);

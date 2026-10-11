@@ -179,7 +179,8 @@ var noiseDisplay = new NoiseDisplayService(() => {
 noiseTransport.Display = noiseDisplay;
 await using var manualStudy=new ManualStudyService(noise,studySettings.DisplaySnapshot,
     ()=>noiseSchedules.ScheduledDue() || studyPaused(),
-    Path.Combine(dataDirectory,"manual-study"), projection: projecting);
+    Path.Combine(dataDirectory,"manual-study"), projection: projecting,
+    displayLeadSeconds: () => new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(pipeName)).Read().DisplayLeadSeconds);
 var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
     calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder, projection: projecting);
 await using var studyReport = new StudyReportService(studySettings.DisplaySnapshot, noise.StudyReportSnapshot,

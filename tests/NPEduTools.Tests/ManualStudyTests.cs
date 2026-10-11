@@ -24,11 +24,11 @@ public sealed class ManualStudyTests
     {
         public readonly Clock Time=new();public readonly List<Capture> Captures=[];
         public readonly string Folder=Path.Combine(Path.GetTempPath(),"manual-study-test-"+Guid.NewGuid());
-        public bool Blocked=false;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
+        public bool Blocked=false;public int Lead=120;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
         public Fixture()
         {
             Noise=new(_=>{var c=new Capture();Captures.Add(c);return c;},()=>[new("mic","Synthetic")],Time);
-            Manual=new(Noise,()=> (null,false,new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null)),()=>Blocked,Folder,Time,false);
+            Manual=new(Noise,()=> (null,false,new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null)),()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>Lead);
         }
         public HostResponse Start(DateTimeOffset? start=null,DateTimeOffset? end=null,int? hide=600)
         {var s=Manual.Status();return Manual.Handle(new(1,Guid.NewGuid(),"manual.study.command",ManualStudy:new("start",s.InstanceId,s.Revision,DeviceId:"mic",StartUtc:start,EndUtc:end,HideSeconds:hide)));}
@@ -54,6 +54,21 @@ public sealed class ManualStudyTests
         Assert.Equal("Waiting",f.Manual.Status().State);Assert.Empty(f.Captures);
         f.Time.Ms=180000;f.Manual.Tick();Assert.Equal("Preparing",f.Manual.Display.Snapshot().Phase);Assert.Empty(f.Captures);
         f.Time.Ms=300000;f.Manual.Tick();await f.Active();Assert.Single(f.Captures);
+    }
+    [Fact]
+    public async Task Local_lead_is_frozen_per_reservation_and_only_presentation_starts_early()
+    {
+        await using var f=new Fixture();f.Lead=300;var start=f.Time.GetUtcNow().AddMinutes(8);f.Start(start,start.AddMinutes(30));f.Lead=0;
+        f.Time.Ms=179999;f.Manual.Tick();Assert.Equal("Waiting",f.Manual.Status().State);
+        f.Time.Ms=180000;f.Manual.Tick();Assert.Equal("Preparing",f.Manual.Status().State);Assert.Empty(f.Captures);Assert.Equal(300,f.Manual.Status().DisplayLeadSeconds);
+        f.Time.Ms=480000;f.Manual.Tick();await f.Active();Assert.Single(f.Captures);
+    }
+    [Fact]
+    public async Task Reservation_inside_lead_opens_immediately_with_short_preparation_but_no_early_sensor()
+    {
+        await using var f=new Fixture();var start=f.Time.GetUtcNow().AddSeconds(3);f.Start(start);Assert.Equal("Preparing",f.Manual.Status().State);
+        Assert.Equal(3,f.Manual.Status().DisplayLeadSeconds);Assert.Empty(f.Captures);
+        f.Time.Ms=3000;f.Manual.Tick();await f.Active();Assert.Single(f.Captures);
     }
     [Theory]
     [InlineData(0)][InlineData(-1)][InlineData(181)]

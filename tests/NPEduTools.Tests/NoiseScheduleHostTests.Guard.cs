@@ -15,8 +15,9 @@ public sealed partial class NoiseScheduleHostTests
         Assert.True(plan.Valid()); Assert.Equal(16, plan.Windows.Count); Assert.Empty(f.Captures);
         Assert.Equal(new DateTimeOffset(2026, 10, 1, 11, 0, 0, TimeSpan.Zero), plan.Windows[0].StartUtc);
         Assert.Equal(new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero), plan.Windows[0].EndUtc);
-        Assert.Null(plan.Due(f.Time.GetUtcNow()));
-        Assert.NotNull(plan.Due(plan.Windows[0].StartUtc.AddMinutes(-2)));
+        Assert.NotNull(plan.Due(f.Time.GetUtcNow()));
+        Assert.Null(plan.Due(plan.Windows[0].StartUtc.AddMinutes(-5).AddTicks(-1)));
+        Assert.NotNull(plan.Due(plan.Windows[0].StartUtc.AddMinutes(-5)));
     }
     [Theory]
     [InlineData("no-confirmation")] [InlineData("disabled")] [InlineData("revoked")] [InlineData("clock")] [InlineData("exam")] [InlineData("expired")]

@@ -1,4 +1,5 @@
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 
 namespace NPEduTools.Host;
 
@@ -55,7 +56,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             double hidden = state.Window == _hiddenWindow ? _manualHidden?10801:Remaining : 0;
             bool projectionPriority = projection?.Invoke() == true;
             if (projectionPriority && current.Selected && _scope is not null && state.Window is { } mutedWindow && state.SchoolNow is { } mutedNow &&
-                (state.Phase is "Preparing" or "Ended" || state.Phase == "Active" && mutedNow < mutedWindow.Start.AddSeconds(5)))
+                (state.Phase is "Preparing" or "Active" or "Ended" && StudyPresentationTiming.NoticeRemaining(state) > 0))
                 _stageReminders.Claim(_scope + (_mode == "Exam" ? ":Exam" : ""), mutedWindow, state.Phase);
             state = state with { ProjectionPriority = projectionPriority };
             bool available = !projectionPriority && current.Selected && state.PolicyState == "APPLIED" && state.ClockReady &&
@@ -78,7 +79,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                 if (reminder?.Phase == "Discipline") return ClaimDiscipline(request, state);
                 if (_scope is null || reminder is null || reminder.InstanceId != _instance || reminder.Version != state.Version || reminder.Window != state.Window ||
                     reminder.Phase != state.Phase || state.Display is not { Available: true } || state.SchoolNow is not { } now ||
-                    state.Phase == "Preparing" && (now < reminder.Window.Start.AddSeconds(-120) || now >= reminder.Window.Start) ||
+                    state.Phase == "Preparing" && StudyPresentationTiming.NoticeRemaining(state) <= 0 ||
                     state.Phase == "Ended" && (now < reminder.Window.End || now >= reminder.Window.End.AddSeconds(5)) ||
                     state.Phase == "Active" && (now < reminder.Window.Start || now >= reminder.Window.Start.AddSeconds(5)))
                     return new(1, request.RequestId, "Rejected", "STUDY_STATE_CHANGED", "阶段已变化，不播放旧提示音。");
