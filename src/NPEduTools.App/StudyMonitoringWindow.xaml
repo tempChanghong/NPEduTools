@@ -1,0 +1,26 @@
+<Window x:Class="NPEduTools.App.StudyMonitoringWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:NPEduTools.App"
+ Title="自习监测 · NPEduTools" Width="880" Height="810" MinWidth="720" MinHeight="600" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI" Icon="/Assets/npedutools.ico" WindowStartupLocation="CenterScreen">
+ <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
+  <TextBlock Text="自习监测" FontSize="30" FontWeight="Bold"/>
+  <TextBlock Text="学校安排由 NPEP 下发；本机负责采集与全屏展示。这里核对执行状态和设备，不创建本机排程。" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,20"/>
+  <Border Background="White" CornerRadius="16" Padding="24" Margin="0,0,0,16"><StackPanel>
+   <DockPanel><Button DockPanel.Dock="Right" Content="刷新状态" Click="RefreshClicked" Padding="14,7"/><TextBlock x:Name="StudyPhase" Text="正在读取学校安排…" FontSize="22" FontWeight="SemiBold"/></DockPanel>
+   <TextBlock x:Name="StudySchedule" Foreground="#61786B" TextWrapping="Wrap" Margin="0,12,0,5"/>
+   <TextBlock x:Name="StudyCapture" Text="实际采集状态待确认" TextWrapping="Wrap" Margin="0,7,0,5" AutomationProperties.AutomationId="StudyCaptureStatus"/>
+   <TextBlock x:Name="StudyPresentation" Foreground="#61786B" TextWrapping="Wrap"/>
+   <TextBlock Text="默认时段为北京时间 19:00–21:30；实际班级、日期、星期和例外日以学校后台配置为准。全屏页按有效安排自动进入；长按收起最多三分钟，收起不停止定时采集。" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,14,0,0"/>
+   <Button Content="查看当前采样、统计与管理保护" Click="NoiseClicked" HorizontalAlignment="Left" Padding="14,8" Margin="0,14,0,0"/>
+   <Button Content="上传／更换本班自习座位表" Click="SeatingClicked" HorizontalAlignment="Left" Padding="14,8" Margin="0,12,0,0"/>
+  </StackPanel></Border>
+  <Border Background="White" CornerRadius="16" Padding="24"><StackPanel>
+   <local:StudyDevicePicker x:Name="Devices"/>
+   <Separator Margin="0,18,0,14"/>
+   <TextBlock Text="噪音阈值校准" FontSize="19" FontWeight="SemiBold"/>
+   <TextBlock Text="快速校准确认 dBFS 双阈值。外部参考使用同期 A 加权读数和第二电平复核，正式监测分别显示 dBFS 与估算 dB(A)。联机校准 (Beta) 先核对 USB 读数，尚不自动保存参考。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,12"/>
+   <WrapPanel><Button Content="打开快速校准" Click="CalibrationClicked" Padding="14,8" AutomationProperties.AutomationId="OpenQuickCalibration"/>
+    <Button Content="外部声级计参考" Click="ReferenceClicked" Padding="14,8" Margin="12,0,0,0" AutomationProperties.AutomationId="OpenReferenceCalibration"/>
+    <Button Content="联机校准 (Beta)" Click="MeterClicked" Padding="14,8" Margin="12,0,0,0" AutomationProperties.AutomationId="OpenMeterCalibration"/>
+   </WrapPanel>
+  </StackPanel></Border>
+ </StackPanel></ScrollViewer>
+</Window>

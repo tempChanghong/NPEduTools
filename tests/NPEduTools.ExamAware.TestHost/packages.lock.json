@@ -161,8 +161,8 @@
       "npedutools.classisland.admin": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.0.0, )",
-          "NPEduTools.Core": "[1.0.0, )"
+          "NPEduTools.Contracts": "[1.1.0, )",
+          "NPEduTools.Core": "[1.1.0, )"
         }
       },
       "npedutools.classisland.bridge.contracts": {
@@ -177,35 +177,36 @@
       "npedutools.core": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.0.0, )"
+          "NPEduTools.Contracts": "[1.1.0, )"
         }
       },
       "npedutools.host": {
         "type": "Project",
         "dependencies": {
           "NAudio.Wasapi": "[2.2.1, )",
-          "NPEduTools.ClassIsland.Admin": "[1.0.0, )",
-          "NPEduTools.Contracts": "[1.0.0, )",
-          "NPEduTools.Core": "[1.0.0, )",
-          "NPEduTools.Integrations.ClassIsland": "[1.0.0, )",
-          "NPEduTools.Integrations.Npep": "[1.0.0, )",
-          "NPEduTools.Integrations.SecRandom": "[1.0.0, )",
-          "NPEduTools.PowerPoint.Diagnostics": "[1.0.0, )"
+          "NPEduTools.ClassIsland.Admin": "[1.1.0, )",
+          "NPEduTools.Contracts": "[1.1.0, )",
+          "NPEduTools.Core": "[1.1.0, )",
+          "NPEduTools.Integrations.ClassIsland": "[1.1.0, )",
+          "NPEduTools.Integrations.Npep": "[1.1.0, )",
+          "NPEduTools.Integrations.SecRandom": "[1.1.0, )",
+          "NPEduTools.PowerPoint.Diagnostics": "[1.1.0, )"
         }
       },
       "npedutools.integrations.classisland": {
         "type": "Project",
         "dependencies": {
           "ClassIsland.Shared.IPC": "[2.1.0.1, )",
-          "NPEduTools.ClassIsland.Bridge.Contracts": "[1.0.0, )",
-          "NPEduTools.Core": "[1.0.0, )",
+          "NPEduTools.ClassIsland.Bridge.Contracts": "[1.1.0, )",
+          "NPEduTools.Core": "[1.1.0, )",
           "dotnetCampus.Ipc": "[2.0.0-alpha410, )"
         }
       },
       "npedutools.integrations.npep": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.0.0, )"
+          "NPEduTools.Contracts": "[1.1.0, )",
+          "NPEduTools.Core": "[1.1.0, )"
         }
       },
       "npedutools.integrations.secrandom": {

@@ -19,11 +19,13 @@ public partial class MainWindow : Window
     private long _configurationRevision;
     private string? _savedPath;
     private bool _configurationLoaded;
+    private long _launchUiGeneration;
     private bool _actionInProgress;
     private Guid? _pendingStartId;
     private Guid? _hostStream;
     private Task? _touchPoll;
     private TouchAssistState? _touchState;
+    private long _touchUiGeneration;
     private bool _touchBusy, _updatingTouch, _exitBusy, _exiting, _entryHint;
     private Forms.NotifyIcon? _tray;
     private System.Drawing.Icon? _trayIcon;
@@ -31,27 +33,33 @@ public partial class MainWindow : Window
     private QuickAccessWindow? _quick;
 
     public MainWindow(string pipe, string? upstream)
+        : this(pipe, upstream, initializeServices: true) { }
+    internal MainWindow(string pipe, string? upstream, bool initializeServices)
     {
         _pipe = pipe;
         _upstream = upstream;
         InitializeComponent();
+        Closed += (_, _) => ShutdownExitWarning();
         DataContext = _model;
-        InitializeNpepConnection();
-        InitializeOnboarding();
-        InitializeTray();
-        InitializeStartupPreferences();
-        InitializeShortcuts();
-        InitializeRecording();
-        Activated += (_, _) => { RefreshLoginStartup(); RefreshToday(); };
+        if (initializeServices)
+        {
+            InitializeNpepConnection();
+            InitializeOnboarding();
+            InitializeTray();
+            InitializeStartupPreferences();
+            InitializeShortcuts();
+            InitializeRecording();
+            Activated += (_, _) => { RefreshLoginStartup(); RefreshToday(); };
+        }
         RefreshToday();
         Closing += (_, e) =>
         {
-            if (_exiting) return;
+            if (_exiting || !initializeServices) return;
             e.Cancel = true;
             if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording.Detach(); };
+        Closed += (_, _) => { _lifetime.Cancel(); _studyMonitoringWindow?.Shutdown(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _studyWindow?.Shutdown();_manualStudyWindow?.Shutdown(); _studyWindow = null; _studyReportWindow?.Shutdown(); _studyReportWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording?.Detach(); };
         _model.PropertyChanged += (_, _) =>
         {
             // After success, the next live snapshot owns the quick panel status again.
@@ -82,6 +90,7 @@ public partial class MainWindow : Window
                     if (_hostStream != snapshot.StreamId)
                     {
                         _hostStream = snapshot.StreamId;
+                        _launchUiGeneration++;
                         _configurationLoaded = false;
                     }
                     _model.Apply(snapshot);
@@ -116,19 +125,7 @@ public partial class MainWindow : Window
         }
         string executable = Path.Combine(AppContext.BaseDirectory, "Host", "NPEduTools.Host.exe");
         if (!File.Exists(executable)) throw new FileNotFoundException("Host bundle is missing.");
-        var start = new ProcessStartInfo(executable)
-        {
-            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
-            WorkingDirectory = Path.GetDirectoryName(executable)!
-        };
-        start.ArgumentList.Add("--pipe");
-        start.ArgumentList.Add(_pipe);
-        if (_upstream is not null)
-        {
-            start.ArgumentList.Add("--classisland-pipe");
-            start.ArgumentList.Add(_upstream);
-        }
-        using var process = Process.Start(start);
+        new NPEduTools.Core.GuardTasks(AppContext.BaseDirectory, _pipe, _upstream).Run("Host");
     }
 
     private void CloseClicked(object sender, RoutedEventArgs e) => Close();
@@ -204,14 +201,16 @@ public partial class MainWindow : Window
         {
             if (!_touchBusy)
             {
+                long generation = _touchUiGeneration;
                 try
                 {
                     var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch.status"));
-                    if (!_touchBusy) ApplyTouch(response);
+                    if (!_touchBusy && !token.IsCancellationRequested && generation == _touchUiGeneration) ApplyTouch(response);
                 }
                 catch (Exception ex) when (IsManagementError(ex))
                 {
-                    if (!_touchBusy) { _touchState = null; TouchStatusText.Text = "后台未连接，正在重连…"; RefreshTouchControls(); }
+                    if (!_touchBusy && !token.IsCancellationRequested && generation == _touchUiGeneration)
+                    { _touchState = null; TouchStatusText.Text = "后台未连接，正在重连…"; RefreshTouchControls(); }
                 }
             }
             await TryStartupTouchAsync();
@@ -255,12 +254,20 @@ public partial class MainWindow : Window
     private async Task ChangeTouchAsync(string action)
     {
         if (_touchBusy || _exitBusy || _lifetime.IsCancellationRequested) return;
+        _touchUiGeneration++;
         _touchBusy = true; RefreshTouchControls();
         TouchStatusText.Text = action == "disable" ? "正在停止辅助…" : "正在应用操作…";
         RefreshQuick();
-        try { ApplyTouch(await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch." + action))); }
+        try
+        {
+            var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "presentation.touch." + action));
+            if (!_lifetime.IsCancellationRequested) ApplyTouch(response);
+        }
         catch (Exception ex) when (IsManagementError(ex))
-        { _touchState = null; TouchStatusText.Text = "暂未确认结果，正在重新读取状态…"; }
+        {
+            if (!_lifetime.IsCancellationRequested)
+            { _touchState = null; TouchStatusText.Text = "暂未确认结果，正在重新读取状态…"; }
+        }
         finally { _touchBusy = false; RefreshTouchControls(); }
     }
 
@@ -293,21 +300,31 @@ public partial class MainWindow : Window
     {
         while (!token.IsCancellationRequested)
         {
+            long generation = _launchUiGeneration;
             try
             {
-                var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.execution.get", OperationId: _pendingStartId));
-                if (!_actionInProgress) ShowLaunchData(response);
+                if (!_actionInProgress && !_exitBusy)
+                {
+                    var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.execution.get", OperationId: _pendingStartId));
+                    if (!token.IsCancellationRequested && CurrentLaunchQuery(generation)) ShowLaunchData(response);
+                }
             }
             catch (Exception ex) when (IsManagementError(ex))
             {
-                StartButton.IsEnabled = false;
-                if (!token.IsCancellationRequested && !_actionInProgress) LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
+                if (!token.IsCancellationRequested && CurrentLaunchQuery(generation))
+                {
+                    StartButton.IsEnabled = false;
+                    LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
+                }
             }
             RefreshQuick();
             try { await Task.Delay(1000, token); }
             catch (OperationCanceledException) { break; }
         }
     }
+
+    private bool CurrentLaunchQuery(long generation) => generation == _launchUiGeneration &&
+        !_lifetime.IsCancellationRequested && !_actionInProgress && !_exitBusy;
 
     private void ShowLaunchData(HostResponse response)
     {
@@ -365,17 +382,28 @@ public partial class MainWindow : Window
         if (picker.ShowDialog(this) == true) ExecutablePathBox.Text = picker.FileName;
     }
 
-    private async void SavePathClicked(object sender, RoutedEventArgs e)
+    private async void SavePathClicked(object sender, RoutedEventArgs e) => await SavePathAsync();
+
+    private async Task SavePathAsync()
     {
         if (_actionInProgress || _adminBusy) return;
+        long generation = ++_launchUiGeneration;
         _actionInProgress = true;
         StartButton.IsEnabled = false;
+        RefreshAdminControls();
         try
         {
             var request = new HostRequest(Protocol.Version, Guid.NewGuid(), "classisland.config.set",
                 ExecutablePath: ExecutablePathBox.Text.Trim(), ExpectedRevision: _configurationRevision);
             if (Protocol.Validate(request) is not null) { ConfigurationMessage.Text = "请先选择有效的程序路径。"; return; }
             var response = await ManagementRequestAsync(request);
+            if (_lifetime.IsCancellationRequested) return;
+            if (generation != _launchUiGeneration)
+            {
+                _configurationLoaded = false;
+                ConfigurationMessage.Text = "后台连接已变化，请重新读取配置后核对保存结果。";
+                return;
+            }
             if (response.Outcome == "Succeeded")
             {
                 _configurationLoaded = false;
@@ -383,20 +411,32 @@ public partial class MainWindow : Window
             }
             ConfigurationMessage.Text = response.Message;
         }
-        catch (Exception ex) when (IsManagementError(ex)) { ConfigurationMessage.Text = "未能确认路径已保存，请重新读取配置后核对。"; }
-        finally { _actionInProgress = false; }
+        catch (Exception ex) when (IsManagementError(ex))
+        {
+            if (!_lifetime.IsCancellationRequested)
+            {
+                _configurationLoaded = false;
+                ConfigurationMessage.Text = "未能确认路径已保存，请重新读取配置后核对。";
+            }
+        }
+        finally { _actionInProgress = false; RefreshAdminControls(); }
     }
 
-    private async void ReloadClicked(object sender, RoutedEventArgs e)
+    private async void ReloadClicked(object sender, RoutedEventArgs e) => await ReloadConfigurationAsync();
+
+    private async Task ReloadConfigurationAsync()
     {
-        if (_actionInProgress) return;
+        if (_actionInProgress || _exitBusy) return;
+        long generation = ++_launchUiGeneration;
         try
         {
             var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.config.get"));
+            if (!CurrentLaunchQuery(generation)) return;
             _configurationLoaded = false;
             ShowLaunchData(response);
         }
-        catch (Exception ex) when (IsManagementError(ex)) { ConfigurationMessage.Text = "后台未连接，暂时无法读取配置。"; }
+        catch (Exception ex) when (IsManagementError(ex))
+        { if (CurrentLaunchQuery(generation)) ConfigurationMessage.Text = "后台未连接，暂时无法读取配置。"; }
     }
 
     private static bool IsManagementError(Exception ex) => ex is IOException or InvalidDataException or JsonException or
@@ -417,6 +457,15 @@ public partial class MainWindow : Window
             if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var modeHost))
             {
                 modeHost.Dispose();
+                // The click precedes management verification. Hiding the study display never sends this capability.
+                StudyExitState? exitState=null;
+                try {
+                    var begun=await ManagementRequestAsync(shutdownRequest with{Capability="study.exit.begin"});
+                    if(begun.ErrorCode is "UnknownCapability" or "STUDY_EXIT_UNSUPPORTED")await ManagementRequestAsync(shutdownRequest with{Capability="study.photos.exit-intent"});
+                    else if(begun.StudyExit is {State:"Failed"} failure){ShowStudyExitWarning(failure);HomeMessage.Text="退出验证未通过，后台继续运行。";return;}
+                    else if(begun.Outcome=="Rejected"){HomeMessage.Text=begun.Message;return;}
+                    else if(begun.StudyExit is {State:"Waiting"} waiting && waiting.AttemptId==shutdownRequest.RequestId)exitState=waiting;
+                }catch(Exception e2)when(IsManagementError(e2)){HomeMessage.Text="无法确认本次退出验证，后台继续运行。";return;}
                 var classroom = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classroom.status"));
                 if (classroom.ClassroomMode?.Busy == true)
                 {
@@ -424,9 +473,15 @@ public partial class MainWindow : Window
                     ShowClassroomMode();
                     return;
                 }
-                var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest);
+                var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest,exitState,ReadStudyExitAsync,ShowStudyExitWarning);
                 if (authorized is null) { HomeMessage.Text = "未验证，后台与录课设置保持原状态。"; return; }
                 shutdownRequest = authorized;
+                try
+                {
+                    using var photoWait = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+                    await HostClient.RequestAsync(_pipe, shutdownRequest with { Capability = "study.photos.flush", NoiseAuthorization = null, TimeoutMs = 6000 }, photoWait.Token);
+                }
+                catch (Exception e2) when (IsManagementError(e2)) { }
                 // Fence scheduled starts and journal authorized intent before touching automatic recording.
                 var prepared = await NoiseManagementDialog.Request(_pipe, shutdownRequest with { Capability = "noise.management.prepare-exit" });
                 if (prepared.Outcome != "Succeeded") { HomeMessage.Text = prepared.Message; return; }

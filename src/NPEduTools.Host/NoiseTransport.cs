@@ -43,6 +43,8 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
                 _store = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject ?? throw new InvalidDataException();
                 if (_store["reports"] is not JsonArray || _store["commands"] is not JsonArray) throw new InvalidDataException();
                 if (_store["scope"] is not null && (_store["scope"] is not JsonValue scope || !scope.TryGetValue<string>(out var scopeText) || scopeText.Length > 2048)) throw new InvalidDataException();
+                if (_store["excludedSessionId"] is not null && (_store["excludedSessionId"] is not JsonValue excluded ||
+                    !excluded.TryGetValue<string>(out var excludedText) || !Guid.TryParseExact(excludedText, "D", out var excludedId) || excludedId == Guid.Empty)) throw new InvalidDataException();
                 if (((JsonArray)_store["reports"]!).Count > 200 || ((JsonArray)_store["commands"]!).Count > 64) throw new InvalidDataException();
                 foreach (var command in (JsonArray)_store["commands"]!)
                 {
@@ -98,7 +100,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
             var s = _noise.Snapshot();
             if (_error is null && _store["scope"] is not null && !Excluded(s) && s.Summary is not null && s.State is "Active" or "Starting" or "Stopping" && Stopwatch.GetElapsedTime(_checkpointAt).TotalSeconds >= 30)
             {
-                _store["checkpoint"] = Report(s, "Interrupted"); _checkpointAt = Stopwatch.GetTimestamp();
+                _store["checkpoint"] = OwnedReport(s, "Interrupted"); _checkpointAt = Stopwatch.GetTimestamp();
                 try { Save(); } catch (Exception e) when (StorageError(e)) { _error = "NOISE_STORE_UNAVAILABLE"; }
             }
             var status = new JsonObject { ["instanceId"] = s.InstanceId.ToString("D"), ["revision"] = s.Revision,
@@ -106,16 +108,34 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
                 ["configured"] = !string.IsNullOrWhiteSpace(s.SelectedDeviceId) && _error is null,
                 ["startedAt"] = s.StartedAt is { } started ? Stamp(started) : null, ["currentDbfs"] = s.CurrentDbfs, ["quality"] = s.Quality,
                 ["summary"] = JsonSerializer.SerializeToNode(s.Summary, Json), ["algorithm"] = s.Algorithm, ["uploadError"] = _error };
+            if (s.Estimate is not null) status["estimate"] = JsonSerializer.SerializeToNode(s.Estimate, Json);
             return status;
         }
     }
     private static string? Short(string? value) => value is null ? null : new string(value.Where(c => !char.IsControl(c)).Take(200).ToArray());
     private static string Stamp(DateTimeOffset value) => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-    private static JsonObject Report(NoiseState s, string outcome) => new() {
-        ["sessionId"] = s.SessionId?.ToString("D"), ["startedAt"] = Stamp(s.StartedAt!.Value),
-        ["endedAt"] = Stamp(DateTimeOffset.UtcNow < s.StartedAt ? s.StartedAt.Value : DateTimeOffset.UtcNow),
+    internal static JsonObject Report(NoiseState s, string outcome)
+    {
+        var started = s.StartedAt!.Value;
+        var ended = started.AddSeconds(s.Summary!.ElapsedSeconds);
+        var observed = DateTimeOffset.UtcNow;
+        var report = new JsonObject {
+        ["sessionId"] = s.SessionId?.ToString("D"), ["startedAt"] = Stamp(started),
+        ["endedAt"] = Stamp(ended),
+        ["timing"] = new JsonObject { ["source"] = "Monotonic", ["observedEndedAt"] = Stamp(observed),
+            ["clockDiscontinuity"] = Math.Abs((observed - ended).TotalSeconds) > 2 },
         ["deviceName"] = Short(s.DeviceName), ["algorithm"] = s.Algorithm, ["summary"] = JsonSerializer.SerializeToNode(s.Summary, Json), ["outcome"] = outcome
-    };
+        };
+        if (s.Estimate is { } estimate) report["estimate"] = JsonSerializer.SerializeToNode(estimate with
+        { State = estimate.Reason is null ? "Stopped" : "Invalidated", CurrentDbA = null }, Json);
+        return report;
+    }
+    private JsonObject OwnedReport(NoiseState s,string outcome)
+    {
+        var report=Report(s,outcome);
+        if(_noise.IsManualStudy(s.SessionId)){report["sessionKind"]="Manual";if(s.SessionId is {} id)report["endReason"]=_noise.ManualStudyEndReason(id)??"Interrupted";}
+        return report;
+    }
     private void AddReport(JsonObject report)
     {
         NpepNoiseProtocol.Validate("report", report);
@@ -123,14 +143,16 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         if (!reports.Any(r => r!["sessionId"]!.GetValue<string>() == report["sessionId"]!.GetValue<string>())) reports.Add(report);
         while (reports.Count > 200) reports.RemoveAt(0);
         for (int i = reports.Count - 1; i >= 0; i--)
-            if (DateTimeOffset.UtcNow - DateTimeOffset.Parse(reports[i]!["endedAt"]!.GetValue<string>()) > TimeSpan.FromDays(14)) reports.RemoveAt(i);
+            if (DateTimeOffset.UtcNow - RetentionEnd(reports[i]!) > TimeSpan.FromDays(14)) reports.RemoveAt(i);
     }
+    private static DateTimeOffset RetentionEnd(JsonNode report) => DateTimeOffset.Parse(
+        (report["timing"]?["observedEndedAt"] ?? report["endedAt"])!.GetValue<string>());
     private void Complete(NoiseState s)
     {
         lock (_sync)
         {
             if (_error is not null || _store["scope"] is null || s.Summary is null || Excluded(s)) return;
-            try { AddReport(Report(s, s.State)); _store["checkpoint"] = null; Save(); }
+            try { AddReport(OwnedReport(s, s.State)); _store["checkpoint"] = null; Save(); }
             catch (Exception e) when (StorageError(e)) { _error = "NOISE_STORE_UNAVAILABLE"; }
         }
     }
@@ -142,7 +164,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
             if (_error is not null) return new();
             var reports = (JsonArray)_store["reports"]!; bool changed = false;
             for (int i = reports.Count - 1; i >= 0; i--)
-                if (DateTimeOffset.UtcNow - DateTimeOffset.Parse(reports[i]!["endedAt"]!.GetValue<string>()) > TimeSpan.FromDays(14)) { reports.RemoveAt(i); changed = true; }
+                if (DateTimeOffset.UtcNow - RetentionEnd(reports[i]!) > TimeSpan.FromDays(14)) { reports.RemoveAt(i); changed = true; }
             if (changed) Save();
             return new(reports.Take(4).Select(r => r!.DeepClone()).ToArray());
         }

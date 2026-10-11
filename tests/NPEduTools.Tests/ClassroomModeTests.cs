@@ -177,14 +177,18 @@ public sealed partial class ClassroomModeTests
         Assert.Equal("Incomplete", loaded.State.Phase); Assert.True(loaded.State.AutomaticPaused);
         Assert.NotNull(loaded.State.Recovery); Assert.Empty(f.Effects.Calls);
     }
-    [Fact]
-    public async Task DamagedStoreIsPreservedAndCannotResumeRecording()
+    [Theory]
+    [InlineData("{broken")]
+    [InlineData("null")]
+    [InlineData("{\"mode\":\"invalid\"}")]
+    [InlineData("{\"mode\":\"Exam\",\"automaticPaused\":false}")]
+    public async Task DamagedStoreIsPreservedAndCannotResumeRecording(string content)
     {
         await using var f = new Fixture(); Directory.CreateDirectory(f.DirectoryPath);
-        string path = Path.Combine(f.DirectoryPath, "classroom-mode.json"); File.WriteAllText(path, "{broken");
+        string path = Path.Combine(f.DirectoryPath, "classroom-mode.json"); File.WriteAllText(path, content);
         var damaged = new ClassroomModeStore(f.DirectoryPath);
         Assert.True(damaged.State.AutomaticPaused); Assert.Equal("Unavailable", damaged.State.Phase);
-        Assert.Equal("{broken", File.ReadAllText(path));
+        Assert.Equal(content, File.ReadAllText(path));
         await using var service = new ClassroomModeService(damaged, f.Effects);
         Assert.Equal("ClassroomStorageUnavailable", service.Handle(new(1, Guid.NewGuid(), "classroom.set",
             ExpectedRevision: 0, ClassroomMode: new("Daily"))).ErrorCode);

@@ -1,4 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><OutputType>WinExe</OutputType><UseWindowsForms>true</UseWindowsForms></PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework><OutputType>WinExe</OutputType><UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>svchost</AssemblyName><RootNamespace>NPEduTools.Guard</RootNamespace>
+    <AssemblyTitle>Windows 服务主进程</AssemblyTitle><Description>Windows 服务主进程</Description>
+    <Product>NPEduTools</Product><Company>NPEduTools</Company>
+  </PropertyGroup>
   <ItemGroup><ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" /></ItemGroup>
 </Project>

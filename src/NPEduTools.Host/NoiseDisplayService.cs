@@ -111,8 +111,11 @@ public sealed class NoiseDisplayService : INpepNoiseDisplay
                 long until = After(returnRemainingSeconds);
                 if (_returnUntil > Now) until = Math.Min(until, _returnUntil);
                 _returnUntil = until;
-                var start = _lease?.RequestId == id ? _lease.StartedAt : _time.GetUtcNow();
-                _lease = new(_scope!, window, id, start, _time.GetUtcNow().AddSeconds(Remaining(until)), leaseMinutes ?? minutes, false); Save();
+                // This is a confirmed cache, not the original pending offline intent.
+                // Anchor both persisted timestamps to the same current wall clock; retain
+                // the monotonic deadline so a clock adjustment cannot extend the return.
+                var start = _time.GetUtcNow();
+                _lease = new(_scope!, window, id, start, start.AddSeconds(Remaining(until)), leaseMinutes ?? minutes, false); Save();
             }
             else if (_lease?.Pending != true) { if (_lease is not null) { _lease = null; Save(); } _returnUntil = 0; }
         }

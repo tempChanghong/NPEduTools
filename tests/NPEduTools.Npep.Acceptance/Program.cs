@@ -7,6 +7,12 @@ using NPEduTools.Integrations.Npep;
 
 // Explicit opt-in, loopback-only acceptance harness. Never installed with the application.
 // A dedicated test CA is trusted ONLY by these handlers; machine/user trust stores are untouched.
+if (args.Length == 2 && args[0] == "--study-reminder-local")
+    return StudyReminderRecoveryAcceptance.ReadInFreshProcess(args[1]);
+if (args.Length == 3 && args[0] == "--seating-http-local")
+    return await SeatingHttpAcceptance.RunAsync(args[1], args[2]);
+if (args.Length == 3 && args[0] == "--study-http-local")
+    return await StudyHttpAcceptance.RunAsync(args[1], args[2]);
 if (args.Length == 3 && args[0] == "--screen-pairing-http")
     return await ScreenPairingAcceptance.RunAsync(args[1], args[2]);
 if (args.Length == 3 && args[0] == "--control-http")

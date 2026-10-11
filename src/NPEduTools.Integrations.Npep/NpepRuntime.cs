@@ -26,9 +26,9 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private bool _blocked, _disposed;
     private NpepCommand? _tlsRetryCommand;
 
-    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null)
-        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules) { }
-    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null)
+    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null)
+        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study) { }
+    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null)
     {
         _sample = sample; _appVersion = appVersion;
         try
@@ -55,6 +55,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         InitializeNoise(noise);
         InitializeNoiseSchedules(schedules);
         InitializeNoiseDisplay(noise as INpepNoiseDisplay);
+        InitializeStudy(study);
     }
 
     public NpepState Snapshot()
@@ -82,6 +83,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             if (_state.Busy || c.Revision != _state.Revision) return Reply("Rejected", "NpepStateChanged", "状态已更新或操作仍在进行，请刷新后重试。");
             _controlPolicy?.Rotate(); // Invalidate queued control intents before pause/resume/unpair work starts.
             _planPolicy?.Rotate();
+            _study?.BindStudy(null); // Fence an in-flight policy before pause/unpair work starts.
             _controlCancellation?.Cancel();
             _requests.Enqueue(request.RequestId); if (_requests.Count > 128) _requests.Dequeue();
             _state = _state with { Revision = _state.Revision + 1, Busy = true, OperationId = request.RequestId, Error = null, Message = "正在处理，请稍候…" };
@@ -260,7 +262,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     {
         Task command;
         lock (_sync) { _disposed = true; _lifetime.Cancel(); _network?.Cancel(); command = _command; }
-        await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop, _noiseDisplayLoop);
+        await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop, _noiseDisplayLoop, _studyLoop, _studySeatingLoop, _studyHomeworkLoop, _studyPresentationLoop, _studyPhotosLoop, _studyExitLoop);
         await _controlLoop;
         _device?.Dispose(); _work.Dispose(); _lifetime.Dispose();
     }

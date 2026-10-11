@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, dirname, basename, resolve} from 'node:path';
-import {createPlan, readOptions, readTapEvidence, readTrxEvidence, readBrowserEvidence, readDatabaseEvidence, childEnvironment, sourceFingerprints} from '../scripts/test-npep-operations.mjs';
+import {createPlan, readOptions, readTapEvidence, readTrxEvidence, readBrowserEvidence, readDatabaseEvidence, databaseTransportScenarios, childEnvironment, sourceFingerprints} from '../scripts/test-npep-operations.mjs';
 import {runStages, testEnvironment} from '../scripts/test-npep-n4.mjs';
 
 const roots = {desktop: 'desktop', web: 'web', backend: 'backend'};
@@ -19,10 +19,13 @@ test('operations plan distinguishes preflight, selected checks and native databa
   assert.equal(plan.find(item => item.id === 'database').status, 'NOT_REQUESTED');
   assert.ok(createPlan(roots, 'result', {browser: true, database: true}).every(item => item.requested));
   assert.ok(plan.findIndex(item => item.id === 'desktop') < plan.findIndex(item => item.id === 'cross-contract'));
+  assert.ok(plan.findIndex(item => item.id === 'cross-contract') < plan.findIndex(item => item.id === 'comparison-contract'));
   const text = JSON.stringify(plan);
   assert.ok(!/docker|deploy-agent|upgrade\.sh|rollback\.sh/i.test(text));
   assert.ok(!text.includes('newfires.top'));
-  assert.ok(text.includes('--skip-desktop'));
+  assert.ok(!text.includes('--skip-desktop'));
+  const database = createPlan(roots, 'result', {database: true}).find(item => item.id === 'database');
+  assert.deepEqual(database.args, ['scripts/run-native-npep-tests.js', '--desktop-root', roots.desktop, '--test-reporter', 'tap']);
   assert.deepEqual(readOptions(['--check', '--browser', '--web-root', 'somewhere']), {check: true, browser: true, database: false, 'web-root': 'somewhere'});
   for (const args of [['--web-root'], ['--production'], ['--backend-root', '--browser']]) assert.throws(() => readOptions(args));
 });
@@ -78,15 +81,30 @@ test('operations browser uses production build semantics and its own loopback po
   assert.equal(env.NODE_ENV, 'production'); assert.equal(env.E2E_WEB_PORT, '53000'); assert.equal(env.E2E_API_PORT, '53001');
   assert.ok(!JSON.stringify(env).includes('production.invalid'));
   assert.equal(childEnvironment(base, {evidence: 'tap'}, 'results', null).NODE_ENV, 'test');
+  const comparison = childEnvironment(base, {evidence: 'comparison'}, 'results', null);
+  assert.ok(comparison.NPEP_DIAGNOSTIC_COMPARISON_CASES.endsWith('comparison-cases.json'));
+  assert.equal(childEnvironment(base, {evidence: 'tap'}, 'results', null).NPEP_DIAGNOSTIC_COMPARISON_CASES, undefined);
 });
 
-test('database evidence requires the actual overview pass and cleanup; only declared .NET skips are allowed', () => {
-  const skipped = 'ok 2 - N3 actual .NET transport through real HTTP/PostgreSQL (simulated OS effects) # SKIP\n';
+test('database evidence requires every real .NET transport scenario, actual overview SQL and cleanup with zero skips', () => {
+  const scenarios = databaseTransportScenarios.map((name, index) => `    ok ${index + 2} - ${name}\n`).join('');
   const success = 'ok 1 - school device overview: real SQL totals, pagination, name search, current binding and authorization\n' +
-    skipped + tap(3, 1) + 'Native NPEP acceptance passed; temporary cluster removed.\n';
-  assert.equal(readDatabaseEvidence(success).groups[0].passed, 3);
-  for (const value of [success.replace('ok 1 - school', 'not ok 1 - school'), success.replace(skipped, ''),
-    success.replace('N3 actual .NET transport through real HTTP/PostgreSQL (simulated OS effects)', 'school device overview skipped'),
+    scenarios + tap(6) + 'Native NPEP acceptance passed; temporary cluster removed.\n';
+  const evidence = readDatabaseEvidence(success);
+  assert.equal(evidence.groups[0].passed, 6);
+  assert.deepEqual(evidence.executedTransportScenarios, databaseTransportScenarios);
+  assert.equal(evidence.realHttp, true); assert.equal(evidence.simulatedSystemEffects, true);
+  // Test all five omissions; zero exit and positive counters are insufficient.
+  for (const name of databaseTransportScenarios) {
+    for (const replacement of ['', ' # SKIP', ' # TODO']) {
+      const value = replacement ? success.replace(name + '\n', name + replacement + '\n') :
+        success.replace(new RegExp(`^.*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`, 'm'), '');
+      assert.throws(() => readDatabaseEvidence(value));
+    }
+    assert.throws(() => readDatabaseEvidence(success + `ok 99 - ${name}\n`));
+  }
+  for (const value of [success.replace('ok 1 - school', 'not ok 1 - school'),
+    success.replace(tap(6), tap(5, 1)),
     success.replace('temporary cluster removed.', 'temporary cluster still running.')]) assert.throws(() => readDatabaseEvidence(value));
 });
 

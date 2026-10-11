@@ -34,24 +34,22 @@ public partial class MainWindow
         RemoteExamBinding.Text = state?.Policy.Binding ?? "当前没有可授权的学校绑定。";
         ExamPlanPolicyMessage.Text = state?.PlanPolicy?.Message ?? "后台尚未提供考试方案通道。";
         RemoteExamPolicyMessage.Text = state?.Policy.Message ?? "后台未连接，无法读取本机许可。";
-        RemoteExamRuntimeMessage.Text = state is null ? "本地考试状态未知。" : state.StorageError is not null
-            ? "考试记录不可用，自动录课保护保留。请先处理存储故障。" : state.AutomaticPaused
-            ? $"N3 自动录课暂停中 · 操作 {state.PauseOperationId}"
-            : "当前没有 N3 自动录课暂停。";
-        RemoteExamHistoryText.Text = state?.History is { Length: > 0 } history
-            ? string.Join("\n\n", history.Select(x => $"{x.UpdatedAt.ToLocalTime():MM-dd HH:mm:ss} · {(x.Target == "Daily" ? "返回日常" : "进入考试")} · {RemoteExamOutcome(x.Outcome)} · {x.Step}\n{x.OperationId}" +
-                (x.Reason is null ? "" : $"\n原因：{x.Reason}") + (x.LocallyEndedAt is null ? "" : $"\n已由本机结束：{x.LocallyEndedAt.Value.ToLocalTime():MM-dd HH:mm:ss}")))
-            : "暂无记录。";
+        RemoteExamRuntimeMessage.Text = RemoteExamPresentation.Runtime(state);
+        RemoteExamRuntimeDetails.Text = RemoteExamPresentation.RuntimeDetails(state);
+        RemoteExamRuntimeDetailsPanel.Visibility = state is null ? Visibility.Collapsed : Visibility.Visible;
+        RemoteExamHistory.ShowHistory(state?.History);
         RemoteExamCheckButton.Content = state?.AutomaticPaused == true ? "核实当前考试状态" : "检查考试环境";
         UpdateRemoteExamControls();
     }
 
-    private static string RemoteExamOutcome(string outcome) => outcome switch
+    private void ShowRemoteExamFeedback(RemoteExamFeedback feedback)
     {
-        "SUCCEEDED" => "切换成功", "REJECTED" => "未执行", "PARTIAL" => "切换未完成，可由学校重试补完",
-        "UNKNOWN" => "结果未知，可由学校重新核查并切入", "CHECKING" => "检查中", "RUNNING" => "执行中",
-        "WAITING_LOCAL" => "等待现场处理", "RECEIVED" => "已接收", _ => outcome
-    };
+        RemoteExamCheckMessage.Text = string.Join("\n", new[] { feedback.Title, feedback.Message, feedback.NextAction }
+            .Where(text => text.Length > 0));
+        RemoteExamCheckDetails.Text = feedback.Details;
+        RemoteExamCheckDetailsPanel.IsExpanded = false;
+        RemoteExamCheckDetailsPanel.Visibility = feedback.Details.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     private void UpdateRemoteExamControls()
     {
@@ -77,12 +75,13 @@ public partial class MainWindow
         {
             var reply = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "remoteexam.command", RemoteExam: command));
             ApplyRemoteExam(reply.RemoteExam);
-            RemoteExamCheckMessage.Text = reply.Message + (reply.ErrorCode is { } code ? $"（{code}）" : "");
+            ShowRemoteExamFeedback(RemoteExamPresentation.Feedback(reply, RemoteExamLocalAction.EndPause));
         }
         catch (Exception e) when (IsManagementError(e))
         {
             ApplyRemoteExam(null);
-            RemoteExamCheckMessage.Text = "未收到确认，请等待状态刷新后核实结果；不会自动重发操作。";
+            ShowRemoteExamFeedback(new("操作结果待核实", "未收到后台确认，不能认定暂停已解除。",
+                "等待状态刷新并核实结果；此处不会自动重发操作。", ""));
         }
         finally { _remoteExamBusy = false; UpdateRemoteExamControls(); }
     }
@@ -94,22 +93,27 @@ public partial class MainWindow
         _remoteExamBusy = true;
         _remoteExamInspectedRevision = null; _remoteExamInspectedEpoch = null;
         UpdateRemoteExamControls();
-        RemoteExamCheckMessage.Text = "正在检查本机考试环境…";
+        bool inspecting = _remoteExamState?.AutomaticPaused == true;
+        ShowRemoteExamFeedback(new(inspecting ? "正在核实当前考试状态…" : "正在检查本机考试环境…", "", "", ""));
         try
         {
             var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(),
-                _remoteExamState?.AutomaticPaused == true ? "remoteexam.inspect" : "remoteexam.preflight"));
+                inspecting ? "remoteexam.inspect" : "remoteexam.preflight"));
             if (response.Outcome == "Succeeded" && response.RemoteExam is { } inspected)
             {
                 _remoteExamInspectedRevision = inspected.RuntimeRevision;
                 _remoteExamInspectedEpoch = inspected.Policy.ControlEpoch;
             }
             ApplyRemoteExam(response.RemoteExam);
-            RemoteExamCheckMessage.Text = response.Message +
-                (response.ErrorCode is { } code ? $"（{code}）" : "");
+            ShowRemoteExamFeedback(RemoteExamPresentation.Feedback(response,
+                inspecting ? RemoteExamLocalAction.InspectCurrent : RemoteExamLocalAction.CheckEnvironment));
         }
         catch (Exception error) when (IsManagementError(error))
-        { RemoteExamCheckMessage.Text = "未能读取检查结果，请核对后台连接。没有请求执行软件切换。"; }
+        {
+            ApplyRemoteExam(null);
+            ShowRemoteExamFeedback(new("检查结果未读取", "未能读取检查结果，不能认定检查通过。",
+                "核对后台连接后重新检查；没有请求执行软件切换。", ""));
+        }
         finally { _remoteExamBusy = false; UpdateRemoteExamControls(); }
     }
 }

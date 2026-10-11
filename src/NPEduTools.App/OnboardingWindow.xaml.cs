@@ -8,7 +8,7 @@ using NPEduTools.Core;
 namespace NPEduTools.App;
 
 internal sealed record OnboardingActions(Action Preferences, Action ClassIsland, Action Recording, Action Shortcuts,
-    Action Classroom, Action ExamAware, Action School, Action Noise);
+    Action Classroom, Action ExamAware, Action School, Action Noise, Action SecRandom);
 
 public partial class OnboardingWindow : Window
 {
@@ -27,7 +27,7 @@ public partial class OnboardingWindow : Window
     private DateOnly? _confirmedDate;
     private Guid _bridgeInstance;
     private long _epoch;
-    private bool _schoolAdvanceBusy;
+    private bool _schoolAdvanceBusy, _deviceAdvanceBusy, _deviceReadinessFailed;
 
     internal OnboardingWindow(string endpoint, OnboardingState state, Action<OnboardingState> save, NpepConnectionSession schoolConnection,
         OnboardingActions actions, Action<bool> finish, string? initialError)
@@ -39,6 +39,8 @@ public partial class OnboardingWindow : Window
         _state = state.Completed ? new(Features: state.Features) : state;
         InitializeComponent();
         SchoolConnection.Bind(schoolConnection);
+        StudyDevices.Bind(endpoint);
+        StudyDevices.SelectionSaved += (_, _) => { if (_state.Step == "noise" && _deviceReadinessFailed) { ErrorText.Text = ""; _deviceReadinessFailed = false; } };
         UseShortcuts.IsChecked = state.Features.HasFlag(OnboardingFeatures.Shortcuts);
         UseTouch.IsChecked = state.Features.HasFlag(OnboardingFeatures.Touch);
         UseRecording.IsChecked = state.Features.HasFlag(OnboardingFeatures.Recording);
@@ -46,6 +48,7 @@ public partial class OnboardingWindow : Window
         UseClassroom.IsChecked = state.Features.HasFlag(OnboardingFeatures.Classroom);
         UseSchool.IsChecked = state.Features.HasFlag(OnboardingFeatures.School);
         UseNoise.IsChecked = state.Features.HasFlag(OnboardingFeatures.Noise);
+        UseSecRandom.IsChecked = state.Features.HasFlag(OnboardingFeatures.SecRandom);
         ConfirmClock.Checked += (_, _) =>
         {
             _confirmedDate = _clock.Read(_elapsed.Elapsed).Now is { } now ? DateOnly.FromDateTime(now.Date) : null;
@@ -56,14 +59,14 @@ public partial class OnboardingWindow : Window
         Activated += (_, _) =>
         {
             if (_state.Step == "preferences") RefreshPreferences();
-            if (_state.Step is "classroom" or "noise") _ = RefreshPreparationAsync();
+            if (_state.Step is "classroom" or "noise" or "secrandom") _ = RefreshPreparationAsync();
             if (_state.Step == "school") _ = _schoolConnection.RefreshAsync();
         };
         Closing += (_, e) =>
         {
             if (!_closing && !Persist(CurrentChoices() with { Deferred = true })) e.Cancel = true;
         };
-        Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); };
+        Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); StudyDevices.CancelPending(); };
         Render();
         ErrorText.Text = initialError ?? "";
         LeaveWithoutSave.Visibility = initialError is null ? Visibility.Collapsed : Visibility.Visible;
@@ -84,7 +87,8 @@ public partial class OnboardingWindow : Window
             (UseAutomatic.IsChecked == true ? OnboardingFeatures.Automatic : 0) |
             (UseClassroom.IsChecked == true ? OnboardingFeatures.Classroom : 0) |
             (UseSchool.IsChecked == true ? OnboardingFeatures.School : 0) |
-            (UseNoise.IsChecked == true ? OnboardingFeatures.Noise : 0);
+            (UseNoise.IsChecked == true ? OnboardingFeatures.Noise : 0) |
+            (UseSecRandom.IsChecked == true ? OnboardingFeatures.SecRandom : 0);
         return features == _state.Features ? _state : _state.Select(features);
     }
 
@@ -97,9 +101,9 @@ public partial class OnboardingWindow : Window
 
     private static string Label(string step) => step switch
     {
-        "welcome" => "选择用途", "preferences" => "使用偏好", "classisland" => "连接学校时间",
+        "welcome" => "选择用途", "preferences" => "使用偏好", "secrandom" => "配置课堂点名", "classisland" => "连接学校时间",
         "recording" => "录制准备", "classroom" => "准备考试环境", "school" => "连接学校（NPEP）",
-        "noise" => "准备噪音监测", _ => "准备好开始了"
+        "noise" => "配置监测设备", _ => "准备好开始了"
     };
 
     private void RefreshProgress(OnboardingState state)
@@ -126,7 +130,9 @@ public partial class OnboardingWindow : Window
         {
             "preferences" => "已查看，使用现有设置",
             "school" => "本步已处理；配对与在线状态以学校互联页为准",
-            "classroom" or "noise" => "已查看准备说明；配置以管理页实时状态为准",
+            "classroom" => "已查看准备说明；配置以管理页实时状态为准",
+            "noise" => "已核对设备选择；运行状态以管理页实时状态为准",
+            "secrandom" => "已保存程序位置；接口和名单请在点名页检查",
             _ => "本次已检查（非持续状态）"
         };
     }
@@ -135,7 +141,7 @@ public partial class OnboardingWindow : Window
     {
         foreach (var (panel, step) in new[] { (WelcomePage, "welcome"), (PreferencesPage, "preferences"),
             (ClassIslandPage, "classisland"), (RecordingPage, "recording"), (ClassroomPage, "classroom"),
-            (SchoolPage, "school"), (NoisePage, "noise"), (ReviewPage, "review") })
+            (SchoolPage, "school"), (NoisePage, "noise"), (SecRandomPage, "secrandom"), (ReviewPage, "review") })
             panel.Visibility = _state.Step == step ? Visibility.Visible : Visibility.Collapsed;
         StepTitle.Text = Label(_state.Step);
         RefreshProgress(_state);
@@ -144,11 +150,11 @@ public partial class OnboardingWindow : Window
         NextButton.Content = _state.Step switch
         {
             "welcome" => "开始设置", "review" => "完成并开始使用",
-            "classroom" or "noise" => "已了解，下一步", _ => "下一步"
+            "classroom" => "已了解，下一步", "noise" => "已保存设备，下一步", _ => "下一步"
         };
         ShortcutHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Shortcuts) ? Visibility.Visible : Visibility.Collapsed;
         TouchHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Touch) ? Visibility.Visible : Visibility.Collapsed;
-        if (_state.Step is "classroom" or "noise") _ = RefreshPreparationAsync();
+        if (_state.Step is "classroom" or "noise" or "secrandom") _ = RefreshPreparationAsync();
         if (_state.Step == "school") _ = _schoolConnection.RefreshAsync();
         if (_state.Step == "preferences") RefreshPreferences();
         if (_state.Step == "classisland")
@@ -164,7 +170,7 @@ public partial class OnboardingWindow : Window
             ReviewText.Text = string.Join("\n", _state.Steps.Where(s => s is not ("welcome" or "review")).Select(s =>
                 $"{Label(s)}：{ReviewStatus(s)}"));
             FinishHint.Text = _state.Features.HasFlag(OnboardingFeatures.Automatic)
-                ? "下一步打开自动录课计划。请核对周期规则、单日计划和预演结果，再主动启用自动录制。完成引导本身不会开启录制。"
+                ? "下一步打开自动录课计划。安排每周或指定日期的录课，核对学校时间后再开启自动录课；试运行只作模拟。完成引导本身不会开启录制。"
                 : "完成后保留主窗口，可从课堂工作台打开常用工具，或展开侧边栏。尚未配置的功能可以稍后继续。";
         }
     }
@@ -183,8 +189,12 @@ public partial class OnboardingWindow : Window
 
     private async void NextClicked(object sender, RoutedEventArgs e)
     {
-        if (_schoolAdvanceBusy || _lifetime.IsCancellationRequested) return;
+        if (_schoolAdvanceBusy || _deviceAdvanceBusy || _lifetime.IsCancellationRequested) return;
         ErrorText.Text = "";
+        if (_state.Step == "secrandom")
+        {
+            if (!await CheckSecRandomPreparationAsync()) return;
+        }
         if (_state.Step == "preferences")
         {
             RefreshPreferences();
@@ -199,6 +209,16 @@ public partial class OnboardingWindow : Window
         {
             // Always re-read/probe on navigation: settings or devices may have changed since the last check.
             if (!await CheckRecordingAsync()) return;
+        }
+        if (_state.Step == "noise")
+        {
+            var visit = _state; _deviceAdvanceBusy = true;
+            NextButton.IsEnabled = BackButton.IsEnabled = SkipButton.IsEnabled = false;
+            bool ready;
+            try { ready = await StudyDevices.CheckReadyAsync(); }
+            finally { _deviceAdvanceBusy = false; NextButton.IsEnabled = BackButton.IsEnabled = SkipButton.IsEnabled = true; }
+            if (_lifetime.IsCancellationRequested || !ReferenceEquals(visit, _state)) return;
+            if (!ready) { _deviceReadinessFailed = true; ErrorText.Text = "请核对并保存监测设备，或跳过此项。"; return; }
         }
         if (_state.Step == "school")
         {
@@ -248,20 +268,25 @@ public partial class OnboardingWindow : Window
 
     private async Task CheckClockAsync()
     {
-        if (_clockBusy || _lifetime.IsCancellationRequested) return;
+        var visit = _state;
+        bool CurrentVisit() => !_lifetime.IsCancellationRequested && ReferenceEquals(visit, _state);
+        if (_clockBusy || _lifetime.IsCancellationRequested || visit.Step != "classisland") return;
         _clockBusy = true;
         try
         {
             var config = await RequestAsync("classisland.config.get");
+            if (!CurrentVisit()) return;
             string? path = config.Launch?.Settings.ExecutablePath;
             PathText.Text = config.Outcome != "Succeeded" || config.Launch?.StorageWarning is not null ? "程序路径：暂时无法读取配置"
                 : string.IsNullOrWhiteSpace(path) ? "程序路径：尚未保存。若 ClassIsland 已连接，可继续；路径用于以后启动本体。"
                 : File.Exists(path) ? "程序路径：文件存在 · " + path : "程序路径：文件不存在，请重新选择";
             var connection = await RequestAsync("classisland.status");
+            if (!CurrentVisit()) return;
             _connected = connection.Outcome == "Succeeded" && connection.Status is not null;
             ConnectionText.Text = _connected ? "本体：已连接" : "本体：未连接，请从管理窗口检查并启动 ClassIsland";
             var start = _elapsed.Elapsed;
             var response = await RequestAsync("classisland.school-clock");
+            if (!CurrentVisit()) return;
             var frame = response.SchoolClock ?? SchoolClockFrame.Unavailable("尚未取得桥接时间");
             _clock.Accept(frame, _elapsed.Elapsed, (_elapsed.Elapsed - start).TotalMilliseconds);
             var reading = _clock.Read(_elapsed.Elapsed);
@@ -278,12 +303,19 @@ public partial class OnboardingWindow : Window
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
+            if (!CurrentVisit()) return;
             _connected = false; _scheduleReady = false; _clock.Unavailable("连接失败，等待重新检查", _elapsed.Elapsed);
             ConfirmClock.IsChecked = false; ConfirmClock.IsEnabled = false;
             ConnectionText.Text = "本体：暂时无法检查，请确认后台与 ClassIsland 已启动";
             BridgeText.Text = "桥接：尚未确认"; ClockText.Text = "学校时间：暂不可用";
         }
-        finally { _clockBusy = false; }
+        finally
+        {
+            _clockBusy = false;
+            // Re-entering this step requires a complete fresh check, including after an old read fails.
+            if (!_lifetime.IsCancellationRequested && !ReferenceEquals(visit, _state) && _state.Step == "classisland")
+                _ = CheckClockAsync();
+        }
     }
 
     private async void CheckRecordingClicked(object sender, RoutedEventArgs e) => await CheckRecordingAsync();

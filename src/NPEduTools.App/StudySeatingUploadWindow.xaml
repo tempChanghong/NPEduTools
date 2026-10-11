@@ -1,0 +1,20 @@
+<Window x:Class="NPEduTools.App.StudySeatingUploadWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="自习座位表 · NPEduTools" Width="820" Height="730" MinWidth="640" MinHeight="580" WindowStartupLocation="CenterOwner"
+ Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI" Icon="/Assets/npedutools.ico">
+ <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Resources/RecordingControls.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
+ <Grid Margin="28"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel><TextBlock Text="自习座位表" FontSize="30" FontWeight="Bold"/>
+   <TextBlock Text="只上传到本机绑定的班级，无需口令。保存后按按钮查看，不自动弹出，也不参与作业轮换。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,18"/>
+   <DockPanel><Button x:Name="RefreshScope" DockPanel.Dock="Right" Content="核对当前版本" Click="RefreshClicked"/>
+    <TextBlock x:Name="ScopeText" Text="正在核对本班当前版本…" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/></DockPanel>
+  </StackPanel>
+  <Border Grid.Row="1" Background="White" CornerRadius="16" Padding="20" Margin="0,20,0,18"><Grid><Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <Grid><Image x:Name="Preview" Stretch="Uniform"/><TextBlock x:Name="EmptyDraft" Text="选择要上传的自习座位表" Foreground="#718089" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21"/></Grid>
+   <TextBlock x:Name="DraftInfo" Grid.Row="1" Foreground="#64776D" Margin="0,14,0,0" TextWrapping="Wrap"/>
+  </Grid></Border>
+  <StackPanel Grid.Row="2"><TextBlock x:Name="ResultText" TextWrapping="Wrap" Foreground="#8A5A15" Margin="0,0,0,12"/>
+   <DockPanel><Button x:Name="SaveImage" DockPanel.Dock="Right" Content="确认上传" Background="#147D68" Foreground="White" IsEnabled="False" Click="SaveClicked"/>
+    <Button x:Name="ChooseImage" Content="选择 PNG／JPEG 图片" HorizontalAlignment="Left" Click="ChooseClicked"/></DockPanel>
+  </StackPanel>
+ </Grid>
+</Window>

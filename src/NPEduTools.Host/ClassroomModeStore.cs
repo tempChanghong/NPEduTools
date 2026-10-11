@@ -38,7 +38,7 @@ public sealed class ClassroomModeStore
                 Save(_state with { Phase = "Incomplete", AutomaticPaused = true,
                     Message = "上次切换被中断。自动录课保持暂停，请核实后恢复或重新切换。" });
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         {
             _state = new(Phase: "Unavailable", AutomaticPaused: true,
                 Message: "无法读取模式记录，自动录课保持暂停。请检查 classroom-mode.json，原文件已保留。");

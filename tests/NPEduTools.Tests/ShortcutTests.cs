@@ -49,6 +49,41 @@ public sealed class ShortcutTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OversizedValidCatalogCannotReplaceReadableConfiguration(bool existing)
+    {
+        string path = Path.Combine(_directory, "items.json");
+        var catalog = new ShortcutCatalog(path);
+        var saved = Link();
+        if (existing) catalog.Save([saved]);
+        byte[]? original = existing ? File.ReadAllBytes(path) : null;
+        string target = @"C:\课堂资料\" + string.Join("\\", Enumerable.Repeat(new string('课', 120), 10)) + @"\课件.pptx";
+        var entries = Enumerable.Range(0, ShortcutCatalog.MaximumItems)
+            .Select(index => new ShortcutEntry(Guid.NewGuid(), $"课件 {index}", "file", target)).ToArray();
+        foreach (var entry in entries) Assert.Equal(entry, ShortcutCatalog.Normalize(entry));
+        Assert.True(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new ShortcutDocument(1, entries)).Length > 128 * 1024);
+
+        Assert.Throws<InvalidDataException>(() => catalog.Save(entries));
+
+        Assert.Equal(existing ? new[] { saved } : [], catalog.Read());
+        if (existing) Assert.Equal(original, File.ReadAllBytes(path));
+        else Assert.False(File.Exists(path));
+        if (Directory.Exists(_directory)) Assert.Empty(Directory.GetFiles(_directory, "*.tmp"));
+    }
+
+    [Fact]
+    public void ValidChinesePathsAtMaximumItemCountRemainReadableAfterSaving()
+    {
+        var catalog = new ShortcutCatalog(Path.Combine(_directory, "items.json"));
+        string target = @"C:\课堂资料\" + string.Join("\\", Enumerable.Repeat(new string('课', 120), 4)) + @"\课件.pptx";
+        var entries = Enumerable.Range(0, ShortcutCatalog.MaximumItems)
+            .Select(index => new ShortcutEntry(Guid.NewGuid(), $"课件 {index}", "file", target)).ToArray();
+        catalog.Save(entries);
+        Assert.Equal(entries, catalog.Read());
+    }
+
+    [Theory]
     [InlineData("javascript:alert(1)")]
     [InlineData("file:///C:/Windows/notepad.exe")]
     [InlineData("ms-settings:startupapps")]

@@ -1,0 +1,20 @@
+<UserControl x:Class="NPEduTools.App.StudyDevicePicker" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" FontFamily="Microsoft YaHei UI">
+ <UserControl.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Resources/RecordingControls.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></UserControl.Resources>
+ <StackPanel>
+  <DockPanel Margin="0,0,0,12"><Button x:Name="DeviceRefresh" DockPanel.Dock="Right" Content="刷新设备" Click="RefreshClicked" Padding="14,7" AutomationProperties.AutomationId="StudyRefreshDevices"/><TextBlock Text="自习监测设备" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
+  <TextBlock Text="监测麦克风" FontWeight="SemiBold" Margin="0,0,0,7"/>
+  <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <ComboBox x:Name="StudyMicrophone" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{StaticResource RecordingChoice}" MinHeight="38" SelectionChanged="ChoiceChanged" AutomationProperties.AutomationId="StudyMicrophone" AutomationProperties.Name="自习监测麦克风"/>
+   <Button x:Name="SaveMicrophone" Grid.Column="1" Content="保存麦克风" Click="SaveMicrophoneClicked" Margin="12,0,0,0" Padding="12,7" AutomationProperties.AutomationId="StudySaveMicrophone"/>
+  </Grid>
+  <TextBlock x:Name="MicrophoneStatus" Foreground="#61786B" TextWrapping="Wrap" FontSize="12" Margin="0,7,0,14"/>
+  <TextBlock Text="预留捕获摄像头" FontWeight="SemiBold" Margin="0,0,0,7"/>
+  <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <ComboBox x:Name="StudyCamera" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{StaticResource RecordingChoice}" MinHeight="38" SelectionChanged="ChoiceChanged" AutomationProperties.AutomationId="StudyCamera" AutomationProperties.Name="自习摄像头"/>
+   <Button x:Name="SaveCamera" Grid.Column="1" Content="保存摄像头" Click="SaveCameraClicked" Margin="12,0,0,0" Padding="12,7" AutomationProperties.AutomationId="StudySaveCamera"/>
+  </Grid>
+  <TextBlock x:Name="CameraStatus" Foreground="#61786B" TextWrapping="Wrap" FontSize="12" Margin="0,7,0,9"/>
+  <TextBlock Text="这里只枚举与保存固定设备，不开始监测或打开摄像头。拔掉所选设备后不会自动改用另一台；摄像头可以暂不选择。单张取图由学校配置决定，仅在有效自习监测中执行。" Foreground="#718089" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,9"/>
+  <TextBlock x:Name="DeviceMessage" Foreground="#AA5337" TextWrapping="Wrap" AutomationProperties.AutomationId="StudyDeviceMessage"/>
+ </StackPanel>
+</UserControl>

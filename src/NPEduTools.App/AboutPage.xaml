@@ -89,6 +89,11 @@
         </ItemsControl>
       </StackPanel></Border>
       <Border Style="{StaticResource AboutCard}"><StackPanel>
+        <TextBlock Text="服务、隐私与开源许可" FontSize="20" FontWeight="SemiBold" Foreground="#203D32" />
+        <TextBlock Text="三份协议自2026年10月4日起生效。正文与 GPL v3 许可证均可离线阅读。" Style="{StaticResource AboutBody}" Margin="0,8,0,12" />
+        <Button Content="查看协议与 GPL v3" Click="AgreementsClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="AboutAgreements" />
+      </StackPanel></Border>
+      <Border Style="{StaticResource AboutCard}"><StackPanel>
         <DockPanel LastChildFill="True">
           <Button Content="复制版本信息" Click="CopyVersionClicked" DockPanel.Dock="Right" Padding="12,8" AutomationProperties.AutomationId="AboutCopyVersion" />
           <TextBlock Text="版本信息" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="#203D32" />

@@ -133,7 +133,7 @@ public sealed class NpepConnectionSessionTests
 
     [Theory]
     [InlineData("ONLINE", false, "当前在线")]
-    [InlineData("OFFLINE", false, "当前未在线")]
+    [InlineData("OFFLINE", false, "自动重试")]
     [InlineData("STOPPED", false, "连接已停止")]
     [InlineData("ONLINE", true, "互联已暂停")]
     public async Task ExistingPairingCanFinishWithoutNetworkOrReRegistration(string connection, bool paused, string title)
@@ -143,6 +143,18 @@ public sealed class NpepConnectionSessionTests
         Assert.True(session.CanFinish); Assert.False(session.ShowCreate); Assert.False(session.ShowConfirm);
         Assert.Contains(title, session.Title); Assert.False(await session.PairAsync());
         Assert.Single(host.Requests);
+    }
+
+    [Fact]
+    public async Task OfflineAndUnknownConnectionHaveDistinctRecoveryHints()
+    {
+        var host = new Host { Snapshot = State("ACTIVE") with { Connection = "OFFLINE", Error = "NETWORK_UNAVAILABLE" } };
+        var session = new NpepConnectionSession(host.Send); await session.RefreshAsync();
+        Assert.Contains("自动重试", session.Title);
+        host.Snapshot = host.Snapshot with { Connection = "NEW_CONNECTION", Error = null };
+        await session.RefreshAsync();
+        Assert.Contains("待核实", session.Title);
+        Assert.DoesNotContain(host.Requests, x => x.Npep is not null);
     }
 
     [Theory]
@@ -164,6 +176,27 @@ public sealed class NpepConnectionSessionTests
         Assert.Contains("已过期", session.Title); Assert.False(session.CanFinish);
         host.Snapshot = State("SUSPENDED"); await session.RefreshAsync();
         Assert.False(session.CanFinish); Assert.False(session.CanConfirm); Assert.True(session.CanUnpair);
+    }
+
+    [Fact]
+    public async Task CurrentFeedbackAndStatusErrorsClearOnSuccessfulRefreshWithoutSendingCommands()
+    {
+        var host = new Host { Snapshot = State("ACTIVE") with { Connection = "OFFLINE", Error = "TLS_VALIDATION_FAILED" } };
+        bool disconnected = false;
+        var session = new NpepConnectionSession((r, t) => disconnected ? throw new IOException("fixture disconnect") : host.Send(r, t));
+        await session.RefreshAsync();
+        Assert.Contains("证书", session.Error);
+        Assert.DoesNotContain("TLS_VALIDATION_FAILED", session.Error);
+        Assert.Contains("TLS_VALIDATION_FAILED", session.TechnicalDetails);
+        Assert.Contains("自动重试", session.NextAction);
+        disconnected = true; await session.RefreshAsync();
+        Assert.Contains("未确认", session.Title); Assert.False(session.CanPause);
+        Assert.DoesNotContain("TLS_VALIDATION_FAILED", session.TechnicalDetails);
+        disconnected = false; host.Snapshot = host.Snapshot with { Connection = "ONLINE", Error = null };
+        await session.RefreshAsync();
+        Assert.Contains("当前在线", session.Title); Assert.Equal("", session.Error);
+        Assert.DoesNotContain("HOST_UNAVAILABLE", session.TechnicalDetails);
+        Assert.DoesNotContain(host.Requests, r => r.Npep is not null);
     }
 
     [Fact]
@@ -202,6 +235,68 @@ public sealed class NpepConnectionSessionTests
         Assert.Contains("可能已受理", session.Message); Assert.False(await session.PairAsync());
         failing = false; await session.RefreshAsync();
         Assert.False(session.ServerConfirmed); Assert.False(session.CanPair);
+    }
+
+    [Theory]
+    [InlineData("refresh")]
+    [InlineData("pair")]
+    [InlineData("confirm")]
+    [InlineData("unpair-authorization")]
+    public async Task AccessDenialInvalidatesSharedStateAndAllowsReadOnlyRecovery(string operation)
+    {
+        var host = new Host { Snapshot = State(operation == "pair" ? "UNPAIRED" : operation == "confirm" ? "APPROVED" : "ACTIVE")
+            with { Server = Server(), Approval = Approval(), Connection = "ONLINE" } };
+        bool denied = false;
+        var requests = new List<HostRequest>();
+        int authorizations = 0;
+        var session = new NpepConnectionSession((request, token) =>
+        {
+            requests.Add(request);
+            if (denied) throw new UnauthorizedAccessException("isolated Host access denied");
+            return host.Send(request, token);
+        }, authorize: request =>
+        {
+            authorizations++;
+            if (denied) throw new UnauthorizedAccessException("isolated management access denied");
+            return Task.FromResult<HostRequest?>(request);
+        });
+        Assert.True(await session.RefreshAsync());
+        session.ServerConfirmed = session.BindingConfirmed = true;
+        session.DeviceName = "保留设备草稿"; session.UserCode = "ABCD-2345";
+        string origin = session.Origin;
+        Task<bool> Act() => operation switch
+        {
+            "pair" => session.PairAsync(), "confirm" => session.ConfirmAsync(),
+            "unpair-authorization" => session.UnpairAsync(1), _ => session.RefreshAsync()
+        };
+        denied = true;
+        Assert.False(await Act());
+        Assert.Null(session.Revision);
+        Assert.False(session.IsWorking); Assert.True(session.CanRefresh);
+        Assert.False(session.HasPairing); Assert.False(session.CanFinish);
+        Assert.False(session.CanPair); Assert.False(session.CanConfirm);
+        Assert.False(session.CanPause); Assert.False(session.CanUnpair);
+        Assert.False(session.ServerConfirmed); Assert.False(session.BindingConfirmed);
+        Assert.Equal("", session.BoundOrigin); Assert.Equal("", session.Receipt);
+        Assert.Contains(operation == "refresh" ? "重新检查" : "操作可能已受理", session.Message);
+        Assert.Equal(origin, session.Origin); Assert.Equal("保留设备草稿", session.DeviceName);
+        Assert.Equal("ABCD-2345", session.UserCode);
+        Assert.Equal(operation == "unpair-authorization" ? 1 : 2, requests.Count);
+        Assert.Equal(operation == "unpair-authorization" ? 1 : 0, authorizations);
+
+        int beforeRecovery = requests.Count;
+        denied = false;
+        host.Snapshot = host.Snapshot with { Revision = 2 };
+        Assert.True(await session.RefreshAsync());
+        Assert.Equal(2, session.Revision); Assert.False(session.IsWorking);
+        Assert.Equal(beforeRecovery + 1, requests.Count);
+        Assert.Equal("npep.status", requests[^1].Capability); Assert.Null(requests[^1].Npep);
+        Assert.Equal(operation == "unpair-authorization" ? 1 : 0, authorizations);
+        Assert.False(session.ServerConfirmed); Assert.False(session.BindingConfirmed);
+        if (operation == "pair") Assert.False(session.CanPair);
+        else if (operation == "confirm") Assert.False(session.CanConfirm);
+        else Assert.True(session.CanFinish);
+        Assert.DoesNotContain("后台暂不可用", session.Message);
     }
 
     [Fact]

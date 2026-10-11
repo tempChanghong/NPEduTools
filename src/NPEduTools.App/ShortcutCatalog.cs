@@ -20,12 +20,13 @@ public sealed record ShortcutDocument(int Version, ShortcutEntry[] Items);
 public sealed class ShortcutCatalog(string path)
 {
     public const int MaximumItems = 24;
+    private const int MaximumDocumentBytes = 128 * 1024;
     public static string PathFor(string endpoint) => StartupPreferencesStore.PathFor(endpoint).Replace(".startup.json", ".shortcuts.json", StringComparison.Ordinal);
 
     public ShortcutEntry[] Read()
     {
         if (!File.Exists(path)) return [];
-        if (new FileInfo(path).Length > 128 * 1024) throw new InvalidDataException("快捷启动配置过大。");
+        if (new FileInfo(path).Length > MaximumDocumentBytes) throw new InvalidDataException("快捷启动配置过大。");
         var document = JsonSerializer.Deserialize<ShortcutDocument>(File.ReadAllText(path));
         if (document is null || document.Version != 1 || document.Items is null)
             throw new InvalidDataException("无法识别快捷启动配置版本。");
@@ -36,11 +37,14 @@ public sealed class ShortcutCatalog(string path)
     public void Save(ShortcutEntry[] items)
     {
         ValidateList(items);
+        byte[] content = JsonSerializer.SerializeToUtf8Bytes(new ShortcutDocument(1, items));
+        if (content.Length > MaximumDocumentBytes)
+            throw new InvalidDataException("快捷启动配置过大，请减少项目或缩短路径、网址。");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new ShortcutDocument(1, items)));
+            File.WriteAllBytes(temporary, content);
             File.Move(temporary, path, true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }

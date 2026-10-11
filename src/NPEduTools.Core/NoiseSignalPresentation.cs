@@ -5,6 +5,16 @@ namespace NPEduTools.Core;
 /// <summary>Signal display only: the trend's lower bound is not an acoustic noise threshold.</summary>
 public static class NoiseSignalPresentation
 {
+    public static string Estimated(double? value) => value is { } v && double.IsFinite(v) ? $"{v:F1} 估算 dB(A)" : "— 估算 dB(A)";
+    public static string EstimateReason(NPEduTools.Contracts.NoiseEstimate? e) => e?.Reason switch
+    {
+        "DEVICE_CHANGED" => "麦克风已更换，参考失效，须重新校准",
+        "INPUT_SETTINGS_CHANGED" => "输入设置已变化，参考失效，须重新校准",
+        "INPUT_SETTINGS_UNAVAILABLE" => "无法核对输入设置，参考失效，须重新校准",
+        "REFERENCE_STORE_UNAVAILABLE" => "参考文件不可用",
+        "A_WEIGHTING_UNAVAILABLE" => "当前采集不支持 A 加权估算",
+        _ => e?.State switch { "Active" => $"估算 dB(A) · A/{e.TimeWeighting}", "WarmingUp" => "A 加权预热中", "Stopped" => "估算采集已结束", "NoData" => "等待有效估算（30–130 dB(A)，削波 ≤ 0.1%）", _ => "尚无有效外部参考，当前为 dBFS" }
+    };
     public const double TrendMinimumDbfs = -100;
 
     public static bool IsWeak(double? value) => value is { } d && double.IsFinite(d) && d <= TrendMinimumDbfs;

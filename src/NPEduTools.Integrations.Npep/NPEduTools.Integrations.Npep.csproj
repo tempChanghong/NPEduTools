@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <EmbeddedResource Include="../../docs/npep/study-photos.schema.json" LogicalName="npep.photos.schema.json" />
+    <EmbeddedResource Include="../../docs/npep/seating.schema.json" LogicalName="npep.seating.schema.json" />
     <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />
+    <ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" />
+    <EmbeddedResource Include="../../docs/npep/study-device.schema.json" LogicalName="npep.study.schema.json" />
     <EmbeddedResource Include="../../docs/npep/n1-wire.schema.json" LogicalName="npep.schema.json" />
     <EmbeddedResource Include="../../docs/npep/n3-wire.schema.json" LogicalName="npep.runtime.schema.json" />
     <EmbeddedResource Include="../../docs/npep/n4-exam-plan.schema.json" LogicalName="npep.plans.schema.json" />

@@ -252,8 +252,16 @@ public partial class QuickAccessWindow : Window
         AutomaticSkipDay.Visibility = state.Enabled ? Visibility.Visible : Visibility.Collapsed;
     }
     private void AutomaticSkipDayClicked(object sender, RoutedEventArgs e) => _skipAutomaticToday?.Invoke();
-    public void UpdateRecording(RecordingState state)
+    public void UpdateRecording(RecordingState state, bool stateAvailable = true)
     {
+        if (!stateAvailable)
+        {
+            RecordingStatus.Text = "录制后台未确认当前状态，等待重新连接。";
+            RecordingButton.Content = "查看";
+            RecordingControls.Visibility = Visibility.Collapsed;
+            RecordingPause.IsEnabled = RecordingStop.IsEnabled = false;
+            return;
+        }
         RecordingStatus.Text = state.Active ? $"{state.Message} · {TimeSpan.FromSeconds(Math.Max(0, state.Seconds)):hh\\:mm\\:ss}" : state.Message;
         RecordingButton.Content = state.Active ? "控制" : "录制";
         if (state.Active && state.Control is { Owner: "Automatic", HardDeadline: > 0 } c)

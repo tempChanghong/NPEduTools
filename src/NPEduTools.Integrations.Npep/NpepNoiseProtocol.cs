@@ -12,6 +12,43 @@ public static class NpepNoiseProtocol
         using var document = JsonDocument.Parse(value.ToJsonString());
         if (!NpepProtocol.Check(Schema.RootElement, Schema.RootElement.GetProperty("definitions").GetProperty(definition), document.RootElement, utf16: true, multiline: true))
             throw new NpepException("INVALID_RESPONSE");
+        if (definition == "exchangeRequest")
+        {
+            ValidateEstimate(document.RootElement.GetProperty("status"));
+            foreach (var r in document.RootElement.GetProperty("reports").EnumerateArray()) ValidateEstimate(r);
+        }
+        else if (definition is "status" or "report") ValidateEstimate(document.RootElement);
+    }
+    private static double? NullableNumber(JsonElement value, string name) => value.GetProperty(name).ValueKind == JsonValueKind.Null ? null : value.GetProperty(name).GetDouble();
+    private static void ValidateEstimate(JsonElement value)
+    {
+        if (value.TryGetProperty("summary", out var raw) && raw.ValueKind == JsonValueKind.Object)
+        {
+            double elapsedRaw = raw.GetProperty("elapsedSeconds").GetDouble(), sampledRaw = raw.GetProperty("sampledSeconds").GetDouble();
+            double coverageRaw = raw.GetProperty("coverage").GetDouble(), clipped = raw.GetProperty("clippedPercent").GetDouble();
+            long frames = raw.GetProperty("frames").GetInt64();
+            double? meanRaw = NullableNumber(raw, "energyMeanDbfs"), peakRaw = NullableNumber(raw, "peakDbfs");
+            if ((sampledRaw > 0) != (frames > 0) ||
+                Math.Abs(coverageRaw - (elapsedRaw > 0 ? Math.Clamp(sampledRaw / elapsedRaw, 0, 1) : 0)) > 1e-6 ||
+                (meanRaw is null) != (peakRaw is null) || meanRaw is not null && peakRaw < meanRaw - 1e-8 ||
+                sampledRaw == 0 && (meanRaw is not null || peakRaw is not null || clipped != 0) ||
+                clipped > 0 && (peakRaw is null || peakRaw < 20 * Math.Log10(.999) - 1e-8))
+                throw new NpepException("INVALID_RESPONSE");
+        }
+        if (!value.TryGetProperty("estimate", out var e) || e.ValueKind != JsonValueKind.Object) return;
+        var s = e.GetProperty("summary");
+        double sampled = s.GetProperty("sampledSeconds").GetDouble();
+        double elapsed = raw.ValueKind == JsonValueKind.Object ? raw.GetProperty("elapsedSeconds").GetDouble() : 0;
+        double coverage = s.GetProperty("coverage").GetDouble();
+        bool current = e.GetProperty("currentDbA").ValueKind != JsonValueKind.Null;
+        double? mean = NullableNumber(s, "energyMeanDbA"), maximum = NullableNumber(s, "maximumDbA");
+        if (current != (e.GetProperty("state").GetString() == "Active") || current && (e.GetProperty("reason").ValueKind != JsonValueKind.Null ||
+            !value.TryGetProperty("state", out var state) || state.GetString() != "Active") ||
+            (sampled > 0) != (mean is not null && maximum is not null) ||
+            sampled == 0 && (mean is not null || maximum is not null) ||
+            Math.Abs(coverage - (elapsed > 0 ? Math.Clamp(sampled / elapsed, 0, 1) : 0)) > 1e-6 ||
+            mean > maximum + 1e-8)
+            throw new NpepException("INVALID_RESPONSE");
     }
 }
 

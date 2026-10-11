@@ -55,7 +55,7 @@ public partial class ShortcutEditorWindow : Window
             Result = ShortcutCatalog.Normalize(new(_id, NameBox.Text, Kind, TargetBox.Text));
             DialogResult = true;
         }
-        catch (Exception error) when (error is IOException or ArgumentException or NotSupportedException)
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException or NotSupportedException)
         { ErrorText.Text = error.Message; }
     }
 }

@@ -15,11 +15,12 @@ public partial class ExamAwareWindow
         _prepared = _allowPreparedPlan ? state?.PreparedPlan : null;
         PreparePlanButton.IsEnabled = ready && state?.CanPresent == true;
         PresentPlanButton.IsEnabled = ready && _prepared is not null && state?.Player is { Known: true, Sessions.Length: 0 };
-        PlanOperationText.Text = state?.PlanOperation?.Message ?? "需要桥接插件 0.4.0，并授权放映与状态读取权限。";
+        PlanOperationText.Text = state is null ? "后台状态未知，恢复连接后重新核对方案和放映状态。" :
+            state.PlanOperation?.Message ?? "需要桥接插件 0.4.0，并授权放映与状态读取权限。";
         PlanSummaryText.Text = _prepared is { } p
             ? $"{p.ExamName} · {p.Exams.Length} 场考试\n" + string.Join("\n", p.Exams.Select(x => $"{x.Name}　{x.Start} → {x.End}　提前 {x.AlertTime} 分钟提醒")) +
               (string.IsNullOrWhiteSpace(p.Message) ? "" : "\n提示语：" + p.Message) + "\n文件 SHA-256：" + p.Sha256
-            : "尚无可启动的已校验方案。启动后或连接变化后，需要重新校验。";
+            : state is null ? "方案状态未知，暂不能开始放映。" : "尚无可启动的已校验方案。启动后或连接变化后，需要重新校验。";
         PlayerStateText.Text = state?.BridgeState != "Connected" || state.Player is not { Known: true } player
             ? "实时放映状态：未知（断线或无读取权限）"
             : player.Sessions.Length == 0 ? "实时放映状态：当前没有活动放映会话。"

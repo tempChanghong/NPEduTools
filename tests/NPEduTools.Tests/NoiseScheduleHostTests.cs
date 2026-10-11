@@ -6,7 +6,7 @@ using NPEduTools.Integrations.Npep;
 
 namespace NPEduTools.Tests;
 
-public sealed class NoiseScheduleHostTests
+public sealed partial class NoiseScheduleHostTests
 {
     public static IEnumerable<object[]> WireCases => JsonNode.Parse(File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory,"Fixtures/noise-schedule-wire-cases.json")))!.AsArray()
         .Select(c => new object[] { c!["name"]!.GetValue<string>(),c["definition"]!.GetValue<string>(),c["expected"]!.GetValue<bool>(),c["value"]!.ToJsonString() });
@@ -20,6 +20,8 @@ public sealed class NoiseScheduleHostTests
     private sealed class Clock : TimeProvider
     {
         public long Ms;
+        public DateTimeOffset? UtcBase;
+        public override DateTimeOffset GetUtcNow() => UtcBase?.AddMilliseconds(Ms) ?? base.GetUtcNow();
         public override long TimestampFrequency => 1000;
         public override long GetTimestamp() => Ms;
         // Scheduler tests drive time explicitly; NoiseService's separate watchdog is
@@ -41,6 +43,7 @@ public sealed class NoiseScheduleHostTests
         public ManualResetEventSlim? StartGate;
         public void Start() => StartGate?.Wait();
         public void Sample() => Frame?.Invoke(new(0.1, 0.000001, 0.002, 0, false));
+        public void Silence() => Frame?.Invoke(new(0.1, 0, 0, 0, false));
         public void Break() => Failed?.Invoke("Disconnected");
         public void Dispose() => Disposed = true;
     }
@@ -74,7 +77,7 @@ public sealed class NoiseScheduleHostTests
                 ["rules"]=source is "None" or "Disabled" ? new JsonArray() : JsonNode.Parse("[{\"days\":[4],\"start\":\"19:00\",\"end\":\"20:00\"}]") },
             ["leaseSeconds"]=seconds,["confirmed"]=confirmed,["command"]=null };
         public void Tick(int ms=500) { Time.Ms+=ms; Scheduler.Tick(); }
-        public async Task Start() { Tick(); Tick(); Tick(); await Until(()=>Noise.Snapshot().State=="Active"); }
+        public async Task Start() { Tick(); Tick(); Tick(); await Until(()=>{Scheduler.Tick();return Noise.Snapshot().State=="Active" && Scheduler.Observe()["owner"]!.GetValue<string>()=="Schedule";}); }
         public async ValueTask DisposeAsync()
         { await Scheduler.DisposeAsync(); await Noise.DisposeAsync(); if(Directory.Exists(Path)) Directory.Delete(Path,true); }
     }
@@ -196,6 +199,64 @@ public sealed class NoiseScheduleHostTests
         f.Time.Ms=3600000; f.Scheduler.Tick(); await Until(()=>f.Noise.Snapshot().State=="Stopped");
         Assert.True(f.Captures[0].Disposed);
     }
+    [Theory]
+    [InlineData(false, "local")]
+    [InlineData(true, "local")]
+    [InlineData(false, "web")]
+    [InlineData(true, "web")]
+    [InlineData(false, "failure")]
+    [InlineData(true, "failure")]
+    public async Task Continuing_capture_uses_updated_window_for_protection_and_stop_blocks(bool shifted, string action)
+    {
+        await using var f = new Fixture();
+        if (shifted) f.Base = new(2026, 10, 1, 19, 59, 58, TimeSpan.Zero);
+        await f.Start();
+        var session = f.Noise.Snapshot().SessionId;
+        var policy = f.Policy();
+        policy["policy"]!["version"] = new string('b', 64);
+        policy["policy"]!["rules"]![0]!["start"] = shifted ? "20:00" : "19:00";
+        policy["policy"]!["rules"]![0]!["end"] = "21:00";
+        f.Scheduler.Confirm(policy); f.Tick();
+        Assert.Equal(session, f.Noise.Snapshot().SessionId);
+        Assert.Single(f.Captures);
+        bool protectionMatches = JsonNode.DeepEquals(f.Scheduler.Observe()["window"], f.Scheduler.ProtectionWindow(session));
+
+        if (action == "failure") f.Captures[0].Break();
+        else if (action == "web")
+        {
+            var state = f.Noise.Snapshot();
+            Assert.Equal("Accepted", f.Noise.RemoteCommand(Guid.NewGuid(), "STOP", state.InstanceId, state.Revision, session, 60).Outcome);
+        }
+        else Assert.Equal("Accepted", f.Noise.Handle(f.Command("stop")).Outcome);
+        await Until(() => f.Noise.Snapshot().State == (action == "failure" ? "Faulted" : "Stopped"));
+        f.Tick(); f.Tick();
+        Assert.Equal(action == "failure" ? "WINDOW_FAILED" : "WINDOW_SKIPPED", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        Assert.Single(f.Captures);
+        Assert.True(protectionMatches, "the running capture's protection window still describes the previous policy");
+        var journal = JsonNode.Parse(File.ReadAllText(System.IO.Path.Combine(f.Path, "noise-schedule-state.json")))!;
+        var block = journal["blocks"]!.AsArray().Single()!["window"]!;
+        Assert.Equal(shifted ? "2026-10-01T20:00:00+00:00" : "2026-10-01T19:00:00+00:00", block["start"]!.GetValue<string>());
+        Assert.Equal("2026-10-01T21:00:00+00:00", block["end"]!.GetValue<string>());
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Window_update_must_be_durable_but_unchanged_ticks_do_not_rewrite_journal(bool changed)
+    {
+        await using var f = new Fixture(); await f.Start();
+        string path = System.IO.Path.Combine(f.Path, "noise-schedule-state.json");
+        byte[] original = File.ReadAllBytes(path);
+        using var locked = new FileStream(path + ".tmp", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var policy = f.Policy();
+        if (changed) policy["policy"]!["rules"]![0]!["end"] = "21:00";
+        f.Scheduler.Confirm(policy); f.Tick();
+        Assert.Equal(changed ? "SCHEDULE_STORE_UNAVAILABLE" : "WINDOW_ACTIVE", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        if (changed) await Until(() => f.Noise.Snapshot().State == "Stopped");
+        else Assert.Equal("Active", f.Noise.Snapshot().State);
+        Assert.Equal(original, File.ReadAllBytes(path));
+        Assert.Single(f.Captures);
+    }
+
     [Theory] [InlineData(false)] [InlineData(true)]
     public async Task Local_and_web_manual_stops_persist_skip_across_restart_and_policy_edits(bool web)
     {
@@ -223,6 +284,31 @@ public sealed class NoiseScheduleHostTests
         f.Scheduler.Confirm(response); f.Tick(); await Until(()=>f.Captures.Count==2&&f.Noise.Snapshot().State=="Active");
         f.Scheduler.Confirm(response); f.Tick(); Assert.Equal(2,f.Captures.Count);
         Assert.Equal("ACCEPTED",f.Scheduler.Observe()["receipt"]!["outcome"]!.GetValue<string>());
+    }
+    [Fact]
+    public async Task Delayed_resume_after_original_window_end_cannot_clear_skip_or_restart_capture()
+    {
+        await using var f = new Fixture(); await f.Start(); f.Noise.Handle(f.Command("stop"));
+        await Until(() => f.Noise.Snapshot().State == "Stopped"); f.Tick();
+        var reply = f.Policy(); reply["command"] = new JsonObject { ["commandId"] = Guid.NewGuid().ToString("D"),
+            ["version"] = new string('a', 64), ["window"] = f.Scheduler.Observe()["window"]!.DeepClone() };
+        f.Time.Ms = 3600000; f.Tick(); f.Tick(); f.Tick();
+        f.Scheduler.Confirm(reply); f.Tick();
+        Assert.Equal("REJECTED", f.Scheduler.Observe()["receipt"]!["outcome"]!.GetValue<string>());
+        Assert.Equal("OUTSIDE_WINDOW", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        Assert.Single(f.Captures); Assert.Equal("Stopped", f.Noise.Snapshot().State);
+    }
+
+    [Fact]
+    public async Task Revocation_rejects_late_policy_and_resume_reply_without_starting_capture()
+    {
+        await using var f = new Fixture(); await f.Start();
+        var reply = f.Policy(); reply["command"] = new JsonObject { ["commandId"] = Guid.NewGuid().ToString("D"),
+            ["version"] = new string('a', 64), ["window"] = f.Scheduler.Observe()["window"]!.DeepClone() };
+        f.Scheduler.Bind(null, false); await Until(() => f.Noise.Snapshot().State == "Stopped");
+        f.Scheduler.Confirm(reply); f.Tick(); f.Tick(); f.Tick();
+        Assert.Equal("NOT_ELIGIBLE", f.Scheduler.Observe()["reason"]!.GetValue<string>());
+        Assert.Null(f.Scheduler.Observe()["version"]); Assert.Single(f.Captures);
     }
     [Fact]
     public async Task Exam_stop_does_not_skip_and_return_resumes_current_window()

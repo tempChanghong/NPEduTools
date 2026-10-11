@@ -8,6 +8,97 @@ namespace NPEduTools.Tests;
 public sealed class NoiseTests
 {
     [Theory]
+    [InlineData(50)]
+    [InlineData(100)]
+    [InlineData(150)]
+    public async Task TerminalTailIsIncludedExactlyOnceWithoutOpeningTheCancelledEventFence(int milliseconds)
+    {
+        var clock = new TestClock(); var captures = new List<TailCapture>();
+        await using var service = new NoiseService(_ => { var c = new TailCapture(); captures.Add(c); return c; }, () => [], clock);
+        service.Handle(Command(service.Snapshot(), "start", "mic")); await Until(() => service.Snapshot().State == "Active");
+        var first = captures[0]; clock.Advance(milliseconds / 1000d);
+        first.Feed(Samples(milliseconds * 48, 32, true, i => i >= 4800 || milliseconds == 50 ? 1 : .01));
+        service.Handle(Command(service.Snapshot(), "stop")); await Until(() => !service.CaptureBusy);
+        var summary = service.Snapshot().Summary!;
+        Assert.Equal(milliseconds / 1000d, summary.SampledSeconds, 8); Assert.Equal((milliseconds + 99) / 100, summary.Frames);
+        Assert.Equal(milliseconds == 100 ? -40 : 0, summary.PeakDbfs!.Value, 5);
+        Assert.Equal(milliseconds == 100 ? 0 : milliseconds == 50 ? 100 : 100d / 3, summary.ClippedPercent, 5);
+        first.EmitLate(); Assert.Equal(summary, service.Snapshot().Summary);
+        service.Handle(Command(service.Snapshot(), "start", "mic")); await Until(() => service.Snapshot().State == "Active");
+        first.EmitLate(); Assert.Equal(0, service.Snapshot().Summary!.SampledSeconds);
+        service.Handle(Command(service.Snapshot(), "stop")); await Until(() => !service.CaptureBusy);
+    }
+    private sealed class TailCapture : INoiseCapture
+    {
+        private readonly NoiseMeter _meter;
+        private Action<NoiseFrame>? _tail;
+        public TailCapture() => _meter = new(48000, 1, 32, true, f => { if (_tail is { } tail) tail(f); else Frame?.Invoke(f); });
+        public string DeviceName => "Synthetic PCM";
+        public event Action<NoiseFrame>? Frame;
+        public event Action<string>? Failed { add { } remove { } }
+        public void Start() { }
+        public void Feed(byte[] pcm) => _meter.Push(pcm);
+        public void EmitLate() => Frame?.Invoke(new(.1, 1, 1, 1, false));
+        public void StopAndFlush(Action<NoiseFrame> rawTail, Action<ReferenceNoiseFrame> referenceTail)
+        { EmitLate(); _tail = rawTail; _meter.Flush(); _tail = null; Dispose(); }
+        public void Dispose() { }
+    }
+    public static TheoryData<string> InvalidSelectionFiles => new()
+    {
+        "null", "{}", "{broken",
+        System.Text.Json.JsonSerializer.Serialize(""),
+        System.Text.Json.JsonSerializer.Serialize(" \t"),
+        System.Text.Json.JsonSerializer.Serialize("mic\n"),
+        System.Text.Json.JsonSerializer.Serialize(new string('x', 2049)),
+        System.Text.Json.JsonSerializer.Serialize(new string('x', 70000))
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidSelectionFiles))]
+    public async Task Invalid_saved_microphone_is_preserved_and_can_be_replaced_without_capture(string content)
+    {
+        string directory = Directory.CreateTempSubdirectory("NPEduTools-noise-selection-").FullName;
+        string path = Path.Combine(directory, "noise-microphone.json");
+        File.WriteAllText(path, content);
+        int captures = 0;
+        try
+        {
+            await using var service = new NoiseService(_ => { captures++; return new FakeCapture(); }, () => [], directory: directory);
+            Assert.Equal(content, File.ReadAllText(path));
+            var initial = service.Snapshot();
+            Assert.Null(initial.SelectedDeviceId);
+            Assert.Equal("MicrophoneNotConfigured", service.RemoteCommand(Guid.NewGuid(), "START",
+                initial.InstanceId, initial.Revision, null, 60).ErrorCode);
+            Assert.Equal("Succeeded", service.Handle(Command(initial, "select", "mic")).Outcome);
+            Assert.Equal("mic", service.Snapshot().SelectedDeviceId);
+            await using var reopened = new NoiseService(_ => { captures++; return new FakeCapture(); }, () => [], directory: directory);
+            Assert.Equal("mic", reopened.Snapshot().SelectedDeviceId);
+            Assert.Equal(0, captures);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Theory]
+    [InlineData("mic", 1)]
+    [InlineData("x", 2048)]
+    [InlineData("麦", 2048)]
+    public async Task Valid_saved_microphone_including_maximum_length_is_retained(string seed, int length)
+    {
+        string directory = Directory.CreateTempSubdirectory("NPEduTools-noise-selection-").FullName;
+        string id = length == 1 ? seed : new string(seed[0], length);
+        string path = Path.Combine(directory, "noise-microphone.json");
+        string content = System.Text.Json.JsonSerializer.Serialize(id);
+        File.WriteAllText(path, content);
+        try
+        {
+            await using var service = new NoiseService(_ => throw new InvalidOperationException("Read must not capture."), () => [], directory: directory);
+            Assert.Equal(id, service.Snapshot().SelectedDeviceId);
+            Assert.Equal(content, File.ReadAllText(path));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Theory]
     [InlineData(16, false)]
     [InlineData(24, false)]
     [InlineData(32, false)]

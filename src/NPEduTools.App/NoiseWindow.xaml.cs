@@ -13,11 +13,12 @@ public partial class NoiseWindow : Window
     private readonly string _pipe;
     private readonly CancellationTokenSource _lifetime = new();
     private NoiseState? _state;
+    private ManualStudyState? _manual;
     private bool _closing, _busy, _connected;
     private long _uiOperation;
     public NoiseWindow(string pipe)
     {
-        _pipe = pipe; InitializeComponent();
+        _pipe = pipe; InitializeComponent();ManualStartDate.SelectedDate=ManualEndDate.SelectedDate=DateTime.Today;
         Closing += (_, args) => { if (!_closing) { args.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Microphone.SelectionChanged += (_, _) => UpdateButtons();
@@ -54,14 +55,20 @@ public partial class NoiseWindow : Window
                     var response = await RequestAsync(loadedDevices ? "noise.status" : "noise.devices");
                     if (_lifetime.IsCancellationRequested || operation != _uiOperation) continue;
                     if (response.NoiseDevices is not null) { _state = response.Noise; SetDevices(response.NoiseDevices); loadedDevices = true; }
+                    using var manualTimeout=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);manualTimeout.CancelAfter(TimeSpan.FromSeconds(4));
+                    var manual=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.status"),manualTimeout.Token);
+                    if(operation!=_uiOperation)continue;
+                    _manual=manual.ManualStudy;
+                    ManualStatus.Text=_manual is {} m?$"{m.State} · {m.Reason??"学校定时优先；预约不会在后台重启后续开"}":"当前后台尚未支持手动自习，请更新后台。";
                     Render(response.Noise);
-                    DisplayStatusText.Text = response.NoiseDisplay is { } display
-                        ? display.Message + (display.ErrorCode is { } code ? $"（{code}）" : "")
-                        : "当前后台不支持原生备用展示，请更新并重启后台。";
+                    if (response.Noise is not null)
+                        DisplayStatusText.Text = response.NoiseDisplay is { } display
+                            ? display.Message + (display.ErrorCode is { } code ? $"（{code}）" : "")
+                            : "当前后台不支持原生备用展示，请更新并重启后台。";
                     if (response.Outcome == "Rejected") MessageText.Text = response.Message;
                 }
             }
-            catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
             { if (!_lifetime.IsCancellationRequested && operation == _uiOperation) Render(null); }
             try { await Task.Delay(500, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
@@ -77,9 +84,9 @@ public partial class NoiseWindow : Window
     private void UpdateButtons()
     {
         bool running = _state?.State is "Starting" or "Active" or "Stopping";
-        StartButton.IsEnabled = _connected && !_busy && !running && Microphone.SelectedItem is NoiseDevice;
+        StartButton.IsEnabled = _manual is not null && _manual.State is not ("Waiting" or "Preparing" or "Starting" or "Active" or "Stopping") && _connected && !_busy && !running && Microphone.SelectedItem is NoiseDevice;
         SaveDeviceButton.IsEnabled = StartButton.IsEnabled;
-        StopButton.IsEnabled = _connected && !_busy && _state?.State is "Starting" or "Active";
+        StopButton.IsEnabled = _connected && !_busy && _manual?.State is "Waiting" or "Preparing" or "Starting" or "Active";
         Microphone.IsEnabled = RefreshButton.IsEnabled = !_busy && !running;
     }
     private void Render(NoiseState? state)
@@ -91,22 +98,41 @@ public partial class NoiseWindow : Window
             DisplayStatusText.Text = "网页与备用展示状态未知，等待后台重新连接。";
             LevelText.Text = "—"; LevelBar.Value = -100; QualityText.Text = "未知";
             LevelHintText.Text = "";
-            MessageText.Text = "旧读数不代表当前状态。恢复连接后可查询或停止，请勿重复启动。";
+            StateHintText.Text = "旧读数不代表当前状态。恢复连接后可查询或停止，请勿重复启动。";
+            StateHintText.Visibility = Visibility.Visible;
+            MessageText.Text = "";
+            SummaryTitle.Text = "监测统计（状态未知）";
+            SummaryText.Text = "后台连接中断，暂不展示旧统计。恢复连接后重新读取；不能据此判断监测已经停止。";
+            EstimateText.Text = "估算状态待确认";
             TrendCanvas.Children.Clear(); UpdateButtons(); return;
         }
         _state = state;
         StateText.Text = state.Message;
+        StateHintText.Text = "";
+        StateHintText.Visibility = Visibility.Collapsed;
         LevelText.Text = NoiseSignalPresentation.Level(state.CurrentDbfs);
+        EstimateText.Text = NoiseSignalPresentation.Estimated(state.Estimate?.CurrentDbA) + " · " + NoiseSignalPresentation.EstimateReason(state.Estimate);
         LevelBar.Value = Math.Clamp(state.CurrentDbfs ?? -100, -100, 0);
         QualityText.Text = NoiseSignalPresentation.Quality(state.Quality, state.CurrentDbfs);
         LevelHintText.Text = state.State == "Active" && state.Quality == "Good"
             ? NoiseSignalPresentation.Hint(state.CurrentDbfs) : "";
         if (state.State is "Stopped" or "Faulted") QualityText.Text = "已结束";
+        SummaryTitle.Text = state.Summary is null ? "监测统计" : state.State switch
+        {
+            "Starting" or "Active" or "Stopping" => "本次监测累计统计",
+            "Stopped" => "上次监测统计（已结束）",
+            "Faulted" => "上次监测统计（采集中断）",
+            _ => "后台返回的监测统计"
+        };
         if (state.Summary is { } s)
             SummaryText.Text = $"总时长 {s.ElapsedSeconds:F1} 秒 · 有效采样 {s.SampledSeconds:F1} 秒 · 覆盖率 {s.Coverage:P0}\n" +
                 $"能量平均 {FormatDb(s.EnergyMeanDbfs)} · 峰值 {FormatDb(s.PeakDbfs)} · 削波 {s.ClippedPercent:F2}%\n" +
                 $"设备：{state.DeviceName ?? "正在打开"}";
         else SummaryText.Text = "开始后显示有效采样、覆盖率与能量平均电平。";
+        if (state.Estimate is { } e)
+            SummaryText.Text += $"\nA/{e.TimeWeighting} 平滑电平能量均值：{NoiseSignalPresentation.Estimated(e.Summary.EnergyMeanDbA)}\n" +
+                $"最高平滑电平：{NoiseSignalPresentation.Estimated(e.Summary.MaximumDbA)} · 估算有效覆盖 {e.Summary.Coverage:P0}\n" +
+                "参考版本：" + e.ProfileId[..12] + " · " + NoiseSignalPresentation.EstimateReason(e);
         DrawTrend(); UpdateButtons();
     }
     private static string FormatDb(double? value) => NoiseSignalPresentation.Statistic(value);
@@ -146,7 +172,7 @@ public partial class NoiseWindow : Window
             else MessageText.Text = response.Message;
             Render(response.Noise);
         }
-        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         { Render(null); }
         finally { _busy = false; UpdateButtons(); }
     }
@@ -158,17 +184,31 @@ public partial class NoiseWindow : Window
     }
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
-        if (_state is { } state && Microphone.SelectedItem is NoiseDevice device)
-            await RunAsync("noise.command", new("start", state.InstanceId, state.Revision, device.Id));
+        if(_manual is not {} m || Microphone.SelectedItem is not NoiseDevice device)return;
+        DateTimeOffset? start=null,end=null;int? hide=null;
+        try {
+            DateTimeOffset Parse(System.Windows.Controls.DatePicker picker,string text){if(picker.SelectedDate is not {} d || !TimeSpan.TryParseExact(text.Trim(),@"hh\:mm",System.Globalization.CultureInfo.InvariantCulture,out var t))throw new FormatException();return new DateTimeOffset(DateTime.SpecifyKind(d.Date+t,DateTimeKind.Local)).ToUniversalTime();}
+            if(UseStart.IsChecked==true)start=Parse(ManualStartDate,ManualStartTime.Text);
+            if(UseEnd.IsChecked==true)end=Parse(ManualEndDate,ManualEndTime.Text);
+            if(NoManualReturn.IsChecked!=true){if(!int.TryParse(ManualHideMinutes.Text,out var minutes) || minutes is <1 or >180)throw new FormatException();hide=minutes*60;}
+        } catch(FormatException){MessageText.Text="请选择日期，时间使用 HH:mm；返回时长为 1–180 分钟。";return;}
+        await ManualCommandAsync(new("start",m.InstanceId,m.Revision,DeviceId:device.Id,StartUtc:start,EndUtc:end,HideSeconds:hide));
     }
     private async void StopClicked(object sender, RoutedEventArgs e)
     {
-        if (_state is { } state) await RunAsync("noise.command", new("stop", state.InstanceId, state.Revision));
+        if(_manual is {} m)await ManualCommandAsync(new("end",m.InstanceId,m.Revision,m.SessionId));
+    }
+    private async Task ManualCommandAsync(ManualStudyCommand command)
+    {
+        if(_busy)return;_busy=true;_uiOperation++;UpdateButtons();
+        try{using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(5));var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",ManualStudy:command),deadline.Token);_manual=reply.ManualStudy;MessageText.Text=reply.Message;Render(reply.Noise);}
+        catch(Exception e)when(e is IOException or InvalidDataException or JsonException or OperationCanceledException){Render(null);MessageText.Text="请求结果待确认；请等待后台状态恢复，不重复启动。";}
+        finally{_busy=false;UpdateButtons();}
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {
         try { await NoiseManagementDialog.ConfigureAsync(this, _pipe); }
-        catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         { MessageText.Text = "无法读取后台管理设置，请重试。"; }
     }
 }
