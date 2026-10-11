@@ -18,6 +18,7 @@ New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
 $appExe = Join-Path $projectRoot "src/NPEduTools.App/bin/$Configuration/net10.0-windows/NPEduTools.App.exe"
 $peerDll = Join-Path $projectRoot "tests/NPEduTools.ClassIsland.TestPeer/bin/$Configuration/net10.0/NPEduTools.ClassIsland.TestPeer.dll"
 $pipe = 'NPEduTools.Test.oobe.' + [Guid]::NewGuid().ToString('N')
+& (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $upstream = $pipe + '.peer'
 $prefix = Join-Path $env:LOCALAPPDATA ('NPEduTools/ui/' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($pipe))).Substring(0,24))
 $statePath = $prefix + '.onboarding.json'
@@ -135,11 +136,11 @@ try {
     $null = Wait-Control 'OobeReview' '录制准备：已跳过'
     Save-Window 'review.png'
     Click 'OobeNext'
-    $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · 计划与预演'
+    $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · NPEduTools'
     $saved = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     if (-not $saved.Completed -or 'recording' -notin $saved.Skipped) { throw 'Completion or explicit skip not saved.' }
     $checks.Add('Back/skip/review/completion opens plans without enabling recording')
-    Click 'AutoHide' '自动录课 · 计划与预演'; Stop-App
+    Click 'AutoHide' '自动录课 · NPEduTools'; Stop-App
 
     $app = Start-App
     $null = Wait-Control 'SettingsTab' '' 'NPEduTools'
@@ -183,8 +184,8 @@ try {
     Click 'OobeSkip'; Click 'OobeSkip'
     $null = Wait-Control 'OobeReview' '连接学校时间：已跳过'
     Save-Window 'unavailable-skipped.png'
-    Click 'OobeNext'; $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · 计划与预演'
-    Click 'AutoHide' '自动录课 · 计划与预演'; Stop-App
+    Click 'OobeNext'; $null = Wait-Control 'AutoRealStatus' '未启用' '自动录课 · NPEduTools'
+    Click 'AutoHide' '自动录课 · NPEduTools'; Stop-App
     $checks.Add('Unavailable school time blocks confirmation but explicit skips can finish without enabling capture')
 
     Set-Content -LiteralPath $statePath -Value '{"Version":999}' -Encoding utf8

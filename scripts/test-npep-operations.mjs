@@ -15,8 +15,8 @@ const desktopRoot = fileURLToPath(new URL('../', import.meta.url));
 export function readOptions(args) {
   const result = {browser: false, database: false, check: false};
   for (let i = 0; i < args.length; i++) {
-    if (['--browser', '--database', '--check'].includes(args[i])) result[args[i].slice(2)] = true;
-    else if (['--web-root', '--backend-root', '--powershell-version'].includes(args[i]) && args[i + 1] && !args[i + 1].startsWith('--')) {
+    if (['--browser', '--database', '--check', '--require-clean'].includes(args[i])) result[args[i].slice(2)] = true;
+    else if (['--web-root', '--backend-root', '--powershell-version', '--desktop-commit', '--web-commit', '--backend-commit'].includes(args[i]) && args[i + 1] && !args[i + 1].startsWith('--')) {
       result[args[i].slice(2)] = args[++i];
     } else throw new Error(`Unknown or incomplete operations option: ${args[i]}`);
   }
@@ -29,13 +29,16 @@ export function createPlan(roots, directory, {browser = false, database = false}
   const nodeTests = (id, repo, files) => stage(id, repo, process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], 'tap');
   const builds = join(directory, 'build'), results = join(directory, 'test-results');
   return [
-    nodeTests('gate-regressions', 'desktop', ['tests/operationsAcceptance.test.mjs']),
+    nodeTests('gate-regressions', 'desktop', ['tests/operationsAcceptance.test.mjs', 'tests/operationsCi.test.mjs']),
     stage('desktop', 'desktop', 'dotnet', ['test', 'tests/NPEduTools.Tests/NPEduTools.Tests.csproj', '--artifacts-path', builds, '-m:1',
       '-p:RestoreLockedMode=true', '--verbosity', 'quiet', '--filter',
-      'FullyQualifiedName~NpepDiagnosticsTests|FullyQualifiedName~NpepConnectionSessionTests|FullyQualifiedName~CachedHostStatusTests|FullyQualifiedName~NpepOperationsFixtureTests',
+      'FullyQualifiedName~NpepDiagnosticsTests|FullyQualifiedName~NpepDiagnosticComparisonTests|FullyQualifiedName~NpepConnectionSessionTests|FullyQualifiedName~CachedHostStatusTests|FullyQualifiedName~NpepOperationsFixtureTests',
       '--logger', 'trx;LogFileName=operations.trx', '--results-directory', results], 'trx'),
     stage('cross-contract', 'desktop', process.execPath, ['scripts/check-npep-operations-contract.mjs', roots.desktop, roots.web,
       roots.backend, join(directory, 'fixtures'), join(directory, 'contract-result.json')], 'contract'),
+    stage('comparison-contract', 'desktop', 'dotnet', ['test', 'tests/NPEduTools.Tests/NPEduTools.Tests.csproj', '--artifacts-path', builds,
+      '--no-build', '--no-restore', '--verbosity', 'quiet', '--filter', 'FullyQualifiedName~FreshCrossRepositoryExportsAreComparedWhenProvided',
+      '--logger', 'trx;LogFileName=comparison.trx', '--results-directory', results], 'comparison'),
     stage('wpf-build', 'desktop', 'dotnet', ['build', 'src/NPEduTools.App/NPEduTools.App.csproj', '--artifacts-path', builds, '-m:1',
       '-p:RestoreLockedMode=true', '--verbosity', 'quiet'], 'build'),
     nodeTests('backend', 'backend', ['tests/npepDeviceOverview.test.js', 'tests/npepWire.test.js', 'tests/npepHttpErrors.test.js']),
@@ -43,7 +46,8 @@ export function createPlan(roots, directory, {browser = false, database = false}
     nodeTests('web-flows', 'web', ['tests/npepDeviceOverviewFlows.test.js', 'tests/npepAdminClientFlows.test.js']),
     stage('browser', 'web', process.execPath, [join(roots.web, 'node_modules/@playwright/test/cli.js'), 'test',
       'tests/e2e/admin-screens.spec.js', '--grep', 'NPEP', '--reporter=json'], 'browser', browser),
-    stage('database', 'backend', process.execPath, ['scripts/run-native-npep-tests.js', '--skip-desktop', '--test-reporter', 'tap'], 'database', database),
+    stage('database', 'backend', process.execPath, ['scripts/run-native-npep-tests.js', '--desktop-root', roots.desktop,
+      '--test-reporter', 'tap'], 'database', database),
   ];
 }
 
@@ -74,23 +78,26 @@ export function readTrxEvidence(text) {
   return values;
 }
 
-export function readDatabaseEvidence(text) {
-  const evidence = readTapEvidence(text, {allowSkipped: true});
-  const allowed = [
+export const databaseTransportScenarios = Object.freeze([
     'Noise screen authentication isolation and actual .NET HTTP/PostgreSQL monitoring',
     'N3 actual .NET transport through real HTTP/PostgreSQL (simulated OS effects)',
     'N4 actual .NET prepare/explicit start over HTTP/PostgreSQL (simulated player)',
     'Web pairing: actual .NET client claims, confirms, restarts, reports and revokes',
     'N4.3c actual .NET scheduler and 0.6/0.7 transport through disposable SQL',
-  ];
-  for (const line of evidence.skippedTests) {
-    const name = line.match(/^ok \d+ - (.*?)\s+# SKIP/)?.[1];
-    assert.ok(allowed.includes(name), `Unexpected database skip: ${name}`);
-  }
-  assert.equal(evidence.skippedTests.length, evidence.groups.reduce((sum, item) => sum + item.skipped, 0), 'Missing skipped database case names');
+]);
+
+export function readDatabaseEvidence(text) {
+  const evidence = readTapEvidence(text);
+  // A green aggregate or unrelated SQL passes cannot substitute for the five
+  // real .NET HTTP scenarios. Reject missing, duplicate and skip-marked cases.
+  const passes = text.split(/\r?\n/).map(line => line.match(/^\s*ok \d+ - (.*?)\s*$/)?.[1]).filter(Boolean);
+  assert.equal(evidence.skippedTests.length, 0, 'Requested database scenarios were skipped');
+  for (const name of databaseTransportScenarios)
+    assert.equal(passes.filter(value => value === name).length, 1, `Required .NET transport scenario did not execute once: ${name}`);
   assert.match(text, /^\s*ok \d+ - school device overview: .*authorization\s*$/m, 'Actual overview SQL scenario was not an executed pass');
   assert.ok(text.includes('Native NPEP acceptance passed; temporary cluster removed.'), 'Temporary cluster cleanup was not confirmed');
-  return evidence;
+  return {...evidence, executedTransportScenarios: [...databaseTransportScenarios],
+    realHttp: true, realPostgreSql: true, simulatedSystemEffects: true};
 }
 
 export function readBrowserEvidence(report) {
@@ -109,7 +116,10 @@ export function readBrowserEvidence(report) {
 export function childEnvironment(base, stage, directory, ports) {
   // Vite's build(mode=production) does not override an inherited NODE_ENV=test.
   // Keep DEV false so ignored local .env addresses cannot win over the E2E API.
-  return {...base, ...(stage.evidence === 'browser' ? {
+  return {...base, ...(stage.evidence === 'comparison' ? {
+    NPEP_DIAGNOSTIC_COMPARISON_CASES: join(directory, 'fixtures/comparison-cases.json'),
+    NPEP_DIAGNOSTIC_COMPARISON_RESULT: join(directory, 'comparison-result.json'),
+  } : {}), ...(stage.evidence === 'browser' ? {
     NODE_ENV: 'production', PLAYWRIGHT_JSON_OUTPUT_FILE: join(directory, 'browser.json'),
     E2E_WEB_PORT: String(ports.web), E2E_API_PORT: String(ports.api),
   } : {})};
@@ -153,9 +163,14 @@ export async function sourceFingerprints(roots) {
   return manifest;
 }
 
+export function inspectOperationsSources(roots, settings = {}) {
+  const expected = Object.fromEntries(['desktop', 'web', 'backend'].map(key => [key, settings[`${key}-commit`]]));
+  return inspectPairingSources(roots, expected, !!settings['require-clean']);
+}
+
 async function preflight(roots, settings) {
   if (process.platform !== 'win32') throw new Error('Desktop operations acceptance requires Windows named pipes.');
-  const sources = await inspectPairingSources(roots);
+  const sources = await inspectOperationsSources(roots, settings);
   for (const [repo, files] of [
     ['desktop', ['global.json', 'scripts/check-npep-operations-contract.mjs', 'tests/operationsAcceptance.test.mjs',
       'src/NPEduTools.App/NpepDiagnostics.cs', 'tests/NPEduTools.Tests/NpepOperationsFixtureTests.cs']],
@@ -172,6 +187,9 @@ async function preflight(roots, settings) {
   }
   let postgresBin = null;
   if (settings.database) {
+    await access(join(roots.desktop, 'tests/NPEduTools.Npep.Acceptance/NPEduTools.Npep.Acceptance.csproj'));
+    await access(join(roots.backend, 'scripts/run-native-npep-tests.js'));
+    await access(join(roots.backend, 'tests/npepDatabase.integration.test.js'));
     postgresBin = process.env.NPEP_TEST_PG_BIN ? resolve(process.env.NPEP_TEST_PG_BIN) : null;
     if (!postgresBin) {
       const base = join(process.env.ProgramFiles || 'C:/Program Files', 'PostgreSQL');
@@ -231,9 +249,15 @@ async function main() {
         else if (stage.evidence === 'contract') {
           stage.result = JSON.parse(await readFile(join(directory, 'contract-result.json'), 'utf8'));
           assert.equal(stage.result.status, 'PASSED'); assert.equal(stage.result.cases.length, 4);
+        } else if (stage.evidence === 'comparison') {
+          const counters = readTrxEvidence(await readFile(join(directory, 'test-results/comparison.trx'), 'utf8'));
+          stage.result = JSON.parse(await readFile(join(directory, 'comparison-result.json'), 'utf8'));
+          assert.equal(stage.result.status, 'PASSED');
+          assert.equal(stage.result.source, 'fresh-cross-repository-exports');
+          assert.deepEqual(stage.result.cases, ['unknown', 'daily', 'exam', 'incomplete']);
+          stage.result.tests = counters.passed;
         } else if (stage.evidence === 'database') {
           stage.result = readDatabaseEvidence(stdout);
-          stage.result.excluded = 'Native runner --skip-desktop excludes .NET transport scenarios; local desktop tests execute in their own stage.';
         } else if (stage.evidence === 'build') {
           const files = await readdir(join(directory, 'build/bin/NPEduTools.App'), {recursive: true});
           assert.ok(files.some(file => file.replaceAll('\\', '/').endsWith('/NPEduTools.App.dll')), 'Fresh WPF assembly missing');
@@ -242,7 +266,7 @@ async function main() {
         console.log(`[Operations] ${stage.id} passed with execution evidence.`);
         return child.status;
       }, persist);
-      const final = await sourceFingerprints(roots), finalSources = await inspectPairingSources(roots);
+      const final = await sourceFingerprints(roots), finalSources = await inspectOperationsSources(roots, settings);
       for (const key of Object.keys(roots)) {
         assert.equal(final[key].sha256, fingerprints[key].sha256, `${key} source inputs changed during verification; rerun`);
         assert.equal(finalSources.sources[key].commit, report.preflight.sources.sources[key].commit, `${key} HEAD changed during verification; rerun`);

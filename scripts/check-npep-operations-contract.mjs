@@ -17,6 +17,7 @@ export async function checkOperationsContract({desktop, web, backend, fixtures})
   const config = {serverInstanceId: id, deploymentEpoch: id};
   const binding = {id, isActive: true, administrativeClassId: id, npepBindingRevision: 1, name: 'SYNTHETIC_PRIVATE_NAME',
     administrativeClass: {id, type: 'ADMIN_CLASS', isActive: true, name: 'SYNTHETIC_PRIVATE_NAME', term: {status: 'ACTIVE', schoolId: id}}};
+  const comparisons = [];
   for (const item of cases) {
     assert.equal(validate('status', item.status), true, `Backend rejects actual .NET status: ${item.name}`);
     const rows = [{id, ...config, schoolId: id, administrativeClassId: id, screenBindingId: id,
@@ -34,7 +35,9 @@ export async function checkOperationsContract({desktop, web, backend, fixtures})
       assert.equal(JSON.stringify(report).includes(text), false, `Private data exported: ${item.name}`);
       assert.equal(JSON.stringify(item.desktop).includes(text), false);
     }
+    comparisons.push({name: item.name, desktop: item.desktop, school: report});
   }
+  await writeFile(join(fixtures, 'comparison-cases.json'), JSON.stringify(comparisons, null, 2) + '\n');
   return {status: 'PASSED', cases: cases.map(item => item.name), source: 'executed-dotnet-status-and-diagnostic-builders',
     coverage: ['N1 schema parity', 'backend status validation and mode-aware overview', 'Vue overview reader', 'web diagnostic allow-list', 'binding and provider correlation']};
 }

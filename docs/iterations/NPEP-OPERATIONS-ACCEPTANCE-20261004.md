@@ -7,6 +7,8 @@
 | 边界 | 不运行真实大屏软件或麦克风，不安装应用，不调用 Docker、不连接调试／生产数据库，不部署，不改 NPEssentials |
 | 验收 | PowerShell 5.1／7 入口、零退出码但空／跳过／异常结果拒绝通过、错误分项落盘、未选阶段明确标记、源码期间变化拒绝通过 |
 
+后续已补齐 [摘要对照](NPEP-DIAGNOSTIC-COMPARISON-20261004.md) 和 [完整 .NET 传输联调](NPEP-OPERATIONS-TRANSPORT-20261004.md)。下文使用说明描述当前入口；“本轮结果”保留最初实现的历史数据。
+
 ## 怎么运行
 
 在 NPEduTools 根目录：
@@ -20,9 +22,13 @@
 
 默认读取同级 `NPClassworks`、`NPClassworksKV`；目录不同时传 `-WebRoot`、`-BackendRoot`。兼容 Windows PowerShell 5.1，执行逻辑使用项目已有 Node.js 环境（本轮 Node 24、.NET 10）。不会自动安装依赖或浏览器。`-CheckOnly` 只检查目录、依赖、SDK 和 Schema，不会执行测试、启动应用或数据库；结果为 `CHECKED`，不是 `PASSED`。
 
+CI 另传 `-RequireClean -DesktopCommit <完整SHA> -WebCommit <完整SHA> -BackendCommit <完整SHA>`，拒绝未提交改动和不匹配的源码组合；默认本地命令仍允许开发中的改动。工作流和来源登记见 [CI 任务卡](NPEP-OPERATIONS-CI-20261004.md)。
+
 默认检查：入口自己的失败回归、桌面诊断／共享互联会话／无探测缓存读取、真实 C# 状态映射的四个合成跨端用例、隔离目录 WPF 编译、后端概览／N1 协议与错误映射、网页摘要与概览及管理员生命周期回归。
 
-`-Browser` 复用隔离测试服务，自动选择两枚临时回环端口，使用 `NODE_ENV=production` 构建，避免忽略的开发环境地址抢占测试服务。运行三条 NPEP 管理流程，包括实际 JSON 下载／过时标注、权限清空、旧服务兼容和迟到响应。`-Database` 复用 `run-native-npep-tests.js --skip-desktop --test-reporter tap`：新建自己的临时 PostgreSQL 集群，执行真实 SQL／HTTP 和旧配对迁移检查，成功后停止并清理；其中 .NET 传输模拟项有意不跑，桌面针对性回归在独立阶段执行。数据库测试被选中时还必须证明确实执行了概览 SQL 子用例，且仅允许五项已声明的 .NET 联调跳过，不能用全跳过的数据库日志冒充通过。
+`-Browser` 复用隔离测试服务，自动选择两枚临时回环端口，使用 `NODE_ENV=production` 构建，避免忽略的开发环境地址抢占测试服务。运行三条 NPEP 管理流程，包括实际 JSON 下载／过时标注、权限清空、旧服务兼容和迟到响应。
+
+`-Database` 复用 `run-native-npep-tests.js --desktop-root <本次桌面源码目录> --test-reporter tap`：编译该目录的 .NET 验收程序，新建临时 PostgreSQL 集群，执行真实 SQL／HTTP、旧配对迁移以及五类 .NET 传输联调，成功后停止并清理。不再传 `--skip-desktop`；选择数据库阶段就要求所有测试零跳过，五类传输场景和概览 SQL 子用例各有实际通过记录。真实配对凭据仅属于隔离测试设备；系统启停、自启动设置、放映、麦克风与学校时钟使用测试替身，不操作用户软件。
 
 KV 的原生测试脚本新增可选 `--test-reporter tap|spec` 参数；直接使用时保留原来的默认输出，数据库、迁移和清理逻辑不变。没有修改后端业务接口。
 

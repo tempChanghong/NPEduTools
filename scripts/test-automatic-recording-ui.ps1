@@ -19,6 +19,7 @@ $fixtureExe = Join-Path $projectRoot "tests/NPEduTools.Recording.TestFixture/bin
 $ffmpeg = Join-Path (Split-Path $appExe -Parent) 'Recorder/Tools/ffmpeg.exe'
 $ffprobe = Join-Path (Split-Path $appExe -Parent) 'Recorder/Tools/ffprobe.exe'
 $pipe = 'NPEduTools.Test.recordui.' + [Guid]::NewGuid().ToString('N')
+& (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $title = 'Recording UI fixture ' + [Guid]::NewGuid().ToString('N')
 $owned = [Collections.Generic.List[Diagnostics.Process]]::new()
 $checks = [Collections.Generic.List[string]]::new()
@@ -62,7 +63,7 @@ function Save-Window([string]$title, [string]$filename) {
     finally { $bitmap.Dispose() }
 }
 
-$planTitle = '自动录课 · 计划与预演'
+$planTitle = '自动录课 · NPEduTools'
 $peerExe = Join-Path $projectRoot "tests/NPEduTools.ClassIsland.TestPeer/bin/$Configuration/net10.0/NPEduTools.ClassIsland.TestPeer.exe"
 $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($pipe))).Substring(0,24)
 $bookPath = Join-Path $env:LOCALAPPDATA "NPEduTools/ui/$hash.recording-plans.json"

@@ -12,6 +12,7 @@ public static class ExamAwareCapture {
 '@
 $root = Split-Path $PSScriptRoot -Parent
 $pipe = 'NPEduTools.Test.examaware-ui.' + [Guid]::NewGuid().ToString('N')
+& (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $out = Join-Path $root ('.artifacts/examaware-ui/' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 $title = '考试看板 · ExamAware2'

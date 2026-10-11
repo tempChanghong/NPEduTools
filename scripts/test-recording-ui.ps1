@@ -19,6 +19,7 @@ $fixtureExe = Join-Path $projectRoot "tests/NPEduTools.Recording.TestFixture/bin
 $ffmpeg = Join-Path (Split-Path $appExe -Parent) 'Recorder/Tools/ffmpeg.exe'
 $ffprobe = Join-Path (Split-Path $appExe -Parent) 'Recorder/Tools/ffprobe.exe'
 $pipe = 'NPEduTools.Test.recordui.' + [Guid]::NewGuid().ToString('N')
+& (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $title = 'Recording UI fixture ' + [Guid]::NewGuid().ToString('N')
 $owned = [Collections.Generic.List[Diagnostics.Process]]::new()
 $checks = [Collections.Generic.List[string]]::new()
