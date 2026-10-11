@@ -13,6 +13,9 @@
     <EmbeddedResource Include="../../docs/legal/*-AGREEMENT.md" LogicalName="NPEduTools.Legal.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../LICENSE" LogicalName="NPEduTools.Legal.GPL-3.0.txt" />
     <Resource Include="../../images/branding/npedutools.ico" Link="Assets/npedutools.ico" />
+    <Resource Include="Assets/Study/Fonts/*.ttf" />
+    <Content Include="Assets/Study/Audio/*" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets/Study/Fonts/*.md;Assets/Study/Fonts/*.txt" CopyToOutputDirectory="PreserveNewest" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />

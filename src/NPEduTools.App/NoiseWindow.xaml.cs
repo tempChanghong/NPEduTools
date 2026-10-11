@@ -97,6 +97,7 @@ public partial class NoiseWindow : Window
             MessageText.Text = "";
             SummaryTitle.Text = "监测统计（状态未知）";
             SummaryText.Text = "后台连接中断，暂不展示旧统计。恢复连接后重新读取；不能据此判断监测已经停止。";
+            EstimateText.Text = "估算状态待确认";
             TrendCanvas.Children.Clear(); UpdateButtons(); return;
         }
         _state = state;
@@ -104,6 +105,7 @@ public partial class NoiseWindow : Window
         StateHintText.Text = "";
         StateHintText.Visibility = Visibility.Collapsed;
         LevelText.Text = NoiseSignalPresentation.Level(state.CurrentDbfs);
+        EstimateText.Text = NoiseSignalPresentation.Estimated(state.Estimate?.CurrentDbA) + " · " + NoiseSignalPresentation.EstimateReason(state.Estimate);
         LevelBar.Value = Math.Clamp(state.CurrentDbfs ?? -100, -100, 0);
         QualityText.Text = NoiseSignalPresentation.Quality(state.Quality, state.CurrentDbfs);
         LevelHintText.Text = state.State == "Active" && state.Quality == "Good"
@@ -121,6 +123,10 @@ public partial class NoiseWindow : Window
                 $"能量平均 {FormatDb(s.EnergyMeanDbfs)} · 峰值 {FormatDb(s.PeakDbfs)} · 削波 {s.ClippedPercent:F2}%\n" +
                 $"设备：{state.DeviceName ?? "正在打开"}";
         else SummaryText.Text = "开始后显示有效采样、覆盖率与能量平均电平。";
+        if (state.Estimate is { } e)
+            SummaryText.Text += $"\nA/{e.TimeWeighting} 平滑电平能量均值：{NoiseSignalPresentation.Estimated(e.Summary.EnergyMeanDbA)}\n" +
+                $"最高平滑电平：{NoiseSignalPresentation.Estimated(e.Summary.MaximumDbA)} · 估算有效覆盖 {e.Summary.Coverage:P0}\n" +
+                "参考版本：" + e.ProfileId[..12] + " · " + NoiseSignalPresentation.EstimateReason(e);
         DrawTrend(); UpdateButtons();
     }
     private static string FormatDb(double? value) => NoiseSignalPresentation.Statistic(value);

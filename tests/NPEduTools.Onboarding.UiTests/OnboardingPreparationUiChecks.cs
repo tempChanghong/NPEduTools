@@ -159,7 +159,7 @@ internal static partial class Program
                     Click(owner, "BackButton");
                     Assert(((TextBlock)owner.FindName("StepTitle")).Text == "使用偏好", "back navigation did not leave preparation");
                     Click(owner, "SkipButton");
-                    Assert(((TextBlock)owner.FindName("StepTitle")).Text == (step == "noise" ? "准备噪音监测" : "准备考试环境"), "return navigation did not reach the original step");
+                    Assert(((TextBlock)owner.FindName("StepTitle")).Text == (step == "noise" ? "配置监测设备" : "准备考试环境"), "return navigation did not reach the original step");
                     using var currentServer = Server();
                     var currentRead = Read(currentServer);
                     var noise = new NoiseState(Guid.NewGuid(), 1, "Stopped", "隔离旧监测状态", null, null, null, null, "NoData", null, []);

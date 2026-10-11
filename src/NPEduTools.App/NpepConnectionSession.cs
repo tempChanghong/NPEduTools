@@ -106,6 +106,32 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     }
 
     public Task<bool> RefreshAsync() => RunAsync(null);
+    public async Task<JsonObject?> CollectDiagnosticsAsync(string appVersion, CancellationToken token = default)
+    {
+        if (lifetime.IsCancellationRequested || token.IsCancellationRequested || !await _gate.WaitAsync(0)) return null;
+        _working = true; Changed();
+        try
+        {
+            async Task<(HostResponse? Response, DateTimeOffset? At)> ReadAsync(string capability)
+            {
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime, token);
+                deadline.CancelAfter(TimeSpan.FromSeconds(3));
+                try
+                {
+                    var response = await request(new(Protocol.Version, Guid.NewGuid(), capability), deadline.Token);
+                    return (response, DateTimeOffset.UtcNow);
+                }
+                catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+                { return (null, null); }
+            }
+            var connection = await ReadAsync("npep.status");
+            if (lifetime.IsCancellationRequested || token.IsCancellationRequested) return null;
+            var cache = await ReadAsync("host.cached-status");
+            if (lifetime.IsCancellationRequested || token.IsCancellationRequested) return null;
+            return NpepDiagnostics.Create(appVersion, DateTimeOffset.UtcNow, connection.Response, connection.At, cache.Response, cache.At);
+        }
+        finally { _working = false; _gate.Release(); Changed(); }
+    }
     public Task<bool> InspectAsync() => CanInspect ? RunAsync(new("inspect", _state!.Revision, Origin.Trim())) : Task.FromResult(false);
     public Task<bool> PairAsync() => CanPair ? RunAsync(new("pair", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
         Text(_state.Server, "serverInstanceId"), Text(_state.Server, "deploymentEpoch"))) : Task.FromResult(false);

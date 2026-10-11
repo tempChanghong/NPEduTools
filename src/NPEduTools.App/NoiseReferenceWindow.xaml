@@ -1,0 +1,61 @@
+<Window x:Class="NPEduTools.App.NoiseReferenceWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="外部声级计参考 · NPEduTools" Width="920" Height="850" MinWidth="760" MinHeight="620"
+ WindowStartupLocation="CenterOwner" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI">
+ <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
+  <TextBlock Text="外部声级计参考" FontSize="28" FontWeight="SemiBold"/>
+  <TextBlock Text="将声级计拾音头放在大屏麦克风附近，在稳定声场中同时测量。使用 A 加权和下方选择的 FAST／SLOW，关闭 MAX 保持；不需要学生配合，也不保存原音频。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,14"/>
+  <Border Background="#FFF1D5" Padding="14" CornerRadius="8" Margin="0,0,0,14"><TextBlock Text="手动输入同期 A 加权仪表读数。正式监测核对本机参考后分别显示 dBFS 与估算 dB(A)；学校后台明确选择双阈值单位。设备、音量、静音或采样格式变化后参考失效，须重新校准。USB 联机仍待实物验证。" TextWrapping="Wrap"/></Border>
+  <Border Background="White" Padding="20" CornerRadius="12" Margin="0,0,0,14"><StackPanel>
+   <DockPanel><Button DockPanel.Dock="Right" Content="刷新" Click="RefreshClicked" Padding="14,6"/><TextBlock x:Name="DeviceStatus" Text="正在读取本机状态…" FontSize="17" TextWrapping="Wrap"/></DockPanel>
+   <TextBlock x:Name="ProfileStatus" TextWrapping="Wrap" Margin="0,8,0,0"/>
+   <TextBlock Text="保持麦克风位置、Windows 输入音量、静音和增强设置不变；移动设备、硬件增益或 AGC／降噪改变后须重采。输入格式须支持 44.1 kHz 或以上；不会自动切换麦克风。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,8,0,0"/>
+   <WrapPanel Margin="0,12,0,0"><TextBlock Text="本机管理口令" VerticalAlignment="Center" Margin="0,0,12,0"/>
+    <PasswordBox x:Name="ManagementSecret" Width="240" MaxLength="128" AutomationProperties.AutomationId="ReferenceSecret"/>
+    <Button Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="12,6"/>
+   </WrapPanel>
+  </StackPanel></Border>
+  <Border Background="White" Padding="20" CornerRadius="12" Margin="0,0,0,14"><StackPanel>
+   <TextBlock Text="1　建立参考草稿" FontSize="19" FontWeight="SemiBold"/>
+   <WrapPanel Margin="0,12,0,0">
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表型号"/><TextBox x:Name="Instrument" Text="DLY-2202" Width="180" Padding="7" MaxLength="80" Margin="0,6,0,0"/></StackPanel>
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="仪表时间模式"/><ComboBox x:Name="TimeMode" Width="150" DisplayMemberPath="Name" SelectedValuePath="Id" MinHeight="32" Margin="0,6,0,0"/></StackPanel>
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="允许波动（dB）"/><TextBox x:Name="Stability" Width="135" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceStability"/></StackPanel>
+    <StackPanel><TextBlock Text="复核允许差值（dB）"/><TextBox x:Name="CheckTolerance" Width="145" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceTolerance"/></StackPanel>
+   </WrapPanel>
+   <TextBlock Text="两项门槛请明确填写 0.1–5 dB：这是您允许的波动与复核差值，不是设备精度。没有已验证的实际误差，因此不替您预填。新草稿后按草稿设置采样；改设置须重新建草稿。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,12,0,0"/>
+   <Button x:Name="BeginDraft" Content="新建参考草稿" Click="BeginClicked" HorizontalAlignment="Left" Padding="14,7" Margin="0,12,0,0"/>
+   <TextBlock x:Name="DraftStatus" TextWrapping="Wrap" Margin="0,8,0,0"/>
+  </StackPanel></Border>
+  <Border Background="White" Padding="20" CornerRadius="12" Margin="0,0,0,14"><StackPanel>
+   <TextBlock Text="2　采样与填入同期读数" FontSize="19" FontWeight="SemiBold"/>
+   <TextBlock Text="先采第一电平，再换一个稳定电平作复核。两段参考至少相差 6 dB；此间隔用于检查输入链路，不是精度承诺。每次先预热 5 秒，再收集约 10 秒统计，总过程最多 20 秒。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,12"/>
+   <WrapPanel><ComboBox x:Name="RoleChoice" Width="190" DisplayMemberPath="Name" SelectedValuePath="Id" MinHeight="32"/>
+    <Button x:Name="StartSample" Content="开始本段采样" Click="StartClicked" Padding="14,7" Margin="12,0,0,0" AutomationProperties.AutomationId="ReferenceStart"/>
+    <Button x:Name="CancelSample" Content="取消本段" Click="CancelClicked" Padding="14,7" Margin="12,0,0,0"/>
+   </WrapPanel>
+   <ProgressBar x:Name="Progress" Minimum="0" Maximum="10" Height="5" Margin="0,12,0,0"/>
+   <TextBlock x:Name="SamplingStatus" TextWrapping="Wrap" Margin="0,8,0,12"/>
+   <ListBox x:Name="SampleList" Height="138" DisplayMemberPath="Description" SelectionChanged="SampleSelected" AutomationProperties.AutomationId="ReferenceSamples"/>
+   <WrapPanel Margin="0,12,0,0">
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="稳定参考读数（dB(A)）"/><TextBox x:Name="ReferenceValue" Width="180" Padding="7" Margin="0,6,0,0" AutomationProperties.AutomationId="ReferenceReading"/></StackPanel>
+    <StackPanel Margin="0,0,20,0"><TextBlock Text="同期最低读数（可选）"/><TextBox x:Name="ReferenceMinimum" Width="160" Padding="7" Margin="0,6,0,0"/></StackPanel>
+    <StackPanel><TextBlock Text="同期最高读数（可选）"/><TextBox x:Name="ReferenceMaximum" Width="160" Padding="7" Margin="0,6,0,0"/></StackPanel>
+   </WrapPanel>
+   <TextBlock Text="读数范围 30–130 dB(A)。最低／最高如需填写须成对填写，仅检查波动，不用于拟合斜率。只支持即时读数的仪表，请记录采样期间稳定的同模式读数；本流程不把它称为 LAeq。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,10,0,0"/>
+   <CheckBox x:Name="SameWindow" Margin="0,12,0,0"><TextBlock Text="我确认读数来自所选采样的同一时段，仪表为 A 加权、草稿时间模式、非 MAX，且声场与读数稳定。" TextWrapping="Wrap"/></CheckBox>
+   <WrapPanel Margin="0,12,0,0"><Button x:Name="AttachReference" Content="保存所选段的参考读数" Click="ReferenceClicked" Padding="14,7" AutomationProperties.AutomationId="ReferenceAttach"/>
+    <Button x:Name="RemoveSample" Content="删除所选段" Click="RemoveClicked" Padding="14,7" Margin="12,0,0,0"/>
+   </WrapPanel>
+  </StackPanel></Border>
+  <Border Background="White" Padding="20" CornerRadius="12"><StackPanel>
+   <TextBlock Text="3　复核并保存" FontSize="19" FontWeight="SemiBold"/>
+   <TextBlock x:Name="EvaluationStatus" TextWrapping="Wrap" Margin="0,10,0,12"/>
+   <WrapPanel><Button x:Name="ConfirmProfile" Content="保存本机估算参考" Click="ConfirmClicked" Padding="14,7" AutomationProperties.AutomationId="ReferenceConfirm"/>
+    <Button x:Name="ClearProfile" Content="清除外部参考配置" Click="ClearClicked" Padding="14,7" Margin="12,0,0,0"/>
+   </WrapPanel>
+   <TextBlock x:Name="OperationMessage" TextWrapping="Wrap" Foreground="#A55337" Margin="0,12,0,0" AutomationProperties.AutomationId="ReferenceMessage"/>
+  </StackPanel></Border>
+ </StackPanel></ScrollViewer>
+</Window>

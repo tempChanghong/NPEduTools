@@ -21,7 +21,7 @@ public sealed record OnboardingState(int Version = 3, OnboardingFeatures Feature
         .. (features & (OnboardingFeatures.Recording | OnboardingFeatures.Automatic)) != 0 ? new[] { "recording" } : [],
         .. features.HasFlag(OnboardingFeatures.Classroom) ? new[] { "classroom" } : [],
         .. features.HasFlag(OnboardingFeatures.School) ? new[] { "school" } : [],
-        .. features.HasFlag(OnboardingFeatures.Noise) ? new[] { "noise" } : [], "review"];
+        .. (features & (OnboardingFeatures.Noise | OnboardingFeatures.School)) != 0 ? new[] { "noise" } : [], "review"];
 
     public OnboardingState Select(OnboardingFeatures features)
     {

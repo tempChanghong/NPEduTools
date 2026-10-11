@@ -60,6 +60,19 @@
       <Button Content="{Binding PauseLabel}" Click="PauseClicked" Visibility="{Binding ShowActive, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{Binding CanPause}" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepPause" />
       <Button Content="{Binding UnpairLabel}" Click="UnpairClicked" Visibility="{Binding ShowUnpair, Converter={StaticResource VisibleWhenTrue}}" IsEnabled="{Binding CanUnpair}" Style="{StaticResource Quiet}" Margin="0,0,0,8" AutomationProperties.AutomationId="NpepUnpair" />
     </WrapPanel>
+    <Expander Header="故障排查" Margin="0,10,0,0">
+      <StackPanel Margin="0,8,0,0">
+        <TextBlock Text="导出互联状态与已有本机缓存，后台不可用时也能记录缺失项。包含服务地址和归属编号，不含配对码、凭据、姓名、路径或录音；分享前请核对文件。此操作不会重新探测课程接口或控制软件。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
+        <WrapPanel Margin="0,8,0,0">
+          <Button Content="导出诊断摘要…" Click="ExportDiagnosticsClicked" IsEnabled="{Binding CanRefresh}" Style="{StaticResource Quiet}" Margin="0,0,8,8" AutomationProperties.AutomationId="NpepExportDiagnostics" />
+          <Button Content="对照学校诊断摘要…" Click="CompareDiagnosticsClicked" IsEnabled="{Binding CanRefresh}" Style="{StaticResource Quiet}" Margin="0,0,0,8" AutomationProperties.AutomationId="NpepCompareDiagnostics" />
+        </WrapPanel>
+        <TextBlock Text="对照时选择学校运维概览导出的 JSON 文件，核对服务与大屏归属。结果只显示在这里，不上传文件，也不会修改设置。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
+        <Border x:Name="ComparisonPanel" Visibility="Collapsed" Background="#EAF6F2" CornerRadius="10" Padding="14" Margin="0,10,0,0">
+          <TextBlock x:Name="ComparisonMessage" TextWrapping="Wrap" LineHeight="23" FontSize="13" Foreground="#314A3E" AutomationProperties.AutomationId="NpepDiagnosticComparison" />
+        </Border>
+      </StackPanel>
+    </Expander>
     <TextBlock x:Name="LocalMessage" Style="{StaticResource OptionalText}" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" />
   </StackPanel>
 </UserControl>

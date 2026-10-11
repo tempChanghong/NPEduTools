@@ -27,6 +27,12 @@ internal static partial class Program
         bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
         bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
         bool classroomOnly = args.Length == 2 && args[1] == "--classroom-status";
+        bool studyMemoryOnly = args.Length == 2 && args[1] == "--study-display-memory";
+        bool studySoakOnly = args.Length == 2 && args[1] is "--study-display-soak" or "--study-display-soak-probe";
+        bool studyDisplayOnly = args.Length == 2 && args[1] == "--study-display";
+        bool studyDevicesOnly = args.Length == 2 && args[1] == "--study-devices";
+        bool calibrationOnly = args.Length == 2 && args[1] == "--noise-calibration";
+        bool meterOnly = args.Length == 2 && args[1] == "--sound-meter-beta";
         bool scheduledDisplayOnly = args.Length == 2 && args[1] == "--scheduled-display";
         bool preparationOnly = args.Length == 2 && args[1] == "--onboarding-preparation";
         bool touchOnly = args.Length == 2 && args[1] == "--touch-status";
@@ -37,7 +43,7 @@ internal static partial class Program
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
         bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
-        if (args.Length != 1 && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
+        if (args.Length != 1 && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -52,6 +58,25 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (meterOnly) { RunSoundMeterChecks(); WriteResult("PASSED", null); return 0; }
+            if (calibrationOnly)
+            { RunNoiseCalibrationChecks(); WriteResult("PASSED", null); return 0; }
+            if (studySoakOnly)
+            {
+                RunStudySoakChecks(args[1] == "--study-display-soak-probe"); WriteResult("PASSED", null); return 0;
+            }
+            if (studyMemoryOnly)
+            {
+                RunStudyMemoryChecks(); WriteResult("PASSED", null); return 0;
+            }
+            if (studyDisplayOnly)
+            {
+                RunStudyDisplayChecks(); WriteResult("PASSED", null); return 0;
+            }
+            if (studyDevicesOnly)
+            {
+                RunStudyDeviceChecks(); WriteResult("PASSED", null); return 0;
+            }
             if (shortcutsOnly)
             {
                 RunShortcutRecoveryChecks();
@@ -227,7 +252,7 @@ internal static partial class Program
         window.Loaded += (_, _) =>
         {
             try { test(window); }
-            catch (Exception error) { failure = error; window.Close(); }
+            catch (Exception error) { failure = error; if (window is StudyWindow study) study.Shutdown(); else window.Close(); }
         };
         window.ShowDialog();
         if (failure is not null) throw failure;

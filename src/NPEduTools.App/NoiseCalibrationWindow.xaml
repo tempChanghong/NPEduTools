@@ -1,0 +1,55 @@
+<Window x:Class="NPEduTools.App.NoiseCalibrationWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="快速校准 · NPEduTools" Width="920" Height="820" MinWidth="760" MinHeight="620"
+ WindowStartupLocation="CenterOwner" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI">
+ <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
+  <TextBlock Text="快速校准" FontSize="28" FontWeight="SemiBold"/>
+  <TextBlock Text="选择自然发生的场景，不必等待绝对安静，也不用同学配合。每段采样 15 秒，仅保存电平统计；场景名称不代表系统能识别聊天或说话者。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,18"/>
+  <Border Background="White" CornerRadius="12" Padding="20" Margin="0,0,0,14"><StackPanel>
+   <DockPanel><Button DockPanel.Dock="Right" Content="刷新" Click="RefreshClicked" Padding="14,6"/>
+    <TextBlock x:Name="DeviceStatus" Text="正在读取设备…" FontSize="17" TextWrapping="Wrap"/></DockPanel>
+   <TextBlock x:Name="ProfileStatus" TextWrapping="Wrap" Margin="0,9,0,0"/>
+   <TextBlock Text="请保持麦克风位置、Windows 输入音量和增强设置不变。更换麦克风、增益、采样格式或学校配置后，旧阈值将停止应用；移动麦克风或改变驱动增强时请重新校准。" TextWrapping="Wrap" FontSize="12" Foreground="#61786B" Margin="0,10,0,0"/>
+   <WrapPanel Margin="0,14,0,0" VerticalAlignment="Center">
+    <TextBlock Text="本机管理口令" VerticalAlignment="Center" Margin="0,0,12,0"/>
+    <PasswordBox x:Name="ManagementSecret" Width="240" MaxLength="128" AutomationProperties.AutomationId="CalibrationSecret"/>
+    <Button Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="12,6"/>
+   </WrapPanel>
+  </StackPanel></Border>
+  <Border Background="White" CornerRadius="12" Padding="20" Margin="0,0,0,14"><StackPanel>
+   <DockPanel><Button x:Name="BeginDraft" DockPanel.Dock="Right" Content="新建校准草稿" Click="BeginClicked" Padding="14,6"/>
+    <TextBlock Text="场景采样" FontSize="19" FontWeight="SemiBold"/></DockPanel>
+   <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <StackPanel><TextBlock Text="现场场景"/><ComboBox x:Name="SceneChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0" MinHeight="34"/></StackPanel>
+    <StackPanel Grid.Column="2"><TextBlock Text="管理员希望如何处理"/><ComboBox x:Name="LabelChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0" MinHeight="34"/></StackPanel>
+   </Grid>
+   <WrapPanel Margin="0,14,0,8">
+    <Button x:Name="StartSample" Content="采样 15 秒" Click="StartClicked" Padding="16,7" AutomationProperties.AutomationId="CalibrationStart"/>
+    <Button x:Name="CancelSample" Content="取消本段" Click="CancelClicked" Padding="16,7" Margin="12,0,0,0"/>
+   </WrapPanel>
+   <ProgressBar x:Name="SamplingProgress" Minimum="0" Maximum="15" Height="5"/>
+   <TextBlock x:Name="SamplingStatus" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,8"/>
+   <ListBox x:Name="SampleList" Height="174" SelectionChanged="SampleSelected" DisplayMemberPath="Description" AutomationProperties.AutomationId="CalibrationSamples"/>
+   <WrapPanel Margin="0,12,0,0">
+    <Button x:Name="RelabelSample" Content="按当前选择重新标记" Click="RelabelClicked" Padding="12,6"/>
+    <Button x:Name="RemoveSample" Content="删除所选样本" Click="RemoveClicked" Padding="12,6" Margin="12,0,0,0"/>
+   </WrapPanel>
+  </StackPanel></Border>
+  <Border Background="White" CornerRadius="12" Padding="20"><StackPanel>
+   <TextBlock Text="确认本机双阈值" FontSize="19" FontWeight="SemiBold"/>
+   <TextBlock x:Name="SuggestionStatus" TextWrapping="Wrap" Margin="0,10,0,12"/>
+   <WrapPanel>
+    <StackPanel Margin="0,0,24,0"><TextBlock Text="第二阈值 · 视觉提醒（dBFS）"/><TextBox x:Name="MediumThreshold" Width="190" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="8" AutomationProperties.AutomationId="CalibrationMedium"/></StackPanel>
+    <StackPanel><TextBlock Text="第一阈值 · 纪律提醒（dBFS）"/><TextBox x:Name="HighThreshold" Width="190" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="8" AutomationProperties.AutomationId="CalibrationHigh"/></StackPanel>
+   </WrapPanel>
+   <TextBlock Text="dBFS 越接近 0，信号越强；第一阈值须高于第二阈值至少 1 dB。快速校准不生成实际 dB(A)。确认只影响当前大屏、麦克风及学校配置；提醒持续时间与限频仍由学校后台决定。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,12,0,0"/>
+   <WrapPanel Margin="0,14,0,0">
+    <Button x:Name="UseSuggestion" Content="填入建议值" Click="SuggestionClicked" Padding="12,7"/>
+    <Button x:Name="ConfirmThresholds" Content="确认并保存本机阈值" Click="ConfirmClicked" Padding="12,7" Margin="12,0,0,0" AutomationProperties.AutomationId="CalibrationConfirm"/>
+    <Button x:Name="ClearThresholds" Content="恢复学校阈值" Click="ClearClicked" Padding="12,7" Margin="12,0,0,0"/>
+   </WrapPanel>
+   <TextBlock x:Name="OperationMessage" TextWrapping="Wrap" Foreground="#A55337" Margin="0,12,0,0" AutomationProperties.AutomationId="CalibrationMessage"/>
+  </StackPanel></Border>
+ </StackPanel></ScrollViewer>
+</Window>

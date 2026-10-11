@@ -5,6 +5,8 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/NPEduTools.App/NPEduTools.App.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/NPEduTools.Host/NPEduTools.Host.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/NPEduTools.Integrations.Npep/NPEduTools.Integrations.Npep.csproj" /></ItemGroup>
   <ItemGroup><None Include="../../src/NPEduTools.App/App.xaml" Link="AppResources.xaml" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Resource Include="../../images/branding/npedutools.ico" Link="Assets/npedutools.ico" /></ItemGroup>
 </Project>
