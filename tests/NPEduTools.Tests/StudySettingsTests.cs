@@ -81,6 +81,19 @@ public sealed class StudySettingsTests
         Assert.Throws<NPEduTools.Integrations.Npep.NpepException>(()=>f.Service.ApplyStudy(f.Config));
     }
     [Fact]
+    public async Task Pause_retains_only_a_fresh_next_window_and_never_enables_execution()
+    {
+        await using var f = new Fixture(); f.Tick(); f.Tick(); f.Exam = true;
+        var paused = f.Service.Snapshot();
+        Assert.Equal("Blocked", paused.Phase); Assert.Equal("EXAM_PAUSED", paused.Reason);
+        Assert.Null(paused.Window); Assert.NotNull(paused.Next);
+        f.Frozen = true;
+        for (int i = 0; i < 10; i++) f.Tick();
+        Assert.Null(f.Service.Snapshot().Next);
+        f.Frozen = false; f.Tick(); f.Tick(); f.Tick(); Assert.NotNull(f.Service.Snapshot().Next);
+        f.Tick(15000, false); Assert.Null(f.Service.Snapshot().Next);
+    }
+    [Fact]
     public async Task Closed_class_and_unconfigured_restart_do_not_activate()
     {
         await using var f = new Fixture();f.Config["effective"] = new JsonObject{["source"]="Disabled",["settings"]=null};

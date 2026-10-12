@@ -113,11 +113,11 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
                 "SCHOOL_CLOCK_UNAVAILABLE", reading.CanStart, reading.Now, null, null, _settings);
             if (_source is "None" or "Disabled")
             { _state = _state with { Phase = "Disabled", Reason = "DISABLED" }; return; }
-            if (_exam()) { _state = _state with { Reason = "EXAM_PAUSED" }; return; }
             if (!reading.CanStart || reading.Now is not { Year: >= 2000 and <= 9998 } now) return;
             try
             {
                 var windows = SchoolStudySchedule.Windows(_settings!.ForMode(_mode), now);
+                if (_exam()) { _state = _state with { Reason = "EXAM_PAUSED", Next = windows.Next }; return; }
                 bool prepare = windows.Current is null && windows.Next is { } next && now >= next.Start.AddSeconds(-StudyPresentationTiming.ScheduledDisplayLeadSeconds);
                 _state = _state with { Phase = windows.Current is not null ? "Active" : prepare ? "Preparing" : "Outside",
                     Reason = windows.Current is not null ? "WINDOW_ACTIVE" : prepare ? "PREPARING" : "OUTSIDE_WINDOW",

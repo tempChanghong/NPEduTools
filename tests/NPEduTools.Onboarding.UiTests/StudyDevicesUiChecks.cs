@@ -58,6 +58,15 @@ internal static partial class Program
                 Assert(((TextBlock)picker.FindName("CameraStatus")).Text.Contains("未确认"), "missing camera not indicated");
                 typeof(StudyMonitoringWindow).GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.Invoke(manage, [null]);
                 Assert(!((TextBlock)manage.FindName("StudyCapture")).Text.Contains("正在采集"), "unknown Host claimed live capture");
+                var next = new SchoolNoiseWindow(new(2026,10,13,23,0,0,TimeSpan.Zero),new(2026,10,14,1,0,0,TimeSpan.Zero));
+                var nextState = new StudyHostState("fixture", "APPLIED", "NOT_INTEGRATED", "MANUAL", "Active", "WINDOW_ACTIVE", true,
+                    next.Start.AddDays(-1), new(next.Start.AddDays(-1),next.End.AddDays(-1)), next, null);
+                var render = typeof(StudyMonitoringWindow).GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
+                render.Invoke(manage, [nextState]);
+                Assert(((TextBlock)manage.FindName("StudyNext")).Text.Contains("2026-10-14 01:00"), "current study hid next overnight window");
+                render.Invoke(manage, [nextState with {ClockReady=false}]);
+                Assert(!((TextBlock)manage.FindName("StudyNext")).Text.Contains("2026"), "stale clock retained predicted window");
+                render.Invoke(manage, [null]);
                 Snapshot(owner, "study-monitoring-devices.png"); owner.Close();
                 Checks.Add("Study management actual WPF/private Host pipe: shared selection, unplugged camera retained without fallback, stale state no active claim");
             });
@@ -69,6 +78,12 @@ internal static partial class Program
                 var sidebarPoint = studyNavigation.TranslatePoint(new Point(), owner);
                 Assert(sidebarPoint.Y >= 0 && sidebarPoint.Y + studyNavigation.ActualHeight <= owner.ActualHeight, "study navigation is clipped by the fixed sidebar footer");
                 Assert(Find(owner, "OpenRecordingPlan") is Button && Find(owner, "OpenClassroomMode") is Button, "existing classroom navigation was lost");
+                Assert(Find(owner, "StudyHomeNext") is TextBlock, "home next-study summary missing");
+                var homeState = new StudyHostState("fixture", "APPLIED", "NOT_INTEGRATED", "MANUAL", "Active", "WINDOW_ACTIVE", true,
+                    new(2026,10,12,19,0,0,TimeSpan.Zero), null, new(new(2026,10,13,19,0,0,TimeSpan.Zero),new(2026,10,13,21,30,0,TimeSpan.Zero)), null);
+                var update = typeof(MainWindow).GetMethod("UpdateStudyHome", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                update.Invoke(main, [homeState]);
+                Assert(((TextBlock)Find(owner, "StudyHomeNext")).Text.Contains("2026-10-13 19:00"), "home did not show next school study during manual monitoring");
                 Snapshot(owner, "home-monitoring-layout.png"); owner.Close();
                 Checks.Add("Main window actual WPF: separate manual noise/self-study entries; existing home tools retained; no production App startup");
             });

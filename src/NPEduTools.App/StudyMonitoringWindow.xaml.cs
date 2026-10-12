@@ -40,7 +40,8 @@ public partial class StudyMonitoringWindow : Window
         StudyPhase.Text = state is null ? "学校安排状态待确认" : state.PolicyState != "APPLIED" ? "尚无已应用的学校自习安排" :
             state.Phase switch { "Preparing" => "准备自习", "Active" => "自习进行中", "Ended" => "自习结束", "Outside" => "当前不在自习时段", _ => "自习暂不可执行" };
         StudySchedule.Text = state?.ClockReady == true && state.SchoolNow is { } now ? $"{(state.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")} {now:yyyy-MM-dd HH:mm:ss}" +
-            (state.Window is { } w ? $"　当前时段 {w.Start:HH:mm}–{w.End:HH:mm}" : state.Next is { } n ? $"　下一时段 {n.Start:MM-dd HH:mm}–{n.End:HH:mm}" : "") : "学校时间未确认；不会按 Windows 时间自行启动。";
+            (state.Window is { } w ? $"　当前时段 {StudySchedulePresentation.Span(w)}" : "") : state?.Mode == "Exam" ? "考试模式 Windows 时间尚未确认；不会自行启动。" : "学校时间未确认；不会按 Windows 时间自行启动。";
+        StudyNext.Text = StudySchedulePresentation.Next(state);
         StudyCapture.Text = state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "学校自习正在采集 · 已收到新鲜采样" :
             state?.Execution is { Owner: "Manual" } ? "当前是手动采样，学校自习没有接管该会话" : state?.Execution is { State: "Starting" } ? "采集启动中，尚未确认有效采样" : "学校自习采集状态待确认";
         StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先；继续后台采集与按策略拍照，自习提示音不补播" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? $"全屏展示临时收起，约 {Math.Ceiling(d.HiddenRemainingSeconds)} 秒后按有效安排返回" :

@@ -115,7 +115,7 @@ try {
         '--verbosity', 'quiet', '--logger', 'trx;LogFileName=transport.trx', '--results-directory', $runRoot)
     Suite 'Desktop exam adapters and onboarding' $DesktopRoot 'dotnet' @('test',
         'tests/NPEduTools.Tests/NPEduTools.Tests.csproj', '--artifacts-path', $runRoot, '-m:1',
-        '--filter', 'FullyQualifiedName~RemoteExam|FullyQualifiedName~RuntimeAdapter|FullyQualifiedName~RuntimeReservation|FullyQualifiedName~ClassroomMode|FullyQualifiedName~AdminStartupTests|FullyQualifiedName~OnboardingTests|FullyQualifiedName~NpepConnectionSessionTests|FullyQualifiedName~FieldCalibrationLayoutTests|FullyQualifiedName~TouchInputBufferTests|FullyQualifiedName~TouchAssistGestureTests|FullyQualifiedName~TouchHostTests',
+        '--filter', 'FullyQualifiedName~RemoteExam|FullyQualifiedName~RuntimeAdapter|FullyQualifiedName~RuntimeReservation|FullyQualifiedName~ClassroomMode|FullyQualifiedName~AdminStartupTests|FullyQualifiedName~OnboardingTests|FullyQualifiedName~NpepConnectionSessionTests|FullyQualifiedName~FieldCalibrationLayoutTests|FullyQualifiedName~StudySchedulePresentationTests|FullyQualifiedName~StudySettingsTests|FullyQualifiedName~TouchInputBufferTests|FullyQualifiedName~TouchAssistGestureTests|FullyQualifiedName~TouchHostTests',
         '--verbosity', 'quiet', '--logger', 'trx;LogFileName=exam-onboarding.trx', '--results-directory', $runRoot)
     # Reuse the existing schedule suite: it exports fresh C# fixtures for web/KV,
     # verifies shared rules, and uses test peers rather than the installed Host.
@@ -132,6 +132,8 @@ try {
         Suite 'Actual native noise browser' $WebRoot 'node' @('scripts/test-native-noise-browser.mjs')
         Suite 'Actual browser stale state and error recovery' $WebRoot 'node' @('node_modules/@playwright/test/cli.js',
             'test', 'tests/e2e/npep-recovery.spec.js', '--reporter=line')
+        Suite 'Screen homework refresh and save stability' $WebRoot 'node' @('node_modules/@playwright/test/cli.js',
+            'test', 'tests/e2e/screen-refresh-stability.spec.js', 'tests/e2e/screen-save-boundaries.spec.js', '--reporter=line')
     } else { Skip 'Pairing, noise and recovery browser checks' }
     if ($Database) {
         Suite 'Native isolated database, upgrade and real HTTP/.NET' $BackendRoot 'node' @('scripts/run-native-npep-tests.js', '--desktop-root', $DesktopRoot)

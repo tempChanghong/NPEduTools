@@ -184,6 +184,7 @@
                     <TextBlock Grid.Column="1" Text="自习监测" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                   </Grid>
                   <TextBlock x:Name="StudyHomeStatus" Text="学校安排与设备准备" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                  <TextBlock x:Name="StudyHomeNext" Text="下一次定时自习：学校安排待确认" Foreground="#61786B" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.AutomationId="StudyHomeNext"/>
                   <TextBlock Text="全屏自习 · 当天作业 · 自习座位表" Foreground="#147D68" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </StackPanel>
               </Button>

@@ -48,6 +48,7 @@ public partial class MainWindow
                 } else if (probeSeating && studyResponse.Outcome == "Succeeded") _seatingUnsupportedAt = null;
                 var studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
                 if (_lifetime.IsCancellationRequested) break;
+                UpdateStudyHome(studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(3.5) ? studyResponse.Study : null);
                 _quickProjectionAt = studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
                 if (_quickProjectionAt is not null) UpdateQuickPresentationVisibility();
                 await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
@@ -65,7 +66,6 @@ public partial class MainWindow
                     _manualStudyWindow?.HideDisplay();
                 }
                 else _manualStudyWindow?.HideDisplay();
-                UpdateStudyHome(studyResponse.Outcome == "Succeeded" ? studyResponse.Study : null);
                 if (studyResponse.Study is not { Display.Selected: true, PolicyState: "APPLIED", Seating.State: "READY" }) _studyWindow?.InvalidateSeating();
                 bool blocked = _exitBusy || _notificationOpening || _schoolNotification is not null || _notificationPreview is not null ||
                     IsActive || _noiseWindow?.IsVisible == true || _onboardingWindow?.IsVisible == true ||
