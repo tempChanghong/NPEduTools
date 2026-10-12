@@ -125,6 +125,7 @@ public partial class StudySurface : UserControl
         bool reminderUnavailable = matchingThreshold && state.Threshold!.ReminderError is not null;
         if (reminderUnavailable) NoiseDetail.Text += " · 纪律提醒暂不可用";
         NoiseDetail.ToolTip = estimated ? "估算 dB(A) 使用本机参考与 A 加权 F/S 统计。参考失效时暂停该单位的阈值判定；dBFS 采样继续。" : "dBFS 是数字信号电平，不能直接当作教室声压级。";
+        if (estimated && _noise?.ReferenceNote is {} referenceNote) NoiseDetail.ToolTip += "\n"+referenceNote;
         SetEdge(matchingThreshold ? state.Threshold!.Band : "None");
         if (!capturing || estimated && _noise?.Estimate?.State != "Active") _timeline.CancelDiscipline();
         if (_shownNotice == "Discipline" && _timeline.Notice != "Discipline") _audio.Stop();

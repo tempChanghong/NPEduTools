@@ -6,7 +6,7 @@ namespace NPEduTools.Core;
 /// Bounded, same-host-clock observations. Queue flushing cannot establish the instrument's
 /// internal sample time. Stable windows and timing checks make this a Beta estimate, not LAeq.
 /// </summary>
-public sealed class NoiseUsbReference(string mode)
+public sealed class NoiseUsbReference(string mode, string workflow = "Stable")
 {
     private sealed record Point(double Requested, double Received, double Level, int Range);
     private readonly List<Point> _points = new(128);
@@ -46,13 +46,13 @@ public sealed class NoiseUsbReference(string mode)
             Error = $"同期 USB 读数覆盖不足（窗口内 {points.Length} 次），请检查响应速率和时延后重采。";
             return sample with { Quality = "Incomplete" };
         }
-        if (points.Length < 8 || end <= start) return Invalid();
+        if (points.Length < (workflow == "Field" ? 28 : 8) || end <= start) return Invalid();
         double Centre(Point p) => (p.Requested + p.Received) / 2;
         double first = Centre(points[0]), last = Centre(points[^1]);
         double maximumGap = points.Zip(points.Skip(1), (a, b) => b.Received - a.Received).Max();
         var evidence = new NoiseReferenceMeterEvidence(points.Length, last - first, maximumGap,
             points.Max(p => p.Received - p.Requested), first - start, end - last, points[0].Range);
-        if (!NoiseReferenceContract.MeterEvidenceValid(evidence)) return Invalid();
+        if (!NoiseReferenceContract.MeterEvidenceValid(evidence,workflow)) return Invalid();
         // Only stable windows are accepted by Evaluate. Bound edges for the observed ~1 Hz query rate.
         double Energy(Point p) => Math.Pow(10, p.Level / 10);
         double sum = Energy(points[0]) * (first - start) + Energy(points[^1]) * (end - last);

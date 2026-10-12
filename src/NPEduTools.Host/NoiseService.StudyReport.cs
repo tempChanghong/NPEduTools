@@ -12,7 +12,7 @@ public sealed partial class NoiseService
             if (_session is not {} s || !s.Scheduled && !s.ManualStudy) return null;
             return new(s.Id, _state is "Stopped" or "Faulted", s.FinishedSeconds ?? _time.GetElapsedTime(s.Started).TotalSeconds,
                 s.Clipped, s.Frames, s.DisciplineReminders, s.ReportRaw.Snapshot(),
-                s.EstimateProfile is null ? null : s.ReportEstimated.Snapshot(), s.EstimateReason);
+                s.EstimateProfile is null ? null : s.ReportEstimated.Snapshot(), s.EstimateReason,s.EstimateReferenceNote);
         }
     }
     internal void RecordStudyReminder(Guid session)

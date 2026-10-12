@@ -43,6 +43,7 @@ public sealed partial class NoiseService
         LoadReference();
         if (s.Calibration is not null || s.Reference is not null || _referenceProfile is not { } p) return;
         s.EstimateProfile = p;
+        s.EstimateReferenceNote = NoiseReferenceCalibration.Describe(p);
         s.EstimateProfileId = ProfileId(p);
         s.EstimateReason = _referenceError ?? _referenceInvalidated;
         if (s.EstimateReason is not null) return;

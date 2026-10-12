@@ -30,6 +30,7 @@ internal static partial class Program
     private static void RunUsbReferenceChecks()
     {
         RunCalibrationOrderingChecks(true);
+        RunFieldReferenceChecks();
         const string secret = "fixture-reference-admin";
         string folder = Path.Combine(Path.GetTempPath(), "npep-usb-reference-ui-" + Guid.NewGuid());
         var previous = SynchronizationContext.Current;
@@ -61,6 +62,7 @@ internal static partial class Program
                 Click(owner, "RefreshStatus");
                 PumpUntil(() => ((TextBlock)owner.FindName("OperationMessage")).Text.Contains("管理口令验证通过"), "refresh did not report valid password");
                 Assert(backend.Opens == 0 && capture is null, "valid refresh verification touched sensors");
+                ((ComboBox)owner.FindName("WorkflowChoice")).SelectedValue="Stable";
                 ((TextBox)owner.FindName("Stability")).Text = "1"; ((TextBox)owner.FindName("CheckTolerance")).Text = "1";
                 Click(owner, "BeginDraft"); PumpUntil(() => Button(owner, "StartSample").IsEnabled, "USB draft missing");
                 Click(owner, "StartSample");
@@ -98,6 +100,60 @@ internal static partial class Program
             Task.Run(async () => await noise.DisposeAsync()).WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
             Directory.Delete(folder, true);
             SynchronizationContext.SetSynchronizationContext(previous);
+        }
+    }
+    private static void RunFieldReferenceChecks()
+    {
+        const string secret="fixture-field-reference-admin";
+        string folder=Path.Combine(Path.GetTempPath(),"npep-field-reference-ui-"+Guid.NewGuid());
+        var previous=SynchronizationContext.Current;SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
+        var backend=new MeterUiBackend {Value=50};var management=new NoiseManagementStore(folder);
+        Assert(management.Configure(null,secret,false) is null,"field fixture management setup failed");
+        var meter=new SoundMeterService(()=>backend,value=>value==secret?null:"MANAGEMENT_SECRET_INVALID");
+        int creates=0;UsbUiCapture? capture=null;
+        var noise=new NoiseService(_=>throw new Exception("No real/formal microphone"),()=>[new("synthetic-mic","Synthetic")],directory:folder,management:management,
+            referenceCreate:_=>capture=new(backend.Value-90+(++creates==2?4:0)),referenceMeterOpen:meter.OpenReferenceAsync);
+        var initial=noise.Snapshot();noise.Handle(new(1,Guid.NewGuid(),"noise.command",Noise:new("select",initial.InstanceId,initial.Revision,"synthetic-mic")));
+        string pipe="NPEduTools.Test.field-reference."+Guid.NewGuid().ToString("N");using var stop=new CancellationTokenSource();
+        var serving=Task.Run(()=>new PipeServer(pipe,new DeviceReader(),_=>{},noise:noise,soundMeter:meter).RunAsync(stop.Token));
+        var window=new NoiseReferenceWindow(pipe,"synthetic-meter");
+        try {
+            Exercise(window,owner=> {
+                PumpUntil(()=>Button(owner,"BeginDraft").IsEnabled,"field Host not connected");
+                Assert(((ComboBox)owner.FindName("WorkflowChoice")).SelectedValue as string=="Field","USB did not default to field mode");
+                Assert(((TextBox)owner.FindName("Stability")).Text=="20" && ((TextBox)owner.FindName("CheckTolerance")).Text=="3","field engineering defaults missing");
+                Assert(backend.Opens==0 && capture is null,"field page opened sensors on load");
+                ((PasswordBox)owner.FindName("ManagementSecret")).Password=secret;Click(owner,"BeginDraft");
+                PumpUntil(()=>Button(owner,"StartSample").IsEnabled,"field draft unavailable");Click(owner,"StartSample");
+                PumpUntil(()=>creates==2,"field first stage did not automatically start its owned check",48);
+                PumpUntil(()=>noise.ReferenceHandle(new(1,Guid.NewGuid(),"noise.reference.status")).NoiseReference?.Evaluation.Assessment?.WarningRequired==true,"field check warning missing",48);
+                PumpUntil(()=>((CheckBox)owner.FindName("AcceptReferenceWarning")).Visibility==Visibility.Visible,"warning confirmation checkbox missing");
+                Assert(!Button(owner,"ConfirmProfile").IsEnabled,"warning bypassed without deliberate acknowledgement");
+                Assert(backend.Opens==2 && backend.Disposals==2 && capture!.Disposed,"automatic pair retained sensor handles");
+                Assert(((TextBlock)owner.FindName("EvaluationStatus")).Text.Contains("未验证全量程"),"same-level field result claimed a broad validation range");
+                var observed=noise.ReferenceHandle(new(1,Guid.NewGuid(),"noise.reference.status")).NoiseReference!;
+                var first=observed.Draft!.Samples.Single(x=>x.Role=="Primary");
+                var continuation=observed with {Revision=101,Draft=observed.Draft with {Samples=[first]}};
+                var continuationCheck=typeof(NoiseReferenceWindow).GetMethod("OwnsFieldContinuation",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static)!;
+                bool Owns(NoiseReferenceState candidate)=>(bool)continuationCheck.Invoke(null,[candidate,continuation.Draft.Id,100L,first.Id])!;
+                Assert(Owns(continuation),"owned first result lost continuation eligibility");
+                Assert(!Owns(continuation with {Revision=103}),"another window's resample retained old automatic continuation");
+                Assert(!Owns(continuation with {Draft=continuation.Draft with {Samples=[first with {Id=Guid.NewGuid()}]}}),"replacement first sample retained automatic continuation");
+                ((ScrollViewer)owner.Content).ScrollToBottom();owner.UpdateLayout();
+                Snapshot(owner,"field-reference-warning.png");
+                ((CheckBox)owner.FindName("AcceptReferenceWarning")).IsChecked=true;Assert(Button(owner,"ConfirmProfile").IsEnabled,"acknowledgement did not enable save");
+                Click(owner,"ConfirmProfile");PumpUntil(()=>noise.ReferenceHandle(new(1,Guid.NewGuid(),"noise.reference.status")).NoiseReference?.Profile is {Workflow:"Field",WarningAcknowledged:true},"field acknowledgement/profile not saved");
+                PumpUntil(()=>Button(owner,"StartSample").IsEnabled && ((TextBlock)owner.FindName("ProfileStatus")).Text.Contains("已明确接受"),"field save response did not settle in WPF");
+                Snapshot(owner,"field-reference-confirmed.png");
+                Click(owner,"StartSample");PumpUntil(()=>creates==3 && Button(owner,"CancelSample").IsEnabled,"field retry did not start");
+                owner.Close();PumpUntil(()=>!owner.IsVisible && backend.Disposals==3 && capture!.Disposed,"field owner close failed to cancel/release");
+                Assert(creates==3,"closed field owner resumed a fourth capture");
+                Checks.Add("Field WPF/private Host pipe + synthetic HID/microphone: USB defaults 20/3, one-click two 30s stages, same-level validation scope, 4dB warning requires checkbox, save records acknowledgement, close cancels; no real sensors");
+            });
+        } finally {
+            window.Close();stop.Cancel();try{serving.GetAwaiter().GetResult();}catch(OperationCanceledException){}
+            Task.Run(async()=>await noise.DisposeAsync()).WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+            Directory.Delete(folder,true);SynchronizationContext.SetSynchronizationContext(previous);
         }
     }
 }

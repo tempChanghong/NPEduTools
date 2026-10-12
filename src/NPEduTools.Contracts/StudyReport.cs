@@ -6,7 +6,7 @@ public sealed record StudyReportChannel(string Unit, double SampledSeconds, doub
     double ThresholdSampledSeconds, double MediumSeconds, double HighSeconds, IReadOnlyList<StudyReportPoint> Trend,
     double MediumThresholdSampledSeconds = 0);
 public sealed record StudySessionReport(Guid SessionId, bool Complete, double ElapsedSeconds, double ClippedSeconds,
-    long Frames, int DisciplineReminders, StudyReportChannel Raw, StudyReportChannel? Estimated, string? EstimateReason);
+    long Frames, int DisciplineReminders, StudyReportChannel Raw, StudyReportChannel? Estimated, string? EstimateReason, string? ReferenceNote = null);
 public sealed record StudyReportData(SchoolNoiseWindow Window, double ExpectedSeconds, double SampledSeconds, double Coverage,
     double ClippedPercent, long Frames, int DisciplineReminders, StudyReportChannel Raw, StudyReportChannel? Estimated,
     bool Complete, IReadOnlyList<string> Notes, string Mode = "Daily", string ClockSource = "ClassIsland");

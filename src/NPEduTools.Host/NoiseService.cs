@@ -199,6 +199,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         public readonly StudyReportAccumulator ReportEstimated = new("estimated-dB(A)");
         public int DisciplineReminders;
         public NoiseReferenceProfile? EstimateProfile;
+        public string? EstimateReferenceNote;
         public string? EstimateProfileId;
         public IReferenceNoiseCapture? EstimateCapture;
         public string? EstimateReason;
@@ -329,7 +330,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             return new(_instance, _revision, _state, _message, s?.DeviceId, s?.DeviceName, s?.StartedAt,
                 _state == "Active" && !stale ? s?.Current : null,
                 stale ? "NoData" : s?.Quality ?? "Waiting", summary, s?.Trend.ToArray() ?? [], SessionId: s?.Id, SelectedDeviceId: _selected,
-                Estimate: EstimateSnapshot(s, elapsed), EstimatedTrend: s?.EstimateProfile is null ? null : s.EstimateTrend.ToArray());
+                Estimate: EstimateSnapshot(s, elapsed), EstimatedTrend: s?.EstimateProfile is null ? null : s.EstimateTrend.ToArray(),
+                ReferenceNote: s?.EstimateReferenceNote);
         }
     }
 

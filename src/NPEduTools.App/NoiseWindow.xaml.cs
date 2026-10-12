@@ -111,7 +111,8 @@ public partial class NoiseWindow : Window
         StateHintText.Text = "";
         StateHintText.Visibility = Visibility.Collapsed;
         LevelText.Text = NoiseSignalPresentation.Level(state.CurrentDbfs);
-        EstimateText.Text = NoiseSignalPresentation.Estimated(state.Estimate?.CurrentDbA) + " · " + NoiseSignalPresentation.EstimateReason(state.Estimate);
+        EstimateText.Text = NoiseSignalPresentation.Estimated(state.Estimate?.CurrentDbA) + " · " + NoiseSignalPresentation.EstimateReason(state.Estimate) +
+            (state.ReferenceNote is { } note ? "\n" + note : "");
         LevelBar.Value = Math.Clamp(state.CurrentDbfs ?? -100, -100, 0);
         QualityText.Text = NoiseSignalPresentation.Quality(state.Quality, state.CurrentDbfs);
         LevelHintText.Text = state.State == "Active" && state.Quality == "Good"

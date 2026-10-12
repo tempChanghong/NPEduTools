@@ -120,6 +120,7 @@ public sealed class ManualStudyService : IAsyncDisposable
             _report=new(new(_start.Value.ToLocalTime(),_end.Value.ToLocalTime()),Math.Max(.001,data.ElapsedSeconds),data.Raw.SampledSeconds,
                 Math.Clamp(data.Raw.SampledSeconds/Math.Max(.001,data.ElapsedSeconds),0,1),data.Raw.SampledSeconds>0?100*data.ClippedSeconds/data.Raw.SampledSeconds:0,
                 data.Frames,data.DisciplineReminders,data.Raw,data.Estimated,data.Complete,["手动自习 · "+ReasonText(_reason),"dBFS 与估算 dB(A) 分开统计；缺样不记作安静。"],Mode:"Manual",ClockSource:"Windows");
+            if (data.ReferenceNote is {} referenceNote) _report=_report with {Notes=_report.Notes.Append(referenceNote).ToArray()};
             try
             {
                 Directory.CreateDirectory(_directory);string file=Path.Combine(_directory,_session.Value.ToString("N")+".json");

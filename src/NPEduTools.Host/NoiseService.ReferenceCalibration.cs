@@ -25,41 +25,42 @@ public sealed partial class NoiseService
     private string? ReferenceUsePath => directory is null ? null : Path.Combine(directory, "noise-reference-use.pending");
     private static bool ReferenceSignature(string? value) => value is { Length: > 0 and <= 4096 } &&
         value.StartsWith(ReferenceNoiseMeter.AlgorithmVersion + "|", StringComparison.Ordinal) && !value.Any(char.IsControl);
-    private static bool ReferenceSampleValid(NoiseReferenceSample? s) => s is not null && s.Id != Guid.Empty &&
-        s.Role is "Primary" or "Check" && double.IsFinite(s.Seconds) && s.Seconds is >= 0 and <= 10.01 &&
+    private static bool ReferenceSampleValid(NoiseReferenceSample? s, string workflow) => s is not null && s.Id != Guid.Empty &&
+        s.Role is "Primary" or "Check" && double.IsFinite(s.Seconds) && s.Seconds >= 0 && s.Seconds <= NoiseReferenceCalibration.Duration(workflow)+.01 &&
         double.IsFinite(s.Coverage) && s.Coverage is >= 0 and <= 1 &&
         double.IsFinite(s.ClippedPercent) && s.ClippedPercent is >= 0 and <= 100 &&
         s.Quality is "Good" or "Interrupted" or "Invalid" or "Clipping" or "Incomplete" &&
         new[] { s.DigitalDbfs, s.MinimumDbfs, s.MaximumDbfs }.All(v => v is null || double.IsFinite(v.Value) && v is >= -160 and <= 20) &&
-        s.WindowEndedAt >= s.WindowStartedAt && (s.WindowEndedAt - s.WindowStartedAt).TotalSeconds <= 21 &&
-        (s.Quality != "Good" || s.Seconds >= 9.999 && s.Coverage >= .9 && s.ClippedPercent <= .1 &&
+        s.WindowEndedAt >= s.WindowStartedAt && (s.WindowEndedAt - s.WindowStartedAt).TotalSeconds <= NoiseReferenceCalibration.CaptureLimit(workflow)+1 &&
+        (s.Quality != "Good" || s.Seconds >= NoiseReferenceCalibration.Duration(workflow)-.001 && s.Coverage >= .9 && s.ClippedPercent <= .1 &&
             s.MinimumDbfs > NoiseMeter.NumericalFloorDbfs && s.MaximumDbfs is not null &&
             s.DigitalDbfs >= s.MinimumDbfs - 1e-8 && s.DigitalDbfs <= s.MaximumDbfs + 1e-8 &&
-            (s.WindowEndedAt - s.WindowStartedAt).TotalSeconds >= 9.7) &&
-        (s.MeterEvidence is null || NoiseReferenceContract.MeterEvidenceValid(s.MeterEvidence)) &&
+            (s.WindowEndedAt - s.WindowStartedAt).TotalSeconds >= NoiseReferenceCalibration.Duration(workflow)-.3) &&
+        (s.MeterEvidence is null || NoiseReferenceContract.MeterEvidenceValid(s.MeterEvidence,workflow)) &&
         (s.SameWindowConfirmed ? NoiseReferenceContract.ReferenceRange(s.ReferenceDbA, s.ReferenceMinimumDbA, s.ReferenceMaximumDbA)
             : s.ReferenceDbA is null && s.ReferenceMinimumDbA is null && s.ReferenceMaximumDbA is null);
     private static bool ReferenceDraftValid(NoiseReferenceDraft? d) => d is not null && d.Id != Guid.Empty &&
         NoiseContract.ValidDeviceId(d.DeviceId) && NoiseReferenceContract.InstrumentValid(d.Instrument) &&
         (d.MeterDevicePath is null || NoiseReferenceContract.MeterPathValid(d.MeterDevicePath)) &&
-        d.TimeWeighting is "Fast" or "Slow" && NoiseReferenceContract.Limit(d.StabilityDb) && NoiseReferenceContract.Limit(d.CheckToleranceDb) &&
+        NoiseReferenceContract.WorkflowValid(d.Workflow,d.MeterDevicePath) && d.TimeWeighting is "Fast" or "Slow" && NoiseReferenceContract.StabilityLimit(d.StabilityDb,d.Workflow) && NoiseReferenceContract.CheckLimit(d.CheckToleranceDb,d.Workflow) &&
         (d.Signature is null || ReferenceSignature(d.Signature)) && d.Samples is not null && d.Samples.Count <= 2 &&
-        d.Samples.All(s => ReferenceSampleValid(s) && (d.MeterDevicePath is null ? s.MeterEvidence is null :
-            !s.SameWindowConfirmed || NoiseReferenceContract.MeterEvidenceValid(s.MeterEvidence))) &&
+        d.Samples.All(s => ReferenceSampleValid(s,d.Workflow) && (d.MeterDevicePath is null ? s.MeterEvidence is null :
+            !s.SameWindowConfirmed || NoiseReferenceContract.MeterEvidenceValid(s.MeterEvidence,d.Workflow))) &&
         d.Samples.Select(s => s.Role).Distinct().Count() == d.Samples.Count &&
         d.Samples.Select(s => s.Id).Distinct().Count() == d.Samples.Count;
     private static bool ReferenceProfileValid(NoiseReferenceProfile p)
     {
         var draft = new NoiseReferenceDraft(Guid.NewGuid(), p.DeviceId, p.Instrument, p.TimeWeighting,
-            p.StabilityDb, p.CheckToleranceDb, p.Signature, p.Samples, p.MeterDevicePath);
-        if (p.Samples is null || p.Version != 1 || p.Algorithm != ReferenceNoiseMeter.AlgorithmVersion ||
+            p.StabilityDb, p.CheckToleranceDb, p.Signature, p.Samples, p.MeterDevicePath,p.Workflow);
+        if (p.Samples is null || p.Version != (p.Workflow=="Field"?2:1) || p.Algorithm != ReferenceNoiseMeter.AlgorithmVersion ||
             !ReferenceDraftValid(draft) ||
             p.Method != (p.MeterDevicePath is null ? "ManualReference" : "UsbReferenceBeta") ||
             p.MeterDevicePath is null && p.Samples.Any(s => s.MeterEvidence is not null) ||
-            p.Statistic != NoiseReferenceCalibration.Statistic || !ReferenceSignature(p.Signature) ||
+            p.Statistic != (p.Workflow=="Field"?NoiseReferenceCalibration.FieldStatistic:NoiseReferenceCalibration.Statistic) || !ReferenceSignature(p.Signature) ||
             p.Samples.Count != 2 || !double.IsFinite(p.OffsetDb)) return false;
         var evaluation = NoiseReferenceCalibration.Evaluate(draft);
-        return evaluation.Ready && Math.Abs(evaluation.OffsetDb!.Value - p.OffsetDb) < 1e-8;
+        return evaluation.Ready && (evaluation.Assessment?.WarningRequired != true || p.WarningAcknowledged) &&
+            (p.Workflow=="Field" || !p.WarningAcknowledged) && Math.Abs(evaluation.OffsetDb!.Value - p.OffsetDb) < 1e-8;
     }
     private void LoadReference()
     {
@@ -158,8 +159,9 @@ public sealed partial class NoiseService
     {
         LoadReference();
         bool sampling = _session is { Reference: not null, Work.IsCompleted: false };
-        double progress = sampling ? Math.Min(NoiseReferenceCalibration.MaximumCaptureSeconds, _time.GetElapsedTime(_session!.Started).TotalSeconds) : 0;
-        if (sampling && progress >= NoiseReferenceCalibration.MaximumCaptureSeconds)
+        double maximum = _session?.Reference?.MaximumSeconds ?? NoiseReferenceCalibration.MaximumCaptureSeconds;
+        double progress = sampling ? Math.Min(maximum, _time.GetElapsedTime(_session!.Started).TotalSeconds) : 0;
+        if (sampling && progress >= maximum)
         { _state = "Stopping"; _session!.Stop.Cancel(); }
         bool busy = paused || study?.Phase is "Preparing" or "Active" || study?.Reason == "EXAM_PAUSED" || _session is { Work.IsCompleted: false };
         return new(_instance, _referenceRevision, sampling ? "Sampling" : busy ? "Busy" : referenceCreate is null ? "Unsupported" : "Ready",
@@ -205,7 +207,7 @@ public sealed partial class NoiseService
                 if (cmd.MeterDevicePath is not null && referenceMeterOpen is null)
                     return Reply("REFERENCE_USB_UNSUPPORTED", "当前后台不支持 USB 同期参考采样，请更新后台。");
                 var draft = new NoiseReferenceDraft(Guid.NewGuid(), _selected, cmd.Instrument!, cmd.TimeWeighting!,
-                    cmd.StabilityDb!.Value, cmd.CheckToleranceDb!.Value, null, [], cmd.MeterDevicePath);
+                    cmd.StabilityDb!.Value, cmd.CheckToleranceDb!.Value, null, [], cmd.MeterDevicePath,cmd.Workflow??"Stable");
                 return SaveReference(draft, _referenceProfile) ? Reply(message: "已新建外部参考草稿；原确认参考保留。") : Reply(_referenceError);
             }
             if (_referenceDraft is not { } d || d.Id != cmd.DraftId || d.DeviceId != _selected)
@@ -224,12 +226,15 @@ public sealed partial class NoiseService
             {
                 var evaluation = NoiseReferenceCalibration.Evaluate(d);
                 if (!evaluation.Ready) return Reply("REFERENCE_CHECK_FAILED", evaluation.Message);
+                if (evaluation.Assessment?.WarningRequired == true && !cmd.WarningAcknowledged)
+                    return Reply("REFERENCE_WARNING_ACK_REQUIRED", "复核差超过自动通过门槛；请阅读当前草稿警告并明确确认，原参考保留。");
                 if (!RecentReferenceSignature || !ReferenceSignature(d.Signature) || d.Signature != _lastReferenceSignature)
                     return Reply("REFERENCE_DEVICE_SETTINGS_CHANGED", "尚无匹配的新鲜采集签名，请在同一输入设置下重采。");
-                var profile = new NoiseReferenceProfile(1, ReferenceNoiseMeter.AlgorithmVersion,
-                    d.MeterDevicePath is null ? "ManualReference" : "UsbReferenceBeta", NoiseReferenceCalibration.Statistic,
+                var profile = new NoiseReferenceProfile(d.Workflow=="Field"?2:1, ReferenceNoiseMeter.AlgorithmVersion,
+                    d.MeterDevicePath is null ? "ManualReference" : "UsbReferenceBeta", d.Workflow=="Field"?NoiseReferenceCalibration.FieldStatistic:NoiseReferenceCalibration.Statistic,
                     d.DeviceId, d.Signature!, d.Instrument, d.TimeWeighting, evaluation.OffsetDb!.Value,
-                    d.StabilityDb, d.CheckToleranceDb, _time.GetUtcNow(), d.Samples, d.MeterDevicePath);
+                    d.StabilityDb, d.CheckToleranceDb, _time.GetUtcNow(), d.Samples, d.MeterDevicePath,d.Workflow,
+                    evaluation.Assessment?.WarningRequired == true && cmd.WarningAcknowledged);
                 _referenceInvalidated = null;
                 return SaveReference(d, profile) && ClearReferenceUse() ? Reply(message: "已保存本机估算参考；正式监测将核对输入设置，并分别保存 dBFS 和估算 dB(A)。") : Reply(_referenceError);
             }
@@ -240,15 +245,22 @@ public sealed partial class NoiseService
             var listed = Handle(request with { Capability = "noise.devices", NoiseReference = null });
             if (listed.Outcome != "Succeeded" || listed.NoiseDevices?.Any(x => x.Id == _selected) != true)
                 return Reply("NoiseDeviceUnavailable", "所选麦克风不可用，不会切换其他设备。");
+            if (d.Workflow=="Field" && cmd.Role=="Primary")
+            {
+                // Starting a new pair cannot reuse the previous second segment.
+                d=d with {Samples=[]};
+                if (!SaveReference(d,_referenceProfile)) return Reply(_referenceError);
+            }
             _session?.Stop.Dispose();
             var session = new Session(_selected, _time.GetTimestamp(), _time.GetUtcNow())
-            { LimitSeconds = NoiseReferenceCalibration.MaximumCaptureSeconds,
-                MeterPath = d.MeterDevicePath, UsbReference = d.MeterDevicePath is null ? null : new(d.TimeWeighting) };
-            session.Reference = new(cmd.Role!, d.TimeWeighting, session.StartedAt);
+            { LimitSeconds = NoiseReferenceCalibration.CaptureLimit(d.Workflow),
+                MeterPath = d.MeterDevicePath, UsbReference = d.MeterDevicePath is null ? null : new(d.TimeWeighting,d.Workflow) };
+            session.Reference = new(cmd.Role!, d.TimeWeighting, session.StartedAt,d.Workflow);
             _session = session; _revision++; _referenceRevision++; _lastReferenceSignature = null; _referenceSignatureAt = null;
             _state = "Starting"; _message = "正在打开外部参考采样；不会作为正式噪音会话上报。";
             session.Work = Task.Run(() => RunAsync(session)); session.Watch = Task.Run(() => WatchAsync(session));
-            return Reply(message: "参考采样已受理：预热后采样 10 秒，总过程最多 20 秒。", outcome: "Accepted");
+            return Reply(message: d.Workflow=="Field" ? "现场本段采样已受理：预热后采样 30 秒，本段最多 40 秒；采样后仍须复核和确认保存。" :
+                "参考采样已受理：预热后采样 10 秒，总过程最多 20 秒。", outcome: "Accepted");
         }
     }
     private void CheckReferenceSignature(Session s)
