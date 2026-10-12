@@ -9,7 +9,7 @@
    <TextBlock x:Name="StudyNext" Text="下一次定时自习：学校安排待确认" TextWrapping="Wrap" Margin="0,7,0,5" AutomationProperties.AutomationId="StudyNextSchedule"/>
    <TextBlock x:Name="StudyCapture" Text="实际采集状态待确认" TextWrapping="Wrap" Margin="0,7,0,5" AutomationProperties.AutomationId="StudyCaptureStatus"/>
    <TextBlock x:Name="StudyPresentation" Foreground="#61786B" TextWrapping="Wrap"/>
-   <TextBlock Text="默认时段为北京时间 19:00–21:30；实际班级、日期、星期和例外日以学校后台配置为准。全屏页按有效安排自动进入；长按收起后，当前 Windows 会话连续无操作十分钟才返回，操作其他软件也会重新计时。收起不停止定时采集或照片策略。" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,14,0,0"/>
+   <TextBlock Text="默认时段为北京时间 19:15–21:30；实际班级、日期、星期和例外日以学校后台配置为准。全屏页按有效安排自动进入；长按收起后，当前 Windows 会话连续无操作十分钟才返回，操作其他软件也会重新计时。收起不停止定时采集或照片策略。" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,14,0,0"/>
    <Button Content="查看当前采样、统计与管理保护" Click="NoiseClicked" HorizontalAlignment="Left" Padding="14,8" Margin="0,14,0,0"/>
    <Button Content="上传／更换本班自习座位表" Click="SeatingClicked" HorizontalAlignment="Left" Padding="14,8" Margin="0,12,0,0"/>
   </StackPanel></Border>
