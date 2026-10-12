@@ -50,8 +50,8 @@ jobs:
       CALLER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       CALLER_EVENT: ${{ github.event_name }}
       DESKTOP_OVERRIDE: ${{ inputs.desktop_sha }}
-      WEB_OVERRIDE: ${{ inputs.web_sha || (github.event_name == 'pull_request' && github.repository != 'tempChanghong/NPClassworks' && 'ac014d1270ee82a4f943d55c46a5e4527bf3c12e') || '' }}
-      BACKEND_OVERRIDE: ${{ inputs.backend_sha || (github.event_name == 'pull_request' && github.repository != 'tempChanghong/NPClassworksKV' && 'c4afaaef66d64ee0d6f3c5f06ba158f80013c591') || '' }}
+      WEB_OVERRIDE: ${{ inputs.web_sha || (github.event_name == 'pull_request' && github.repository != 'tempChanghong/NPClassworks' && '091672bde11370e9bd67bda7e0507a3a3ad2370d') || '' }}
+      BACKEND_OVERRIDE: ${{ inputs.backend_sha || (github.event_name == 'pull_request' && github.repository != 'tempChanghong/NPClassworksKV' && '84d4bcbfef680c17d812fecfbc21430613b19133') || '' }}
       E2E_WEB_PORT: '14180'
       E2E_API_PORT: '14181'
     steps:
@@ -159,6 +159,7 @@ jobs:
             ci-driver/.artifacts/npep-current/runs/**/*.log
             ci-driver/.artifacts/npep-current/runs/**/*.trx
             NPEduTools/.artifacts/noise-schedule-tests/**/result.json
+            NPEduTools/.artifacts/desktop-field-fixes/**/result.json
             NPEduTools/.artifacts/noise-schedule-tests/**/suite-*.log
             NPEduTools/.artifacts/noise-schedule-tests/display-*/**/*.json
             NPEduTools/.artifacts/noise-schedule-tests/management-*/**/*.json

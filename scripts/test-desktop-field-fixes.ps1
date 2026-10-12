@@ -11,8 +11,10 @@ $fixture = Join-Path $runRoot 'build/bin/NPEduTools.Onboarding.UiTests/debug/NPE
 foreach ($suite in @('classisland-clock', 'desktop-density', 'sound-meter-beta', 'usb-reference', 'noise-calibration', 'study-devices', 'touch-status')) {
     $output = Join-Path $runRoot $suite
     $process = Start-Process -FilePath $fixture -ArgumentList @('"' + $output + '"', '--' + $suite) -WindowStyle Hidden -Wait -PassThru
+    $resultPath = Join-Path $output 'result.json'
+    if (Test-Path -LiteralPath $resultPath) { Get-Content -LiteralPath $resultPath -Raw | Write-Output }
     if ($process.ExitCode -ne 0) { throw "Desktop field checks failed: $suite ($output)" }
-    $result = Get-Content -LiteralPath (Join-Path $output 'result.json') -Raw | ConvertFrom-Json
+    $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
     if ($result.status -ne 'PASSED') { throw "Desktop field evidence missing or failed: $suite" }
 }
 Write-Output "DESKTOP_FIELD_RESULT: $runRoot"

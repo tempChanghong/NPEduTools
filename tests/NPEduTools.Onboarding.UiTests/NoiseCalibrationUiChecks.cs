@@ -44,7 +44,7 @@ internal static partial class Program
             referencePaused: () => Volatile.Read(ref paused) != 0);
         var initial = noise.Snapshot();
         noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("select", initial.InstanceId, initial.Revision, "fixture-mic")));
-        string cases = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../docs/npep/study-device-cases.json"));
+        string cases = Path.Combine(AppContext.BaseDirectory, "Fixtures/study-device-cases.json");
         var config = JsonNode.Parse(File.ReadAllText(cases))![0]!["value"]!.DeepClone().AsObject();
         var connection = Guid.NewGuid(); var bridge = Guid.NewGuid(); long sequence = 0;
         var school = new StudySettingsService(() => new(connection, bridge, ++sequence, 0,
