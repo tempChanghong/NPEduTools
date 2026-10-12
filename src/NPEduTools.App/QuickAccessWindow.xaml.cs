@@ -74,6 +74,8 @@ public partial class QuickAccessWindow : Window
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
+        try { _densityPreference = DesktopDensity.Read(endpoint); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
         SelectShortcutPage(false); RefreshCompact();
         SourceInitialized += (_, _) =>
@@ -117,6 +119,8 @@ public partial class QuickAccessWindow : Window
         uint dpi = GetDpiForWindow(_handle);
         return dpi > 0 ? dpi / 96.0 : 1;
     }
+    private double _densityPreference;
+    public void SetDensity(double preference) { _densityPreference = preference; Position(); }
     private double AnchorHeight => _placement.Compact ? CompactHeight : RailHeight;
 
     private void Position()
@@ -126,7 +130,10 @@ public partial class QuickAccessWindow : Window
         try
         {
             // WPF handles WM_DPICHANGED; its DpiChanged event reapplies bounds on the new monitor.
-            var screen = Screen; var area = screen.WorkingArea; double scale = Scale();
+            var screen = Screen; var area = screen.WorkingArea; double dpi = Scale();
+            double density = DesktopDensity.Resolve(_densityPreference, area.Width / dpi, area.Height / dpi);
+            ((FrameworkElement)Content).LayoutTransform = new ScaleTransform(density, density);
+            double scale = dpi * density;
             int width = Math.Min((int)Math.Round((_expanded ? PanelWidth : RailWidth) * scale), area.Width);
             int height = Math.Min((int)Math.Round((_expanded ? PanelHeight : AnchorHeight) * scale), area.Height);
             double anchor = area.Top + Math.Max(0, area.Height - AnchorHeight * scale) * _placement.RelativeY;

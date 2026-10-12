@@ -11,6 +11,11 @@ public partial class NoiseReferenceWindow : Window
 {
     private sealed record Choice(string Id, string Name);
     private sealed record SampleRow(Guid Id, string Description);
+    private NoiseProtectionState? _access;
+    private async Task ReadAccessAsync(CancellationToken token)
+    { var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token); _access = reply.NoiseProtection;
+      ManagementLabel.Text = CalibrationAccess.Label(_access); ManagementHint.Text = CalibrationAccess.Hint(_access);
+      ConfigureManagement.IsEnabled = _access?.ManagementSource != "School"; }
     private readonly string _pipe;
     private readonly string? _meterPath;
     private readonly CancellationTokenSource _lifetime = new();
@@ -18,10 +23,10 @@ public partial class NoiseReferenceWindow : Window
     private NoiseReferenceState? _state;
     private Guid? _ownedSampleDraft;
     private long? _ownedSamplingRevision;
-    private bool _busy, _reading, _connected, _closing, _allowClose;
+    private bool _busy, _reading, _connected, _closing, _allowClose, _verifying;
     public NoiseReferenceWindow(string pipe, string? meterPath = null)
     {
-        _pipe = pipe; _meterPath = meterPath; InitializeComponent();
+        _pipe = pipe; _meterPath = meterPath; InitializeComponent(); DesktopDialogSizing.Attach(this, pipe);
         if (meterPath is not null)
         {
             Title = "USB 同期校准 (Beta) · NPEduTools"; Heading.Text = "USB 同期校准 (Beta)";
@@ -60,10 +65,11 @@ public partial class NoiseReferenceWindow : Window
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
+            await ReadAccessAsync(deadline.Token);
             var reply = await HostClient.RequestAsync(_pipe, "noise.reference.status", deadline.Token);
             if (_lifetime.IsCancellationRequested) return;
             _connected = reply.Outcome == "Succeeded" && reply.NoiseReference is not null;
-            if (_connected) Render(reply.NoiseReference!); else OperationMessage.Text = reply.Message;
+            if (_connected) Render(reply.NoiseReference!); else OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { _connected = false; if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "后台连接不可用；请刷新，旧状态不能用于保存。"; }
@@ -164,7 +170,7 @@ public partial class NoiseReferenceWindow : Window
             if (action == "cancel" && reply.Outcome == "Succeeded")
             { _ownedSampleDraft = null; _ownedSamplingRevision = null; }
             if (reply.NoiseReference is { } state) Render(state);
-            OperationMessage.Text = reply.Message;
+            OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { _connected = false; if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "操作结果未确认，请刷新核对；不会自动重复采样或保存。"; }
@@ -178,7 +184,25 @@ public partial class NoiseReferenceWindow : Window
         ReferenceMaximum.Text = sample?.ReferenceMaximumDbA?.ToString(CultureInfo.CurrentCulture) ?? "";
         SameWindow.IsChecked = sample?.SameWindowConfirmed == true; UpdateButtons();
     }
-    private async void RefreshClicked(object sender, RoutedEventArgs e) => await ReadAsync();
+    private async void RefreshClicked(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _verifying || _lifetime.IsCancellationRequested) return;
+        _verifying = true; RefreshStatus.IsEnabled = false;
+        await ReadAsync();
+        _busy = true; UpdateButtons();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
+        try
+        {
+            var reply = await CalibrationAccess.VerifyAsync(_pipe, ManagementSecret.Password, deadline.Token);
+            if (_lifetime.IsCancellationRequested) return;
+            _access = reply.NoiseProtection ?? _access;
+            OperationMessage.Text = reply.Outcome == "Succeeded" ? "管理口令验证通过；刷新仅读取状态，尚未连接声级计或开始采样。" :
+                CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        { if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "管理验证响应未确认，请检查后台连接后重试。"; }
+        finally { _busy = _verifying = false; RefreshStatus.IsEnabled = true; UpdateButtons(); }
+    }
     private async void ManagementClicked(object sender, RoutedEventArgs e) { await NoiseManagementDialog.ConfigureAsync(this, _pipe); await ReadAsync(); }
     private async void BeginClicked(object sender, RoutedEventArgs e)
     {

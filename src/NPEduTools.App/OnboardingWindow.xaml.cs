@@ -298,7 +298,8 @@ public partial class OnboardingWindow : Window
             _bridgeInstance = frame.BridgeInstanceId; _epoch = frame.Epoch;
             ConfirmClock.IsEnabled = ready;
             if (ConfirmClock.IsChecked == true && reading.DateNeedsReview) _clock.ConfirmDate();
-            BridgeText.Text = reading.Fresh ? $"桥接：已取得时间；课表{(_scheduleReady ? "已就绪" : "未就绪，请检查是否加载并启用")}" : "桥接：未取得可用时间，请检查插件与连接";
+            BridgeText.Text = ClassIslandBridgeInspection.Describe(path, response.Outcome == "Succeeded" ? response.SchoolClock : null, (_elapsed.Elapsed - start).TotalMilliseconds) +
+                (_scheduleReady ? "\n课表已就绪" : "\n课表未就绪，请检查是否加载并启用");
             ClockText.Text = reading.Fresh ? $"学校时间：{reading.Now:yyyy-MM-dd HH:mm:ss}\n{reading.Message}" : "学校时间：暂不可用；" + reading.Message;
         }
         catch (Exception error) when (error is not OutOfMemoryException)

@@ -8,13 +8,14 @@
   <TextBlock Text="将声级计拾音头放在大屏麦克风附近，在稳定声场中同时测量。使用 A 加权和下方选择的 FAST／SLOW，关闭 MAX 保持；不需要学生配合，也不保存原音频。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,14"/>
   <Border Background="#FFF1D5" Padding="14" CornerRadius="8" Margin="0,0,0,14"><TextBlock x:Name="WorkflowNote" Text="手动输入同期 A 加权仪表读数。正式监测核对本机参考后分别显示 dBFS 与估算 dB(A)；学校后台明确选择双阈值单位。设备、音量、静音或采样格式变化后参考失效，须重新校准。USB 联机仍待实物验证。" TextWrapping="Wrap"/></Border>
   <Border Background="White" Padding="20" CornerRadius="12" Margin="0,0,0,14"><StackPanel>
-   <DockPanel><Button DockPanel.Dock="Right" Content="刷新" Click="RefreshClicked" Padding="14,6"/><TextBlock x:Name="DeviceStatus" Text="正在读取本机状态…" FontSize="17" TextWrapping="Wrap"/></DockPanel>
+   <DockPanel><Button x:Name="RefreshStatus" DockPanel.Dock="Right" Content="刷新并验证口令" Click="RefreshClicked" Padding="14,6"/><TextBlock x:Name="DeviceStatus" Text="正在读取本机状态…" FontSize="17" TextWrapping="Wrap"/></DockPanel>
    <TextBlock x:Name="ProfileStatus" TextWrapping="Wrap" Margin="0,8,0,0"/>
    <TextBlock Text="保持麦克风位置、Windows 输入音量、静音和增强设置不变；移动设备、硬件增益或 AGC／降噪改变后须重采。输入格式须支持 44.1 kHz 或以上；不会自动切换麦克风。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,8,0,0"/>
-   <WrapPanel Margin="0,12,0,0"><TextBlock Text="本机管理口令" VerticalAlignment="Center" Margin="0,0,12,0"/>
+   <WrapPanel Margin="0,12,0,0"><TextBlock x:Name="ManagementLabel" Text="管理口令" VerticalAlignment="Center" Margin="0,0,12,0"/>
     <PasswordBox x:Name="ManagementSecret" Width="240" MaxLength="128" AutomationProperties.AutomationId="ReferenceSecret"/>
-    <Button Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="12,6"/>
+    <Button x:Name="ConfigureManagement" Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="12,6"/>
    </WrapPanel>
+   <TextBlock x:Name="ManagementHint" TextWrapping="Wrap" FontSize="12" Foreground="#61786B" Margin="0,8,0,0"/>
   </StackPanel></Border>
   <Border Background="White" Padding="20" CornerRadius="12" Margin="0,0,0,14"><StackPanel>
    <TextBlock Text="1　建立参考草稿" FontSize="19" FontWeight="SemiBold"/>

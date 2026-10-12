@@ -10,7 +10,7 @@ public static class NoiseManagementContract
     public static bool SecretValid(string? value) => value is { Length: >= 8 and <= 128 } && !value.Any(char.IsControl);
     public static bool Valid(NoiseManagementCommand c) => c.Action switch
     {
-        "unlock" => SecretValid(c.Secret) && c.NewSecret is null && c.Purpose is null && c.TargetRequestId is null && c.InstanceId is null && c.SessionId is null,
+        "verify" or "unlock" => SecretValid(c.Secret) && c.NewSecret is null && c.Purpose is null && c.TargetRequestId is null && c.InstanceId is null && c.SessionId is null,
         "configure" => SecretValid(c.NewSecret) && (c.Secret is null || SecretValid(c.Secret)) &&
             c.Purpose is null && c.TargetRequestId is null && c.InstanceId is null && c.SessionId is null,
         "authorize" => SecretValid(c.Secret) && c.NewSecret is null &&

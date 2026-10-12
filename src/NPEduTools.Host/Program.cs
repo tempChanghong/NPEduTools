@@ -150,7 +150,7 @@ await using var classroom = new ClassroomModeService(classroomStore, new Classro
 var noiseManagement = new NoiseManagementStore(dataDirectory);
 NoiseService? meterNoise = null;
 var soundMeter = new SoundMeterService(() => OperatingSystem.IsWindows() ? new WindowsSoundMeterHid() : throw new PlatformNotSupportedException(),
-    noiseManagement.VerifyCalibration, () => meterNoise?.MeterUnavailable == true);
+    secret => meterNoise is null ? "MANAGEMENT_NOT_CONFIGURED" : meterNoise.VerifyCalibrationSecret(secret), () => meterNoise?.MeterUnavailable == true);
 await using var noise = new NoiseService(id => OperatingSystem.IsWindows()
     ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory,
     management: noiseManagement,

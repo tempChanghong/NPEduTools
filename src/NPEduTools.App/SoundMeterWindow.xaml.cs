@@ -13,12 +13,19 @@ public partial class SoundMeterWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _expiry = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool _busy;
+    private NoiseProtectionState? _access;
+    private void ShowAccess(NoiseProtectionState? state)
+    { _access = state; ManagementLabel.Text = CalibrationAccess.Label(state); ManagementHint.Text = CalibrationAccess.Hint(state); ConfigureManagement.IsEnabled = state?.ManagementSource != "School"; }
+    private async Task ReadAccessAsync(CancellationToken token)
+    { var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token); ShowAccess(reply.NoiseProtection); }
     private long? _received;
     public SoundMeterWindow(string pipe)
     {
-        _pipe = pipe; InitializeComponent();
+        _pipe = pipe; InitializeComponent(); DesktopDialogSizing.Attach(this, pipe);
         _expiry.Tick += (_, _) => { if (_received is { } at && Stopwatch.GetElapsedTime(at).TotalSeconds >= 3) ClearReading("读数已过期，请显式重新读取。"); };
-        Loaded += (_, _) => _expiry.Start(); // Never enumerates/opens hardware on load.
+        Loaded += async (_, _) => { _expiry.Start(); using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
+            try { await ReadAccessAsync(deadline.Token); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException) { if (!_lifetime.IsCancellationRequested) ShowAccess(null); } }; // Never enumerates/opens hardware on load.
         Closed += (_, _) => { _expiry.Stop(); _lifetime.Cancel(); ManagementSecret.Clear(); ClearReading("窗口已关闭。"); };
     }
     private void ClearReading(string? message = null)
@@ -35,13 +42,19 @@ public partial class SoundMeterWindow : Window
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(5000);
         try
         {
+            await ReadAccessAsync(deadline.Token);
             var response = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.meter.command", 4000, SoundMeter: command), deadline.Token);
             if (_lifetime.IsCancellationRequested) return;
-            Message.Text = response.Message;
+            if (response.NoiseProtection is not null) ShowAccess(response.NoiseProtection);
+            Message.Text = CalibrationAccess.Message(response.ErrorCode, response.Message, _access);
             if (response.SoundMeter?.Diagnostic is { } diagnostic)
                 Mode.Text = $"阶段 {diagnostic.Stage ?? "未知"} · HID 输入/输出 {diagnostic.InputReportLength?.ToString() ?? "?"}/{diagnostic.OutputReportLength?.ToString() ?? "?"} 字节 · 系统错误 {diagnostic.NativeErrorCode?.ToString() ?? "无"}";
             if (response.Outcome != "Succeeded") return;
-            if (action == "list") Devices.ItemsSource = response.SoundMeter?.Devices ?? [];
+            if (action == "list")
+            {
+                Devices.ItemsSource = response.SoundMeter?.Devices ?? [];
+                Message.Text = (_access?.ManagementSource == "School" ? "学校" : "本机") + "管理口令验证通过；" + response.Message;
+            }
             else if (response.SoundMeter?.Reading is { } value)
             {
                 _received = Stopwatch.GetTimestamp(); Reading.Text = $"{value.Decibels:F1} dB({value.Weighting})";
@@ -67,7 +80,9 @@ public partial class SoundMeterWindow : Window
     {
         if (_busy || Devices.SelectedItem is not SoundMeterDevice selected) return;
         ClearReading("单次诊断已撤下；同期参考需新建草稿并明确开始采样。");
-        new NoiseReferenceWindow(_pipe, selected.Path) { Owner = this }.ShowDialog();
+        var reference = new NoiseReferenceWindow(_pipe, selected.Path) { Owner = this };
+        ((PasswordBox)reference.FindName("ManagementSecret")).Password = ManagementSecret.Password;
+        reference.ShowDialog();
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e) => await NoiseManagementDialog.ConfigureAsync(this, _pipe);
 }

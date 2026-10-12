@@ -142,6 +142,8 @@ internal sealed class NoiseManagementDialog : Window
         if (reply is null) return;
         if (reply.NoiseProtection is not { } state || reply.Outcome != "Succeeded")
         { MessageBox.Show(owner, reply.Message, "无法读取管理设置"); return; }
+        if (state.ManagementSource == "School")
+        { MessageBox.Show(owner, CalibrationAccess.Hint(state) + "\n学校口令由学校管理员在 NPClassworks 后台设置，本机不能覆盖。", "学校管理口令"); return; }
         if (state.Protected && !state.Configured)
         { MessageBox.Show(owner, "首次设置需在没有定时监测时进行。请先从大屏网页验证学校 PIN 后结束本次监测。", "本机管理口令"); return; }
         new NoiseManagementDialog(owner, pipe, state, null).ShowDialog();

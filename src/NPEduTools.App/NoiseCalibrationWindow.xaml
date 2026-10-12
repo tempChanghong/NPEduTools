@@ -7,15 +7,16 @@
   <TextBlock Text="快速校准" FontSize="28" FontWeight="SemiBold"/>
   <TextBlock Text="选择自然发生的场景，不必等待绝对安静，也不用同学配合。每段采样 15 秒，仅保存电平统计；场景名称不代表系统能识别聊天或说话者。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,8,0,18"/>
   <Border Background="White" CornerRadius="12" Padding="20" Margin="0,0,0,14"><StackPanel>
-   <DockPanel><Button DockPanel.Dock="Right" Content="刷新" Click="RefreshClicked" Padding="14,6"/>
+   <DockPanel><Button x:Name="RefreshStatus" DockPanel.Dock="Right" Content="刷新并验证口令" Click="RefreshClicked" Padding="14,6"/>
     <TextBlock x:Name="DeviceStatus" Text="正在读取设备…" FontSize="17" TextWrapping="Wrap"/></DockPanel>
    <TextBlock x:Name="ProfileStatus" TextWrapping="Wrap" Margin="0,9,0,0"/>
    <TextBlock Text="请保持麦克风位置、Windows 输入音量和增强设置不变。更换麦克风、增益、采样格式或学校配置后，旧阈值将停止应用；移动麦克风或改变驱动增强时请重新校准。" TextWrapping="Wrap" FontSize="12" Foreground="#61786B" Margin="0,10,0,0"/>
    <WrapPanel Margin="0,14,0,0" VerticalAlignment="Center">
-    <TextBlock Text="本机管理口令" VerticalAlignment="Center" Margin="0,0,12,0"/>
+    <TextBlock x:Name="ManagementLabel" Text="管理口令" VerticalAlignment="Center" Margin="0,0,12,0"/>
     <PasswordBox x:Name="ManagementSecret" Width="240" MaxLength="128" AutomationProperties.AutomationId="CalibrationSecret"/>
-    <Button Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="12,6"/>
+    <Button x:Name="ConfigureManagement" Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="12,6"/>
    </WrapPanel>
+   <TextBlock x:Name="ManagementHint" TextWrapping="Wrap" FontSize="12" Foreground="#61786B" Margin="0,8,0,0"/>
   </StackPanel></Border>
   <Border Background="White" CornerRadius="12" Padding="20" Margin="0,0,0,14"><StackPanel>
    <DockPanel><Button x:Name="BeginDraft" DockPanel.Dock="Right" Content="新建校准草稿" Click="BeginClicked" Padding="14,6"/>

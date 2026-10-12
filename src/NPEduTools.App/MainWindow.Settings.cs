@@ -21,7 +21,7 @@ public partial class MainWindow
         NpepSettingsTab.Tag = category == "Npep" ? "active" : null;
         SettingsScroll.ScrollToTop();
         if (category == "Teaching") ReadManualStudyPreferences();
-        if (category == "Connections") _ = RefreshAdminAsync();
+        if (category == "Connections") { _ = RefreshAdminAsync(); _ = RefreshClassIslandBridgeAsync(); }
         if (category == "Npep") _ = RefreshNpepAsync();
     }
 

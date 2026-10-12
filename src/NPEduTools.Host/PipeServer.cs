@@ -67,7 +67,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     using var meterDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                     meterDeadline.CancelAfter(request.TimeoutMs);
                     response = soundMeter is null ? new(1, request.RequestId, "Rejected", "METER_UNSUPPORTED", "请更新后台以使用联机校准 (Beta)。")
-                        : await soundMeter.HandleAsync(request, meterDeadline.Token);
+                        : (await soundMeter.HandleAsync(request, meterDeadline.Token)) with { NoiseProtection = noise?.Protection() };
                 }
                 else if (request.Capability == "study.devices.microphone")
                 {

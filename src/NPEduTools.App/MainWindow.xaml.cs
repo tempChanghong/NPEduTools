@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         _pipe = pipe;
         _upstream = upstream;
         InitializeComponent();
+        InitializeDensity(initializeServices);
         Closed += (_, _) => ShutdownExitWarning();
         DataContext = _model;
         if (initializeServices)
@@ -317,6 +318,8 @@ public partial class MainWindow : Window
                     LaunchResultText.Text = "暂时无法读取启动结果，连接恢复后继续查询。";
                 }
             }
+            if (IsVisible && SettingsPage.Visibility == Visibility.Visible && ConnectionsSettingsPanel.Visibility == Visibility.Visible)
+                await RefreshClassIslandBridgeAsync();
             RefreshQuick();
             try { await Task.Delay(1000, token); }
             catch (OperationCanceledException) { break; }

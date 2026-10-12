@@ -403,6 +403,9 @@
             </Border>
             <Border Style="{StaticResource Surface}">
               <StackPanel>
+                <TextBlock Text="界面大小" FontSize="16" FontWeight="SemiBold" />
+                <ComboBox x:Name="DensityChoiceBox" DisplayMemberPath="Name" SelectedValuePath="Value" SelectionChanged="DensityChanged" Margin="0,10,0,6" AutomationProperties.AutomationId="DesktopDensity" />
+                <TextBlock x:Name="DensityMessage" Text="按 Windows 缩放后的可用空间适配主页与侧栏；可选择更紧凑的尺寸。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" Margin="0,0,0,18" />
                 <TextBlock Text="快捷入口" FontSize="16" FontWeight="SemiBold" />
                 <TextBlock Text="选择顺手的一侧，拖动侧边栏顶部的图标调整高度。" TextWrapping="Wrap" Foreground="#7B8991" FontSize="12" Margin="0,6,0,16" />
                 <Grid>
@@ -462,6 +465,8 @@
                   <Button Content="保存" Style="{StaticResource Primary}" Click="SavePathClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SaveExecutable" />
                   <Button Content="重新读取" Style="{StaticResource Quiet}" Click="ReloadClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ReloadConfiguration" />
                 </WrapPanel>
+                <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,12,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
+                <Button Content="检查时间桥接插件" Click="RefreshClassIslandBridgeClicked" HorizontalAlignment="Left" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="RefreshClassIslandBridge" />
                 <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#718089" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
                 <Expander Header="启动记录与连接详情" FontSize="13" Margin="0,20,0,0" AutomationProperties.AutomationId="ClassIslandDetails">
                   <StackPanel Margin="0,12,0,0">

@@ -52,7 +52,14 @@ internal static partial class Program
                 Assert(owner.Title.Contains("(Beta)"), "USB reference lost Beta title");
                 Assert(backend.Opens == 0 && backend.Enumerations == 0 && capture is null, "load touched devices");
                 Assert(((WrapPanel)owner.FindName("ManualReferenceInputs")).Visibility == Visibility.Collapsed, "USB page allows manual override");
+                ((PasswordBox)owner.FindName("ManagementSecret")).Password = "wrong-password";
+                Click(owner, "RefreshStatus");
+                PumpUntil(() => ((TextBlock)owner.FindName("OperationMessage")).Text.Contains("验证未通过"), "refresh did not reject wrong password");
+                Assert(backend.Opens == 0 && capture is null, "refresh verification touched sensors");
                 ((PasswordBox)owner.FindName("ManagementSecret")).Password = secret;
+                Click(owner, "RefreshStatus");
+                PumpUntil(() => ((TextBlock)owner.FindName("OperationMessage")).Text.Contains("管理口令验证通过"), "refresh did not report valid password");
+                Assert(backend.Opens == 0 && capture is null, "valid refresh verification touched sensors");
                 ((TextBox)owner.FindName("Stability")).Text = "1"; ((TextBox)owner.FindName("CheckTolerance")).Text = "1";
                 Click(owner, "BeginDraft"); PumpUntil(() => Button(owner, "StartSample").IsEnabled, "USB draft missing");
                 Click(owner, "StartSample");

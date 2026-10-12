@@ -103,6 +103,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             }
             if (management is null) return ManagementReply(r, "MANAGEMENT_UNSUPPORTED");
             var c = r.NoiseManagement!;
+            if (c.Action == "verify") return ManagementReply(r, management.VerifyCalibration(c.Secret));
             if (c.Action == "configure") return ManagementReply(r, management.Configure(c.Secret, c.NewSecret!, ScheduledLive));
             if (!ScheduledLive || _session is null) return ManagementReply(r, "NoiseStateChanged");
             var grant = management.Issue(c, _instance, _session.Id);

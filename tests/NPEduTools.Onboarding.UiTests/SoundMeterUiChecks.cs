@@ -34,10 +34,22 @@ internal static partial class Program
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         var backend = new MeterUiBackend();
-        var service = new SoundMeterService(() => backend, s => s == "fixture-admin" ? null : "MANAGEMENT_SECRET_INVALID");
+        string folder = Path.Combine(_output, "meter-school-credential-fixture");
+        var store = new NoiseManagementStore(folder);
+        var noise = new NoiseService(_ => throw new Exception("No real microphone"), () => [], directory: folder, management: store);
+        var school = new SchoolManagementService(noise, new StudyDeviceService(() => [], folder), folder);
+        var identity = new System.Text.Json.Nodes.JsonObject { ["deviceId"] = "fixture" };
+        school.BindSchool(identity.ToJsonString());
+        byte[] salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+        byte[] hash = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("fixture-admin", salt, 210000, System.Security.Cryptography.HashAlgorithmName.SHA256, 32);
+        school.ApplySchool(new() { ["identity"] = identity, ["credential"] = new System.Text.Json.Nodes.JsonObject {
+            ["revision"] = 7L, ["verifier"] = new System.Text.Json.Nodes.JsonObject { ["iterations"] = 210000,
+                ["salt"] = Convert.ToBase64String(salt), ["hash"] = Convert.ToBase64String(hash) } },
+            ["equipment"] = new System.Text.Json.Nodes.JsonObject { ["revision"] = 0, ["locked"] = false, ["microphoneId"] = null, ["cameraId"] = null } });
+        var service = new SoundMeterService(() => backend, s => noise.ManagementHandle(new(1, Guid.NewGuid(), "noise.management.command", NoiseManagement: new("verify", s))).ErrorCode);
         string pipe = "NPEduTools.Test.meter-beta." + Guid.NewGuid().ToString("N");
         using var lifetime = new CancellationTokenSource();
-        var serving = Task.Run(() => new PipeServer(pipe, new DeviceReader(), _ => { }, soundMeter: service).RunAsync(lifetime.Token));
+        var serving = Task.Run(() => new PipeServer(pipe, new DeviceReader(), _ => { }, noise: noise, soundMeter: service).RunAsync(lifetime.Token));
         var window = new SoundMeterWindow(pipe);
         try
         {
@@ -45,13 +57,17 @@ internal static partial class Program
             {
                 Assert(owner.Title.Contains("联机校准 (Beta)"), "Beta label missing");
                 Assert(backend.Enumerations == 0 && backend.Opens == 0, "window load touched hardware");
-                var secret = (PasswordBox)owner.FindName("ManagementSecret"); secret.Password = "wrong";
+                PumpUntil(() => ((TextBlock)owner.FindName("ManagementLabel")).Text.Contains("学校"), "school credential source was not displayed");
+                Assert(((TextBlock)owner.FindName("ManagementHint")).Text.Contains("7"), "school credential revision missing");
+                Assert(!Button(owner, "ConfigureManagement").IsEnabled, "school credential could be overwritten locally");
+                var secret = (PasswordBox)owner.FindName("ManagementSecret"); secret.Password = "wrong-password";
                 Click(owner, "ListDevices");
                 PumpUntil(() => ((TextBlock)owner.FindName("Message")).Text.Contains("验证未通过"), "management failure missing");
                 Assert(backend.Enumerations == 0, "unauthorized list enumerated devices");
                 Checks.Add("WPF/private Host pipe: Beta label, no startup enumeration, denied management never touches backend");
                 secret.Password = "fixture-admin"; Click(owner, "ListDevices");
                 var list = (ComboBox)owner.FindName("Devices"); PumpUntil(() => list.Items.Count == 1, "fake device list missing");
+                Assert(((TextBlock)owner.FindName("Message")).Text.Contains("学校管理口令验证通过"), "successful school verification had no explicit feedback");
                 Assert(backend.Opens == 0, "enumeration opened a device"); list.SelectedIndex = 0; Click(owner, "ReadMeter");
                 PumpUntil(() => ((TextBlock)owner.FindName("Reading")).Text.Contains("60.5"), "fake reading missing");
                 Assert(backend.Opens == 1 && backend.Disposals == 1, "one-shot handle was not released");
@@ -77,6 +93,7 @@ internal static partial class Program
         finally
         {
             window.Close(); lifetime.Cancel(); try { serving.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
+            noise.DisposeAsync().AsTask().GetAwaiter().GetResult();
             SynchronizationContext.SetSynchronizationContext(previous);
         }
     }

@@ -5,6 +5,7 @@ namespace NPEduTools.Host;
 
 public sealed partial class NoiseService
 {
+    internal string? VerifyCalibrationSecret(string secret) { lock (_sync) return management?.VerifyCalibration(secret) ?? (management is null ? "MANAGEMENT_NOT_CONFIGURED" : null); }
     internal bool EquipmentLocked {get;set;}
     internal Func<string,string?>? EquipmentUnlock {get;set;}
     internal string? BindSchoolManagement(string? scope) {lock(_sync)return management?.BindSchool(scope);}
