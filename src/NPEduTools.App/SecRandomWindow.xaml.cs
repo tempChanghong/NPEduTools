@@ -17,6 +17,7 @@ public partial class SecRandomWindow : Window
     public SecRandomWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent();
+        DesktopDialogSizing.Attach(this, pipe);
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Render(null);

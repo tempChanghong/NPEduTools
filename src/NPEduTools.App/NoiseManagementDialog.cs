@@ -52,6 +52,7 @@ internal sealed class NoiseManagementDialog : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         if(exit is null)buttons.Children.Add(new Button { Content = "取消", IsCancel = true, Margin = new(0,0,12,0), MinWidth = 80 });
         buttons.Children.Add(_submit); body.Children.Add(buttons); Content = body;
+        DesktopDialogSizing.Attach(this, pipe);
         _submit.Click += Submit;
         Closed += (_, _) => { _old.Clear(); _new.Clear(); _confirm.Clear(); };
         Loaded += (_, _) => { if (target is not null || state.Configured) _old.Focus(); else _new.Focus(); };

@@ -17,6 +17,7 @@ public partial class StudySeatingUploadWindow : Window
     public StudySeatingUploadWindow(string pipe)
     {
         _pipe=pipe; InitializeComponent();
+        DesktopDialogSizing.Attach(this, pipe);
         Loaded += async (_,_) => await RefreshAsync();
         Closing += (_,e) => { if (_busy && !_dismissed) e.Cancel=true; };
         Closed += (_,_) => { _closed=true; _lifetime.Cancel(); RemoveTransfer(); Preview.Source=null; _draft=null; _lifetime.Dispose(); };

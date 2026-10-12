@@ -35,6 +35,7 @@ public partial class AutoRecordingWindow : Window
         _store = new(StartupPreferencesStore.PathFor(pipe).Replace(".startup.json", ".recording-preview.json", StringComparison.Ordinal));
         bool hadLegacy = File.Exists(StartupPreferencesStore.PathFor(pipe).Replace(".startup.json", ".recording-preview.json", StringComparison.Ordinal));
         InitializeComponent();
+        DesktopDialogSizing.Attach(this, pipe);
         _realRecording.AutomaticChanged += AutomaticChanged;
         AutomaticChanged(_realRecording.Automatic);
         try { _preview = new(_store.Read()); }

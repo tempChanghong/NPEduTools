@@ -20,6 +20,7 @@ public partial class ClassroomModeWindow : Window
     internal ClassroomModeWindow(string pipe, Action configureClassIsland, Action configureAdmin, Action configureExamAware, ClassroomSetupCheck? setupCheck)
     {
         _pipe = pipe; InitializeComponent();
+        DesktopDialogSizing.Attach(this, pipe);
         _configureClassIsland = configureClassIsland; _configureAdmin = configureAdmin; _configureExamAware = configureExamAware;
         _setupCheck = setupCheck ?? new(ReadSetupAsync, path => AdminClient.RunAsync(
             Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"), "status", path), File.Exists);

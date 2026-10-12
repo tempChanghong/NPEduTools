@@ -62,7 +62,7 @@ public partial class StudyDevicePicker : UserControl
             _rendering = false; RenderStatus();
             if (cameras.Outcome != "Succeeded" || _camera?.Error is not null) DeviceMessage.Text = DeviceError(cameras.ErrorCode ?? _camera?.Error);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         {
             if (generation != _generation) return;
             _connected = false; DeviceMessage.Text = "设备状态暂不可用，请检查后台连接后刷新；旧列表不能用于保存。";

@@ -37,7 +37,7 @@ internal static partial class Program
         bool calibrationOnly = args.Length == 2 && args[1] == "--noise-calibration";
         bool meterOnly = args.Length == 2 && args[1] is "--sound-meter-beta" or "--usb-reference";
         bool usbReferenceOnly = args.Length == 2 && args[1] == "--usb-reference";
-        bool inputsOnly = args.Length == 2 && args[1] is "--input-controls" or "--desktop-density" or "--classisland-clock";
+        bool inputsOnly = args.Length == 2 && args[1] is "--input-controls" or "--desktop-density" or "--desktop-window-bounds" or "--classisland-clock";
         bool scheduledDisplayOnly = args.Length == 2 && args[1] == "--scheduled-display";
         bool preparationOnly = args.Length == 2 && args[1] == "--onboarding-preparation";
         bool touchOnly = args.Length == 2 && args[1] == "--touch-status";
@@ -64,7 +64,7 @@ internal static partial class Program
         try
         {
             if (manualStudyOnly) { RunManualStudyChecks(); WriteResult("PASSED", null); return 0; }
-            if (inputsOnly) { if (args[1] == "--classisland-clock") RunClassIslandClockChecks(); else if (args[1] == "--desktop-density") RunDesktopDensityChecks(); else RunInputControlChecks(); WriteResult("PASSED", null); return 0; }
+            if (inputsOnly) { if (args[1] == "--classisland-clock") RunClassIslandClockChecks(); else if (args[1] == "--desktop-window-bounds") RunDesktopWindowBoundsChecks(); else if (args[1] == "--desktop-density") RunDesktopDensityChecks(); else RunInputControlChecks(); WriteResult("PASSED", null); return 0; }
             if (studyReportOnly) { RunStudyReportChecks(); WriteResult("PASSED", null); return 0; }
             if (studyExitOnly) { RunStudyExitChecks(); WriteResult("PASSED", null); return 0; }
             if (usbReferenceOnly) { RunUsbReferenceChecks(); WriteResult("PASSED", null); return 0; }

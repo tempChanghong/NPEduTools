@@ -15,8 +15,9 @@ public partial class StudyMonitoringWindow : Window
     public StudyMonitoringWindow(string pipe, Action noise)
     {
         _pipe = pipe; _noise = noise; InitializeComponent(); Devices.Bind(pipe);
+        DesktopDialogSizing.Attach(this, pipe);
         _timer.Tick += async (_, _) => await ReadAsync();
-        Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); await Devices.RefreshAsync(); };
+        Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); if (!_lifetime.IsCancellationRequested && IsVisible) await Devices.RefreshAsync(); };
         Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); Devices.CancelPending(); };
     }
     public void Shutdown() => Close();

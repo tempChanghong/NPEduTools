@@ -19,6 +19,7 @@ public partial class NoiseWindow : Window
     public NoiseWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent();ManualStartDate.SelectedDate=ManualEndDate.SelectedDate=DateTime.Today;
+        DesktopDialogSizing.Attach(this, pipe);
         Closing += (_, args) => { if (!_closing) { args.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Microphone.SelectionChanged += (_, _) => UpdateButtons();

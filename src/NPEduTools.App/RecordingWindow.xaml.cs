@@ -34,6 +34,7 @@ public partial class RecordingWindow : Window
         _probe = probe;
         _preferencesPath = StartupPreferencesStore.PathFor(endpoint).Replace(".startup.json", ".recording.json", StringComparison.Ordinal);
         InitializeComponent();
+        DesktopDialogSizing.Attach(this, endpoint);
         OutputDirectory.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "NPEduTools");
         try
         {

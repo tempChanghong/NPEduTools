@@ -12,6 +12,7 @@ public partial class ShortcutEditorWindow : Window
     {
         _id = entry?.Id ?? Guid.NewGuid();
         InitializeComponent();
+        DesktopDialogSizing.Attach(this);
         Heading.Text = Title = entry is null ? "添加快捷启动" : "编辑快捷启动";
         if (entry is not null)
         {

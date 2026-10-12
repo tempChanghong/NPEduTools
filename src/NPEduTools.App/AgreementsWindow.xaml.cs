@@ -19,6 +19,7 @@ public partial class AgreementsWindow : Window
         _store = new(AgreementAcceptanceStore.PathFor(endpoint));
         _agreements = AgreementCatalog.Load();
         InitializeComponent();
+        DesktopDialogSizing.Attach(this, endpoint);
         try
         {
             var saved = _store.Read();

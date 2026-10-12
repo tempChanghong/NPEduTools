@@ -25,10 +25,14 @@ public partial class MainWindow
         DensityChoiceBox.SelectedValue = _densityPreference;
         _densityReady = persist;
         SourceInitialized += (_, _) => ApplyDensity();
+        Loaded += (_, _) => ApplyDensity();
+        IsVisibleChanged += (_, _) => { if (IsVisible) Dispatcher.BeginInvoke(ApplyDensity); };
+        StateChanged += (_, _) => { if (WindowState == WindowState.Normal) Dispatcher.BeginInvoke(ApplyDensity); };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(ApplyDensity);
     }
     internal void ApplyDensity()
     {
+        if (_lifetime.IsCancellationRequested) return;
         var area = Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle).WorkingArea;
         var dpi = VisualTreeHelper.GetDpi(this);
         double width = area.Width / dpi.DpiScaleX, height = area.Height / dpi.DpiScaleY;
@@ -38,8 +42,7 @@ public partial class MainWindow
         if (WindowState == WindowState.Normal)
         {
             Width = Math.Min(1040 * scale, width - 16); Height = Math.Min(760 * scale, height - 16);
-            Left = Math.Clamp(Left, area.Left / dpi.DpiScaleX, area.Right / dpi.DpiScaleX - Width);
-            Top = Math.Clamp(Top, area.Top / dpi.DpiScaleY, area.Bottom / dpi.DpiScaleY - Height);
+            DesktopWindowBounds.KeepVisible(this);
         }
         _quick?.SetDensity(_densityPreference);
     }

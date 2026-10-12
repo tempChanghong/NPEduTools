@@ -38,6 +38,7 @@ public partial class OnboardingWindow : Window
         // Rechecking starts a new walkthrough only on the user's explicit open action.
         _state = state.Completed ? new(Features: state.Features) : state;
         InitializeComponent();
+        DesktopDialogSizing.Attach(this, endpoint);
         SchoolConnection.Bind(schoolConnection);
         StudyDevices.Bind(endpoint);
         StudyDevices.SelectionSaved += (_, _) => { if (_state.Step == "noise" && _deviceReadinessFailed) { ErrorText.Text = ""; _deviceReadinessFailed = false; } };

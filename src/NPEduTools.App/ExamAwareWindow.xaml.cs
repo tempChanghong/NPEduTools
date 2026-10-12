@@ -19,6 +19,7 @@ public partial class ExamAwareWindow : Window
     {
         _pipe = pipe;
         InitializeComponent();
+        DesktopDialogSizing.Attach(this, pipe);
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Render(null);
