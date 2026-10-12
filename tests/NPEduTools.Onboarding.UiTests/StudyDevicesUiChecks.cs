@@ -66,9 +66,28 @@ internal static partial class Program
                 Assert(((TextBlock)manage.FindName("StudyNext")).Text.Contains("2026-10-14 01:00"), "current study hid next overnight window");
                 render.Invoke(manage, [nextState with {ClockReady=false}]);
                 Assert(!((TextBlock)manage.FindName("StudyNext")).Text.Contains("2026"), "stale clock retained predicted window");
+                var devicesPanel = (Expander)manage.FindName("DeviceSettings");
+                Assert(!devicesPanel.IsExpanded && ((TextBlock)manage.FindName("DeviceSummary")).Text.Contains("麦克风已配置"), "compact device summary missing or settings expanded by default");
+                var active = nextState with {Execution = new("Schedule", "Active", Guid.NewGuid(), "fixture", true, null, null, true)};
+                render.Invoke(manage, [active]);
+                Assert(((TextBlock)manage.FindName("StudyCapture")).Text.Contains("正在采集"), "fresh execution no longer shows sampling");
+                render.Invoke(manage, [active with {Execution = active.Execution! with {SignalFresh=false}}]);
+                Assert(!((TextBlock)manage.FindName("StudyCapture")).Text.Contains("正在采集"), "stale execution retained active badge");
+                render.Invoke(manage, [active with {ProjectionPriority=true}]);
+                Assert(((TextBlock)manage.FindName("StudyPresentation")).Text.Contains("考试放映优先"), "projection priority missing from compact summary");
+                render.Invoke(manage, [active]);
+                owner.Width = 660; owner.Height = 600; ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
+                var calibration = Button(owner, "OpenMeterCalibration");
+                var actionPoint = calibration.TranslatePoint(new Point(), owner);
+                Assert(actionPoint.X >= 0 && actionPoint.X + calibration.ActualWidth <= owner.ActualWidth && actionPoint.Y + calibration.ActualHeight < owner.ActualHeight - 30,
+                    "common calibration action is clipped or below the first viewport in compact layout");
+                Snapshot(owner, "study-monitoring-compact-active.png");
+                devicesPanel.IsExpanded = true; owner.UpdateLayout();
+                Assert(picker.IsVisible && captures == 0, "expanding shared device settings started capture or hid controls");
+                devicesPanel.IsExpanded = false;
                 render.Invoke(manage, [null]);
                 Snapshot(owner, "study-monitoring-devices.png"); owner.Close();
-                Checks.Add("Study management actual WPF/private Host pipe: shared selection, unplugged camera retained without fallback, stale state no active claim");
+                Checks.Add("Study management actual WPF/private Host pipe: compact first-screen actions, expandable shared devices, fresh/stale/unknown execution, next schedule and projection priority; no capture");
             });
             var main = (MainWindow)typeof(MainWindow).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic).Single().Invoke([pipe, null, false]);
             Exercise(main, owner =>

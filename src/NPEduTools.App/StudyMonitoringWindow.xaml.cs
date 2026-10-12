@@ -16,6 +16,7 @@ public partial class StudyMonitoringWindow : Window
     {
         _pipe = pipe; _noise = noise; InitializeComponent(); Devices.Bind(pipe);
         DesktopDialogSizing.Attach(this, pipe);
+        Devices.StatusChanged += (_, _) => DeviceSummary.Text = Devices.Summary;
         _timer.Tick += async (_, _) => await ReadAsync();
         Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); if (!_lifetime.IsCancellationRequested && IsVisible) await Devices.RefreshAsync(); };
         Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); Devices.CancelPending(); };
@@ -32,7 +33,7 @@ public partial class StudyMonitoringWindow : Window
             if (_lifetime.IsCancellationRequested) return;
             Render(response.Outcome == "Succeeded" ? response.Study : null);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) Render(null); }
         finally { _reading = false; }
     }
@@ -43,14 +44,21 @@ public partial class StudyMonitoringWindow : Window
         StudySchedule.Text = state?.ClockReady == true && state.SchoolNow is { } now ? $"{(state.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")} {now:yyyy-MM-dd HH:mm:ss}" +
             (state.Window is { } w ? $"　当前时段 {StudySchedulePresentation.Span(w)}" : "") : state?.Mode == "Exam" ? "考试模式 Windows 时间尚未确认；不会自行启动。" : "学校时间未确认；不会按 Windows 时间自行启动。";
         StudyNext.Text = StudySchedulePresentation.Next(state);
-        StudyCapture.Text = state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "学校自习正在采集 · 已收到新鲜采样" :
-            state?.Execution is { Owner: "Manual" } ? "当前是手动采样，学校自习没有接管该会话" : state?.Execution is { State: "Starting" } ? "采集启动中，尚未确认有效采样" : "学校自习采集状态待确认";
-        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先；继续后台采集与按策略拍照，自习提示音不补播" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
-            "全屏展示临时收起；输入状态暂不可读取，等待恢复后判断无操作返回，后台采集继续" :
-            $"全屏展示临时收起；连续无操作十分钟后按有效安排返回，目前还需约 {Math.Ceiling(d.HiddenRemainingSeconds)} 秒，操作会重新计时" :
-            state?.Display is { Available: true } ? "全屏展示具备执行条件；这不等于已经显示" : "全屏展示等待有效安排、学校时间及运行条件";
+        StudyCapture.Text = state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "正在采集 · 已收到新鲜采样" :
+            state?.Execution is { Owner: "Manual" } ? "当前为手动采样" : state?.Execution is { State: "Starting" } ? "启动中 · 等待有效采样" :
+            "采集状态待确认";
+        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先 · 自习在后台执行" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
+            "已收起 · 输入状态待确认" :
+            $"已收起 · 再闲置约 {Math.Ceiling(d.HiddenRemainingSeconds / 60)} 分钟返回" :
+            state?.Display is { Available: true } ? "满足展示条件 · 可见性待回执确认" : "等待有效安排与时间";
+        StudyCapture.ToolTip = state?.Execution is { Owner: "Manual" } ? "学校定时自习没有接管该手动会话。" : "只有当前执行状态与新鲜采样均确认，才显示正在采集。";
+        StudyPresentation.ToolTip = "临时收起后连续无操作十分钟返回，操作会重新计时；后台采集和照片策略继续。满足展示条件不等于窗口已经可见。";
     }
-    private async void RefreshClicked(object sender, RoutedEventArgs e) => await ReadAsync();
+    private async void RefreshClicked(object sender, RoutedEventArgs e)
+    {
+        await ReadAsync();
+        if (!_lifetime.IsCancellationRequested && IsVisible) await Devices.RefreshAsync();
+    }
     private void NoiseClicked(object sender, RoutedEventArgs e) => _noise();
     private void SeatingClicked(object sender, RoutedEventArgs e) => new StudySeatingUploadWindow(_pipe) { Owner = this }.ShowDialog();
     private void CalibrationClicked(object sender, RoutedEventArgs e) => new NoiseCalibrationWindow(_pipe) { Owner = this }.ShowDialog();

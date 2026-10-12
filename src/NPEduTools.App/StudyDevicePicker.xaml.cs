@@ -8,6 +8,11 @@ namespace NPEduTools.App;
 public partial class StudyDevicePicker : UserControl
 {
     public event EventHandler? SelectionSaved;
+    public event EventHandler? StatusChanged;
+    public string Summary => !_connected ? "设备状态待刷新" :
+        (_noise?.SelectedDeviceId is not {} id ? "麦克风待配置" : _microphones.Any(d => d.Id == id) ? "麦克风已配置" : "已选麦克风不可用") + " · " +
+        (_camera is null ? "摄像头状态待确认" : _camera.CameraId is null ? "未使用摄像头" : _camera.CameraAvailable == true ? "摄像头已配置" : "已选摄像头待确认") +
+        (_camera?.Locked == true ? " · 学校已锁定" : "");
     private string? _pipe;
     private NoiseState? _noise;
     private StudyDeviceState? _camera;
@@ -88,6 +93,7 @@ public partial class StudyDevicePicker : UserControl
         SaveMicrophone.IsEnabled = !_busy && _connected && Idle && !locked && StudyMicrophone.SelectedValue is string mic && _microphones.Any(d => d.Id == mic);
         SaveCamera.IsEnabled = !_busy && _connected && Idle && !locked && _camera is not null && _camera.Error is null &&
             StudyCamera.SelectedValue is string cam && (cam.Length == 0 || _camera.Cameras.Any(d => d.Id == cam));
+        StatusChanged?.Invoke(this, EventArgs.Empty);
     }
     public async Task<bool> CheckReadyAsync()
     {
