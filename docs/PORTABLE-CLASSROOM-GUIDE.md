@@ -1,6 +1,6 @@
-# NPEduTools v1.1.0：安装、更新与回退
+# NPEduTools v1.1.1：安装、更新与回退
 
-适用：v1.1.0 EVA-02（二号机）内置录制组件包，Windows x64，ClassIsland API 2.1.0.1／桥接 0.2.0.0，ExamAware2 1.5.2／桥接 0.4.0。已发布的 InDev 20261002 仍按随包原说明安装录制组件。发行附件与源码运行方法见对应包的 `RELEASE-NOTES.md`。开发机检查不等于目标大屏整课验收。自包含包内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在本包内。
+适用：v1.1.1 EVA-02（二号机）内置录制组件包，Windows x64，ClassIsland API 2.1.0.1／桥接 0.2.0.0，ExamAware2 1.5.2／桥接 0.4.0。已发布的 InDev 20261002 仍按随包原说明安装录制组件。发行附件与源码运行方法见对应包的 `RELEASE-NOTES.md`。开发机检查不等于目标大屏整课验收。自包含包内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在本包内。
 
 ## 第一次使用
 
