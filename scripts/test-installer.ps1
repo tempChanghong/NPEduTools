@@ -44,15 +44,20 @@ function Execute([string]$Exe, [string]$Case, [int]$Expected = 0) {
 }
 Save-Result
 try {
+    # Keep guardian failure/rollback checks in the existing delivery/CI entry point.
+    & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-guard-maintenance.ps1') | Out-Host
+    Check 'guardian maintenance transaction regressions' ($LASTEXITCODE -eq 0)
     # Names and registry roots alone differ from the production .iss; event code is shared.
     $first = Compile '0.2026.1003.0' 'Installer-Test-A'
     $next = Compile '0.2026.1003.1' 'Installer-Test-B'
     Execute $first 'first-install'
     Check 'payload installed' ((Get-Content (Join-Path $install 'version.txt')).Trim() -eq '0.2026.1003.0')
+    Check 'maintenance helper installed and initial marker released' ((Test-Path -LiteralPath (Join-Path $install 'maintenance/guard-maintenance.ps1')) -and -not (Test-Path -LiteralPath (Join-Path $install 'app/guard-maintenance.json')))
     Set-Content -LiteralPath (Join-Path $install 'user-file.txt') -Value 'preserve'
     Set-Content -LiteralPath (Join-Path $scratch 'outside-user-data.txt') -Value 'preserve'
     Execute $next 'upgrade'
     Check 'upgrade files and version marker' (((Get-Content (Join-Path $install 'version.txt')).Trim() -eq '0.2026.1003.1') -and (Get-ItemProperty -LiteralPath $registry).InstallerVersion -eq '0.2026.1003.1')
+    Check 'successful upgrade releases maintenance marker' (-not (Test-Path -LiteralPath (Join-Path $install 'app/guard-maintenance.json')))
     Execute $first 'downgrade-rejected' 7
     Check 'downgrade left new payload intact' ((Get-Content (Join-Path $install 'version.txt')).Trim() -eq '0.2026.1003.1')
     Set-ItemProperty -LiteralPath $registry -Name InstallerVersion -Value 'damaged'
@@ -74,8 +79,18 @@ try {
     Execute $uninstaller 'startup-uninstall-rejected' 1
     Check 'startup blocker preserved files' (Test-Path -LiteralPath (Join-Path $install 'version.txt'))
     Remove-ItemProperty -LiteralPath $registry -Name StartupCommand
+    $helper=Join-Path $install 'maintenance/guard-maintenance.ps1'
+    $helperBytes=[IO.File]::ReadAllBytes($helper)
+    [IO.File]::AppendAllText($helper,"`r`n# synthetic tampering")
+    Execute $uninstaller 'modified-helper-uninstall-rejected' 1
+    Check 'modified helper never executed and payload preserved' ((Test-Path -LiteralPath (Join-Path $install 'version.txt')) -and -not (Test-Path -LiteralPath (Join-Path $install 'app/guard-maintenance.json')))
+    [IO.File]::WriteAllBytes($helper,$helperBytes)
     Execute $uninstaller 'uninstall'
     Check 'tracked payload removed' (-not (Test-Path -LiteralPath (Join-Path $install 'version.txt')))
+    # The first uninstaller process can exit while its second phase completes maintenance.
+    $maintenanceDeadline=[DateTime]::UtcNow.AddSeconds(10)
+    while (((Test-Path -LiteralPath $helper) -or (Test-Path -LiteralPath (Join-Path $install 'app/guard-maintenance.json'))) -and [DateTime]::UtcNow -lt $maintenanceDeadline) { Start-Sleep -Milliseconds 100 }
+    Check 'uninstall removes helper and maintenance marker' (-not (Test-Path -LiteralPath $helper) -and -not (Test-Path -LiteralPath (Join-Path $install 'app/guard-maintenance.json')))
     Check 'untracked and external user files preserved' (((Get-Content (Join-Path $install 'user-file.txt')).Trim() -eq 'preserve') -and ((Get-Content (Join-Path $scratch 'outside-user-data.txt')).Trim() -eq 'preserve'))
     Check 'test version registration removed' (-not (Test-Path -LiteralPath $registry))
     # Inno's self-delete helper outlives the exit code. Reinstalling while it is

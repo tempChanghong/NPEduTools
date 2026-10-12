@@ -1,0 +1,127 @@
+# Same production transaction code, synthetic tasks/processes, private files only.
+$ErrorActionPreference='Stop'
+$projectRoot=Split-Path $PSScriptRoot -Parent
+. (Join-Path $projectRoot 'installer/guard-maintenance.ps1')
+$scratch=Join-Path $projectRoot ('.artifacts/guard-maintenance-tests/'+[guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($scratch) | Out-Null
+$identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+$sid=$identity.User.Value;$identity.Dispose()
+$defaultData=GuardData $sid 'default'
+if ($defaultData -ne (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'NPEduTools\config\guard')) { throw 'Default data path does not match native KnownFolder.' }
+$script:checks=@();$script:runs=0
+function Check([string]$Name,[bool]$Value) {
+    if (-not $Value) { throw ('FAIL: '+$Name) }
+    $script:checks+=$Name;Write-Output ('PASS: '+$Name)
+}
+function Throws([string]$Name,[scriptblock]$Work,[string]$Pattern) {
+    $errorMessage=$null
+    try { & $Work | Out-Null } catch { $errorMessage=$_.Exception.Message }
+    Check $Name ($null -ne $errorMessage -and $errorMessage -match $Pattern)
+}
+function TaskXml([string]$Role,[string]$Root,[string]$Pipe,[string]$Sid) {
+    $exe=switch($Role) { 'App' {Join-Path $Root 'app\NPEduTools.App.exe'} 'Host' {Join-Path $Root 'app\Host\NPEduTools.Host.exe'} default {Join-Path $Root 'app\Guard\svchost.exe'} }
+    $args='--pipe "'+$Pipe+'"'
+    if ($Role -eq 'App') { $args+=' --guard-recovery' }
+    if ($Role -eq 'Login') { $args+=' --at-login' }
+    $command=[Security.SecurityElement]::Escape($exe);$wd=[Security.SecurityElement]::Escape((Split-Path $exe))
+    return '<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><RegistrationInfo><Source>NPEduTools.Guard.v2</Source></RegistrationInfo><Principals><Principal id="User"><UserId>'+ $Sid+'</UserId><LogonType>InteractiveToken</LogonType></Principal></Principals><Actions Context="User"><Exec><Command>'+$command+'</Command><Arguments>'+$args+'</Arguments><WorkingDirectory>'+$wd+'</WorkingDirectory></Exec></Actions></Task>'
+}
+function Fixture([string]$Name) {
+    $root=Join-Path $scratch ($Name+'\installed');$data=Join-Path $scratch ($Name+'\data');$transaction=Join-Path $scratch ($Name+'\transaction')
+    foreach($directory in @($data,$transaction,(Join-Path $root 'app\Host'),(Join-Path $root 'app\Guard'))) { [IO.Directory]::CreateDirectory($directory) | Out-Null }
+    foreach($file in @('app\NPEduTools.App.exe','app\Host\NPEduTools.Host.exe','app\Guard\svchost.exe')) { [IO.File]::WriteAllText((Join-Path $root $file),'NOT EXECUTABLE fixture') }
+    $pipe='NPEduTools.Test.Maintenance.'+[guid]::NewGuid().ToString('N');$key=(GuardHash ($sid+'|'+$pipe)).Substring(0,24)
+    $registration=@{Generation=[guid]::NewGuid().ToString();App=@{Id=$PID;StartedUtcTicks=1};Upstream=$null;BundleDirectory=(Join-Path $root 'app')}
+    WriteGuardJson (Join-Path $data 'registration.json') $registration
+    $folder=[pscustomobject]@{Rows=@{};Deleted=@();Registered=@();FailDelete=$null}
+    $folder | Add-Member ScriptMethod GetTasks { param($flags) return @($this.Rows.Values) }
+    $folder | Add-Member ScriptMethod DeleteTask { param($name,$flags) if ($this.FailDelete -eq $name) { $this.FailDelete=$null;throw 'Synthetic deletion failure' };$this.Rows.Remove($name);$this.Deleted+=$name }
+    $folder | Add-Member ScriptMethod RegisterTask { param($name,$xml,$flags,$user,$password,$logon,$sddl) $this.Rows[$name]=[pscustomobject]@{Name=$name;Xml=$xml};$this.Registered+=$name;return $this.Rows[$name] }
+    $folder | Add-Member ScriptMethod GetTask { param($name) $task=[pscustomobject]@{Name=$name};$task | Add-Member ScriptMethod Run {param($value) $script:runs++ };return $task }
+    foreach($role in @('Guard','Login','App','Host')) {
+        $name='NPEduTools.Guard.'+$key+'.'+$role
+        $folder.Rows[$name]=[pscustomobject]@{Name=$name;Xml=(TaskXml $role $root $pipe $sid)}
+    }
+    $script:active=[pscustomobject]@{Root=$root;Data=$data;Transaction=$transaction;Journal=(Join-Path $transaction 'journal.json');Folder=$folder;Generation=$registration.Generation;Running=$true;NeverStops=$false;Pipe=$pipe;Key=$key}
+    return $script:active
+}
+# Substitute only environmental adapters. No production scheduler/process is touched.
+function GuardData([string]$Sid,[string]$Endpoint) {
+    if ($Sid -ne $sid -or $Endpoint -ne $script:active.Pipe) { throw 'Fixture data ownership mismatch' }
+    return $script:active.Data
+}
+function OwnedGuardProcesses([string]$Root) {
+    if ($Root -ne $script:active.Root) { throw 'Fixture process scope mismatch' }
+    $stop=ReadGuardJson (Join-Path $script:active.Data 'stop.json')
+    if ($script:active.Running -and ($script:active.NeverStops -or $null -eq $stop -or $stop.Generation -ne $script:active.Generation)) { return @([pscustomobject]@{ProcessId=12345}) }
+    return @()
+}
+function Invoke-CimMethod($InputObject,[string]$MethodName) { return [pscustomobject]@{ReturnValue=0;Sid=$sid} }
+try {
+    Check 'default instance uses current account LocalAppData KnownFolder' ($null -ne $defaultData)
+    $f=Fixture 'normal'
+    $original=GuardFileSnapshot (Join-Path $f.Data 'registration.json')
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $journal=ReadGuardJson $f.Journal
+    Check 'all four owned tasks removed' ($f.Folder.Rows.Count -eq 0)
+    Check 'generation-scoped stop persisted before completion' ((ReadGuardJson (Join-Path $f.Data 'stop.json')).Generation -eq $f.Generation)
+    Check 'maintenance marker present and registration preserved' ([IO.File]::Exists($journal.Marker) -and (GuardFileSnapshot (Join-Path $f.Data 'registration.json')) -eq $original)
+    RestoreGuardMaintenance $journal $f.Folder
+    Check 'cancel restores tasks, original stop and only guardian launch' ($f.Folder.Rows.Count -eq 4 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')) -and $script:runs -eq 1)
+    Check 'cancel releases installation marker' (-not [IO.File]::Exists($journal.Marker))
+    RestoreGuardMaintenance $journal $f.Folder
+    Check 'repeated rollback does not launch twice' ($script:runs -eq 1)
+
+    $f=Fixture 'stale-stop'
+    WriteGuardJson (Join-Path $f.Data 'stop.json') @{Generation=[guid]::NewGuid().ToString();Reason='WindowsSessionEnding'}
+    $previous=GuardFileSnapshot (Join-Path $f.Data 'stop.json')
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder
+    Check 'prior stale stop restored byte-for-byte and guardian resumed' ((GuardFileSnapshot (Join-Path $f.Data 'stop.json')) -eq $previous -and $script:runs -eq 2)
+
+    $f=Fixture 'partial-failure';$f.Folder.FailDelete='NPEduTools.Guard.'+$f.Key+'.Host'
+    Throws 'partial deletion failure rolls back' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'Synthetic deletion failure'
+    Check 'partial rollback restores all tasks and clears maintenance' ($f.Folder.Rows.Count -eq 4 -and -not [IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')))
+
+    $f=Fixture 'mismatch';$name='NPEduTools.Guard.'+$f.Key+'.Host';$f.Folder.Rows[$name].Xml=$f.Folder.Rows[$name].Xml.Replace('NPEduTools.Guard.v2','Other.Product')
+    Throws 'all ownership checked before touching any member' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'ownership mismatch'
+    Check 'ownership mismatch preserves all tasks and configuration' ($f.Folder.Deleted.Count -eq 0 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
+
+    $f=Fixture 'other-installation';$other=TaskXml 'Guard' (Join-Path $scratch 'another') $f.Pipe $sid
+    Check 'other installation tasks ignored' (@(GuardPlans @([pscustomobject]@{Name=('NPEduTools.Guard.'+$f.Key+'.Guard');Xml=$other}) $f.Root).Count -eq 0)
+    foreach($change in @('path','arguments','principal','source')) {
+        $xml=TaskXml 'Guard' $f.Root $f.Pipe $sid
+        switch($change) {
+            'path' {$xml=$xml.Replace('svchost.exe','foreign.exe')}
+            'arguments' {$xml=$xml.Replace('</Arguments>',' --unexpected</Arguments>')}
+            'principal' {$xml=$xml.Replace($sid,'S-1-5-18')}
+            'source' {$xml=$xml.Replace('NPEduTools.Guard.v2','Other')}
+        }
+        Throws ('changed '+$change+' refused') { GuardTaskInfo ('NPEduTools.Guard.'+$f.Key+'.Guard') $xml $f.Root } 'mismatch'
+    }
+
+    $f=Fixture 'missing-guardian';$f.Running=$false
+    [IO.File]::Delete((Join-Path $f.Root 'app\Guard\svchost.exe'))
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    Check 'missing guardian executable does not block owned task cleanup' ($f.Folder.Rows.Count -eq 0)
+    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder
+    Check 'idle missing-guardian rollback never starts components' ($script:runs -eq 3)
+
+    $f=Fixture 'changed-bundle';PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    [IO.File]::WriteAllText((Join-Path $f.Root 'app\Host\NPEduTools.Host.exe'),'PARTIAL UPGRADE')
+    Throws 'partial upgrade cannot restart mixed bundle' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} 'Application files changed'
+    Check 'mixed bundle retains stop and recovery journal' ([IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and $f.Folder.Rows.Count -eq 0)
+
+    $f=Fixture 'changed-generation';PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $r=ReadGuardJson (Join-Path $f.Data 'registration.json');$r.Generation=[guid]::NewGuid().ToString();WriteGuardJson (Join-Path $f.Data 'registration.json') $r
+    Throws 'new client generation cannot be overwritten by rollback' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} 'generation changed'
+
+    $f=Fixture 'timeout';$f.NeverStops=$true
+    Throws 'nonresponsive guard times out without force-killing any process' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'ten seconds'
+    Check 'timeout restores task registrations' ($f.Folder.Rows.Count -eq 4 -and (ReadGuardJson $f.Journal).Phase -eq 'Restored')
+    @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
+    Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
+} catch {
+    @{status='FAILED';checks=$script:checks;error=$_.Exception.Message} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
+    throw
+}

@@ -92,6 +92,7 @@ public sealed class GuardTasks(string bundle, string pipe, string? upstream)
     }
     public void Register(bool highest = true)
     {
+        if (File.Exists(Path.Combine(Root, "guard-maintenance.json"))) throw new IOException("安装器正在维护此目录，守护暂不登记；请等待维护完成。");
         dynamic service = Connect(); dynamic? folder = null;
         try
         {
@@ -114,6 +115,7 @@ public sealed class GuardTasks(string bundle, string pipe, string? upstream)
     }
     public void Run(string role)
     {
+        if (File.Exists(Path.Combine(Root, "guard-maintenance.json"))) throw new IOException("安装器正在维护此目录，暂不启动组件。");
         dynamic service = Connect(); dynamic? folder = null, task = null, running = null;
         try
         {

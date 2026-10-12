@@ -15,6 +15,7 @@
   #error OutputRoot is required
 #endif
 #define ProductId "{{B76C0D58-1319-4D53-AC50-D607C7B578A8}"
+#define MaintenanceHash GetSHA256OfFile(SourcePath + "guard-maintenance.ps1")
 #ifdef InstallerTestId
   ; Only the isolated regression script defines this. Production wrapper never does.
   #define ProductId "NPEduTools-InstallerTest-" + InstallerTestId
@@ -56,7 +57,7 @@ OutputDir={#OutputRoot}
 OutputBaseFilename=NPEduTools-{#ReleaseVersion}-win-x64-setup
 CloseApplications=no
 RestartApplications=no
-; No automatic process termination, restart, startup registration, or recursive deletion.
+; Busy collection/recording is never terminated; only owned guardian maintenance is automated.
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "Languages\ChineseSimplified.isl"
@@ -67,6 +68,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 [Files]
 Source: "{#PackageRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "guard-maintenance.ps1"; DestDir: "{app}\maintenance"; Flags: ignoreversion
 
 #ifndef InstallerTestId
 [Icons]
@@ -95,7 +97,11 @@ const
   VersionKey = 'Software\NPEduTools\Installer';
 #endif
 
-function InstallationProblem: String;
+var
+  MaintenanceScript, MaintenanceDirectory: String;
+  MaintenanceActive, MaintenanceCompleted: Boolean;
+
+function InstallationProblem(AllowGuardian: Boolean): String;
 var
   Service, Processes, Process: Variant;
   Query, Name, Path, InstallPrefix: String;
@@ -126,7 +132,7 @@ begin
         { Never identify or stop a Windows service by basename. Only this bundle's path is ours. }
         if not VarIsNull(Process.ExecutablePath) then begin
           Path := Lowercase(Process.ExecutablePath);
-          if Path = InstallPrefix + 'app\guard\svchost.exe' then begin
+          if (not AllowGuardian) and (Path = InstallPrefix + 'app\guard\svchost.exe') then begin
             Result := '此安装的自习守护仍在待命。请维护人员按 GUARD-MAINTENANCE.md 停止本安装的守护并撤销启动登记后重试。';
             Exit;
           end;
@@ -187,13 +193,79 @@ begin
   end;
 end;
 
+function MaintenanceCommand(Action: String): Boolean;
+var Code: Integer;
+begin
+  Result := Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + MaintenanceScript +
+    '" -Action ' + Action + ' -InstallRoot "' + ExpandConstant('{app}') +
+    '" -TransactionDirectory "' + MaintenanceDirectory + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Result := Result and (Code = 0);
+  if not Result then Log('Guardian maintenance failed: ' + Action + '; result: ' + MaintenanceDirectory + '\result.txt');
+end;
+
+function PrepareGuardian: String;
+begin
+  Result := '';
+  if MaintenanceActive then begin
+    Result := '维护流程已启动，请退出本安装器后重新运行，避免重复接管同一事务。'; Exit;
+  end;
+  if FileExists(MaintenanceDirectory + '\journal.json') then begin
+    Result := '安装维护记录已存在，本次不接管该记录：' + MaintenanceDirectory; Exit;
+  end;
+  if not MaintenanceCommand('Prepare') then begin
+    MaintenanceActive := FileExists(MaintenanceDirectory + '\journal.json');
+    Result := '无法自动完成本安装的守护维护，本次不继续。诊断及恢复记录：' + MaintenanceDirectory;
+    Exit;
+  end;
+  MaintenanceActive := True;
+  Result := InstallationProblem(False);
+  if Result = '' then Result := GuardianRegistrationProblem;
+end;
+
+function MaintenanceHelperReady(Uninstalling: Boolean): Boolean;
+var Source: String;
+begin
+  MaintenanceScript := ExpandConstant('{tmp}\guard-maintenance.ps1');
+  if Uninstalling then begin
+    Source := ExpandConstant('{app}\maintenance\guard-maintenance.ps1');
+    Result := FileExists(Source);
+    if Result then Result := CompareText(GetSHA256OfFile(Source), '{#MaintenanceHash}') = 0;
+    if Result then Result := FileCopy(Source, MaintenanceScript, False);
+  end else begin
+    ExtractTemporaryFile('guard-maintenance.ps1');
+    Result := True;
+  end;
+  if Result then Result := CompareText(GetSHA256OfFile(MaintenanceScript), '{#MaintenanceHash}') = 0;
+#ifdef InstallerTestId
+  MaintenanceDirectory := ExpandConstant('{localappdata}\NPEduTools-InstallerTest-{#InstallerTestId}\maintenance-') + ExtractFileName(ExpandConstant('{tmp}'));
+#else
+  MaintenanceDirectory := ExpandConstant('{commonappdata}\NPEduTools\installer-maintenance\') + ExtractFileName(ExpandConstant('{tmp}'));
+#endif
+end;
+
+procedure RestoreGuardian;
+begin
+  if MaintenanceActive and (not MaintenanceCompleted) then
+    if not MaintenanceCommand('Restore') then
+      SuppressibleMsgBox('守护未能自动恢复。请保留记录并按 GUARD-MAINTENANCE.md 处理：' + MaintenanceDirectory, mbError, MB_OK, IDOK);
+end;
+
+procedure CompleteGuardian;
+begin
+  if MaintenanceActive then begin
+    if not MaintenanceCommand('Complete') then
+      RaiseException('安装文件已处理，但守护维护状态未能解除，请核查记录：' + MaintenanceDirectory);
+    MaintenanceCompleted := True;
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   OldVersion: String;
   Previous, Incoming: Int64;
 begin
-  Result := InstallationProblem;
-  if Result = '' then Result := GuardianRegistrationProblem;
+  Result := InstallationProblem(True);
   if Result <> '' then Exit;
   if RegValueExists(VersionRoot, VersionKey, 'InstallerVersion') then begin
     if not RegQueryStringValue(VersionRoot, VersionKey, 'InstallerVersion', OldVersion) then begin
@@ -205,6 +277,21 @@ begin
     else if ComparePackedVersion(Previous, Incoming) > 0 then
       Result := '已安装更新的版本，不能直接降级覆盖。请备份配置并按回退说明处理。';
   end;
+  if Result <> '' then Exit;
+  if not MaintenanceHelperReady(False) then begin
+    Result := '守护维护助手完整性检查失败，本次不继续。'; Exit;
+  end;
+  Result := PrepareGuardian;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then CompleteGuardian;
+end;
+
+procedure DeinitializeSetup;
+begin
+  RestoreGuardian;
 end;
 
 function StartupProblem: String;
@@ -239,9 +326,26 @@ end;
 function InitializeUninstall: Boolean;
 var Problem: String;
 begin
-  Problem := InstallationProblem;
-  if Problem = '' then Problem := GuardianRegistrationProblem;
+  Problem := InstallationProblem(True);
   if Problem = '' then Problem := StartupProblem;
+  if (Problem = '') and (not MaintenanceHelperReady(True)) then Problem := '守护维护助手缺失或被修改，本次不卸载，请使用新版完整安装包修复。';
   Result := Problem = '';
   if not Result then SuppressibleMsgBox(Problem, mbError, MB_OK, IDOK);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var Problem: String;
+begin
+  if CurUninstallStep = usUninstall then begin
+    Problem := InstallationProblem(True);
+    if Problem = '' then Problem := StartupProblem;
+    if Problem = '' then Problem := PrepareGuardian;
+    if Problem <> '' then RaiseException(Problem);
+  end;
+  if CurUninstallStep = usPostUninstall then CompleteGuardian;
+end;
+
+procedure DeinitializeUninstall;
+begin
+  RestoreGuardian;
 end;

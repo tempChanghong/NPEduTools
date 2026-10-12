@@ -40,4 +40,18 @@ public sealed class GuardTaskTests
         var tasks = new GuardTasks(@"C:\NPEduTools", "x\" --maintenance", null);
         Assert.Throws<ArgumentException>(() => tasks.Definition("Guard"));
     }
+    [Fact]
+    public void Installer_maintenance_blocks_registration_and_launch_before_scheduler_access()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "NPEduTools.GuardMaintenanceTest." + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "guard-maintenance.json"), "{}");
+            var tasks = new GuardTasks(root, "NPEduTools.Test.Guard.maintenance", null);
+            Assert.Throws<IOException>(() => tasks.Register(false));
+            foreach (var role in new[] { "Guard", "Login", "App", "Host" }) Assert.Throws<IOException>(() => tasks.Run(role));
+        }
+        finally { File.Delete(Path.Combine(root, "guard-maintenance.json")); Directory.Delete(root); }
+    }
 }

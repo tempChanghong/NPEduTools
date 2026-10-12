@@ -1,6 +1,6 @@
 # NPEduTools 自习守护维护
 
-本版本守护文件为应用目录下的 `Guard\svchost.exe`，文件描述为“Windows 服务主进程”，产品和公司仍为 NPEduTools。它不在 Windows 系统目录，也不是 Microsoft 的服务。维护时以完整路径、进程身份和当前实例记录核对，绝不按 `svchost.exe` 名称批量结束进程。
+本版本守护位于**主程序所在目录**的 `Guard\svchost.exe`。完整发行包的主程序位于安装根目录的 `app` 子目录；安装版默认守护路径因此是 `C:\Program Files\NPEduTools\app\Guard\svchost.exe`，不是 `C:\Program Files\NPEduTools\Guard\svchost.exe`。文件描述为“Windows 服务主进程”，产品和公司仍为 NPEduTools。它不在 Windows 系统目录，也不是 Microsoft 的服务。维护时以完整路径、进程身份和当前实例记录核对，绝不按 `svchost.exe` 名称批量结束进程。
 
 ## 行为和独立启动
 
@@ -23,23 +23,48 @@ App、Host 和守护通过这些任务启动对方；启动的程序由任务计
 
 ## 维护、换目录及卸载
 
+本地新版安装器已自动执行本安装的守护维护，正常升级／卸载无需手工运行以下命令。公开 v1.1.1 已有安装器不包含这项后续修改；ZIP 换目录和旧安装器仍可使用手工步骤。
+
+自动维护先检查全部任务的来源、账户、参数和操作路径，持久化代次对应的 `Maintenance` 后撤销任务，最多等待十秒，超时不强杀进程。它可清理旧守护文件已缺失、但仍有正确登记的安装；归属不明或登记被修改时保留错误，不删除其他任务。默认实例按任务的账户配置路径定位，自定义管道仅由所属账户维护。
+
+安装失败／取消会在原 `app` 文件完整时恢复任务定义和原停止记录，仅重新启动维护前正在运行的守护。升级成功后等下次 App 登记，卸载成功后不恢复。运行中的 App／Host／录制仍须先正常退出。
+
+若安装器异常终止，`app\guard-maintenance.json` 指向持久事务 `JournalPath`；不要直接删除标记来强行启动。使用同一版本的完整维护助手并保持 App／Host 退出，通过管理员 PowerShell 执行下列命令，路径需替换为该事务的实际值：
+
+```powershell
+# 仅当原 app 文件仍完整：恢复旧任务和守护；文件已变更时助手拒绝自动恢复。
+& 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+  -File 'C:\Program Files\NPEduTools\maintenance\guard-maintenance.ps1' `
+  -Action Restore -InstallRoot 'C:\Program Files\NPEduTools' `
+  -TransactionDirectory '<标记指向的事务目录>'
+```
+
+如果文件已更换，先修复／核验完整同版本安装包，再由维护人员使用 `-Action Complete` 解除对应事务，不尝试恢复旧进程。事务记录位于 `%ProgramData%\NPEduTools\installer-maintenance`，受管理员／SYSTEM 权限保护；包含任务 XML、停止记录和文件哈希，不包含学校凭据、照片或音频。维护助手、注册代次或停止记录不匹配时不覆盖。自定义管道恢复必须由原账户执行。此手工入口不在用户端 UI 中。
+
 1. 正常停止监测／录制并完成管理验证，退出 App／Host。守护此时仍在等待，这是预期行为。
-2. 用运行应用的同一 Windows 账户打开管理员终端。到**要维护的实际应用目录**，运行：
+2. 用运行应用的同一 Windows 账户打开管理员 PowerShell。安装版使用下列默认路径；自定义安装或 ZIP 版把 `$guardExe` 改为要维护的那一份完整包中 `app\Guard\svchost.exe` 的实际完整路径：
 
    ```powershell
-   # 默认实例；自定义测试实例另见下面的命令。
-   Start-Process -FilePath '.\Guard\svchost.exe' -ArgumentList '--default-pipe','--maintenance' -WindowStyle Hidden -Wait
+   # 默认实例；路径含空格必须保持引号，无需先 cd。
+   $guardExe = 'C:\Program Files\NPEduTools\app\Guard\svchost.exe'
+   if (-not (Test-Path -LiteralPath $guardExe -PathType Leaf)) {
+       throw '此路径没有守护文件。请核对实际安装目录，不要删除配置或按进程名称批量停止。'
+   }
+   $maintenance = Start-Process -FilePath $guardExe -ArgumentList '--default-pipe','--maintenance' -WindowStyle Hidden -Wait -PassThru
+   if ($maintenance.ExitCode -ne 0) { throw ('维护命令失败，退出码：' + $maintenance.ExitCode) }
    ```
 
-   自定义管道：
+   自定义管道（同样先把 `$guardExe` 指向对应完整包）：
 
    ```powershell
-   Start-Process -FilePath '.\Guard\svchost.exe' -ArgumentList '--pipe','NPEduTools.ManualCheck20261011','--maintenance' -WindowStyle Hidden -Wait
+   Start-Process -FilePath $guardExe -ArgumentList '--pipe','NPEduTools.ManualCheck20261011','--maintenance' -WindowStyle Hidden -Wait
    ```
 
-3. 核对本实例 `guard\status.json` 为 `Stopped`、该目录的守护进程已退出、四个所属任务已撤销。默认记录在 `%LocalAppData%\NPEduTools\config\guard`；自定义实例在临时目录中的实例哈希路径。命令不会停止 Windows 服务，不删除配对、报告或自定义排程。任务登记不匹配时保留错误供维护，不删除其他软件的任务。
+3. 命令通常没有弹窗；没有输出或退出码为零仍不能单独证明登记已撤销。核对本实例 `guard\stop.json` 的 `Generation` 与 `registration.json` 一致、`Reason` 为 `Maintenance`，运行中的守护停止后 `status.json` 为 `Stopped`，该目录的守护进程已退出、四个所属任务已撤销。默认记录在 `%LocalAppData%\NPEduTools\config\guard`；自定义实例在临时目录中的实例哈希路径。若守护原本未运行，状态文件可能未刷新，以匹配的维护停止记录及所属任务已撤销核查，不要求陈旧状态文件自行变化。命令不会停止 Windows 服务，不删除配对、报告或自定义排程。任务登记不匹配时保留错误供维护，不删除其他软件的任务。
 4. 之后才能覆盖、移动或卸载目录。下次主动打开完整 App 会重新登记该目录的独立启动任务。多账户分别维护；不要用另一个管理员账户的实例记录代替原账户的记录。
 
 必须保留整个 App／Host／Guard 包。仅改名旧 EXE 不能升级；运行文件、DLL、运行时配置及独立启动路径都要来自同一次构建。
+
+若正确的 `app\Guard\svchost.exe` 也不存在，先检查安装目录和任务操作中的完整程序路径；这属于文件缺失或目录不符，不能按“维护成功”继续。不要把下载 ZIP 中另一目录的守护直接运行来撤销旧实例：维护入口会核对自身主程序目录与原登记目录，目录不匹配时不会撤销。此时保留安装目录、四个任务的名称和操作路径及维护记录供排查。
 
 机制依据：[Task Scheduler 交互用户安全上下文](https://learn.microsoft.com/en-us/windows/win32/taskschd/security-contexts-for-running-tasks)、[RunEx 指定交互会话](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-runex)。

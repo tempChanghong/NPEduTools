@@ -11,6 +11,9 @@ public partial class MainWindow
         var files = GuardFiles.ForPipe(_pipe);
         try
         {
+            // Check before writing a new generation: rollback must retain the old identity.
+            if (File.Exists(Path.Combine(AppContext.BaseDirectory, "guard-maintenance.json")))
+                throw new IOException("安装器正在维护此目录，请等待维护完成后再启动应用。");
             bool existing = Mutex.TryOpenExisting($@"Local\{_pipe}.Guard", out var mutex);
             mutex?.Dispose();
             var registration = existing ? files.Read<GuardRegistration>("registration.json") : null;
