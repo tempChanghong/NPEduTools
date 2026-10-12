@@ -44,7 +44,9 @@ public partial class StudyMonitoringWindow : Window
         StudyNext.Text = StudySchedulePresentation.Next(state);
         StudyCapture.Text = state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "学校自习正在采集 · 已收到新鲜采样" :
             state?.Execution is { Owner: "Manual" } ? "当前是手动采样，学校自习没有接管该会话" : state?.Execution is { State: "Starting" } ? "采集启动中，尚未确认有效采样" : "学校自习采集状态待确认";
-        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先；继续后台采集与按策略拍照，自习提示音不补播" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? $"全屏展示临时收起，约 {Math.Ceiling(d.HiddenRemainingSeconds)} 秒后按有效安排返回" :
+        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先；继续后台采集与按策略拍照，自习提示音不补播" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
+            "全屏展示临时收起；输入状态暂不可读取，等待恢复后判断无操作返回，后台采集继续" :
+            $"全屏展示临时收起；连续无操作十分钟后按有效安排返回，目前还需约 {Math.Ceiling(d.HiddenRemainingSeconds)} 秒，操作会重新计时" :
             state?.Display is { Available: true } ? "全屏展示具备执行条件；这不等于已经显示" : "全屏展示等待有效安排、学校时间及运行条件";
     }
     private async void RefreshClicked(object sender, RoutedEventArgs e) => await ReadAsync();

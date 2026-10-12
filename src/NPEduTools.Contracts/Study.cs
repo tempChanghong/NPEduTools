@@ -27,9 +27,11 @@ public sealed record StudyHostState(string? Version, string PolicyState, string 
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? Manual = null, string Mode = "Daily", string ClockSource = "ClassIsland", bool ProjectionPriority = false);
 // Local statistics only. An offer is not a camera action or evidence of audio playback.
 public sealed record StudyThresholdState(Guid SessionId, string Band, Guid? DisciplineId = null, string? ReminderError = null);
-// Local Named Pipe only. Available means eligible to show, never a claim that WPF is visible.
+// Local Named Pipe only. HiddenRemainingSeconds is an idle estimate, reset by desktop input.
+// Available means eligible to show, never a claim that WPF is visible.
 public sealed record StudyDisplayState(Guid InstanceId, bool Selected, bool Available, double HiddenRemainingSeconds,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? StageAudioError = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? StageAudioError = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? IdleReady = null);
 public sealed record StudyHideCommand(Guid InstanceId, string Version, SchoolNoiseWindow Window);
 public sealed record StudyReminderCommand(Guid InstanceId, string Version, SchoolNoiseWindow Window, string Phase,
     Guid? DisciplineId = null, Guid? SessionId = null);

@@ -26,7 +26,7 @@
           <Grid Margin="0,8,0,12"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
             <DatePicker x:Name="ManualEndDate"/><TextBox x:Name="ManualEndTime" Grid.Column="1" Text="21:30" Margin="12,0,0,0" AutomationProperties.Name="手动结束时间 HH:mm"/>
           </Grid>
-          <WrapPanel><TextBlock Text="临时使用电脑后返回（分钟）" VerticalAlignment="Center"/><TextBox x:Name="ManualHideMinutes" Text="10" Width="72" Margin="12,0"/><CheckBox x:Name="NoManualReturn" Content="不自动返回" VerticalAlignment="Center"/></WrapPanel>
+          <WrapPanel><TextBlock Text="临时使用后无操作返回（分钟）" VerticalAlignment="Center"/><TextBox x:Name="ManualHideMinutes" Text="10" Width="72" Margin="12,0"/><CheckBox x:Name="NoManualReturn" Content="不自动返回" VerticalAlignment="Center"/></WrapPanel>
           <TextBlock x:Name="ManualStatus" Text="正在核对手动自习状态…" TextWrapping="Wrap" Margin="0,12,0,0"/>
         </StackPanel>
         <WrapPanel Margin="0,16,0,0">

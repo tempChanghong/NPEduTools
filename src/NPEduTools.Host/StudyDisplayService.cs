@@ -3,10 +3,11 @@ using NPEduTools.Core;
 
 namespace NPEduTools.Host;
 
-/// <summary>Presentation only. A monotonic Host deadline survives App restarts, but never resumes capture.</summary>
+/// <summary>Presentation only. Host-owned desktop inactivity survives App restarts, but never resumes capture.</summary>
 public sealed partial class StudyDisplayService(Func<(string? Scope, bool Selected, StudyHostState State)> sample, TimeProvider? time = null,
     Func<Guid?, StudyNoise?, (string Band, bool Qualified)>? thresholds = null, string? directory = null,
-    Func<string?, string?, StudyNoise, StudyNoise>? calibratedThresholds = null, Action<Guid>? disciplineClaimed = null, Func<bool>? projection = null)
+    Func<string?, string?, StudyNoise, StudyNoise>? calibratedThresholds = null, Action<Guid>? disciplineClaimed = null, Func<bool>? projection = null,
+    Func<TimeSpan?>? inactivity = null)
 {
     private readonly object _sync = new();
     private readonly TimeProvider _time = time ?? TimeProvider.System;
@@ -17,14 +18,13 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
     private string _mode = "Daily";
     private SchoolNoiseWindow? _lastWindow, _hiddenWindow;
     private SchoolNoiseWindow? _presentationWindow;
-    private long? _hiddenUntil;
+    private readonly StudyIdleReturn _hiddenReturn = new(time, inactivity);
     private bool _manualHidden;
     private readonly HashSet<Guid> _requests = [];
     private readonly Queue<Guid> _requestOrder = new();
-    private double Remaining => _hiddenUntil is { } until ? Math.Max(0, (until - _time.GetTimestamp()) / (double)_time.TimestampFrequency) : 0;
     public void ResumeAfterExitWarning(StudyHostState expected)
     {
-        lock(_sync){var current=Snapshot();if(current.PolicyState=="APPLIED" && current.Phase=="Active" && current.ClockReady && current.Version==expected.Version && current.Window==expected.Window){_hiddenUntil=null;_hiddenWindow=null;}}
+        lock(_sync){var current=Snapshot();if(current.PolicyState=="APPLIED" && current.Phase=="Active" && current.ClockReady && current.Version==expected.Version && current.Window==expected.Window){_hiddenReturn.Clear();_hiddenWindow=null;_manualHidden=false;}}
     }
 
     public StudyHostState Snapshot()
@@ -35,12 +35,15 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             if (_scope != current.Scope || !current.Selected)
             {
                 if (_scope != current.Scope) _instance = Guid.NewGuid();
-                _scope = current.Scope; _lastWindow = _hiddenWindow = null; _hiddenUntil = null;_manualHidden=false;
+                _scope = current.Scope; _lastWindow = _hiddenWindow = null; _hiddenReturn.Clear();_manualHidden=false;
                 _requests.Clear(); _requestOrder.Clear();
                 _presentations.Clear();
                 _presentationWindow = null;
             }
-            if (_version != state.Version || _mode != state.Mode) { _mode = state.Mode; _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); _presentations.Clear(); }
+            if (_version != state.Version || _mode != state.Mode) {
+                if (_mode != state.Mode || state.Manual is not null) { _hiddenWindow = null; _hiddenReturn.Clear(); _manualHidden = false; }
+                _mode = state.Mode; _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); _presentations.Clear();
+            }
             // The end overlay is displayed only after observing this exact active window.
             // Reconnection, disabled policy, exam or invalid time cannot manufacture an end event.
             if (state.PolicyState != "APPLIED" || !state.ClockReady) _lastWindow = null;
@@ -53,7 +56,9 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             {
                 _presentationWindow = presentationWindow; _instance = Guid.NewGuid(); _presentations.Clear();
             }
-            double hidden = state.Window == _hiddenWindow ? _manualHidden?10801:Remaining : 0;
+            double hidden = _hiddenWindow is not null && state.Window == _hiddenWindow ? _manualHidden ? 10801 : _hiddenReturn.Remaining : 0;
+            if (_hiddenWindow is not null && state.Window is not null && (state.Window != _hiddenWindow || hidden <= 0))
+            { _hiddenWindow = null; _hiddenReturn.Clear(); _manualHidden = false; }
             bool projectionPriority = projection?.Invoke() == true;
             if (projectionPriority && current.Selected && _scope is not null && state.Window is { } mutedWindow && state.SchoolNow is { } mutedNow &&
                 (state.Phase is "Preparing" or "Active" or "Ended" && StudyPresentationTiming.NoticeRemaining(state) > 0))
@@ -61,7 +66,8 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             state = state with { ProjectionPriority = projectionPriority };
             bool available = !projectionPriority && current.Selected && state.PolicyState == "APPLIED" && state.ClockReady &&
                 state.Window is not null && state.Phase is "Preparing" or "Active" or "Ended" && hidden <= 0;
-            state = state with { Display = new(_instance, current.Selected, available, hidden, _stageReminders.Error) };
+            state = state with { Display = new(_instance, current.Selected, available, hidden, _stageReminders.Error,
+                hidden > 0 && !_manualHidden ? _hiddenReturn.Ready : null) };
             return state with { Threshold = ObserveThreshold(state) };
         }
     }
@@ -93,15 +99,17 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             if (command is null || command.InstanceId != _instance || command.Version != state.Version ||
                 command.Window != state.Window || state.PolicyState != "APPLIED" || !state.ClockReady || state.Phase != "Active")
                 return new(1, request.RequestId, "Rejected", "STUDY_STATE_CHANGED", "自习状态已变化，请重新查看。", Study: state);
-            if (_requests.Contains(request.RequestId)) return new(1, request.RequestId, "Succeeded", null, "沿用原返回期限。", Study: state);
+            if (_requests.Contains(request.RequestId)) return new(1, request.RequestId, "Succeeded", null, "沿用原无操作返回设置。", Study: state);
             _requests.Add(request.RequestId); _requestOrder.Enqueue(request.RequestId);
             if (_requestOrder.Count > 128) _requests.Remove(_requestOrder.Dequeue());
             if (state.Display!.HiddenRemainingSeconds <= 0)
             {
-                int seconds = Math.Clamp(state.Manual?.HideSeconds??state.Settings!.Presentation.TemporaryHideSeconds, 1, state.Manual is null?180:10800);
+                // Legacy school TemporaryHideSeconds is retained on the wire, but no longer limits
+                // computer use to 1–3 elapsed minutes. Scheduled sessions use ten idle minutes.
+                int seconds = state.Manual?.HideSeconds ?? StudyIdleReturn.DefaultSeconds;
                 _manualHidden=state.Manual is {HideSeconds:null};
                 _hiddenWindow = state.Window;
-                _hiddenUntil = _time.GetTimestamp() + (long)(seconds * (double)_time.TimestampFrequency);
+                if (!_manualHidden) _hiddenReturn.Start(seconds);
             }
             return new(1, request.RequestId, "Succeeded", null, "临时收起展示，监测按原规则运行。", Study: Snapshot());
         }

@@ -57,24 +57,26 @@ public sealed class StudyDisplayTests
     }
 
     [Fact]
-    public void Repeated_hide_and_new_App_client_cannot_extend_the_Host_deadline()
+    public void Repeated_hide_and_new_App_client_cannot_restart_the_Host_idle_interval()
     {
-        var clock = new Clock(); var state = State(); var service = new StudyDisplayService(() => ("scope", true, state), clock);
+        var clock = new Clock(); var state = State(); var service = new StudyDisplayService(() => ("scope", true, state), clock,
+            inactivity: () => TimeSpan.FromMilliseconds(clock.Ms));
         var first = Hide(service.Snapshot()); Assert.Null(Protocol.Validate(first));
-        Assert.Equal(180, service.Handle(first).Study!.Display!.HiddenRemainingSeconds);
+        Assert.Equal(600, service.Handle(first).Study!.Display!.HiddenRemainingSeconds);
         clock.Ms = 100000;
-        Assert.Equal(80, service.Handle(Hide(service.Snapshot())).Study!.Display!.HiddenRemainingSeconds);
-        clock.Ms = 180000;
+        Assert.Equal(500, service.Handle(Hide(service.Snapshot())).Study!.Display!.HiddenRemainingSeconds);
+        clock.Ms = 600000;
         Assert.True(service.Snapshot().Display!.Available);
         Assert.Equal(0, service.Handle(first).Study!.Display!.HiddenRemainingSeconds);
     }
     [Fact]
     public void Config_change_inside_same_window_cannot_extend_hide_and_old_commands_are_rejected()
     {
-        var clock = new Clock(); var state = State(); var service = new StudyDisplayService(() => ("scope", true, state), clock);
+        var clock = new Clock(); var state = State(); var service = new StudyDisplayService(() => ("scope", true, state), clock,
+            inactivity: () => TimeSpan.FromMilliseconds(clock.Ms));
         var old = Hide(service.Snapshot()); service.Handle(old); clock.Ms = 60000;
         state = state with { Version = new string('b', 64) };
-        Assert.Equal(120, service.Snapshot().Display!.HiddenRemainingSeconds);
+        Assert.Equal(540, service.Snapshot().Display!.HiddenRemainingSeconds);
         Assert.Equal("STUDY_STATE_CHANGED", service.Handle(old).ErrorCode);
     }
     [Theory]
@@ -129,11 +131,45 @@ public sealed class StudyDisplayTests
     }
     [Theory]
     [InlineData(60)] [InlineData(180)] [InlineData(999)]
-    public void Configured_hide_is_bounded(int seconds)
+    public void Legacy_elapsed_hide_policy_does_not_override_ten_idle_minutes(int seconds)
     {
+        var clock = new Clock();
         var state = State() with { Settings = Settings with { Presentation = new("StatusTrend", seconds) } };
-        var service = new StudyDisplayService(() => ("scope", true, state));
-        Assert.InRange(service.Handle(Hide(service.Snapshot())).Study!.Display!.HiddenRemainingSeconds, 1, 180);
+        var service = new StudyDisplayService(() => ("scope", true, state), clock, inactivity:()=>TimeSpan.Zero);
+        Assert.Equal(600, service.Handle(Hide(service.Snapshot())).Study!.Display!.HiddenRemainingSeconds);
+    }
+    [Fact]
+    public void Desktop_activity_delays_return_and_does_not_rehide_after_return()
+    {
+        var clock = new Clock(); long lastInput = 0; var state = State();
+        var service = new StudyDisplayService(() => ("scope", true, state), clock,
+            inactivity: () => TimeSpan.FromMilliseconds(clock.Ms - lastInput));
+        service.Handle(Hide(service.Snapshot()));
+        clock.Ms = 599000; lastInput = clock.Ms;
+        clock.Ms = 600000; Assert.False(service.Snapshot().Display!.Available);
+        Assert.Equal(599, service.Snapshot().Display!.HiddenRemainingSeconds);
+        clock.Ms = 1199000; Assert.True(service.Snapshot().Display!.Available);
+        lastInput = clock.Ms; Assert.True(service.Snapshot().Display!.Available);
+    }
+    [Fact]
+    public void Unknown_input_state_is_explicit_and_clock_or_exam_priority_still_fences_display()
+    {
+        var clock = new Clock(); var state = State(); bool projecting = false; TimeSpan? idle = null;
+        var service = new StudyDisplayService(() => ("scope", true, state), clock, projection: () => projecting, inactivity: () => idle);
+        service.Handle(Hide(service.Snapshot())); clock.Ms = 600000;
+        Assert.False(service.Snapshot().Display!.IdleReady); Assert.False(service.Snapshot().Display!.Available);
+        idle = TimeSpan.FromMinutes(10); projecting = true; Assert.False(service.Snapshot().Display!.Available);
+        projecting = false; state = state with { ClockReady = false }; Assert.False(service.Snapshot().Display!.Available);
+        state = state with { ClockReady = true }; Assert.True(service.Snapshot().Display!.Available);
+    }
+    [Fact]
+    public void Switching_modes_with_identical_window_does_not_transfer_hidden_state()
+    {
+        var state = State(); var service = new StudyDisplayService(() => ("scope", true, state));
+        var old = Hide(service.Snapshot()); service.Handle(old);
+        state = state with { Mode = "Exam" };
+        Assert.True(service.Snapshot().Display!.Available);
+        Assert.Equal("STUDY_STATE_CHANGED", service.Handle(old).ErrorCode);
     }
     [Fact]
     public void Preparation_is_ten_seconds_then_start_and_end_have_five_second_windows()

@@ -90,7 +90,9 @@ public partial class StudySurface : UserControl
         ClassTitle.Text=manual?"手动自习":"学校自习";
         EndButton.Visibility=manual?Visibility.Visible:Visibility.Collapsed;EndButton.IsEnabled=fresh && state.Phase=="Active" && !_busy;
         if(manual){SeatingButton.Visibility=SeatingStatus.Visibility=Visibility.Collapsed;Canvas.SetLeft(HoldButton,266);Canvas.SetLeft(ManageButton,492);}
-        HoldHint.Text=manual?state.Manual!.HideSeconds is {} seconds?$"长按 2 秒 · {seconds/60.0:g} 分钟后返回":"长按 2 秒 · 不自动返回":"长按 2 秒 · 最多 3 分钟";
+        HoldHint.Text=manual?state.Manual!.HideSeconds is {} seconds?$"长按 2 秒 · 闲置 {seconds/60.0:g} 分钟":"长按 2 秒 · 不自动返回":$"长按 2 秒 · 闲置 {StudyIdleReturn.DefaultSeconds/60} 分钟";
+        HoldButton.ToolTip=manual && state.Manual!.HideSeconds is null ? "临时收起后不自动返回；后台监测与照片策略继续。" :
+            "临时收起后，当前 Windows 会话连续无操作达到设定时长才返回；操作其他软件也会重新计时。后台监测与照片策略继续。";
         Clock.Text = state.SchoolNow?.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "--:--:--";
         Clock.Foreground = fresh ? Brushes.White : Muted;
         string clockSource = manual || state.ClockSource == "Windows" ? "Windows 本机时间" : "ClassIsland 学校时间";

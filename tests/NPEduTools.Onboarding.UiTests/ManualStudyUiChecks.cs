@@ -23,6 +23,8 @@ internal static partial class Program
                 Assert(Element<TextBlock>("HoldHint").Text.Contains("不自动返回"),"no-auto-return setting ignored");Snapshot(w,"manual-no-end.png");
                 state=state with{Manual=state.Manual! with{HasPlannedEnd=true,HideSeconds=600}};surface.Apply(state,noise);
                 Assert(Element<TextBlock>("ProgressPercent").Text.EndsWith("%") && Element<TextBlock>("HoldHint").Text.Contains("10 分钟"),"planned end/default hide ignored");Snapshot(w,"manual-planned-end.png");
+                Assert(Element<TextBlock>("HoldHint").Text.Contains("闲置") && !Element<TextBlock>("HoldHint").Text.Contains("后返回"),"manual return hint still describes elapsed-time return");
+                Assert(Element<TextBlock>("HoldHint").DesiredSize.Width <= Element<Button>("HoldButton").ActualWidth - 12,"idle return hint overflows the existing study button");
                 state=state with{Threshold=new(noise.SessionId!.Value,"High")};surface.Apply(state,noise);
                 Assert(((FrameworkElement)surface.FindName("NoiseEdge")).Visibility==Visibility.Visible,"real manual study lost double-threshold visualization");
                 var begin=typeof(StudySurface).GetMethod("BeginEndHold",BindingFlags.Instance|BindingFlags.NonPublic)!;

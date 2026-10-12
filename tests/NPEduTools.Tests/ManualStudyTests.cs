@@ -24,11 +24,12 @@ public sealed class ManualStudyTests
     {
         public readonly Clock Time=new();public readonly List<Capture> Captures=[];
         public readonly string Folder=Path.Combine(Path.GetTempPath(),"manual-study-test-"+Guid.NewGuid());
-        public bool Blocked=false;public int Lead=120;public Func<int>? ReadLead;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
+        public bool Blocked=false;public int Lead=120;public long LastInput;public Func<int>? ReadLead;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
         public Fixture()
         {
             Noise=new(_=>{var c=new Capture();Captures.Add(c);return c;},()=>[new("mic","Synthetic")],Time);
-            Manual=new(Noise,()=> (null,false,new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null)),()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>ReadLead?.Invoke()??Lead);
+            Manual=new(Noise,()=> (null,false,new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null)),()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>ReadLead?.Invoke()??Lead,
+                inactivity:()=>TimeSpan.FromMilliseconds(Time.Ms-LastInput));
         }
         public HostResponse Start(DateTimeOffset? start=null,DateTimeOffset? end=null,int? hide=600)
         {var s=Manual.Status();return Manual.Handle(new(1,Guid.NewGuid(),"manual.study.command",ManualStudy:new("start",s.InstanceId,s.Revision,DeviceId:"mic",StartUtc:start,EndUtc:end,HideSeconds:hide)));}
@@ -112,6 +113,18 @@ public sealed class ManualStudyTests
         for(int i=0;i<100 && f.Noise.Snapshot().State!="Active";i++)await Task.Delay(10);
         Assert.Equal("MANUAL_STATE_CHANGED",f.Manual.Handle(old).ErrorCode);Assert.Equal(scheduled,f.Noise.Snapshot().SessionId);Assert.Equal("Active",f.Noise.Snapshot().State);
         Assert.Equal(2,f.Captures.Count);Assert.True(f.Captures[0].Disposed);Assert.False(f.Captures[1].Disposed);
+    }
+    [Theory]
+    [InlineData(120)] [InlineData(600)] [InlineData(null)]
+    public async Task Manual_desktop_activity_keeps_synthetic_capture_alive_and_delays_only_presentation(int? seconds)
+    {
+        await using var f=new Fixture();f.Start(hide:seconds);await f.Active();var state=f.Manual.Display.Snapshot();
+        f.Manual.Display.Handle(new(1,Guid.NewGuid(),"study.hide",StudyHide:new(state.Display!.InstanceId,state.Version!,state.Window!)));
+        f.Time.Ms=700000;f.LastInput=f.Time.Ms;f.Captures.Last().Sample();
+        Assert.False(f.Manual.Display.Snapshot().Display!.Available);Assert.Equal("Active",f.Noise.Snapshot().State);
+        f.Time.Ms+=(seconds??600)*1000L;f.Captures.Last().Sample();
+        Assert.Equal(seconds is not null,f.Manual.Display.Snapshot().Display!.Available);
+        Assert.Equal("Active",f.Noise.Snapshot().State);
     }
     [Fact]
     public async Task Command_retry_returns_fresh_noise_and_reusing_id_with_changed_body_is_rejected()

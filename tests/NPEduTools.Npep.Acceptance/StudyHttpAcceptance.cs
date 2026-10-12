@@ -172,7 +172,7 @@ internal static class StudyHttpAcceptance
             Check(display.Handle(discipline).Outcome=="Rejected","reconstructed Host rejects old discipline candidate even with matching school policy");
             Level(-60);shown=display.Snapshot();
             var hide = display.Handle(new(1,Guid.NewGuid(),"study.hide",StudyHide:new(shown.Display!.InstanceId,shown.Version!,shown.Window!)));
-            Check(hide.Outcome=="Succeeded" && hide.Study!.Display!.HiddenRemainingSeconds==180 && noise.Snapshot().State=="Active" && noise.Snapshot().SessionId==sessionBeforeHide,
+            Check(hide.Outcome=="Succeeded" && hide.Study!.Display!.HiddenRemainingSeconds==600 && noise.Snapshot().State=="Active" && noise.Snapshot().SessionId==sessionBeforeHide,
                 "Host presentation hide leaves the same actual synthetic scheduled capture running");
             await Present("Hidden");presentationView=await Management();
             Check(!presentationView["presentationVerified"]!.GetValue<bool>() && presentationView["captureVerified"]!.GetValue<bool>() &&

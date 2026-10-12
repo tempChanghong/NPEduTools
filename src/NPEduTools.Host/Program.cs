@@ -177,12 +177,14 @@ var noiseDisplay = new NoiseDisplayService(() => {
 }, () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
     Path.Combine(dataDirectory, "npep"));
 noiseTransport.Display = noiseDisplay;
+var desktopInactivity = new DesktopInactivity();
 await using var manualStudy=new ManualStudyService(noise,studySettings.DisplaySnapshot,
     ()=>noiseSchedules.ScheduledDue() || studyPaused(),
     Path.Combine(dataDirectory,"manual-study"), projection: projecting,
-    displayLeadSeconds: () => new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(pipeName)).Read().DisplayLeadSeconds);
+    displayLeadSeconds: () => new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(pipeName)).Read().DisplayLeadSeconds,
+    inactivity: desktopInactivity.Read);
 var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
-    calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder, projection: projecting);
+    calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder, projection: projecting, inactivity: desktopInactivity.Read);
 await using var studyReport = new StudyReportService(studySettings.DisplaySnapshot, noise.StudyReportSnapshot,
     observePolicy: (scope, version, session, policy) => noise.StudyThresholds(session, noise.ResolveCalibration(scope, version, policy)), projection: projecting);
 studySettings.PresentationObservation = studyDisplay.ObservePresentation;

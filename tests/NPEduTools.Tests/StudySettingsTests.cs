@@ -123,7 +123,7 @@ public sealed class StudySettingsTests
     public async Task New_display_pipe_reads_and_hides_without_accessing_microphone_or_lesson_bridge()
     {
         await using var f = new Fixture(); f.Tick(120000); f.Tick(); f.Tick();
-        var display = new StudyDisplayService(f.Service.DisplaySnapshot, f.Time);
+        var display = new StudyDisplayService(f.Service.DisplaySnapshot, f.Time, inactivity:()=>TimeSpan.FromMilliseconds(f.Time.Ms));
         string pipe = "NPEduTools.Test.Study.Display." + Guid.NewGuid().ToString("N");
         using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         var running = new PipeServer(pipe, new ForbiddenReader(), _ => { }, study: f.Service, studyDisplay: display).RunAsync(lifetime.Token);
@@ -137,10 +137,10 @@ public sealed class StudySettingsTests
             var request = new HostRequest(1, Guid.NewGuid(), "study.hide", StudyHide: new(status.Study.Display.InstanceId, status.Study.Version!, status.Study.Window!));
             Assert.False(Protocol.NoiseInterruption(request));
             var hidden = await HostClient.RequestAsync(pipe, request, lifetime.Token);
-            Assert.Equal("Succeeded", hidden.Outcome); Assert.Equal(180, hidden.Study!.Display!.HiddenRemainingSeconds);
+            Assert.Equal("Succeeded", hidden.Outcome); Assert.Equal(600, hidden.Study!.Display!.HiddenRemainingSeconds);
             f.Tick(60000); f.Tick(); f.Tick();
             var sameDeadline = await HostClient.RequestAsync(pipe, "study.status", lifetime.Token);
-            Assert.Equal(119, sameDeadline.Study!.Display!.HiddenRemainingSeconds);
+            Assert.Equal(539, sameDeadline.Study!.Display!.HiddenRemainingSeconds);
             f.Service.StudyFailed("STUDY_OFFLINE");
             var offline = await HostClient.RequestAsync(pipe, "study.status", lifetime.Token);
             Assert.True(offline.Study!.Display!.Selected); Assert.False(offline.Study.Display.Available);

@@ -31,11 +31,12 @@ public sealed class ManualStudyService : IAsyncDisposable
     private readonly Dictionary<Guid,(ManualStudyCommand? Command,HostResponse Response)> _requests=[];
     public StudyDisplayService Display {get;}
     public ManualStudyService(NoiseService noise,Func<(string? Scope,bool Selected,StudyHostState State)> school,
-        Func<bool> blocked,string directory,TimeProvider? time=null,bool background=true,Func<bool>? projection=null, Func<int>? displayLeadSeconds=null)
+        Func<bool> blocked,string directory,TimeProvider? time=null,bool background=true,Func<bool>? projection=null, Func<int>? displayLeadSeconds=null,
+        Func<TimeSpan?>? inactivity=null)
     {
         _lead = displayLeadSeconds ?? (() => 120);
         _noise=noise;_school=school;_blocked=blocked;_directory=directory;_time=time??TimeProvider.System;
-        Display=new(Source,_time,noise.StudyThresholds,Path.Combine(directory,"reminders"),(scope,v,p)=>noise.ResolveCalibration(_school().Scope,_school().State.Version,p),noise.RecordStudyReminder,projection);
+        Display=new(Source,_time,noise.StudyThresholds,Path.Combine(directory,"reminders"),(scope,v,p)=>noise.ResolveCalibration(_school().Scope,_school().State.Version,p),noise.RecordStudyReminder,projection,inactivity);
         noise.Completed+=Completed;
         _loop=background?Task.Run(async()=>{try{while(!_stop.IsCancellationRequested){Tick();await Task.Delay(TimeSpan.FromMilliseconds(200),_time,_stop.Token);}}catch(OperationCanceledException)when(_stop.IsCancellationRequested){} }):Task.CompletedTask;
     }
