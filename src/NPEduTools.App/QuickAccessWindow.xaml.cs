@@ -9,6 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using NPEduTools.Contracts;
 using Forms = System.Windows.Forms;
 
@@ -55,6 +56,8 @@ public partial class QuickAccessWindow : Window
     private bool _autoHidden;
     private bool _expanded, _dragging, _closing, _positioning, _shortcutsSelected;
     private Point? _dragStart;
+    private TouchDevice? _handleTouch;
+    private int _handleInputRevision;
     private double _dragOffsetY;
     private Action? _openRecording, _pauseRecording, _stopRecording, _openRecordingPlan, _skipAutomaticToday;
 
@@ -84,24 +87,42 @@ public partial class QuickAccessWindow : Window
             HwndSource.FromHwnd(_handle)?.AddHook(WindowHook);
             Position();
         };
-        Deactivated += (_, _) => { if (_expanded) Collapse(false); };
+        Deactivated += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            // Activation can briefly change while touch capture is being released. Check the
+            // current foreground after that input transaction, not the earlier notification.
+            if (_expanded && !IsActive && GetForegroundWindow() != _handle) Collapse(false);
+        });
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Collapse(); } };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(Position);
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplayChanged;
         Closed += (_, _) => { _closing = true; Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplayChanged; };
         EdgeHandle.PreviewMouseLeftButtonDown += (_, e) =>
-        { BeginDrag(PointToScreen(e.GetPosition(this))); EdgeHandle.CaptureMouse(); e.Handled = true; };
-        EdgeHandle.PreviewMouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && _dragStart is not null) MoveHandle(PointToScreen(e.GetPosition(this))); };
+        {
+            if (!IsPromotedTouch(e) && _handleTouch is null) { BeginDrag(PointToScreen(e.GetPosition(this))); EdgeHandle.CaptureMouse(); }
+            e.Handled = true;
+        };
+        EdgeHandle.PreviewMouseMove += (_, e) =>
+        { if (!IsPromotedTouch(e) && _handleTouch is null && e.LeftButton == MouseButtonState.Pressed && _dragStart is not null) MoveHandle(PointToScreen(e.GetPosition(this))); };
         EdgeHandle.PreviewMouseLeftButtonUp += (_, e) =>
-        { if (_dragStart is null) return; FinishDrag(); EdgeHandle.ReleaseMouseCapture(); e.Handled = true; };
+        { if (!IsPromotedTouch(e) && _handleTouch is null) FinishDrag(); e.Handled = true; };
         EdgeHandle.PreviewTouchDown += (_, e) =>
-        { BeginDrag(PointToScreen(e.GetTouchPoint(this).Position)); EdgeHandle.CaptureTouch(e.TouchDevice); e.Handled = true; };
-        EdgeHandle.PreviewTouchMove += (_, e) => { if (_dragStart is not null) MoveHandle(PointToScreen(e.GetTouchPoint(this).Position)); e.Handled = true; };
-        EdgeHandle.PreviewTouchUp += (_, e) => { FinishDrag(); EdgeHandle.ReleaseTouchCapture(e.TouchDevice); e.Handled = true; };
-        EdgeHandle.LostMouseCapture += (_, _) => CancelDrag();
-        EdgeHandle.LostTouchCapture += (_, _) => CancelDrag();
+        {
+            if (_handleTouch is null && _dragStart is null)
+            { _handleTouch = e.TouchDevice; BeginDrag(PointToScreen(e.GetTouchPoint(this).Position)); EdgeHandle.CaptureTouch(e.TouchDevice); }
+            e.Handled = true;
+        };
+        EdgeHandle.PreviewTouchMove += (_, e) =>
+        { if (_handleTouch == e.TouchDevice && _dragStart is not null) MoveHandle(PointToScreen(e.GetTouchPoint(this).Position)); e.Handled = true; };
+        EdgeHandle.PreviewTouchUp += (_, e) => { if (_handleTouch == e.TouchDevice) FinishDrag(); e.Handled = true; };
+        EdgeHandle.LostMouseCapture += (_, _) => { if (_handleTouch is null) CancelDrag(); };
+        EdgeHandle.LostTouchCapture += (_, e) => { if (_handleTouch == e.TouchDevice) { _handleTouch = null; CancelDrag(); } };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { Collapse(); e.Handled = true; } };
     }
+
+    // A real pen uses mouse promotion too, but has no TouchDown/TouchUp counterpart.
+    // Ignore only touch promotion so pen users can still operate/drag the handle.
+    private static bool IsPromotedTouch(MouseEventArgs e) => e.StylusDevice?.TabletDevice.Type == TabletDeviceType.Touch;
 
     private nint WindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
@@ -132,7 +153,9 @@ public partial class QuickAccessWindow : Window
             // WPF handles WM_DPICHANGED; its DpiChanged event reapplies bounds on the new monitor.
             var screen = Screen; var area = screen.WorkingArea; double dpi = Scale();
             double density = DesktopDensity.Resolve(_densityPreference, area.Width / dpi, area.Height / dpi);
-            ((FrameworkElement)Content).LayoutTransform = new ScaleTransform(density, density);
+            var content = (FrameworkElement)Content;
+            if (content.LayoutTransform is not ScaleTransform transform || transform.ScaleX != density || transform.ScaleY != density)
+                content.LayoutTransform = new ScaleTransform(density, density);
             double scale = dpi * density;
             int width = Math.Min((int)Math.Round((_expanded ? PanelWidth : RailWidth) * scale), area.Width);
             int height = Math.Min((int)Math.Round((_expanded ? PanelHeight : AnchorHeight) * scale), area.Height);
@@ -168,6 +191,7 @@ public partial class QuickAccessWindow : Window
     public void Collapse(bool restoreFocus = true)
     {
         if (_closing) return;
+        _handleInputRevision++; // A pending release must not reopen a deliberately closed/hidden panel.
         bool wasExpanded = _expanded;
         _expanded = false; RefreshCompact();
         PanelSurface.BeginAnimation(OpacityProperty, null);
@@ -205,6 +229,7 @@ public partial class QuickAccessWindow : Window
         if (_dragStart is null) return;
         if (_dragging) Save();
         _dragStart = null; _dragging = false;
+        _handleInputRevision++;
     }
 
     private void MoveHandle(Point point)
@@ -212,7 +237,9 @@ public partial class QuickAccessWindow : Window
         if (_expanded || _dragStart is not { } start || (!_dragging && (point - start).Length < 8)) return;
         _dragging = true;
         var screen = Forms.Screen.FromPoint(new System.Drawing.Point((int)point.X, (int)point.Y));
-        double available = screen.WorkingArea.Height - AnchorHeight * Scale();
+        double dpi = Scale();
+        double density = DesktopDensity.Resolve(_densityPreference, screen.WorkingArea.Width / dpi, screen.WorkingArea.Height / dpi);
+        double available = screen.WorkingArea.Height - AnchorHeight * dpi * density;
         double ratio = available <= 0 ? 0 : (point.Y - screen.WorkingArea.Top - _dragOffsetY) / available;
         _placement = _placement with { RelativeY = Math.Clamp(ratio, 0, 1), Display = screen.DeviceName };
         Position();
@@ -221,9 +248,22 @@ public partial class QuickAccessWindow : Window
     private void FinishDrag()
     {
         if (_dragStart is null) return;
+        bool dragged = _dragging;
+        var touch = _handleTouch;
         _dragStart = null;
-        if (_dragging) Save(); else ToggleHandle();
         _dragging = false;
+        _handleTouch = null;
+        // Release capture BEFORE resizing/activating the window. Otherwise WPF/Windows can
+        // cancel the same touch during expansion and immediately deactivate/collapse it.
+        if (touch is not null) EdgeHandle.ReleaseTouchCapture(touch);
+        else EdgeHandle.ReleaseMouseCapture();
+        if (dragged) Save();
+        else
+        {
+            int revision = ++_handleInputRevision;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            { if (revision == _handleInputRevision && !_closing && !_autoHidden) ToggleHandle(); });
+        }
     }
 
     private void Save()

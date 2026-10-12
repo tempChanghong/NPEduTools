@@ -23,7 +23,7 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunTouchOrderingCheck(false); RunTouchOrderingCheck(true); RunTouchOrderingCheck(false, lostCommand: true); }
+        try { RunTouchOrderingCheck(false); RunTouchOrderingCheck(true); RunTouchOrderingCheck(false, lostCommand: true); RunQuickPointerChecks(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static void RunTouchOrderingCheck(bool oldFailure, bool lostCommand = false)

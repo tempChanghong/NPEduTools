@@ -13,10 +13,10 @@ internal static partial class Program
         const BindingFlags flags=BindingFlags.NonPublic|BindingFlags.Instance;
         var screen=typeof(QuickAccessWindow).GetProperty("Screen",flags)!.GetValue(quick)!;
         var area=(System.Drawing.Rectangle)screen.GetType().GetProperty("WorkingArea")!.GetValue(screen)!;
-        double scale=(double)typeof(QuickAccessWindow).GetMethod("Scale",flags)!.Invoke(quick,null)!;
         void Invoke(string name,params object[] args)=>typeof(QuickAccessWindow).GetMethod(name,flags)!.Invoke(quick,args);
-        var start=quick.PointToScreen(new Point(40,20));Invoke("BeginDrag",start);
-        Invoke("MoveHandle",new Point(start.X,area.Bottom-Math.Round(94*scale)+20*scale));quick.UpdateLayout();
+        var start=quick.PointToScreen(new Point(40,20));var top=quick.PointToScreen(new Point(0,0));
+        double height=quick.PointToScreen(new Point(0,quick.ActualHeight)).Y-top.Y;Invoke("BeginDrag",start);
+        Invoke("MoveHandle",new Point(start.X,area.Bottom-height+start.Y-top.Y));quick.UpdateLayout();
         double bottom=quick.PointToScreen(new Point(0,quick.ActualHeight)).Y;
         Assert(Math.Abs(bottom-area.Bottom)<=2,$"compact handle could not reach lower work area: bottom={bottom}, expected={area.Bottom}");
         Invoke("CancelDrag");
