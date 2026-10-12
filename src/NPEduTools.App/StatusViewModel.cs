@@ -28,7 +28,7 @@ public sealed class StatusViewModel : INotifyPropertyChanged
         };
         Subject = !healthy ? "—" : s is { IsClassPlanLoaded: false } ? "暂无科目" : s?.Subject ?? "暂无科目";
         Detail = healthy ? (s!.IsTimerRunning ? "课程状态自动同步中。" : "ClassIsland 计时已暂停。") : snapshot.Message;
-        Updated = s is null ? "当前状态不可用" : "最近同步  " + s.SampleCompletedAt.ToLocalTime().ToString("HH:mm:ss");
+        Updated = s is null ? "当前状态不可用" : "课程状态最近采样（Windows 时间） " + s.SampleCompletedAt.ToLocalTime().ToString("HH:mm:ss");
         LessonPlan = s is null ? "—" : !s.IsClassPlanLoaded ? "未加载课表" : s.IsClassPlanEnabled ? "课表已启用" : "课表已停用";
         Events = s is null ? "连接恢复后重新同步" :
             $"本次连接  ·  上课 {Count(s, "onClass")}  /  课间 {Count(s, "onBreakingTime")}";

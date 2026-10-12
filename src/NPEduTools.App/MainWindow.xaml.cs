@@ -40,6 +40,7 @@ public partial class MainWindow : Window
         _upstream = upstream;
         InitializeComponent();
         InitializeDensity(initializeServices);
+        InitializeBridgeClock();
         Closed += (_, _) => ShutdownExitWarning();
         DataContext = _model;
         if (initializeServices)
@@ -362,7 +363,7 @@ public partial class MainWindow : Window
         {
             LaunchResultText.Text = operation?.Message ?? "暂无启动记录";
             LaunchTimeText.Text = operation is null ? "" :
-                $"{operation.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}  ·  {OutcomeName(operation.Outcome)}";
+                $"启动记录（Windows 时间）{operation.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}  ·  {OutcomeName(operation.Outcome)}";
             if (operation?.Outcome != "Running") _pendingStartId = null;
         }
         StartButton.IsEnabled = !_actionInProgress && _pendingStartId is null && operation?.Outcome != "Running" && data.StorageWarning is null && response.Outcome != "Failed";

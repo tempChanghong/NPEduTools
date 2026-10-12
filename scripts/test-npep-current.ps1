@@ -115,11 +115,13 @@ try {
         '--verbosity', 'quiet', '--logger', 'trx;LogFileName=transport.trx', '--results-directory', $runRoot)
     Suite 'Desktop exam adapters and onboarding' $DesktopRoot 'dotnet' @('test',
         'tests/NPEduTools.Tests/NPEduTools.Tests.csproj', '--artifacts-path', $runRoot, '-m:1',
-        '--filter', 'FullyQualifiedName~RemoteExam|FullyQualifiedName~RuntimeAdapter|FullyQualifiedName~RuntimeReservation|FullyQualifiedName~ClassroomMode|FullyQualifiedName~AdminStartupTests|FullyQualifiedName~OnboardingTests|FullyQualifiedName~NpepConnectionSessionTests',
+        '--filter', 'FullyQualifiedName~RemoteExam|FullyQualifiedName~RuntimeAdapter|FullyQualifiedName~RuntimeReservation|FullyQualifiedName~ClassroomMode|FullyQualifiedName~AdminStartupTests|FullyQualifiedName~OnboardingTests|FullyQualifiedName~NpepConnectionSessionTests|FullyQualifiedName~FieldCalibrationLayoutTests',
         '--verbosity', 'quiet', '--logger', 'trx;LogFileName=exam-onboarding.trx', '--results-directory', $runRoot)
     # Reuse the existing schedule suite: it exports fresh C# fixtures for web/KV,
     # verifies shared rules, and uses test peers rather than the installed Host.
     $shell = (Get-Process -Id $PID).Path
+    Suite 'Desktop adjusted clock, density and school calibration' $DesktopRoot $shell @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+        (Join-Path $DesktopRoot 'scripts/test-desktop-field-fixes.ps1'))
     $scheduleArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
         (Join-Path $DesktopRoot 'scripts/test-npep-noise-schedules.ps1'), '-WebRoot', $WebRoot, '-BackendRoot', $BackendRoot,
         '-Display', '-Protection', '-Presence', '-Guard')

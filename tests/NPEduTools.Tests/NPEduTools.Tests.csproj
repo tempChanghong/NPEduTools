@@ -59,5 +59,6 @@
     <Compile Include="../../src/NPEduTools.App/CalibrationAccess.cs" Link="App/CalibrationAccess.cs" />
     <Compile Include="../../src/NPEduTools.App/DesktopDensity.cs" Link="App/DesktopDensity.cs" />
     <Compile Include="../../src/NPEduTools.App/ClassIslandBridgeInspection.cs" Link="App/ClassIslandBridgeInspection.cs" />
+    <Compile Include="../../src/NPEduTools.App/ClassIslandClockPresentation.cs" Link="App/ClassIslandClockPresentation.cs" />
   </ItemGroup>
 </Project>

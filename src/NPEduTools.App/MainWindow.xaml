@@ -466,6 +466,9 @@
                   <Button Content="重新读取" Style="{StaticResource Quiet}" Click="ReloadClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ReloadConfiguration" />
                 </WrapPanel>
                 <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,12,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
+                <TextBlock Text="ClassIsland 学校时间" FontSize="13" Margin="0,4,0,6" />
+                <TextBlock x:Name="ClassIslandClockText" Text="--:--:--" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassIslandClock" />
+                <TextBlock x:Name="ClassIslandClockDetail" Text="尚未读取桥接时间；不使用 Windows 时间代替。" FontSize="12" TextWrapping="Wrap" Foreground="#526A60" Margin="0,6,0,12" />
                 <Button Content="检查时间桥接插件" Click="RefreshClassIslandBridgeClicked" HorizontalAlignment="Left" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="RefreshClassIslandBridge" />
                 <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#718089" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
                 <Expander Header="启动记录与连接详情" FontSize="13" Margin="0,20,0,0" AutomationProperties.AutomationId="ClassIslandDetails">

@@ -8,6 +8,17 @@ namespace NPEduTools.Tests;
 public sealed class FieldCalibrationLayoutTests
 {
     [Fact]
+    public void ConnectionSettingsUseAdjustedSchoolClockAndExpireItWithoutWindowsFallback()
+    {
+        var tracker = new NPEduTools.Core.SchoolClockTracker();
+        var adjusted = new DateTimeOffset(2026, 10, 12, 19, 0, 10, TimeSpan.Zero);
+        tracker.Accept(new(Guid.NewGuid(), Guid.NewGuid(), 1, 1, adjusted, 0, "Advancing", "fixture adjusted time"), TimeSpan.Zero, 0);
+        Assert.Equal("2026-10-12 19:00:10", ClassIslandClockPresentation.From(tracker.Read(TimeSpan.Zero)).Clock);
+        Assert.Equal("--:--:--", ClassIslandClockPresentation.From(tracker.Read(TimeSpan.FromSeconds(4))).Clock);
+        tracker.Unavailable("disconnected", TimeSpan.FromSeconds(4));
+        Assert.Contains("不会用 Windows", ClassIslandClockPresentation.From(tracker.Read(TimeSpan.FromSeconds(4))).Detail);
+    }
+    [Fact]
     public async Task NodeSchoolCredentialVerifiesWithoutSensorsOrAnExitGrant()
     {
         // Produced with the KV's node:crypto pbkdf2Sync, UTF-8, SHA-256, 210000 iterations.
