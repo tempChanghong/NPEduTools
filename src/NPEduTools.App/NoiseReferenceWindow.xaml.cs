@@ -38,6 +38,8 @@ public partial class NoiseReferenceWindow : Window
     private Guid? _autoFieldDraft;
     private long? _autoPrimaryRevision;
     private bool _autoCheckQueued, _autoCheckStarted, _renderingPreferences;
+    private int _step = 1;
+    private int _displayedStep;
     private string SelectedWorkflow => _meterPath is not null && WorkflowChoice.SelectedValue as string == "Field" ? "Field" : "Stable";
     public NoiseReferenceWindow(string pipe, string? meterPath = null)
     {
@@ -45,8 +47,12 @@ public partial class NoiseReferenceWindow : Window
         if (meterPath is not null)
         {
             Title = "USB 同期校准 (Beta) · NPEduTools"; Heading.Text = "USB 同期校准 (Beta)";
+            StepNavigation.Visibility = ReviewSamples.Visibility = Visibility.Visible;
+            BeginDraft.Content = "下一步：准备采样";
+            SampleDetails.IsExpanded = false;
             WorkflowNote.Text = "连续读取所选仪表，与麦克风在同一 Host 时钟下同期统计。现场模式自动采两段各 30 秒，计算偏移并复核，无需刻意制造安静或第二音量。仪表内部采样时间没有确认的时间戳；保留 Beta，不宣称精确硬件同步或 LAeq。设备、输入设置变化后参考失效。";
         }
+        else AdvancedSettings.IsExpanded = true;
         WorkflowChoice.ItemsSource = new[] {new Choice("Field","现场校准 · 两段自动（Beta）"),new Choice("Stable","严格校准 · 稳定声场")};
         WorkflowOptions.Visibility = meterPath is not null ? Visibility.Visible : Visibility.Collapsed;
         WorkflowChoice.SelectedValue = meterPath is not null ? "Field" : "Stable";
@@ -72,7 +78,7 @@ public partial class NoiseReferenceWindow : Window
                 using var deadline = new CancellationTokenSource(3500);
                 await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.reference.command", NoiseReference: command), deadline.Token);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException) { }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException) { }
             finally { _allowClose = true; Close(); } // Host's per-segment 20/40 s limit is independent of this window.
         };
         UpdateButtons();
@@ -92,7 +98,7 @@ public partial class NoiseReferenceWindow : Window
             _connected = reply.Outcome == "Succeeded" && reply.NoiseReference is not null;
             if (_connected) Render(reply.NoiseReference!); else OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "后台连接不可用；已停止自动续采，请刷新，旧状态不能用于保存。"; } }
         finally { if (_activeRead == stamp) _reading = false; UpdateButtons(); }
     }
@@ -103,8 +109,10 @@ public partial class NoiseReferenceWindow : Window
     { "Good" => "采样有效", "Interrupted" => "已中断，须重采", "Clipping" => "削波，须重采", "Incomplete" => "采样不足，须重采", _ => "信号异常，须重采" };
     internal void Render(NoiseReferenceState state)
     {
+        bool finishedSample = _state?.State == "Sampling" && state.State != "Sampling";
         bool changed = _state?.Revision != state.Revision || _state.InstanceId != state.InstanceId;
         bool newDraft = _state?.Draft?.Id != state.Draft?.Id;
+        if (changed && !_busy && !_verifying) OperationMessage.Text = "";
         var previousSelected = (SampleList.SelectedItem as SampleRow)?.Id;
         _state = state;
         bool usb = state.Draft?.MeterDevicePath is not null || _meterPath is not null;
@@ -116,6 +124,9 @@ public partial class NoiseReferenceWindow : Window
         ReferenceInstructions.Text = usb ? "同期读数由 USB 自动取得，不能手动覆盖；预热、跨窗口、迟到和不完整数据不用于参考。模式、MAX、低电量、量程变化或断线会使本段作废。" :
             ManualReferenceInstructions;
         DeviceStatus.Text = state.DeviceId is null ? "请先保存监测麦克风" : state.DeviceName is { } name ? "监测麦克风：" + name : "监测麦克风已选择";
+        ReferenceHealth.Text = state.Error is not null || state.InvalidationReason is not null ? "参考不可用 · 请重新校准；原配置保留" :
+            state.Profile is null ? "尚未保存估算参考" : state.FreshSignatureMatched ? "已保存估算参考 · 本次输入已核对" : "已保存估算参考 · 正式采样时核对输入设置";
+        ReferenceHealth.ToolTip = state.Error ?? state.InvalidationReason;
         ProfileStatus.Text = state.Profile is not { } p ? "尚无已确认的外部参考配置" :
             $"已保存估算参考 · {(p.Method == "UsbReferenceBeta" ? "USB (Beta) · " : "")}{p.Instrument} · A/{p.TimeWeighting} · 偏移 {p.OffsetDb:+0.00;-0.00;0.00} dB\n" +
             (NoiseReferenceCalibration.Describe(p) is {} note?note+"\n":"") +
@@ -137,7 +148,7 @@ public partial class NoiseReferenceWindow : Window
         MeterStatus.Text = state.Meter?.Reading is { } reading ?
             $"USB {reading.Decibels:F1} dB(A) · {reading.TimeWeighting} · 往返 {reading.RoundTripMilliseconds:F0} ms · 读数年龄 {state.Meter.AgeSeconds:F2} 秒\n{state.Meter.Message}" : state.Meter?.Message ??
             (usb ? "USB 仅在明确开始本段采样时连接，到时／取消后释放；不会自动重连。" : "");
-        SamplingStatus.Text = state.State == "Sampling" ? $"预热／采样中 · 已采有效统计 {state.MeasuredSeconds:F1} / {Progress.Maximum:g} 秒 · 总过程 {state.ProgressSeconds:F1} / 最多 {NoiseReferenceCalibration.CaptureLimit(state.Draft?.Workflow??"Stable"):g} 秒。关闭此窗口不会无限占用设备，到时自动释放。" :
+        SamplingStatus.Text = state.State == "Sampling" ? (field ? state.Draft!.Samples.Any(s => s.Role == "Primary") ? "第二段复核 · " : "第一段参考 · " : "") + $"预热／采样中 · 已采有效统计 {state.MeasuredSeconds:F1} / {Progress.Maximum:g} 秒 · 总过程 {state.ProgressSeconds:F1} / 最多 {NoiseReferenceCalibration.CaptureLimit(state.Draft?.Workflow??"Stable"):g} 秒。关闭此窗口不会无限占用设备，到时自动释放。" :
             state.State == "Busy" ? "当前采集占用或运行保护生效（准备／自习／考试、暂停或状态未确认），暂不可操作参考校准。" :
             state.State == "Unsupported" ? "当前后台尚不支持 A 加权参考采样，请更新后台。" : state.CaptureMessage ?? "请选择电平开始采样；重采同一电平会替换其旧统计和参考读数。";
         if (changed)
@@ -155,6 +166,12 @@ public partial class NoiseReferenceWindow : Window
         EvaluationStatus.Text = evaluation.Message + (evaluation.OffsetDb is { } offset ?
             $"\n候选偏移 {offset:+0.00;-0.00;0.00} dB · {(field?"第二段偏移复核差值":"第二电平复核差值")} {Number(evaluation.CheckErrorDb)} dB" : "");
         if (state.Error is not null) OperationMessage.Text = "外部参考文件不可用，原文件已保留；未应用任何新值。";
+        if (_meterPath is not null && state.Draft?.MeterDevicePath == _meterPath)
+        {
+            if (state.State == "Sampling") _step = 2;
+            else if (newDraft) _step = state.Evaluation.Ready ? 3 : 2;
+            else if (finishedSample && (state.Evaluation.Ready || state.Draft.Samples.Any(s => s.Role == "Check" || s.Quality != "Good"))) _step = 3;
+        }
         UpdateButtons();
         ContinueFieldSequence(state);
     }
@@ -175,6 +192,7 @@ public partial class NoiseReferenceWindow : Window
         _autoFieldDraft=null;
         Stability.Text=SelectedWorkflow=="Field"?"20":"";
         CheckTolerance.Text=SelectedWorkflow=="Field"?"3":"";
+        if (SelectedWorkflow == "Stable") AdvancedSettings.IsExpanded = true;
         UpdateWorkflowInstructions(SelectedWorkflow);UpdateButtons();
     }
     private void WarningSelected(object sender,RoutedEventArgs e)=>UpdateButtons();
@@ -218,7 +236,34 @@ public partial class NoiseReferenceWindow : Window
         AttachReference.IsEnabled = RemoveSample.IsEnabled && _state!.Draft!.MeterDevicePath is null;
         ConfirmProfile.IsEnabled = matchingDraft && _state!.Evaluation.Ready && (_state.Evaluation.Assessment?.WarningRequired!=true || AcceptReferenceWarning.IsChecked==true);
         ClearProfile.IsEnabled = idle && _state!.Profile is not null;
+        if (!_connected) ReferenceHealth.Text = "后台连接待确认 · 旧状态不能用于保存";
+        UpdateSteps();
     }
+    private void UpdateSteps()
+    {
+        if (_meterPath is null) return; // Keep manual reference entry and all its controls available.
+        PreparePanel.Visibility = _step == 1 ? Visibility.Visible : Visibility.Collapsed;
+        SamplePanel.Visibility = _step == 2 ? Visibility.Visible : Visibility.Collapsed;
+        ResultPanel.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
+        if (_displayedStep != _step) { _displayedStep = _step; ((ScrollViewer)Content).ScrollToTop(); }
+        bool navigating = !_busy && !_verifying && _state?.State != "Sampling" && _autoFieldDraft is null;
+        SetupStep.IsEnabled = !_busy && !_verifying && (!_connected || navigating);
+        SamplingStep.IsEnabled = ReviewSamples.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath;
+        ResultStep.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath && _state?.Draft?.Samples.Count is > 0;
+        SetupStep.Style = TryFindResource(_step == 1 ? (object)"Primary" : typeof(Button)) as Style;
+        SamplingStep.Style = TryFindResource(_step == 2 ? (object)"Primary" : typeof(Button)) as Style;
+        ResultStep.Style = TryFindResource(_step == 3 ? (object)"Primary" : typeof(Button)) as Style;
+    }
+    private void Navigate(int step)
+    {
+        if (_busy || _verifying || _connected && (_state?.State == "Sampling" || _autoFieldDraft is not null)) return;
+        if (!_connected && step != 1) return;
+        if (step != 1 && _state?.Draft?.MeterDevicePath != _meterPath) return;
+        _step = step; UpdateSteps(); ((ScrollViewer)Content).ScrollToTop();
+    }
+    private void SetupClicked(object sender, RoutedEventArgs e) => Navigate(1);
+    private void SamplingClicked(object sender, RoutedEventArgs e) => Navigate(2);
+    private void ResultClicked(object sender, RoutedEventArgs e) => Navigate(3);
     private async Task SendAsync(string action, string? role = null, Guid? sample = null,
         double? reference = null, double? minimum = null, double? maximum = null)
     {
@@ -258,7 +303,7 @@ public partial class NoiseReferenceWindow : Window
             if (reply.NoiseReference is { } state) Render(state);
             OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "操作结果未确认，已停止自动续采；请刷新核对，不会自动重复采样或保存。"; } }
         finally { _busy = false; UpdateButtons(); }
     }
@@ -282,10 +327,10 @@ public partial class NoiseReferenceWindow : Window
             var reply = await CalibrationAccess.VerifyAsync(_pipe, ManagementSecret.Password, deadline.Token);
             if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
             ShowAccess(reply.NoiseProtection ?? _access);
-            OperationMessage.Text = reply.Outcome == "Succeeded" ? "管理口令验证通过；刷新仅读取状态，尚未连接声级计或开始采样。" :
+            OperationMessage.Text = reply.Outcome == "Succeeded" ? _connected ? "管理口令验证通过；校准状态已刷新。" : "管理口令验证通过；采样状态仍待确认，请重试刷新。" :
                 CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "管理验证响应未确认，请检查后台连接后重试。"; }
         finally { _busy = _verifying = false; UpdateButtons(); }
     }

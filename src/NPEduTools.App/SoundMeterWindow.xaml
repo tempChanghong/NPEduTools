@@ -1,19 +1,32 @@
 <Window x:Class="NPEduTools.App.SoundMeterWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="联机校准 (Beta) · NPEduTools" Width="780" Height="560" MinWidth="640" MinHeight="480"
- WindowStartupLocation="CenterOwner" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI">
- <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
-  <TextBlock Text="联机校准 (Beta)" FontSize="28" FontWeight="SemiBold"/>
-  <TextBlock Text="先关闭 SoundLab2、核对单次读数，再进入 USB 同期参考：连续读取所选 2202，与监测麦克风采集两段稳定电平，自动计算偏移并复核。实物协议、内部读数时延及精度仍待验证。" TextWrapping="Wrap" Margin="0,12,0,20"/>
-  <TextBlock x:Name="ManagementLabel" Text="管理口令"/>
-  <TextBlock x:Name="ManagementHint" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" Foreground="#61786B"/><PasswordBox x:Name="ManagementSecret" MaxLength="128" Margin="0,8,0,12" AutomationProperties.AutomationId="MeterSecret"/>
-  <WrapPanel><Button x:Name="ListDevices" Content="刷新声级计" Click="ListClicked" Padding="14,7" AutomationProperties.AutomationId="MeterList"/>
-   <Button x:Name="ConfigureManagement" Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="14,7"/></WrapPanel>
-  <ComboBox x:Name="Devices" DisplayMemberPath="Name" Margin="0,14,0,12" SelectionChanged="DeviceSelected" AutomationProperties.AutomationId="MeterDevices"/>
-  <Button x:Name="ReadMeter" Content="连接并读取一次" Click="ReadClicked" IsEnabled="False" HorizontalAlignment="Left" Padding="14,7" AutomationProperties.AutomationId="MeterRead"/>
-  <Button x:Name="OpenReference" Content="USB 同期校准 (Beta)…" Click="ReferenceClicked" IsEnabled="False" HorizontalAlignment="Left" Padding="14,7" Margin="0,12,0,0" AutomationProperties.AutomationId="MeterReference"/>
-  <TextBlock x:Name="Reading" Text="尚未读取" FontSize="30" FontWeight="SemiBold" Margin="0,22,0,6" AutomationProperties.AutomationId="MeterReading"/>
-  <TextBlock x:Name="Mode" TextWrapping="Wrap" Margin="0,0,0,12"/>
-  <TextBlock x:Name="Message" Text="请先关闭 SoundLab2。只有点击读取才连接所选设备；每次读取后关闭连接，不自动轮询，不保存或上传读数。" TextWrapping="Wrap" Foreground="#61786B" AutomationProperties.AutomationId="MeterMessage"/>
+ Title="联机校准 (Beta) · NPEduTools" Width="820" Height="620" MinWidth="620" MinHeight="440"
+ WindowStartupLocation="CenterOwner" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI" UseLayoutRounding="True">
+ <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel Margin="24,20">
+  <TextBlock Text="联机校准 (Beta)" FontSize="26" FontWeight="SemiBold"/>
+  <TextBlock Text="连接与验证　→　同期采样　→　复核并保存" Foreground="#61786B" Margin="0,6,0,16"/>
+  <Border Background="White" CornerRadius="12" BorderBrush="#E5EBE7" BorderThickness="1" Padding="18"><StackPanel>
+   <TextBlock Text="连接 DLY-2202" FontSize="18" FontWeight="SemiBold"/>
+   <TextBlock Text="插入 USB 数据线，关闭 SoundLab2；仪表使用 A 加权、关闭 MAX。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,6,0,14"/>
+   <TextBlock x:Name="ManagementLabel" Text="管理口令"/>
+   <WrapPanel Margin="0,6,0,0">
+    <PasswordBox x:Name="ManagementSecret" Width="240" MaxLength="128" Margin="0,0,10,6" AutomationProperties.AutomationId="MeterSecret"/>
+    <Button x:Name="ListDevices" Content="验证口令并查找仪表" Click="ListClicked" Padding="12,7" Margin="0,0,10,6" AutomationProperties.AutomationId="MeterList"/>
+    <Button x:Name="ConfigureManagement" Content="设置管理口令" Click="ManagementClicked" Padding="12,7" Margin="0,0,0,6"/>
+   </WrapPanel>
+   <TextBlock x:Name="ManagementHint" TextWrapping="Wrap" FontSize="12" Margin="0,2,0,12" Foreground="#61786B"/>
+   <TextBlock Text="声级计"/>
+   <ComboBox x:Name="Devices" DisplayMemberPath="Name" Margin="0,6,0,12" SelectionChanged="DeviceSelected" AutomationProperties.AutomationId="MeterDevices"/>
+   <Button x:Name="OpenReference" Content="下一步：同期采样 (Beta)" Style="{StaticResource Primary}" Click="ReferenceClicked" IsEnabled="False" HorizontalAlignment="Left" Padding="14,8" AutomationProperties.AutomationId="MeterReference"/>
+  </StackPanel></Border>
+  <TextBlock x:Name="Message" Text="输入管理口令后查找仪表，再选择设备进入同期采样。此页不会自动采样。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,12,0,14" AutomationProperties.AutomationId="MeterMessage"/>
+  <Expander x:Name="DiagnosticDetails" Header="连接诊断：读取一次" HorizontalContentAlignment="Stretch">
+   <StackPanel Margin="0,10,0,0">
+    <Button x:Name="ReadMeter" Content="连接并读取一次" Click="ReadClicked" IsEnabled="False" HorizontalAlignment="Left" Padding="12,7" AutomationProperties.AutomationId="MeterRead"/>
+    <TextBlock x:Name="Reading" Text="尚未读取" FontSize="24" FontWeight="SemiBold" Margin="0,12,0,6" AutomationProperties.AutomationId="MeterReading"/>
+    <TextBlock x:Name="Mode" TextWrapping="Wrap" Foreground="#61786B"/>
+    <TextBlock Text="诊断读数不用于校准。每次读取后释放连接，三秒后撤下读数；正式校准需同期采样。" TextWrapping="Wrap" Foreground="#61786B" FontSize="12" Margin="0,8,0,0"/>
+   </StackPanel>
+  </Expander>
  </StackPanel></ScrollViewer>
 </Window>

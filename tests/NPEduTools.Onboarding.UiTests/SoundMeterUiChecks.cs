@@ -68,7 +68,10 @@ internal static partial class Program
                 secret.Password = "fixture-admin"; Click(owner, "ListDevices");
                 var list = (ComboBox)owner.FindName("Devices"); PumpUntil(() => list.Items.Count == 1, "fake device list missing");
                 Assert(((TextBlock)owner.FindName("Message")).Text.Contains("学校管理口令验证通过"), "successful school verification had no explicit feedback");
-                Assert(backend.Opens == 0, "enumeration opened a device"); list.SelectedIndex = 0; Click(owner, "ReadMeter");
+                Assert(backend.Opens == 0, "enumeration opened a device"); list.SelectedIndex = 0;
+                Assert(!((Expander)owner.FindName("DiagnosticDetails")).IsExpanded && Button(owner, "OpenReference").IsVisible, "diagnostics crowd the default connection workflow");
+                ((Expander)owner.FindName("DiagnosticDetails")).IsExpanded = true;
+                Click(owner, "ReadMeter");
                 PumpUntil(() => ((TextBlock)owner.FindName("Reading")).Text.Contains("60.5"), "fake reading missing");
                 Assert(backend.Opens == 1 && backend.Disposals == 1, "one-shot handle was not released");
                 Assert(((TextBlock)owner.FindName("Mode")).Text.Contains("9/9"), "HID capabilities missing from diagnostic UI");

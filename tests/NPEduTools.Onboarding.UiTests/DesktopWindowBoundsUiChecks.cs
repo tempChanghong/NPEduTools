@@ -55,6 +55,7 @@ internal static partial class Program
             ("quick-calibration",()=>new NoiseCalibrationWindow(pipe)),
             ("reference-calibration",()=>new NoiseReferenceWindow(pipe)),
             ("usb-meter",()=>new SoundMeterWindow(pipe)),
+            ("usb-reference",()=>new NoiseReferenceWindow(pipe,"isolated-meter")),
             ("shortcut",()=>new ShortcutEditorWindow())
         };
         using var ownerScope=new BoundsOwnerScope();
@@ -80,7 +81,21 @@ internal static partial class Program
                 window.MinWidth=Math.Min(window.MinWidth*scale,1264);window.MinHeight=Math.Min(window.MinHeight*scale,664);
                 window.Width=Math.Min(designW*scale,1264);window.Height=Math.Min(designH*scale,664);window.UpdateLayout();
                 Assert(window.ActualHeight<=664 && window.ActualWidth<=1264,item.Name+" cannot shrink within simulated 200% work area");
-                if(item.Name is "study" or "reference-calibration" or "automatic-recording" or "shortcut") Snapshot(window,item.Name+"-simulated-200.png");
+                if(item.Name is "study" or "reference-calibration" or "usb-meter" or "usb-reference" or "automatic-recording" or "shortcut") Snapshot(window,item.Name+"-simulated-200.png");
+                if(item.Name=="usb-reference")
+                {
+                    ((ComboBox)window.FindName("WorkflowChoice")).SelectedValue="Stable";
+                    Assert(((Expander)window.FindName("AdvancedSettings")).IsExpanded,"strict calibration hides required engineering inputs");
+                    var render=typeof(NoiseReferenceWindow).GetMethod("Render",BindingFlags.NonPublic|BindingFlags.Instance|BindingFlags.DeclaredOnly)!;
+                    var state=new NoiseReferenceState(Guid.NewGuid(),1,"Ready","fixture","隔离麦克风",0,0,null,new(false,null,null,"等待采样"),null,false,null);
+                    render.Invoke(window,[state]);
+                    ((TextBlock)window.FindName("OperationMessage")).Text="上一段采样已受理";
+                    render.Invoke(window,[state with {Revision=2}]);
+                    Assert(((TextBlock)window.FindName("OperationMessage")).Text.Length==0,"advanced state retains an obsolete accepted receipt");
+                    Checks.Add("USB workflow: strict inputs expand; newer state withdraws obsolete operation receipt; no sensor commands");
+                    ((ScrollViewer)window.Content).ScrollToBottom();window.UpdateLayout();
+                    Snapshot(window,"usb-reference-strict-settings.png");
+                }
                 // Exercise native recovery of a title bar deliberately moved off screen.
                 SetWindowPos(handle,0,area.Left-200,area.Top-600,(int)window.ActualWidth,(int)window.ActualHeight,0x0214);
                 placement.GetMethod("KeepVisible",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,[window]);

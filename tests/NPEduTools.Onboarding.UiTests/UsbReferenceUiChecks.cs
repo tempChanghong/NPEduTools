@@ -51,6 +51,8 @@ internal static partial class Program
             Exercise(window, owner =>
             {
                 PumpUntil(() => Button(owner, "BeginDraft").IsEnabled, "USB reference Host not connected");
+                Assert(((FrameworkElement)owner.FindName("PreparePanel")).IsVisible && !((FrameworkElement)owner.FindName("SamplePanel")).IsVisible,
+                    "USB wizard did not begin at setup");
                 Assert(owner.Title.Contains("(Beta)"), "USB reference lost Beta title");
                 Assert(backend.Opens == 0 && backend.Enumerations == 0 && capture is null, "load touched devices");
                 Assert(((WrapPanel)owner.FindName("ManualReferenceInputs")).Visibility == Visibility.Collapsed, "USB page allows manual override");
@@ -65,9 +67,20 @@ internal static partial class Program
                 ((ComboBox)owner.FindName("WorkflowChoice")).SelectedValue="Stable";
                 ((TextBox)owner.FindName("Stability")).Text = "1"; ((TextBox)owner.FindName("CheckTolerance")).Text = "1";
                 Click(owner, "BeginDraft"); PumpUntil(() => Button(owner, "StartSample").IsEnabled, "USB draft missing");
+                Assert(((FrameworkElement)owner.FindName("SamplePanel")).IsVisible && !((FrameworkElement)owner.FindName("PreparePanel")).IsVisible, "draft preparation did not advance to sampling");
                 Click(owner, "StartSample");
                 PumpUntil(() => ((TextBlock)owner.FindName("MeterStatus")).Text.Contains("50.0 dB(A)"), "continuous USB reading missing");
                 Assert(!Button(owner, "ConfirmProfile").IsEnabled, "accepted request claimed calibration ready");
+                var uiType = typeof(NoiseReferenceWindow);
+                uiType.GetField("_connected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(owner, false);
+                uiType.GetMethod("UpdateButtons", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(owner, null);
+                Assert(Button(owner,"RefreshStatus").IsVisible && Button(owner,"SetupStep").IsEnabled && !Button(owner,"ConfirmProfile").IsEnabled,
+                    "lost connection traps sampling view or permits stale save");
+                Click(owner,"SetupStep");
+                Assert(((PasswordBox)owner.FindName("ManagementSecret")).IsVisible,"lost connection cannot reach credentials");
+                Click(owner,"RefreshStatus");
+                PumpUntil(()=>((FrameworkElement)owner.FindName("SamplePanel")).IsVisible && Button(owner,"CancelSample").IsEnabled,"refresh could not return to the active sampling step");
+                Assert(backend.Opens==1,"workflow recovery started an extra USB capture");
                 var observer = new NoiseReferenceWindow(pipe, "synthetic-meter") { Owner = owner };
                 observer.Show(); PumpUntil(() => Button(observer, "CancelSample").IsEnabled, "observer did not see current capture");
                 ((PasswordBox)observer.FindName("ManagementSecret")).Password = secret; observer.Close();
@@ -87,6 +100,7 @@ internal static partial class Program
                 Checks.Add("Real WPF/private Host pipe + synthetic HID/microphone: explicit two-level USB capture, automatic offset/check, Beta profile; no physical devices");
                 // A backend handle can open before the Accepted reply reaches this window.
                 // Test owner cancellation only after the UI has confirmed its sampling ownership.
+                Click(owner, "ReviewSamples");
                 Click(owner, "StartSample"); PumpUntil(() => backend.Opens == 3 && Button(owner, "CancelSample").IsEnabled, "third capture not confirmed");
                 owner.Close(); PumpUntil(() => !owner.IsVisible && backend.Disposals == 3 && capture!.Disposed, "close did not cancel/release both devices");
                 Assert(((PasswordBox)owner.FindName("ManagementSecret")).Password.Length == 0, "password retained after close");
@@ -122,12 +136,14 @@ internal static partial class Program
                 PumpUntil(()=>Button(owner,"BeginDraft").IsEnabled,"field Host not connected");
                 Assert(((ComboBox)owner.FindName("WorkflowChoice")).SelectedValue as string=="Field","USB did not default to field mode");
                 Assert(((TextBox)owner.FindName("Stability")).Text=="20" && ((TextBox)owner.FindName("CheckTolerance")).Text=="3","field engineering defaults missing");
+                Assert(!((Expander)owner.FindName("AdvancedSettings")).IsExpanded,"field wizard exposed engineering parameters by default");
                 Assert(backend.Opens==0 && capture is null,"field page opened sensors on load");
                 ((PasswordBox)owner.FindName("ManagementSecret")).Password=secret;Click(owner,"BeginDraft");
                 PumpUntil(()=>Button(owner,"StartSample").IsEnabled,"field draft unavailable");Click(owner,"StartSample");
                 PumpUntil(()=>creates==2,"field first stage did not automatically start its owned check",48);
                 PumpUntil(()=>noise.ReferenceHandle(new(1,Guid.NewGuid(),"noise.reference.status")).NoiseReference?.Evaluation.Assessment?.WarningRequired==true,"field check warning missing",48);
                 PumpUntil(()=>((CheckBox)owner.FindName("AcceptReferenceWarning")).Visibility==Visibility.Visible,"warning confirmation checkbox missing");
+                Assert(((FrameworkElement)owner.FindName("ResultPanel")).IsVisible && Button(owner,"ConfirmProfile").IsVisible,"field completion did not advance to visible results");
                 Assert(!Button(owner,"ConfirmProfile").IsEnabled,"warning bypassed without deliberate acknowledgement");
                 Assert(backend.Opens==2 && backend.Disposals==2 && capture!.Disposed,"automatic pair retained sensor handles");
                 Assert(((TextBlock)owner.FindName("EvaluationStatus")).Text.Contains("未验证全量程"),"same-level field result claimed a broad validation range");
@@ -145,6 +161,8 @@ internal static partial class Program
                 Click(owner,"ConfirmProfile");PumpUntil(()=>noise.ReferenceHandle(new(1,Guid.NewGuid(),"noise.reference.status")).NoiseReference?.Profile is {Workflow:"Field",WarningAcknowledged:true},"field acknowledgement/profile not saved");
                 PumpUntil(()=>Button(owner,"StartSample").IsEnabled && ((TextBlock)owner.FindName("ProfileStatus")).Text.Contains("已明确接受"),"field save response did not settle in WPF");
                 Snapshot(owner,"field-reference-confirmed.png");
+                Click(owner,"ReviewSamples");
+                Assert(Button(owner,"StartSample").IsVisible,"return-to-sampling did not expose retry action");
                 Click(owner,"StartSample");PumpUntil(()=>creates==3 && Button(owner,"CancelSample").IsEnabled,"field retry did not start");
                 owner.Close();PumpUntil(()=>!owner.IsVisible && backend.Disposals==3 && capture!.Disposed,"field owner close failed to cancel/release");
                 Assert(creates==3,"closed field owner resumed a fourth capture");
