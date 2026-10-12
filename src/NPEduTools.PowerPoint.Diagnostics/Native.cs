@@ -33,9 +33,12 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern bool UnhookWindowsHookEx(nint hook);
     [DllImport("user32.dll")] internal static extern nint CallNextHookEx(nint hook, int code, nuint message, nint data);
     [DllImport("user32.dll")] internal static extern bool PeekMessageW(out Message message, nint hwnd, uint min, uint max, uint remove);
+    [DllImport("user32.dll")] internal static extern int GetMessageW(out Message message, nint hwnd, uint min, uint max);
+    [DllImport("user32.dll")] internal static extern bool PostThreadMessageW(uint threadId, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll")] internal static extern bool TranslateMessage(ref Message message);
     [DllImport("user32.dll")] internal static extern nint DispatchMessageW(ref Message message);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern nint GetModuleHandleW(string? module);
+    [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
     [DllImport("oleaut32.dll", PreserveSig = false)] internal static extern void GetActiveObject(ref Guid clsid, nint reserved, [MarshalAs(UnmanagedType.IUnknown)] out object value);
 
     internal static void Pump()

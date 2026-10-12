@@ -1,8 +1,6 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using System.Threading.Channels;
 
 namespace NPEduTools.PowerPoint.Diagnostics;
 
@@ -13,13 +11,24 @@ internal sealed class InputObserver : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly ManualResetEventSlim _ready = new();
     private readonly Thread _thread;
-    private readonly Channel<InputSample> _events = Channel.CreateBounded<InputSample>(2048);
+    private readonly TouchInputBuffer _events = new();
     private Exception? _error;
-    private long _dropped, _callbackErrors;
-    private bool _tracking;
-    public long Dropped => Interlocked.Read(ref _dropped);
+    private long _callbackErrors;
+    private uint _threadId;
+    public long Dropped => _events.Dropped;
     public long CallbackErrors => Interlocked.Read(ref _callbackErrors);
-    public bool TryRead(out InputSample? input) => _events.Reader.TryRead(out input);
+    public bool TryRead(out InputSample? input) => _events.TryRead(Environment.TickCount64, HitTest, out input);
+    public void Discard() => _events.Discard();
+
+    private static bool HitTest(ShowTarget target, int x, int y)
+    {
+        // WindowFromPoint can send WM_NCHITTEST to another UI thread. Keep it out of OnInput:
+        // global mouse/touch delivery must never wait for a PowerPoint/WPF window to respond.
+        nint hit = Native.GetAncestor(Native.WindowFromPoint(new() { X = x, Y = y }), 2);
+        if (hit.ToInt64() != target.Hwnd) return false;
+        Native.GetWindowThreadProcessId(hit, out uint pid);
+        return pid == target.ProcessId;
+    }
 
     public InputObserver(ProbeSession session)
     {
@@ -36,10 +45,14 @@ internal sealed class InputObserver : IDisposable
         nint hook = 0;
         try
         {
+            // Create the queue before publishing the thread ID so Dispose can wake GetMessage.
+            Native.PeekMessageW(out _, 0, 0, 0, 0);
+            Volatile.Write(ref _threadId, Native.GetCurrentThreadId());
             hook = Native.SetWindowsHookExW(14, callback, Native.GetModuleHandleW(null), 0);
             if (hook == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
             _ready.Set();
-            while (!_stop.IsCancellationRequested) { Native.Pump(); Thread.Sleep(5); }
+            while (!_stop.IsCancellationRequested && Native.GetMessageW(out var message, 0, 0, 0) > 0)
+            { Native.TranslateMessage(ref message); Native.DispatchMessageW(ref message); }
         }
         catch (Exception error) { _error = error; _ready.Set(); }
         finally
@@ -55,36 +68,12 @@ internal sealed class InputObserver : IDisposable
         {
             if (code >= 0)
             {
-                string? kind = message switch { 0x201 => "Down", 0x202 => "Up", 0x200 when _tracking => "Move", 0x204 => "RightDown", _ => null };
-                if (kind is not null)
+                if (message is 0x201 or 0x202 or 0x200 or 0x204)
                 {
                     var mouse = Marshal.PtrToStructure<Native.MouseData>(data);
-                    var frame = _session.Latest;
-                    ShowTarget? target = null;
-                    if (Stopwatch.GetElapsedTime(frame.ReceivedAt).TotalMilliseconds <= 750 && frame.Snapshot.Status == "Showing")
-                    {
-                        nint foreground = Native.GetAncestor(Native.GetForegroundWindow(), 2);
-                        nint hit = Native.GetAncestor(Native.WindowFromPoint(mouse.Point), 2);
-                        if (foreground == hit)
-                            target = frame.Snapshot.Windows.FirstOrDefault(x => x.Hwnd == hit.ToInt64() &&
-                                mouse.Point.X >= x.Left && mouse.Point.X < x.Right && mouse.Point.Y >= x.Top && mouse.Point.Y < x.Bottom);
-                        if (target is not null)
-                        {
-                            Native.GetWindowThreadProcessId(hit, out uint pid);
-                            if (pid != target.ProcessId) target = null;
-                        }
-                    }
-                    bool wasTracking = _tracking;
-                    if (kind == "Down" && target is not null) _tracking = true;
-                    if (kind is "Up" or "RightDown" || target is null) _tracking = false;
-                    if (target is not null || wasTracking)
-                    {
-                        // Events outside the show are represented only as cancellation, with no coordinates.
-                        var sample = new InputSample(Environment.TickCount64, target is null ? "Cancel" : kind,
-                            target is null ? 0 : mouse.Point.X, target is null ? 0 : mouse.Point.Y,
-                            target is null ? 0 : (ulong)mouse.ExtraInfo, target is null ? 0 : mouse.Flags, target);
-                        if (!_events.Writer.TryWrite(sample)) Interlocked.Increment(ref _dropped);
-                    }
+                    long now = Environment.TickCount64;
+                    _events.Observe(message, mouse.Point.X, mouse.Point.Y, (ulong)mouse.ExtraInfo, mouse.Flags,
+                        TouchInputBuffer.EventTime(now, mouse.Time), _session.Latest, Native.GetAncestor(Native.GetForegroundWindow(), 2).ToInt64());
                 }
             }
         }
@@ -96,6 +85,8 @@ internal sealed class InputObserver : IDisposable
     public void Dispose()
     {
         _stop.Cancel();
+        uint threadId = Volatile.Read(ref _threadId);
+        if (threadId != 0) Native.PostThreadMessageW(threadId, 0x12, 0, 0); // WM_QUIT wakes a blocking message loop.
         _thread.Join(2000);
         // Do not dispose the signals if an OS callback has not returned yet.
         if (!_thread.IsAlive) { _ready.Dispose(); _stop.Dispose(); }

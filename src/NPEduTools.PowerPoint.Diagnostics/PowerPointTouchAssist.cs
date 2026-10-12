@@ -45,7 +45,7 @@ public sealed class PowerPointTouchAssist
                 {
                     dropped = observer.Dropped; errors = observer.CallbackErrors;
                     gesture.Reset(); pending = null;
-                    while (observer.TryRead(out _)) { }
+                    observer.Discard();
                 }
                 var frame = probe.Latest;
                 bool fresh = Stopwatch.GetElapsedTime(frame.ReceivedAt).TotalMilliseconds <= 750;

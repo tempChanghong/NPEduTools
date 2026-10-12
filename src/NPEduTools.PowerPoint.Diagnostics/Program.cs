@@ -123,7 +123,7 @@ internal static class Program
                     Log("inputGap", new { dropped, callbackErrors });
                     if (tracker.Cancel("InputGap") is { } cancelled) Log("gesture", cancelled);
                     // Discard the remaining partial sequence after a gap.
-                    while (observer.TryRead(out _)) { }
+                    observer.Discard();
                 }
                 int batch = 0;
                 while (batch++ < 2048 && observer.TryRead(out var input))
