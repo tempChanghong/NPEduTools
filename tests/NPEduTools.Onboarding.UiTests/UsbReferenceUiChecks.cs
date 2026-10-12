@@ -29,6 +29,7 @@ internal static partial class Program
     }
     private static void RunUsbReferenceChecks()
     {
+        RunCalibrationOrderingChecks(true);
         const string secret = "fixture-reference-admin";
         string folder = Path.Combine(Path.GetTempPath(), "npep-usb-reference-ui-" + Guid.NewGuid());
         var previous = SynchronizationContext.Current;

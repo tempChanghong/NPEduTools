@@ -13,20 +13,24 @@ public partial class SoundMeterWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _expiry = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool _busy;
+    private readonly CalibrationUiOrder _order = new();
     private NoiseProtectionState? _access;
     private void ShowAccess(NoiseProtectionState? state)
-    { _access = state; ManagementLabel.Text = CalibrationAccess.Label(state); ManagementHint.Text = CalibrationAccess.Hint(state); ConfigureManagement.IsEnabled = state?.ManagementSource != "School"; }
-    private async Task ReadAccessAsync(CancellationToken token)
-    { var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token); ShowAccess(reply.NoiseProtection); }
+    { _access = state; ManagementLabel.Text = CalibrationAccess.Label(state); ManagementHint.Text = CalibrationAccess.Hint(state); ConfigureManagement.IsEnabled = !_busy && state?.ManagementSource != "School"; }
+    private async Task ReadAccessAsync(CancellationToken token, long stamp)
+    {
+        var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token);
+        if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) ShowAccess(reply.NoiseProtection);
+    }
     private long? _received;
     public SoundMeterWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent(); DesktopDialogSizing.Attach(this, pipe);
         _expiry.Tick += (_, _) => { if (_received is { } at && Stopwatch.GetElapsedTime(at).TotalSeconds >= 3) ClearReading("读数已过期，请显式重新读取。"); };
-        Loaded += async (_, _) => { _expiry.Start(); using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
-            try { await ReadAccessAsync(deadline.Token); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException) { if (!_lifetime.IsCancellationRequested) ShowAccess(null); } }; // Never enumerates/opens hardware on load.
-        Closed += (_, _) => { _expiry.Stop(); _lifetime.Cancel(); ManagementSecret.Clear(); ClearReading("窗口已关闭。"); };
+        Loaded += async (_, _) => { _expiry.Start(); long stamp = _order.Advance(); using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
+            try { await ReadAccessAsync(deadline.Token, stamp); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException) { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) ShowAccess(null); } }; // Never enumerates/opens hardware on load.
+        Closed += (_, _) => { _expiry.Stop(); _order.Advance(); _lifetime.Cancel(); ManagementSecret.Clear(); ClearReading("窗口已关闭。"); };
     }
     private void ClearReading(string? message = null)
     { _received = null; Reading.Text = "—"; Mode.Text = ""; if (message is not null) Message.Text = message; }
@@ -35,16 +39,18 @@ public partial class SoundMeterWindow : Window
         if (_busy || _lifetime.IsCancellationRequested) return;
         var selected = Devices.SelectedItem as SoundMeterDevice;
         var command = new SoundMeterCommand(action, ManagementSecret.Password, action == "read" ? selected?.Path : null);
-        if (!SoundMeterContract.Valid(command)) { ClearReading("请填写本机管理口令，并选择声级计。"); return; }
-        _busy = true; ListDevices.IsEnabled = ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.IsEnabled = false;
+        if (!SoundMeterContract.Valid(command)) { ClearReading("请填写管理口令，并选择声级计；已连接 NPEP 时使用学校口令。"); return; }
+        long stamp = _order.Advance();
+        _busy = true; ListDevices.IsEnabled = ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.IsEnabled = ConfigureManagement.IsEnabled = false;
         ClearReading(); Message.Text = "正在核对设备…";
         if (action == "list") Devices.ItemsSource = null;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(5000);
         try
         {
-            await ReadAccessAsync(deadline.Token);
+            await ReadAccessAsync(deadline.Token, stamp);
+            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
             var response = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.meter.command", 4000, SoundMeter: command), deadline.Token);
-            if (_lifetime.IsCancellationRequested) return;
+            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
             if (response.NoiseProtection is not null) ShowAccess(response.NoiseProtection);
             Message.Text = CalibrationAccess.Message(response.ErrorCode, response.Message, _access);
             if (response.SoundMeter?.Diagnostic is { } diagnostic)
@@ -69,7 +75,7 @@ public partial class SoundMeterWindow : Window
         finally
         {
             _busy = false;
-            if (!_lifetime.IsCancellationRequested) { ListDevices.IsEnabled = Devices.IsEnabled = true; ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
+            if (!_lifetime.IsCancellationRequested) { ListDevices.IsEnabled = Devices.IsEnabled = true; ConfigureManagement.IsEnabled = _access?.ManagementSource != "School"; ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
         }
     }
     private async void ListClicked(object sender, RoutedEventArgs e) => await ExecuteAsync("list");
@@ -84,5 +90,22 @@ public partial class SoundMeterWindow : Window
         ((PasswordBox)reference.FindName("ManagementSecret")).Password = ManagementSecret.Password;
         reference.ShowDialog();
     }
-    private async void ManagementClicked(object sender, RoutedEventArgs e) => await NoiseManagementDialog.ConfigureAsync(this, _pipe);
+    private async void ManagementClicked(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _lifetime.IsCancellationRequested) return;
+        _busy = true; long stamp = _order.Advance(); ConfigureManagement.IsEnabled = ListDevices.IsEnabled = ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.IsEnabled = false;
+        try
+        {
+            await NoiseManagementDialog.ConfigureAsync(this, _pipe);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
+            await ReadAccessAsync(deadline.Token, stamp);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        { if (!_lifetime.IsCancellationRequested) ShowAccess(null); }
+        finally
+        {
+            _busy = false;
+            if (!_lifetime.IsCancellationRequested) { ListDevices.IsEnabled = Devices.IsEnabled = true; ConfigureManagement.IsEnabled = _access?.ManagementSource != "School"; ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
+        }
+    }
 }

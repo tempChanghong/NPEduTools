@@ -29,6 +29,25 @@ public sealed partial class NoiseReferenceCalibrationTests
     }
 
     [Fact]
+    public async Task Default_acoustic_50_65_thresholds_use_only_valid_estimated_levels()
+    {
+        await using var f = new Fixture(); await f.PrepareAsync(); Assert.Equal("Succeeded", f.Command("confirm").Outcome);
+        await StartFormal(f);
+        var session = f.Noise.Snapshot().SessionId;
+        var policy = new StudyNoise(true, -90, -89, 600, 3, new(65, 50));
+        f.Noise.StudyThresholds(session, policy);
+        FormalFrames(f, 40, aDigital: -41); // 49 estimated dB(A); raw signal alone would cross the raw fallback.
+        Assert.Equal(("None", false), f.Noise.StudyThresholds(session, policy));
+        FormalFrames(f, 40, aDigital: -35);
+        Assert.Equal(("Medium", false), f.Noise.StudyThresholds(session, policy));
+        FormalFrames(f, 40, aDigital: -24);
+        Assert.Equal(("High", true), f.Noise.StudyThresholds(session, policy));
+        f.Capture!.Signature = Signature.Replace("gain=.7", "gain=.8"); FormalFrames(f, 1, aDigital: -24);
+        Assert.Equal(("None", false), f.Noise.StudyThresholds(session, policy));
+        Assert.Null(f.Noise.Snapshot().Estimate!.CurrentDbA);
+        await StopFormal(f);
+    }
+    [Fact]
     public async Task FormalMonitoringKeepsRawDigitalAndEstimatedWeightedChannelsAndReportsSeparate()
     {
         await using var f = new Fixture(); await f.PrepareAsync(); Assert.Equal("Succeeded", f.Command("confirm").Outcome);
