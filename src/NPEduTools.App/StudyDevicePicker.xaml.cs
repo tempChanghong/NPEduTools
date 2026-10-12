@@ -28,7 +28,11 @@ public partial class StudyDevicePicker : UserControl
         UpdateButtons();
     }
     public void Bind(string pipe) { if (_pipe != pipe) { CancelPending(); _pipe = pipe; _noise = null; _camera = null; _connected = false; } }
-    public void CancelPending() { _generation++; _operation?.Cancel(); _operation?.Dispose(); _operation = null; _busy = false; UpdateButtons(); }
+    public void CancelPending()
+    {
+        if (_busy) { _connected = false; DeviceMessage.Text = "设备操作结果待确认，请刷新核对。"; }
+        _generation++; _operation?.Cancel(); _operation?.Dispose(); _operation = null; _busy = false; UpdateButtons();
+    }
     private CancellationToken Begin()
     {
         _operation?.Cancel(); _operation?.Dispose(); _operation = new(); _operation.CancelAfter(6000);
@@ -134,7 +138,7 @@ public partial class StudyDevicePicker : UserControl
             }
             RenderStatus();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (generation == _generation) { _connected = false; DeviceMessage.Text = "保存结果未确认，请刷新核对；不会自动重新保存或开始采集。"; } }
         finally { if (generation == _generation) { _busy = false; UpdateButtons(); } }
     }
@@ -168,7 +172,8 @@ public partial class StudyDevicePicker : UserControl
             if(generation!=_generation)return;
             DeviceMessage.Text=reply.Outcome=="Succeeded"?"设备已解锁，学校再次锁定前可在监测结束后更换。":reply.Message;
         }
-        catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){DeviceMessage.Text="解锁结果未确认，请刷新检查。";}
+        catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        {if(generation==_generation)DeviceMessage.Text="解锁结果未确认，请刷新检查。";}
         finally{if(generation==_generation){_busy=false;UpdateButtons();}}
         if(generation==_generation)await RefreshAsync();
     }

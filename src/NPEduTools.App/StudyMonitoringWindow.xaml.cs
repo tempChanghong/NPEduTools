@@ -47,7 +47,7 @@ public partial class StudyMonitoringWindow : Window
         StudyCapture.Text = state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "正在采集 · 已收到新鲜采样" :
             state?.Execution is { Owner: "Manual" } ? "当前为手动采样" : state?.Execution is { State: "Starting" } ? "启动中 · 等待有效采样" :
             "采集状态待确认";
-        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先 · 自习在后台执行" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
+        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先 · 自习展示暂缓" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
             "已收起 · 输入状态待确认" :
             $"已收起 · 再闲置约 {Math.Ceiling(d.HiddenRemainingSeconds / 60)} 分钟返回" :
             state?.Display is { Available: true } ? "满足展示条件 · 可见性待回执确认" : "等待有效安排与时间";

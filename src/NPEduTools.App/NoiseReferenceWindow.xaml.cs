@@ -96,7 +96,8 @@ public partial class NoiseReferenceWindow : Window
             var reply = await HostClient.RequestAsync(_pipe, "noise.reference.status", deadline.Token);
             if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
             _connected = reply.Outcome == "Succeeded" && reply.NoiseReference is not null;
-            if (_connected) Render(reply.NoiseReference!); else OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
+            if (_connected) Render(reply.NoiseReference!);
+            else { _autoFieldDraft = null; OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access); }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "后台连接不可用；已停止自动续采，请刷新，旧状态不能用于保存。"; } }
@@ -142,7 +143,7 @@ public partial class NoiseReferenceWindow : Window
             CheckTolerance.Text = draft.CheckToleranceDb.ToString(CultureInfo.CurrentCulture);
             _renderingPreferences=false;
         }
-        UpdateWorkflowInstructions(state.Draft?.Workflow??SelectedWorkflow);
+        UpdateWorkflowInstructions(_meterPath is not null && _step == 1 && state.State != "Sampling" ? SelectedWorkflow : state.Draft?.Workflow??SelectedWorkflow);
         Progress.Maximum = NoiseReferenceCalibration.Duration(state.Draft?.Workflow??SelectedWorkflow);
         Progress.Value = state.MeasuredSeconds;
         MeterStatus.Text = state.Meter?.Reading is { } reading ?
@@ -166,9 +167,10 @@ public partial class NoiseReferenceWindow : Window
         EvaluationStatus.Text = evaluation.Message + (evaluation.OffsetDb is { } offset ?
             $"\n候选偏移 {offset:+0.00;-0.00;0.00} dB · {(field?"第二段偏移复核差值":"第二电平复核差值")} {Number(evaluation.CheckErrorDb)} dB" : "");
         if (state.Error is not null) OperationMessage.Text = "外部参考文件不可用，原文件已保留；未应用任何新值。";
-        if (_meterPath is not null && state.Draft?.MeterDevicePath == _meterPath)
+        if (_meterPath is not null)
         {
-            if (state.State == "Sampling") _step = 2;
+            if (state.Draft?.MeterDevicePath != _meterPath) _step = 1;
+            else if (state.State == "Sampling") _step = 2;
             else if (newDraft) _step = state.Evaluation.Ready ? 3 : 2;
             else if (finishedSample && (state.Evaluation.Ready || state.Draft.Samples.Any(s => s.Role == "Check" || s.Quality != "Good"))) _step = 3;
         }
@@ -246,7 +248,7 @@ public partial class NoiseReferenceWindow : Window
         SamplePanel.Visibility = _step == 2 ? Visibility.Visible : Visibility.Collapsed;
         ResultPanel.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
         if (_displayedStep != _step) { _displayedStep = _step; ((ScrollViewer)Content).ScrollToTop(); }
-        bool navigating = !_busy && !_verifying && _state?.State != "Sampling" && _autoFieldDraft is null;
+        bool navigating = _connected && !_busy && !_verifying && _state?.State != "Sampling" && _autoFieldDraft is null;
         SetupStep.IsEnabled = !_busy && !_verifying && (!_connected || navigating);
         SamplingStep.IsEnabled = ReviewSamples.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath;
         ResultStep.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath && _state?.Draft?.Samples.Count is > 0;

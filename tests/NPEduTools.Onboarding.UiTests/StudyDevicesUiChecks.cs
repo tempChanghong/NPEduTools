@@ -56,6 +56,18 @@ internal static partial class Program
                 var refresh = picker.RefreshAsync(); PumpUntil(() => refresh.IsCompleted, "hotplug refresh did not finish"); refresh.GetAwaiter().GetResult();
                 Assert(cam.SelectedValue as string == "cam-b" && !((Button)picker.FindName("SaveCamera")).IsEnabled, "hotplug switched to another camera or accepted unavailable camera");
                 Assert(((TextBlock)picker.FindName("CameraStatus")).Text.Contains("未确认"), "missing camera not indicated");
+                var pickerFlags=BindingFlags.Instance|BindingFlags.NonPublic;
+                typeof(StudyDevicePicker).GetField("_busy",pickerFlags)!.SetValue(picker,true);
+                picker.CancelPending();
+                Assert(!((Button)picker.FindName("SaveMicrophone")).IsEnabled && picker.Summary.Contains("待刷新"),"cancelled pending selection leaves stale save controls enabled");
+                refresh=picker.RefreshAsync();PumpUntil(()=>refresh.IsCompleted,"cancelled preference state could not refresh");refresh.GetAwaiter().GetResult();
+                typeof(StudyDevicePicker).GetField("_pipe",pickerFlags)!.SetValue(picker,"NPEduTools.Test.absent."+Guid.NewGuid().ToString("N"));
+                ((Button)picker.FindName("SaveMicrophone")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                PumpUntil(()=>((TextBlock)picker.FindName("DeviceMessage")).Text.Contains("保存结果未确认"),"save connection timeout escaped or lacked feedback");
+                Assert(!((Button)picker.FindName("SaveMicrophone")).IsEnabled,"uncertain save permits stale retry");
+                typeof(StudyDevicePicker).GetField("_pipe",pickerFlags)!.SetValue(picker,pipe);
+                refresh=picker.RefreshAsync();PumpUntil(()=>refresh.IsCompleted,"post-timeout preferences did not recover");refresh.GetAwaiter().GetResult();
+                Checks.Add("Device selection: cancellation invalidates stale controls; absent private pipe save timeout has feedback and refresh recovery; no capture");
                 typeof(StudyMonitoringWindow).GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.Invoke(manage, [null]);
                 Assert(!((TextBlock)manage.FindName("StudyCapture")).Text.Contains("正在采集"), "unknown Host claimed live capture");
                 var next = new SchoolNoiseWindow(new(2026,10,13,23,0,0,TimeSpan.Zero),new(2026,10,14,1,0,0,TimeSpan.Zero));
@@ -75,6 +87,8 @@ internal static partial class Program
                 Assert(!((TextBlock)manage.FindName("StudyCapture")).Text.Contains("正在采集"), "stale execution retained active badge");
                 render.Invoke(manage, [active with {ProjectionPriority=true}]);
                 Assert(((TextBlock)manage.FindName("StudyPresentation")).Text.Contains("考试放映优先"), "projection priority missing from compact summary");
+                render.Invoke(manage,[active with {ProjectionPriority=true,ClockReady=false,Execution=null}]);
+                Assert(((TextBlock)manage.FindName("StudyPresentation")).Text.Contains("展示暂缓") && !((TextBlock)manage.FindName("StudyCapture")).Text.Contains("正在采集"),"projection priority falsely claims backend sampling");
                 render.Invoke(manage, [active]);
                 owner.Width = 660; owner.Height = 600; ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
                 var calibration = Button(owner, "OpenMeterCalibration");
