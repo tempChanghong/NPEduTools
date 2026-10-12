@@ -17,6 +17,30 @@ public sealed class TouchInputBufferTests
     private static void Observe(TouchInputBuffer buffer, nuint message, long at = 1000, long foreground = 1, int x = 500, SnapshotFrame? frame = null) =>
         buffer.Observe(message, x, 500, 0xff515780, 0, at, frame ?? Frame(), foreground);
 
+    [Theory]
+    [InlineData("NotRunning")]
+    [InlineData("NoSlideShow")]
+    [InlineData("Starting")]
+    [InlineData("ProbeTimeout")]
+    public void WithoutAShowAllOrdinaryInputBypassesEvenForegroundQueries(string status)
+    {
+        var buffer = new TouchInputBuffer(); var frame = Frame(status);
+        foreach (nuint message in new nuint[] { 0x201, 0x202, 0x200, 0x204, 0x20a }) Assert.False(buffer.Interested(message, frame));
+    }
+
+    [Fact]
+    public void IdleMoveIsIgnoredAndLosingTheShowStillCancelsAnInFlightGesture()
+    {
+        var buffer = new TouchInputBuffer();
+        Assert.False(buffer.Interested(0x200, Frame())); Assert.True(buffer.Interested(0x201, Frame()));
+        Observe(buffer, 0x201); var lost = Frame("NoSlideShow");
+        Assert.True(buffer.Interested(0x200, lost)); Observe(buffer, 0x200, 1030, frame: lost);
+        Assert.False(buffer.Interested(0x202, lost));
+        Assert.True(buffer.TryRead(1100, (_, _, _) => true, out _));
+        Assert.True(buffer.TryRead(1100, (_, _, _) => throw new Exception("Cancellation was hit tested"), out var cancellation));
+        Assert.Equal("Cancel", cancellation!.Kind);
+    }
+
     [Fact]
     public async Task SlowWindowHitTestCannotHoldUpTheInputProducer()
     {

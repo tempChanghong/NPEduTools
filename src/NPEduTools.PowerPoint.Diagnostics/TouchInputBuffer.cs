@@ -16,6 +16,13 @@ internal sealed class TouchInputBuffer
     // when hook dispatch is delayed rather than timestamping an old tap as new.
     public static long EventTime(long nowMs, uint eventTime) => nowMs - unchecked((uint)nowMs - eventTime);
 
+    public bool Interested(nuint message, SnapshotFrame frame)
+    {
+        if (message is not (0x201 or 0x202 or 0x200 or 0x204) || message == 0x200 && !_tracking) return false;
+        return _tracking || frame.Snapshot.Status == "Showing" && frame.Snapshot.Windows.Length == 1 &&
+            Stopwatch.GetElapsedTime(frame.ReceivedAt).TotalMilliseconds <= 750;
+    }
+
     public void Observe(nuint message, int x, int y, ulong extraInfo, uint flags, long timeMs, SnapshotFrame frame, long foreground)
     {
         string? kind = message switch { 0x201 => "Down", 0x202 => "Up", 0x200 when _tracking => "Move", 0x204 => "RightDown", _ => null };

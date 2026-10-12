@@ -68,12 +68,15 @@ internal sealed class InputObserver : IDisposable
         {
             if (code >= 0)
             {
-                if (message is 0x201 or 0x202 or 0x200 or 0x204)
+                var frame = _session.Latest;
+                // No show (including an open editor), unavailable probe or untracked mouse move:
+                // pass straight through without even querying the foreground/window tree.
+                if (_events.Interested(message, frame))
                 {
                     var mouse = Marshal.PtrToStructure<Native.MouseData>(data);
                     long now = Environment.TickCount64;
                     _events.Observe(message, mouse.Point.X, mouse.Point.Y, (ulong)mouse.ExtraInfo, mouse.Flags,
-                        TouchInputBuffer.EventTime(now, mouse.Time), _session.Latest, Native.GetAncestor(Native.GetForegroundWindow(), 2).ToInt64());
+                        TouchInputBuffer.EventTime(now, mouse.Time), frame, Native.GetAncestor(Native.GetForegroundWindow(), 2).ToInt64());
                 }
             }
         }
