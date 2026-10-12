@@ -13,7 +13,9 @@ public sealed partial class NoiseScheduleHostTests
         await f.Scheduler.DisposeAsync(); f.Scheduler = f.NewScheduler(transport.OwnStudySession);
         Select(f,config); await f.Start(); f.Tick(); f.Captures[0].Sample(); f.Tick();
         Assert.Equal("Accepted", f.Noise.Handle(f.Command("stop")).Outcome);
+        await Until(()=>f.Noise.Snapshot().State=="Stopped");
         await Until(()=>transport.Reports().Count==1);
+        Assert.Null(transport.Observe()["uploadError"]);
         var r=transport.Reports()[0]!.AsObject(); NpepNoiseProtocol.Validate("report",r);
         Assert.Equal("Daily",r["study"]!["mode"]!.GetValue<string>());
         Assert.Equal(config["scope"]!["classId"]!.GetValue<string>(),r["study"]!["scope"]!["classId"]!.GetValue<string>());

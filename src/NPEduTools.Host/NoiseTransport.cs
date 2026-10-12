@@ -143,10 +143,17 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
         {
             report["study"] = context.DeepClone();
             if (_noise.StudyReportSnapshot() is { } statistics && statistics.SessionId == session)
-                report["study"]!["statistics"] = JsonSerializer.SerializeToNode(statistics, Protocol.Json);
+                report["study"]!["statistics"] = StudyStatistics(statistics);
         }
         return report;
     }
+    // The closed NPEP statistics contract is separate from local report IPC. Local
+    // calibration notes must not add unknown fields and block the entire outbox.
+    internal static JsonObject StudyStatistics(StudySessionReport statistics) => JsonSerializer.SerializeToNode(new
+    {
+        statistics.SessionId, statistics.Complete, statistics.ElapsedSeconds, statistics.ClippedSeconds,
+        statistics.Frames, statistics.DisciplineReminders, statistics.Raw, statistics.Estimated, statistics.EstimateReason
+    }, Protocol.Json)!.AsObject();
     private void AddReport(JsonObject report)
     {
         NpepNoiseProtocol.Validate("report", report);

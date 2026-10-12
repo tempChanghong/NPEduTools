@@ -8,6 +8,28 @@ namespace NPEduTools.Tests;
 public sealed class NoiseTransportTests
 {
     [Theory]
+    [InlineData(null)]
+    [InlineData("USB field calibration requires review")]
+    public void Local_calibration_notes_do_not_invalidate_the_closed_statistics_wire_contract(string? note)
+    {
+        var session = Guid.NewGuid();
+        var state = new NoiseState(Guid.NewGuid(), 1, "Stopped", "synthetic", "mic", "fake", DateTimeOffset.UtcNow, null,
+            "Good", new(60, 30, .5, -30, -20, 0, 300), [], SessionId: session);
+        var statistics = new StudySessionReport(session, true, 60, 0, 300, 1,
+            new("dBFS", 30, -30, -20, 30, 0, 0, [], 30), null, null, note);
+        var report = NoiseTransport.Report(state, "Stopped");
+        report["study"] = new JsonObject
+        {
+            ["scope"] = new JsonObject { ["schoolId"] = "school", ["termId"] = "term", ["classId"] = "class" },
+            ["policyVersion"] = new string('a', 64), ["mode"] = "Daily", ["clockSource"] = "ClassIsland",
+            ["window"] = new JsonObject { ["start"] = "2026-10-13T19:15:00.000", ["end"] = "2026-10-13T21:30:00.000" },
+            ["statistics"] = NoiseTransport.StudyStatistics(statistics)
+        };
+        NpepNoiseProtocol.Validate("report", report);
+        Assert.False(report["study"]!["statistics"]!.AsObject().ContainsKey("referenceNote"));
+        Assert.Equal(note, statistics.ReferenceNote); // The local report retains its calibration warning.
+    }
+    [Theory]
     [InlineData(-3600)]
     [InlineData(3600)]
     [InlineData(0)]
