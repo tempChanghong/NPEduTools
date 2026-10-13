@@ -74,6 +74,8 @@ public sealed class StudyPhotoJournal(string directory, Func<byte[], bool, byte[
                     byte[] clear = protect(File.ReadAllBytes(file), false); StudyPhotoPacket packet;
                     try { packet = JsonSerializer.Deserialize<StudyPhotoPacket>(clear, Protocol.Json) ?? throw new InvalidDataException(); }
                     finally { CryptographicOperations.ZeroMemory(clear); }
+                    if (packet.Metadata is null || packet.Bytes is null || string.IsNullOrWhiteSpace(packet.Scope) ||
+                        !NoiseContract.ValidDeviceId(packet.Camera) || !NoiseContract.ValidDeviceId(packet.Microphone)) throw new InvalidDataException();
                     NpepPhotoProtocol.Validate("metadata", packet.Metadata);
                     if (packet.Scope != scope || packet.Camera != camera || packet.Microphone != microphone ||
                         serverNow is { } now && now - DateTimeOffset.Parse(packet.Metadata.Text("capturedAt")) > TimeSpan.FromDays(1)) { File.Delete(file); continue; }
