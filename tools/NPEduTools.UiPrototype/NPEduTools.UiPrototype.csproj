@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <StartupObject>NPEduTools.UiPrototype.Program</StartupObject>
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Page Include="../../src/NPEduTools.App/Resources/RecordingControls.xaml" Link="Resources/RecordingControls.xaml" />
+    <Page Include="../../src/NPEduTools.App/Resources/CommonControls.xaml" Link="Resources/CommonControls.xaml" />
+    <Resource Include="../../images/branding/png/npedutools-small-256.png" Link="Resources/logo.png" />
+    <Compile Include="../../src/NPEduTools.App/DesktopWindowBounds.cs" Link="Shared/DesktopWindowBounds.cs" />
+  </ItemGroup>
+</Project>
