@@ -147,8 +147,10 @@ public sealed partial class StudyWindow : Window
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var reply = await HostClient.RequestAsync(_pipe, new HostRequest(1, id, _manual?"manual.study.hide":"study.hide", StudyHide: new(display.InstanceId, version, window)), timeout.Token);
             if (_shutdown || _state?.Display?.InstanceId != display.InstanceId || _state.Window != window || _state.Version != version) return;
-            if (reply.Outcome == "Succeeded" && reply.Study is { Display: { } confirmation } confirmed &&
-                confirmation.InstanceId == display.InstanceId && confirmed.Version == version && confirmed.Window == window && confirmation.HiddenRemainingSeconds>0 && confirmation.HiddenRemainingSeconds<=(_manual?10801:180))
+            if (reply.Outcome == "Succeeded" && reply.Study is { Display: { Available: false } confirmation } confirmed &&
+                confirmation.InstanceId == display.InstanceId && confirmed.Version == version && confirmed.Window == window &&
+                double.IsFinite(confirmation.HiddenRemainingSeconds) && confirmation.HiddenRemainingSeconds>0 &&
+                confirmation.HiddenRemainingSeconds<=(_manual?10801:StudyIdleReturn.DefaultSeconds))
             { _surface.ReturnError(null); HideDisplay(); }
             else _surface.ReturnError("后台尚未确认收起期限，请重试；没有停止监测。");
             if (_hideRequest == id) _hideRequest = null;

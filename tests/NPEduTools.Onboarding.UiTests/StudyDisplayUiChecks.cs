@@ -22,6 +22,7 @@ internal static partial class Program
     }
     private static void RunStudyDisplayChecks()
     {
+        RunStudyIdleHideChecks();
         RunStudyTimingAndSidebarChecks();
         RunSeatingLifecycleChecks();
         RunStudyProgressChecks();
