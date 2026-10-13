@@ -169,6 +169,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         public bool Scheduled;
         public bool ManualStudy;
         public string? EndReason;
+        public string? TimeLimitReason;
         public Guid Id = Guid.NewGuid();
         public double LimitSeconds = 10800;
         public string? DeviceName;
@@ -416,7 +417,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                     if (calibrationIsPaused)
                     { s.CalibrationInterrupted = true; _state = "Stopping"; s.Stop.Cancel(); continue; }
                     if (_time.GetElapsedTime(s.Started).TotalSeconds >= s.LimitSeconds)
-                    { _state = "Stopping"; _message = "监测已到时，正在释放麦克风。"; s.Stop.Cancel(); continue; }
+                    { s.EndReason ??= s.TimeLimitReason; _state = "Stopping"; _message = "监测已到时，正在释放麦克风。"; s.Stop.Cancel(); continue; }
                     if (_state == "Starting" && _time.GetElapsedTime(s.Started).TotalSeconds > 5)
                         Fail(s, "麦克风启动超时，请检查 Windows 音频设备。");
                     else if (_state is "Active" or "ReferenceSampling" && _time.GetElapsedTime(s.LastData).TotalSeconds > 3)
