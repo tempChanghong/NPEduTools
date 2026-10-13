@@ -96,6 +96,21 @@ internal static partial class Program
                 quick.SetAutoHidden(false); Touch(UIElement.PreviewTouchUpEvent); Settle();
                 Assert(panel.Visibility == Visibility.Collapsed && !edge.TouchesCaptured.Any(), "late touch revives suppressed panel");
             });
+            Case("Dragging an expanded panel returns keyboard focus only after touch release", () =>
+            {
+                other = new Window { Title = "NPEduTools.Test.drag-focus", Width = 240, Height = 160 };
+                other.Show(); other.Activate(); PumpUntil(() => other.IsActive, "drag focus fixture could not become foreground");
+                quick.OpenPanel(); quick.UpdateLayout(); PumpUntil(() => quick.IsActive, "expanded drag could not become foreground");
+                var start = edge.TranslatePoint(new Point(20, 20), quick);
+                touch.MoveTo(start); Touch(UIElement.PreviewTouchDownEvent);
+                double scale = (double)typeof(QuickAccessWindow).GetField("_gestureScale", flags)!.GetValue(quick)!;
+                var end = quick.PointToScreen(start) - new Vector(0, 30 * scale);
+                touch.MoveTo(quick.PointFromScreen(end)); Touch(UIElement.PreviewTouchMoveEvent);
+                Assert(quick.IsActive && edge.TouchesCaptured.Any(), "drag restores focus before releasing capture");
+                touch.MoveTo(quick.PointFromScreen(end)); Touch(UIElement.PreviewTouchUpEvent); Settle();
+                Assert(other.IsActive && !quick.IsActive && !edge.TouchesCaptured.Any(), "completed expanded drag retained foreground focus");
+                other.Close(); other = null;
+            });
         }
         finally
         {

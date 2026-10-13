@@ -61,6 +61,7 @@ public partial class QuickAccessWindow : Window
     private int _handleInputRevision;
     private double _dragOffsetY;
     private double _gestureScale = 1;
+    private nint _dragFocusReturn;
     private long _handleActivity = Stopwatch.GetTimestamp();
     private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _studyTask, _recordingTask, _taskOrderDirty;
@@ -244,6 +245,7 @@ public partial class QuickAccessWindow : Window
         HandleActivity();
         _handleInputRevision++; // A second gesture supersedes an earlier queued click.
         _dragStart = point; _dragging = false;
+        _dragFocusReturn = _expanded ? _previous : 0;
         _gestureScale = Scale() * ((Content as FrameworkElement)?.LayoutTransform is ScaleTransform transform ? transform.ScaleY : 1);
         _dragOffsetY = point.Y - PointToScreen(new Point(0, 0)).Y;
     }
@@ -254,6 +256,7 @@ public partial class QuickAccessWindow : Window
         if (_dragStart is null) return;
         if (_dragging) Save();
         _dragStart = null; _dragging = false;
+        _dragFocusReturn = 0;
         _handleInputRevision++;
         HandleActivity();
     }
@@ -291,6 +294,8 @@ public partial class QuickAccessWindow : Window
     {
         if (_dragStart is null) return;
         bool dragged = _dragging;
+        nint returnFocus = _dragFocusReturn;
+        _dragFocusReturn = 0;
         var touch = _handleTouch;
         _dragStart = null;
         _dragging = false;
@@ -300,7 +305,12 @@ public partial class QuickAccessWindow : Window
         // cancel the same touch during expansion and immediately deactivate/collapse it.
         if (touch is not null) EdgeHandle.ReleaseTouchCapture(touch);
         else EdgeHandle.ReleaseMouseCapture();
-        if (dragged) Save();
+        if (dragged)
+        {
+            Save();
+            // Expansion took focus; release capture before returning it to the original app.
+            if (returnFocus != 0 && GetForegroundWindow() == _handle && IsWindow(returnFocus)) SetForegroundWindow(returnFocus);
+        }
         else
         {
             int revision = ++_handleInputRevision;
