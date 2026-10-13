@@ -181,8 +181,10 @@ public partial class RecordingWindow : Window
     private void OpenFolderClicked(object sender, RoutedEventArgs e) => OpenPath(_client.State.OutputFile is { } file ? Path.GetDirectoryName(file) : _client.State.RecoveryDirectory ?? OutputDirectory.Text.Trim());
     private void OpenPath(string? path)
     {
-        if (path is null) return;
+        if (string.IsNullOrWhiteSpace(path))
+        { RecordingError.Text = "请先填写有效的保存位置，或选择要打开的视频。"; return; }
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
-        catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception) { RecordingError.Text = "无法打开该位置，请检查文件是否已移动。"; }
+        catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception or ArgumentException or InvalidOperationException)
+        { RecordingError.Text = "无法打开该位置，请检查保存位置是否有效、文件是否已移动。"; }
     }
 }

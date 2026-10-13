@@ -100,6 +100,13 @@ internal static partial class Program
                 Assert(probes == 1 && !manual.IsVisible && ((FrameworkElement)main.FindName("RecordingWorkspace")).IsVisible,
                     "recording opened another window or did not load embedded controller");
                 Snapshot(main, "recording-workspace-immediate.png");
+                string originalDirectory = ((TextBox)manual.FindName("OutputDirectory")).Text;
+                ((TextBox)manual.FindName("OutputDirectory")).Text = "   ";
+                Click(manual, "OpenFolder");
+                Assert(((TextBlock)manual.FindName("RecordingError")).Text.Contains("保存位置"), "blank folder action has no usable feedback");
+                Assert(!state.Active && requests.All(r => r.Recording is null), "invalid folder action changed recording state");
+                ((TextBox)manual.FindName("OutputDirectory")).Text = originalDirectory;
+                Checks.Add("Actual recording folder button: a blank editable directory gives feedback without launching anything or mutating the recording session");
                 Click(manual, "RecordStart");
                 PumpUntil(() => state.Active && Button(manual, "RecordStop").IsEnabled, "synthetic recording did not start");
                 Assert(((FrameworkElement)manual.FindName("RecordingSettings")).Visibility == Visibility.Collapsed,
