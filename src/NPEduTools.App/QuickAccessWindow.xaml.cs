@@ -117,7 +117,7 @@ public partial class QuickAccessWindow : Window
         EdgeHandle.PreviewMouseMove += (_, e) =>
         { if (!IsPromotedTouch(e) && _handleTouch is null && e.LeftButton == MouseButtonState.Pressed && _dragStart is not null) MoveHandle(PointToScreen(e.GetPosition(this))); };
         EdgeHandle.PreviewMouseLeftButtonUp += (_, e) =>
-        { if (!IsPromotedTouch(e) && _handleTouch is null) FinishDrag(); e.Handled = true; };
+        { if (!IsPromotedTouch(e) && _handleTouch is null) ReleaseHandle(PointToScreen(e.GetPosition(this))); e.Handled = true; };
         EdgeHandle.PreviewTouchDown += (_, e) =>
         {
             if (_handleTouch is null && _dragStart is null)
@@ -126,7 +126,7 @@ public partial class QuickAccessWindow : Window
         };
         EdgeHandle.PreviewTouchMove += (_, e) =>
         { if (_handleTouch == e.TouchDevice && _dragStart is not null) MoveHandle(PointToScreen(e.GetTouchPoint(this).Position)); e.Handled = true; };
-        EdgeHandle.PreviewTouchUp += (_, e) => { if (_handleTouch == e.TouchDevice) FinishDrag(); e.Handled = true; };
+        EdgeHandle.PreviewTouchUp += (_, e) => { if (_handleTouch == e.TouchDevice) ReleaseHandle(PointToScreen(e.GetTouchPoint(this).Position)); e.Handled = true; };
         EdgeHandle.LostMouseCapture += (_, _) => { if (_handleTouch is null) CancelDrag(); };
         EdgeHandle.LostTouchCapture += (_, e) => { if (_handleTouch == e.TouchDevice) { _handleTouch = null; CancelDrag(); } };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { Collapse(); e.Handled = true; } };
@@ -201,8 +201,12 @@ public partial class QuickAccessWindow : Window
     }
 
     public void Collapse(bool restoreFocus = true)
+        => CollapseCore(restoreFocus, preserveHandleGesture: false);
+
+    private void CollapseCore(bool restoreFocus, bool preserveHandleGesture)
     {
         if (_closing) return;
+        if (!preserveHandleGesture) AbortHandleGesture();
         _handleInputRevision++; // A pending release must not reopen a deliberately closed/hidden panel.
         bool wasExpanded = _expanded;
         _expanded = false; RefreshCompact(); RefreshTaskOrder();
@@ -225,9 +229,15 @@ public partial class QuickAccessWindow : Window
     private void OnboardingClicked(object sender, RoutedEventArgs e) { Collapse(false); _onboarding?.Invoke(); }
 
     public void SetSide(bool leftSide)
-    { CancelDrag(); EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture(); _placement = _placement with { LeftSide = leftSide }; HandleActivity(); Collapse(); Position(); Save(); }
+    { AbortHandleGesture(); _placement = _placement with { LeftSide = leftSide }; HandleActivity(); Collapse(); Position(); Save(); }
 
-    public void Shutdown() { CancelDrag(); EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture(); _closing = true; _idleTimer.Stop(); Close(); }
+    public void Shutdown() { AbortHandleGesture(); _closing = true; _idleTimer.Stop(); Close(); }
+
+    private void AbortHandleGesture()
+    {
+        CancelDrag(); _handleTouch = null;
+        EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture();
+    }
 
     private void BeginDrag(Point point)
     {
@@ -256,7 +266,7 @@ public partial class QuickAccessWindow : Window
             // The expanded rail can return to either a full rail or a compact handle.
             // Measure the handle itself across that layout change so it stays under the finger.
             double inHandle = start.Y - PointToScreen(EdgeHandle.TranslatePoint(new Point(), this)).Y;
-            Collapse(false); UpdateLayout();
+            CollapseCore(restoreFocus: false, preserveHandleGesture: true); UpdateLayout();
             if (_dragStart is null) return; // Capture may have been cancelled by the display change.
             _dragOffsetY = inHandle + PointToScreen(EdgeHandle.TranslatePoint(new Point(), this)).Y - PointToScreen(new Point()).Y;
         }
@@ -268,6 +278,13 @@ public partial class QuickAccessWindow : Window
         double ratio = available <= 0 ? 0 : (point.Y - screen.WorkingArea.Top - _dragOffsetY) / available;
         _placement = _placement with { RelativeY = Math.Clamp(ratio, 0, 1), Display = screen.DeviceName };
         Position();
+    }
+
+    private void ReleaseHandle(Point point)
+    {
+        // Input coalescing can omit the final move; the up position still decides click vs drag.
+        MoveHandle(point);
+        FinishDrag();
     }
 
     private void FinishDrag()
@@ -320,7 +337,7 @@ public partial class QuickAccessWindow : Window
 
     private void HandleClicked(object sender, RoutedEventArgs e) => ToggleHandle();
     private void ToggleHandle() { if (_autoHidden) return; if (_placement.Compact && !_expanded) SetCompact(false); else if (_expanded) Collapse(); else OpenPanel(); }
-    public void SetCompact(bool compact) { CancelDrag(); EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture(); _placement = _placement with { Compact = compact }; HandleActivity(); Collapse(false); Save(); }
+    public void SetCompact(bool compact) { AbortHandleGesture(); _placement = _placement with { Compact = compact }; HandleActivity(); Collapse(); Save(); }
     private void FoldClicked(object sender, RoutedEventArgs e) => SetCompact(!_placement.Compact);
     private void RefreshCompact()
     {
@@ -370,7 +387,7 @@ public partial class QuickAccessWindow : Window
     {
         if (_closing || _autoHidden == hidden) return;
         _autoHidden = hidden;
-        if (hidden) { CancelDrag(); EdgeHandle.ReleaseMouseCapture(); EdgeHandle.ReleaseAllTouchCaptures(); Collapse(false); Hide(); }
+        if (hidden) { AbortHandleGesture(); Collapse(false); Hide(); }
         else { HandleActivity(); ShowEntry(); }
     }
     public void ShowEntry() { if (!_autoHidden && !_closing) { if (!IsVisible) Show(); Position(); } }

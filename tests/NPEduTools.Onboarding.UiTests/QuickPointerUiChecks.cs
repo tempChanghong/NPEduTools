@@ -31,7 +31,15 @@ internal static partial class Program
             var edge = (Button)quick.FindName("EdgeHandle"); var panel = (FrameworkElement)quick.FindName("PanelSurface");
             bool openedWhileCaptured = false;
             panel.IsVisibleChanged += (_, _) => { if (panel.IsVisible) openedWhileCaptured |= ReferenceEquals(Mouse.Captured, edge) || edge.TouchesCaptured.Any(); };
-            void MouseEvent(RoutedEvent routed) => edge.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = routed });
+            void MouseEvent(RoutedEvent routed)
+            {
+                edge.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = routed });
+                // RaiseEvent has no native mouse position report. Capture refreshes the primary
+                // device's source, so seed the synthetic down at that same position as the up.
+                if (routed == UIElement.PreviewMouseLeftButtonDownEvent && ReferenceEquals(Mouse.Captured, edge))
+                    typeof(QuickAccessWindow).GetMethod("BeginDrag", BindingFlags.NonPublic | BindingFlags.Instance)!
+                        .Invoke(quick, [quick.PointToScreen(Mouse.GetPosition(quick))]);
+            }
             void TouchEvent(FixtureTouch touch, RoutedEvent routed) => edge.RaiseEvent(new TouchEventArgs(touch, Environment.TickCount) { RoutedEvent = routed });
             MouseEvent(UIElement.PreviewMouseLeftButtonDownEvent);
             Assert(ReferenceEquals(Mouse.Captured, edge), "fixture failed to capture the handle");
