@@ -71,7 +71,7 @@ public partial class StudyDevicePicker : UserControl
             _rendering = false; RenderStatus();
             if (cameras.Outcome != "Succeeded" || _camera?.Error is not null) DeviceMessage.Text = DeviceError(cameras.ErrorCode ?? _camera?.Error);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         {
             if (generation != _generation) return;
             _connected = false; DeviceMessage.Text = "设备状态暂不可用，请检查后台连接后刷新；旧列表不能用于保存。";
@@ -127,6 +127,17 @@ public partial class StudyDevicePicker : UserControl
         {
             var response = await HostClient.RequestAsync(_pipe!, request, token);
             if (generation != _generation) return;
+            if (response.Outcome == "Succeeded")
+            {
+                bool confirmed = camera
+                    ? request.StudyCamera is { } cameraCommand && response.StudyDevices is { Error: null } cameraResult &&
+                        cameraResult.InstanceId == cameraCommand.InstanceId && cameraResult.Revision >= cameraCommand.Revision &&
+                        cameraResult.CameraId == cameraCommand.DeviceId
+                    : request.Noise is { } microphoneCommand && response.Noise is { } microphoneResult &&
+                        microphoneResult.InstanceId == microphoneCommand.InstanceId && microphoneResult.Revision >= microphoneCommand.Revision &&
+                        microphoneResult.SelectedDeviceId == microphoneCommand.DeviceId;
+                if (!confirmed) throw new InvalidDataException("后台尚未确认本次设备选择。");
+            }
             if (response.Noise is { } noise) _noise = noise;
             if (response.StudyDevices is { } devices) _camera = devices;
             if (response.Outcome != "Succeeded") DeviceMessage.Text = DeviceError(response.ErrorCode);
@@ -138,7 +149,7 @@ public partial class StudyDevicePicker : UserControl
             }
             RenderStatus();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (generation == _generation) { _connected = false; DeviceMessage.Text = "保存结果未确认，请刷新核对；不会自动重新保存或开始采集。"; } }
         finally { if (generation == _generation) { _busy = false; UpdateButtons(); } }
     }
@@ -166,15 +177,31 @@ public partial class StudyDevicePicker : UserControl
         string secret=EquipmentSecret.Password;EquipmentSecret.Clear();
         if(!NoiseManagementContract.SecretValid(secret)){DeviceMessage.Text="请输入8至128位学校管理口令。";return;}
         var token=Begin();long generation=_generation;
+        string feedback = "解锁结果未确认，请刷新检查。";
+        bool accepted = false;
         try
         {
             var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"noise.management.command",NoiseManagement:new("unlock",Secret:secret)),token);
             if(generation!=_generation)return;
-            DeviceMessage.Text=reply.Outcome=="Succeeded"?"设备已解锁，学校再次锁定前可在监测结束后更换。":reply.Message;
+            accepted = reply.Outcome == "Succeeded";
+            feedback = accepted ? "设备已解锁，学校再次锁定前可在监测结束后更换。" : reply.Message;
+            DeviceMessage.Text = feedback;
         }
-        catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        {if(generation==_generation)DeviceMessage.Text="解锁结果未确认，请刷新检查。";}
+        catch(Exception ex)when(ex is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        {if(generation==_generation)DeviceMessage.Text=feedback;}
         finally{if(generation==_generation){_busy=false;UpdateButtons();}}
-        if(generation==_generation)await RefreshAsync();
+        if (generation == _generation)
+        {
+            var refresh = RefreshAsync(); long refreshGeneration = _generation;
+            await refresh;
+            if (refreshGeneration != _generation) return;
+            // Refresh clears form feedback. Restore this operation's outcome
+            // only after that same read settles, without overriding its lock state.
+            if (accepted && (!_connected || _camera?.Locked != false))
+                feedback = "解锁请求已受理，但刷新后未确认设备已解锁，请核对学校配置。";
+            DeviceMessage.Text = _connected ? feedback : feedback + "\n" + DeviceMessage.Text;
+            if (accepted && _connected && _camera?.Locked == false)
+                DeviceMessage.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 125, 104));
+        }
     }
 }
