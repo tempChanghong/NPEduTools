@@ -42,6 +42,8 @@ public partial class MainWindow
                 "Stopping" => "正在结束手动会话，等待后台确认",
                 _ => "手动会话已由后台确认；采样详情请在自习页查看"
             } : _workspaceSchool is null || _workspaceManual is null ? "状态尚未确认，不能据此判断后台任务已经停止" : "可立即开始手动自习，或查看学校定时安排";
+        _quick?.UpdateStudy(WorkspaceTaskTitle.Text, StudyHomeStatus.Text, StudyHomeNext.Text,
+            WorkspacePrimary.Content?.ToString() ?? "查看自习", school || manual);
 
     }
     private void UpdateWorkspaceManual(ManualStudyState? state)

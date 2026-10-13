@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -45,7 +46,7 @@ public partial class QuickAccessWindow : Window
     }
     public void SetExamAwareAction(Action action) => _examAware = action;
     private void ExamAwareClicked(object sender, RoutedEventArgs e) => _examAware?.Invoke();
-    private const double RailWidth = 80, RailHeight = 360, CompactHeight = 94, PanelWidth = 440, PanelHeight = 620;
+    private const double RailWidth = 80, RailHeight = 390, CompactHeight = 94, PanelWidth = 470, PanelHeight = 620;
     private sealed record Placement(bool LeftSide = false, double RelativeY = 0.78, string? Display = null, bool Compact = false);
     private readonly string _settingsPath;
     private readonly Action _power, _pause, _startClassIsland, _settings;
@@ -59,6 +60,11 @@ public partial class QuickAccessWindow : Window
     private TouchDevice? _handleTouch;
     private int _handleInputRevision;
     private double _dragOffsetY;
+    private double _gestureScale = 1;
+    private long _handleActivity = Stopwatch.GetTimestamp();
+    private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private bool _studyTask, _recordingTask, _taskOrderDirty;
+    private Action? _study;
     private Action? _openRecording, _pauseRecording, _stopRecording, _openRecordingPlan, _skipAutomaticToday;
 
     public QuickAccessWindow(string endpoint, Action power, Action pause, Action startClassIsland, Action settings,
@@ -81,6 +87,12 @@ public partial class QuickAccessWindow : Window
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
         SelectShortcutPage(false); RefreshCompact();
+        _idleTimer.Tick += (_, _) => RefreshHandleOpacity();
+        _idleTimer.Start();
+        EdgeHandle.MouseEnter += (_, _) => HandleActivity();
+        EdgeHandle.MouseLeave += (_, _) => HandleActivity();
+        EdgeHandle.GotKeyboardFocus += (_, _) => HandleActivity();
+        ShortcutItems.SizeChanged += (_, _) => RefreshShortcutColumns();
         SourceInitialized += (_, _) =>
         {
             _handle = new WindowInteropHelper(this).Handle;
@@ -96,10 +108,10 @@ public partial class QuickAccessWindow : Window
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Collapse(); } };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(Position);
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplayChanged;
-        Closed += (_, _) => { _closing = true; Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplayChanged; };
+        Closed += (_, _) => { _closing = true; _idleTimer.Stop(); Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplayChanged; };
         EdgeHandle.PreviewMouseLeftButtonDown += (_, e) =>
         {
-            if (!IsPromotedTouch(e) && _handleTouch is null) { BeginDrag(PointToScreen(e.GetPosition(this))); EdgeHandle.CaptureMouse(); }
+            if (!IsPromotedTouch(e) && _handleTouch is null && _dragStart is null) { BeginDrag(PointToScreen(e.GetPosition(this))); if (!EdgeHandle.CaptureMouse()) CancelDrag(); }
             e.Handled = true;
         };
         EdgeHandle.PreviewMouseMove += (_, e) =>
@@ -109,7 +121,7 @@ public partial class QuickAccessWindow : Window
         EdgeHandle.PreviewTouchDown += (_, e) =>
         {
             if (_handleTouch is null && _dragStart is null)
-            { _handleTouch = e.TouchDevice; BeginDrag(PointToScreen(e.GetTouchPoint(this).Position)); EdgeHandle.CaptureTouch(e.TouchDevice); }
+            { _handleTouch = e.TouchDevice; BeginDrag(PointToScreen(e.GetTouchPoint(this).Position)); if (!EdgeHandle.CaptureTouch(e.TouchDevice)) { _handleTouch = null; CancelDrag(); } }
             e.Handled = true;
         };
         EdgeHandle.PreviewTouchMove += (_, e) =>
@@ -180,7 +192,7 @@ public partial class QuickAccessWindow : Window
         if (_closing || _autoHidden) return;
         if (!_expanded) _previous = GetForegroundWindow();
         bool animate = !_expanded && SystemParameters.ClientAreaAnimation;
-        _expanded = true; RefreshCompact();
+        RefreshTaskOrder(); _expanded = true; RefreshCompact();
         PanelSurface.Visibility = Visibility.Visible;
         RefreshRail();
         if (!IsVisible) Show();
@@ -193,7 +205,7 @@ public partial class QuickAccessWindow : Window
         if (_closing) return;
         _handleInputRevision++; // A pending release must not reopen a deliberately closed/hidden panel.
         bool wasExpanded = _expanded;
-        _expanded = false; RefreshCompact();
+        _expanded = false; RefreshCompact(); RefreshTaskOrder();
         PanelSurface.BeginAnimation(OpacityProperty, null);
         PanelSurface.Visibility = Visibility.Collapsed;
         RefreshRail();
@@ -213,13 +225,16 @@ public partial class QuickAccessWindow : Window
     private void OnboardingClicked(object sender, RoutedEventArgs e) { Collapse(false); _onboarding?.Invoke(); }
 
     public void SetSide(bool leftSide)
-    { _placement = _placement with { LeftSide = leftSide }; Collapse(); Position(); Save(); }
+    { CancelDrag(); EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture(); _placement = _placement with { LeftSide = leftSide }; HandleActivity(); Collapse(); Position(); Save(); }
 
-    public void Shutdown() { _closing = true; Close(); }
+    public void Shutdown() { CancelDrag(); EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture(); _closing = true; _idleTimer.Stop(); Close(); }
 
     private void BeginDrag(Point point)
     {
+        HandleActivity();
+        _handleInputRevision++; // A second gesture supersedes an earlier queued click.
         _dragStart = point; _dragging = false;
+        _gestureScale = Scale() * ((Content as FrameworkElement)?.LayoutTransform is ScaleTransform transform ? transform.ScaleY : 1);
         _dragOffsetY = point.Y - PointToScreen(new Point(0, 0)).Y;
     }
 
@@ -230,11 +245,21 @@ public partial class QuickAccessWindow : Window
         if (_dragging) Save();
         _dragStart = null; _dragging = false;
         _handleInputRevision++;
+        HandleActivity();
     }
 
     private void MoveHandle(Point point)
     {
-        if (_expanded || _dragStart is not { } start || (!_dragging && (point - start).Length < 8)) return;
+        if (_dragStart is not { } start || (!_dragging && (point - start).Length < 12 * _gestureScale)) return;
+        if (_expanded)
+        {
+            // The expanded rail can return to either a full rail or a compact handle.
+            // Measure the handle itself across that layout change so it stays under the finger.
+            double inHandle = start.Y - PointToScreen(EdgeHandle.TranslatePoint(new Point(), this)).Y;
+            Collapse(false); UpdateLayout();
+            if (_dragStart is null) return; // Capture may have been cancelled by the display change.
+            _dragOffsetY = inHandle + PointToScreen(EdgeHandle.TranslatePoint(new Point(), this)).Y - PointToScreen(new Point()).Y;
+        }
         _dragging = true;
         var screen = Forms.Screen.FromPoint(new System.Drawing.Point((int)point.X, (int)point.Y));
         double dpi = Scale();
@@ -253,6 +278,7 @@ public partial class QuickAccessWindow : Window
         _dragStart = null;
         _dragging = false;
         _handleTouch = null;
+        HandleActivity();
         // Release capture BEFORE resizing/activating the window. Otherwise WPF/Windows can
         // cancel the same touch during expansion and immediately deactivate/collapse it.
         if (touch is not null) EdgeHandle.ReleaseTouchCapture(touch);
@@ -282,34 +308,70 @@ public partial class QuickAccessWindow : Window
         StatusText.Text = status;
         PowerButton.Content = state?.Running == true ? "停止辅助" : "开启辅助";
         PowerButton.IsEnabled = available;
-        PauseButton.Content = state?.Paused == true ? "继续" : "暂停";
+        PauseButton.Content = state?.Paused == true ? "继续辅助" : "暂停辅助";
         PauseButton.Visibility = state?.Running == true ? Visibility.Visible : Visibility.Collapsed;
         PauseButton.IsEnabled = available;
         ClassIslandStatus.Text = classIslandStatus; ClassIslandButton.IsEnabled = canStart;
         ClassIslandButton.Content = startLabel;
         RailStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(
             state?.Error is not null ? "#CD7552" : state?.Running != true ? "#A5B3AB" : state.Paused ? "#C69A4F" : "#147D68"));
-        RailTools.ToolTip = "课堂工具 · " + status;
+        RailStatusDot.ToolTip = "PPT 辅助 · " + status;
     }
 
     private void HandleClicked(object sender, RoutedEventArgs e) => ToggleHandle();
     private void ToggleHandle() { if (_autoHidden) return; if (_placement.Compact && !_expanded) SetCompact(false); else if (_expanded) Collapse(); else OpenPanel(); }
-    public void SetCompact(bool compact) { _placement = _placement with { Compact = compact }; Collapse(false); Save(); }
+    public void SetCompact(bool compact) { CancelDrag(); EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture(); _placement = _placement with { Compact = compact }; HandleActivity(); Collapse(false); Save(); }
     private void FoldClicked(object sender, RoutedEventArgs e) => SetCompact(!_placement.Compact);
     private void RefreshCompact()
     {
         bool compact = _placement.Compact && !_expanded;
         RailTools.Visibility = RailShortcuts.Visibility = RailSecRandom.Visibility = RailSettings.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         RailFold.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        RailFold.Content = compact ? "‹›" : "⋮";
+        RailSeparator.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        RailFold.Content = "收起";
         RailFold.ToolTip = compact ? "恢复快捷侧栏" : "折叠为快捷把手";
+        RefreshHandleOpacity();
+    }
+    private void HandleActivity() { _handleActivity = Stopwatch.GetTimestamp(); Rail.Opacity = 1; }
+    private void RefreshHandleOpacity()
+    {
+        Rail.Opacity = _placement.Compact && !_expanded && !_autoHidden && _dragStart is null &&
+            !EdgeHandle.IsMouseOver && !EdgeHandle.IsKeyboardFocusWithin && Stopwatch.GetElapsedTime(_handleActivity).TotalSeconds >= 3 ? .6 : 1;
+    }
+    private void RefreshShortcutColumns()
+    {
+        if (System.Windows.Media.VisualTreeHelper.GetChildrenCount(ShortcutItems) == 0) return;
+        void Visit(DependencyObject node)
+        {
+            if (node is System.Windows.Controls.Primitives.UniformGrid grid) { grid.Columns = ShortcutItems.ActualWidth < 290 ? 1 : 2; return; }
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++) Visit(VisualTreeHelper.GetChild(node, i));
+        }
+        Visit(ShortcutItems);
+    }
+    public void SetStudyAction(Action action) => _study = action;
+    private void StudyClicked(object sender, RoutedEventArgs e) { Collapse(false); _study?.Invoke(); }
+    public void UpdateStudy(string title, string status, string next, string action, bool active)
+    {
+        StudyTitle.Text = title; StudyStatus.Text = status; StudyNext.Text = next; StudyButton.Content = action;
+        StudyNext.Visibility = string.IsNullOrWhiteSpace(next) ? Visibility.Collapsed : Visibility.Visible;
+        if (_studyTask != active) { _studyTask = active; _taskOrderDirty = true; }
+        RefreshTaskOrder();
+    }
+    private void RefreshTaskOrder()
+    {
+        // Do not move controls beneath a finger or keyboard focus in an open panel.
+        if (_expanded || !_taskOrderDirty) return;
+        bool recordingFirst = _recordingTask && !_studyTask;
+        var first = recordingFirst ? RecordingCard : StudyCard;
+        if (TaskStack.Children[0] != first) { TaskStack.Children.Remove(first); TaskStack.Children.Insert(0, first); }
+        _taskOrderDirty = false;
     }
     public void SetAutoHidden(bool hidden)
     {
         if (_closing || _autoHidden == hidden) return;
         _autoHidden = hidden;
         if (hidden) { CancelDrag(); EdgeHandle.ReleaseMouseCapture(); EdgeHandle.ReleaseAllTouchCaptures(); Collapse(false); Hide(); }
-        else ShowEntry();
+        else { HandleActivity(); ShowEntry(); }
     }
     public void ShowEntry() { if (!_autoHidden && !_closing) { if (!IsVisible) Show(); Position(); } }
     public void SetRecordingActions(Action open, Action pause, Action stop, Action plan, Action skipToday)
@@ -320,9 +382,12 @@ public partial class QuickAccessWindow : Window
         AutomaticSkipDay.Visibility = state.Enabled && stateAvailable ? Visibility.Visible : Visibility.Collapsed;
         AutomaticSkipDay.IsEnabled = stateAvailable;
     }
-    private void AutomaticSkipDayClicked(object sender, RoutedEventArgs e) => _skipAutomaticToday?.Invoke();
+    private void AutomaticSkipDayClicked(object sender, RoutedEventArgs e) { if (AutomaticSkipDay.IsEnabled && AutomaticSkipDay.Visibility == Visibility.Visible) _skipAutomaticToday?.Invoke(); }
     public void UpdateRecording(RecordingState state, bool stateAvailable = true)
     {
+        bool active = stateAvailable && state.Active;
+        if (_recordingTask != active) { _recordingTask = active; _taskOrderDirty = true; }
+        RefreshTaskOrder();
         if (!stateAvailable)
         {
             RecordingStatus.Text = "录制后台未确认当前状态，等待重新连接。";
@@ -341,8 +406,8 @@ public partial class QuickAccessWindow : Window
     }
     private void RecordingClicked(object sender, RoutedEventArgs e) { Collapse(false); _openRecording?.Invoke(); }
     private void RecordingPlanClicked(object sender, RoutedEventArgs e) { Collapse(false); _openRecordingPlan?.Invoke(); }
-    private void RecordingPauseClicked(object sender, RoutedEventArgs e) => _pauseRecording?.Invoke();
-    private void RecordingStopClicked(object sender, RoutedEventArgs e) => _stopRecording?.Invoke();
+    private void RecordingPauseClicked(object sender, RoutedEventArgs e) { if (RecordingPause.IsEnabled && RecordingControls.Visibility == Visibility.Visible) _pauseRecording?.Invoke(); }
+    private void RecordingStopClicked(object sender, RoutedEventArgs e) { if (RecordingStop.IsEnabled && RecordingControls.Visibility == Visibility.Visible) _stopRecording?.Invoke(); }
     private void RailToolsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(false); OpenPanel(); }
     private void RailShortcutsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(true); OpenPanel(); }
     private void PowerClicked(object sender, RoutedEventArgs e) => _power();
@@ -353,6 +418,7 @@ public partial class QuickAccessWindow : Window
     {
         ShortcutItems.ItemsSource = items;
         ShortcutsEmpty.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, RefreshShortcutColumns);
     }
 
     public void SetShortcutStatus(string message, bool available, bool repair)

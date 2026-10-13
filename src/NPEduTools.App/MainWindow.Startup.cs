@@ -46,6 +46,8 @@ public partial class MainWindow
         _quick.SetSecRandomAction(ShowSecRandom);
         _quick.SetSecRandomQuickDrawAction(QuickDrawSecRandomAsync);
         _quick.SetClassroomModeAction(ShowClassroomMode);
+        _quick.SetStudyAction(() => ShowStudyWorkspace(_homeStudyTarget));
+        RefreshWorkspaceHome();
         _ = ClassroomModePollAsync();
         _quick.SetRecordingActions(ShowRecording,
             () => _ = _recording.SendAsync(_recording.State.Phase == "Paused" ? "resume" : "pause"),
