@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO.Pipes;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -74,17 +73,10 @@ internal sealed class AudioInput : IAsyncDisposable
             var token = _lifetime.Token;
             await _pipe.WaitForConnectionAsync(token);
             foreach (var source in _sources) source.Buffer.ClearBuffer();
-            float[] mixed = new float[1920], input = new float[1920];
-            byte[] bytes = new byte[1920 * sizeof(float)];
-            var clock = Stopwatch.StartNew();
-            long blocks = 0;
-            while (!token.IsCancellationRequested)
+            float[] input = new float[1920];
+            await RecordingAudioPump.RunAsync(_pipe, mixed =>
             {
                 if (Error is { } error) throw new IOException("音频设备已中断。", error);
-                double delay = blocks * 20 - clock.Elapsed.TotalMilliseconds;
-                if (delay > 0) await Task.Delay(TimeSpan.FromMilliseconds(delay), token);
-                if (delay < -500) throw new IOException("音频写入持续落后，已停止以保留当前片段。");
-                Array.Clear(mixed);
                 foreach (var source in _sources)
                 {
                     // Bound latency after bursts; do not keep stale classroom audio queued indefinitely.
@@ -93,12 +85,8 @@ internal sealed class AudioInput : IAsyncDisposable
                     int read = source.Samples.Read(input, 0, input.Length);
                     for (int i = 0; i < read; i++) mixed[i] += input[i] / _sources.Count;
                 }
-                Buffer.BlockCopy(mixed, 0, bytes, 0, bytes.Length);
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-                deadline.CancelAfter(TimeSpan.FromSeconds(3));
-                await _pipe.WriteAsync(bytes, deadline.Token);
-                blocks++;
-            }
+            }, () => { foreach (var source in _sources) source.Buffer.ClearBuffer(); },
+                () => Interlocked.Increment(ref _overruns), token);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception error) when (error is not OutOfMemoryException) { Volatile.Write(ref _error, error); }
