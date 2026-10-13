@@ -13,6 +13,20 @@ public partial class NoiseReferenceWindow : Window
     private sealed record Choice(string Id, string Name);
     private sealed record SampleRow(Guid Id, string Description);
     private NoiseProtectionState? _access;
+    private NoiseProtectionState? _verifiedAccess;
+    internal void UseVerifiedAccess(NoiseProtectionState state)
+    {
+        _verifiedAccess = state;
+        ReferenceCredentials.Visibility = Visibility.Collapsed;
+        VerifiedCredentialHint.Visibility = Visibility.Visible;
+    }
+    private void RestoreCredentials(bool clear)
+    {
+        _verifiedAccess = null;
+        ReferenceCredentials.Visibility = Visibility.Visible;
+        VerifiedCredentialHint.Visibility = Visibility.Collapsed;
+        if (clear) ManagementSecret.Clear();
+    }
     private async Task ReadAccessAsync(CancellationToken token, long stamp)
     {
         var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token);
@@ -21,6 +35,9 @@ public partial class NoiseReferenceWindow : Window
     }
     private void ShowAccess(NoiseProtectionState? state)
     {
+        if (_verifiedAccess is { } verified && (state?.ManagementSource != verified.ManagementSource ||
+            state?.CredentialRevision != verified.CredentialRevision || state?.InstanceId != verified.InstanceId))
+            RestoreCredentials(true);
         _access = state;
         ManagementLabel.Text = CalibrationAccess.Label(_access); ManagementHint.Text = CalibrationAccess.Hint(_access);
         UpdateButtons();
@@ -47,7 +64,7 @@ public partial class NoiseReferenceWindow : Window
         if (meterPath is not null)
         {
             Title = "USB 同期校准 (Beta) · NPEduTools"; Heading.Text = "USB 同期校准 (Beta)";
-            StepNavigation.Visibility = ReviewSamples.Visibility = Visibility.Visible;
+            StepNavigation.Visibility = Visibility.Visible;
             BeginDraft.Content = "下一步：准备采样";
             SampleDetails.IsExpanded = false;
             WorkflowNote.Text = "连续读取所选仪表，与麦克风在同一 Host 时钟下同期统计。现场模式自动采两段各 30 秒，计算偏移并复核，无需刻意制造安静或第二音量。仪表内部采样时间没有确认的时间戳；保留 Beta，不宣称精确硬件同步或 LAeq。设备、输入设置变化后参考失效。";
@@ -213,7 +230,7 @@ public partial class NoiseReferenceWindow : Window
         { _autoFieldDraft=null;OperationMessage.Text="第一段声场波动超过本草稿允许值，自动续采已停止；可调整门槛并新建草稿，原确认参考保留。";return; }
         _autoCheckQueued=true;
         Dispatcher.BeginInvoke(new Action(async()=> {
-            if (_lifetime.IsCancellationRequested || !IsVisible || _autoFieldDraft!=owned || _autoPrimaryRevision is not {} revision ||
+            if (_lifetime.IsCancellationRequested || !WorkspacePanel.Visible(this) || _autoFieldDraft!=owned || _autoPrimaryRevision is not {} revision ||
                 _state is not {} current || !OwnsFieldContinuation(current,owned,revision,first.Id))
             { _autoFieldDraft=null;return; }
             await SendAsync("start",role:"Check");
@@ -247,7 +264,7 @@ public partial class NoiseReferenceWindow : Window
         PreparePanel.Visibility = _step == 1 ? Visibility.Visible : Visibility.Collapsed;
         SamplePanel.Visibility = _step == 2 ? Visibility.Visible : Visibility.Collapsed;
         ResultPanel.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
-        if (_displayedStep != _step) { _displayedStep = _step; ((ScrollViewer)Content).ScrollToTop(); }
+        if (_displayedStep != _step) { _displayedStep = _step; ReferencePageScroll.ScrollToTop(); }
         bool navigating = _connected && !_busy && !_verifying && _state?.State != "Sampling" && _autoFieldDraft is null;
         SetupStep.IsEnabled = !_busy && !_verifying && (!_connected || navigating);
         SamplingStep.IsEnabled = ReviewSamples.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath;
@@ -261,7 +278,7 @@ public partial class NoiseReferenceWindow : Window
         if (_busy || _verifying || _connected && (_state?.State == "Sampling" || _autoFieldDraft is not null)) return;
         if (!_connected && step != 1) return;
         if (step != 1 && _state?.Draft?.MeterDevicePath != _meterPath) return;
-        _step = step; UpdateSteps(); ((ScrollViewer)Content).ScrollToTop();
+        _step = step; UpdateSteps(); ReferencePageScroll.ScrollToTop();
     }
     private void SetupClicked(object sender, RoutedEventArgs e) => Navigate(1);
     private void SamplingClicked(object sender, RoutedEventArgs e) => Navigate(2);
@@ -331,6 +348,7 @@ public partial class NoiseReferenceWindow : Window
             ShowAccess(reply.NoiseProtection ?? _access);
             OperationMessage.Text = reply.Outcome == "Succeeded" ? _connected ? "管理口令验证通过；校准状态已刷新。" : "管理口令验证通过；采样状态仍待确认，请重试刷新。" :
                 CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
+            if (reply.Outcome != "Succeeded") RestoreCredentials(false);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "管理验证响应未确认，请检查后台连接后重试。"; }
@@ -340,13 +358,13 @@ public partial class NoiseReferenceWindow : Window
     {
         if (_busy || _verifying || _lifetime.IsCancellationRequested) return;
         _busy = true; _order.Advance(); UpdateButtons();
-        try { await NoiseManagementDialog.ConfigureAsync(this, _pipe); }
+        try { await NoiseManagementDialog.ConfigureAsync(WorkspacePanel.DialogOwner(this), _pipe); }
         finally { _busy = false; }
         await ReadCoreAsync(true); UpdateButtons();
     }
     private async void BeginClicked(object sender, RoutedEventArgs e)
     {
-        if (_state?.Draft?.Samples.Count > 0 && MessageBox.Show(this, "新草稿会替换已有参考统计，已确认参考保留。继续吗？",
+        if (_state?.Draft?.Samples.Count > 0 && MessageBox.Show(WorkspacePanel.DialogOwner(this), "新草稿会替换已有参考统计，已确认参考保留。继续吗？",
             "新建外部参考草稿", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
         await SendAsync("begin");
     }

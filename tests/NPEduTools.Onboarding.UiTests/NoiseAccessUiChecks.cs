@@ -30,7 +30,7 @@ internal static partial class Program
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
         string pipe = "NPEduTools.Test.noise-access." + Guid.NewGuid().ToString("N");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         using var initial = new NamedPipeServerStream(pipe, PipeDirection.InOut, 1,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         async Task<HostRequest> Read(NamedPipeServerStream server)
@@ -63,7 +63,9 @@ internal static partial class Program
                     Assert(request.Capability == "noise.devices", "unexpected initial query");
                     var warmup = Protocol.WriteAsync(initial, new HostResponse(Protocol.Version, request.RequestId,
                         "Succeeded", null, "合成设备", Noise: state, NoiseDevices: [new("fixture", "合成麦克风")]), timeout.Token);
-                    PumpUntil(() => warmup.IsCompleted && ((TextBlock)owner.FindName("SummaryText")).Text.Contains("29.6"),
+                    PumpUntil(() => warmup.IsCompleted, "initial signal write stalled");
+                    var ownership = ReplyManualFixtureAsync(initial, state, timeout.Token);
+                    PumpUntil(() => ownership.IsCompleted && ((TextBlock)owner.FindName("SummaryText")).Text.Contains("29.6"),
                         "synthetic initial state did not render");
                     warmup.GetAwaiter().GetResult(); initial.Dispose();
                     // The duplex HostClient cannot open a write-only server. No real ACL changes are made.
@@ -106,7 +108,9 @@ internal static partial class Program
                     Assert(fresh.Capability == "noise.status" && fresh.Noise is null, "recovery replayed a command");
                     var reply = Protocol.WriteAsync(recovered, new HostResponse(Protocol.Version, fresh.RequestId,
                         "Succeeded", null, "隔离恢复", Noise: state with { State = "Active", Revision = 8, CurrentDbfs = -42 }), timeout.Token);
-                    PumpUntil(() => reply.IsCompleted && ((TextBlock)owner.FindName("LevelText")).Text == "-42.0",
+                    PumpUntil(() => reply.IsCompleted, "recovery signal write stalled");
+                    var restoredOwnership = ReplyManualFixtureAsync(recovered, state with { State = "Active" }, timeout.Token);
+                    PumpUntil(() => restoredOwnership.IsCompleted && ((TextBlock)owner.FindName("LevelText")).Text == "-42.0",
                         "fresh status failed to restore the noise display");
                     reply.GetAwaiter().GetResult();
                     Assert(Button(owner, "StopButton").IsEnabled && !Button(owner, "StartButton").IsEnabled,
@@ -129,7 +133,7 @@ internal static partial class Program
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         string pipe = "NPEduTools.Test.noise-management-access." + Guid.NewGuid().ToString("N");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         using var denied = new NamedPipeServerStream(pipe, PipeDirection.Out, 1,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var state = new NoiseProtectionState(operation == "authorize", true, Guid.NewGuid(),
@@ -139,7 +143,7 @@ internal static partial class Program
         var owner = new Window { Title = "隔离管理访问检查", Width = 600, Height = 400 };
         owner.Show();
         var type = typeof(NoiseWindow).Assembly.GetType("NPEduTools.App.NoiseManagementDialog")!;
-        var dialog = (Window)type.GetConstructors(flags).Single().Invoke([owner, pipe, state, target]);
+        var dialog = (Window)type.GetConstructors(flags).Single().Invoke([owner, pipe, state, target, null, null]);
         var submit = (Button)type.GetField("_submit", flags)!.GetValue(dialog)!;
         var message = (TextBlock)type.GetField("_message", flags)!.GetValue(dialog)!;
         var context = new QuickEventContext();

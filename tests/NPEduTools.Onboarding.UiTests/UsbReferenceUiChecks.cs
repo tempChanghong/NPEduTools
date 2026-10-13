@@ -155,7 +155,7 @@ internal static partial class Program
                 Assert(Owns(continuation),"owned first result lost continuation eligibility");
                 Assert(!Owns(continuation with {Revision=103}),"another window's resample retained old automatic continuation");
                 Assert(!Owns(continuation with {Draft=continuation.Draft with {Samples=[first with {Id=Guid.NewGuid()}]}}),"replacement first sample retained automatic continuation");
-                ((ScrollViewer)owner.Content).ScrollToBottom();owner.UpdateLayout();
+                ((ScrollViewer)owner.FindName("ReferencePageScroll")).ScrollToBottom();owner.UpdateLayout();
                 Snapshot(owner,"field-reference-warning.png");
                 ((CheckBox)owner.FindName("AcceptReferenceWarning")).IsChecked=true;Assert(Button(owner,"ConfirmProfile").IsEnabled,"acknowledgement did not enable save");
                 Click(owner,"ConfirmProfile");PumpUntil(()=>noise.ReferenceHandle(new(1,Guid.NewGuid(),"noise.reference.status")).NoiseReference?.Profile is {Workflow:"Field",WarningAcknowledged:true},"field acknowledgement/profile not saved");

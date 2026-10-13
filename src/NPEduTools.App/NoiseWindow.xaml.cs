@@ -23,6 +23,7 @@ public partial class NoiseWindow : Window
         Closing += (_, args) => { if (!_closing) { args.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Microphone.SelectionChanged += (_, _) => UpdateButtons();
+        ManualOptionsChanged(this, new RoutedEventArgs());
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
@@ -31,7 +32,7 @@ public partial class NoiseWindow : Window
         var request = new HostRequest(Protocol.Version, Guid.NewGuid(), capability, Noise: command);
         if (command?.Action == "stop")
         {
-            var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, request);
+            var authorized = await NoiseManagementDialog.AuthorizeAsync(WorkspacePanel.DialogOwner(this), _pipe, request);
             if (authorized is null) return new(Protocol.Version, request.RequestId, "Rejected", "MANAGEMENT_CANCELLED", "未验证，监测继续。", Noise: _state);
             request = authorized;
         }
@@ -51,7 +52,7 @@ public partial class NoiseWindow : Window
                 ? $"{guard.Message} 恢复次数：{guard.Restarts}/3。" : "守护未连接或状态已陈旧；不会据此判断监测已停止。";
             try
             {
-                if (!_busy && (IsVisible || !loadedDevices))
+                if (!_busy && (WorkspacePanel.Visible(this) || !loadedDevices))
                 {
                     var response = await RequestAsync(loadedDevices ? "noise.status" : "noise.devices");
                     if (_lifetime.IsCancellationRequested || operation != _uiOperation) continue;
@@ -60,7 +61,7 @@ public partial class NoiseWindow : Window
                     var manual=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.status"),manualTimeout.Token);
                     if(operation!=_uiOperation)continue;
                     _manual=manual.ManualStudy;
-                    ManualStatus.Text=_manual is {} m?$"{m.State} · {m.Reason??"学校定时优先；预约不会在后台重启后续开"}":"当前后台尚未支持手动自习，请更新后台。";
+                    ManualStatus.Text = _manual is { } m ? ManualStateText(m) : "手动会话状态待确认，不能据此判断已结束。";
                     Render(response.Noise);
                     if (response.Noise is not null)
                         DisplayStatusText.Text = response.NoiseDisplay is { } display
@@ -84,11 +85,35 @@ public partial class NoiseWindow : Window
     }
     private void UpdateButtons()
     {
+        bool manualRunning = _manual?.State is "Waiting" or "Preparing" or "Starting" or "Active" or "Stopping";
+        ManualConfiguration.Visibility = manualRunning ? Visibility.Collapsed : Visibility.Visible;
+        ManualHeading.Text = manualRunning ? "当前手动自习" : "开始一节手动自习";
+        StartButton.Visibility = manualRunning ? Visibility.Collapsed : Visibility.Visible;
+        StopButton.Visibility = manualRunning ? Visibility.Visible : Visibility.Collapsed;
+        StartButton.Content = UseStart.IsChecked == true ? "保存预约" : "开始自习";
+        StopButton.Content = _manual?.State is "Waiting" or "Preparing" ? "取消预约" : "结束自习";
         bool running = _state?.State is "Starting" or "Active" or "Stopping";
         StartButton.IsEnabled = _manual is not null && _manual.State is not ("Waiting" or "Preparing" or "Starting" or "Active" or "Stopping") && _connected && !_busy && !running && Microphone.SelectedItem is NoiseDevice;
         SaveDeviceButton.IsEnabled = StartButton.IsEnabled;
         StopButton.IsEnabled = _connected && !_busy && _manual?.State is "Waiting" or "Preparing" or "Starting" or "Active";
         Microphone.IsEnabled = RefreshButton.IsEnabled = !_busy && !running;
+    }
+    private static string ManualStateText(ManualStudyState state)
+    {
+        string phase = state.State switch { "Waiting" => "等待预约开始", "Preparing" => "准备自习（尚未采集）",
+            "Starting" => "正在启动，等待采样确认", "Active" => "手动会话已启动，实际采集见下方状态",
+            "Stopping" => "正在结束", "Stopped" => "已结束", _ => state.Reason ?? "当前没有手动会话" };
+        return phase + (state.StartUtc is { } start ? $"\n开始：{start.ToLocalTime():yyyy-MM-dd HH:mm}" : "") +
+            (state.EndUtc is { } end ? $"\n结束：{end.ToLocalTime():yyyy-MM-dd HH:mm}" : "") +
+            (state.Reason is { } reason ? "\n" + reason : "");
+    }
+    private void ManualOptionsChanged(object sender, RoutedEventArgs e)
+    {
+        if (StartFields is null) return;
+        StartFields.Visibility = UseStart.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        EndFields.Visibility = UseEnd.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        ManualHideMinutes.IsEnabled = NoManualReturn.IsChecked != true;
+        UpdateButtons();
     }
     private void Render(NoiseState? state)
     {
@@ -105,7 +130,10 @@ public partial class NoiseWindow : Window
             SummaryTitle.Text = "监测统计（状态未知）";
             SummaryText.Text = "后台连接中断，暂不展示旧统计。恢复连接后重新读取；不能据此判断监测已经停止。";
             EstimateText.Text = "估算状态待确认";
-            TrendCanvas.Children.Clear(); UpdateButtons(); return;
+            TrendCanvas.Children.Clear(); UpdateButtons();
+            ManualStatus.Text = "手动会话状态未知，不能据此判断已结束。";
+            ManualHeading.Text = "后台状态待确认";
+            return;
         }
         _state = state;
         StateText.Text = state.Message;
@@ -166,6 +194,7 @@ public partial class NoiseWindow : Window
         try
         {
             var response = await RequestAsync(capability, command);
+            if (_lifetime.IsCancellationRequested) return;
             if (response.NoiseDevices is not null)
             {
                 SetDevices(response.NoiseDevices);
@@ -203,13 +232,13 @@ public partial class NoiseWindow : Window
     private async Task ManualCommandAsync(ManualStudyCommand command)
     {
         if(_busy)return;_busy=true;_uiOperation++;UpdateButtons();
-        try{using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(5));var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",ManualStudy:command),deadline.Token);_manual=reply.ManualStudy;MessageText.Text=reply.Message;Render(reply.Noise);}
+        try{using var deadline=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);deadline.CancelAfter(5000);var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",ManualStudy:command),deadline.Token);if(_lifetime.IsCancellationRequested)return;_manual=reply.ManualStudy;ManualStatus.Text=_manual is {} m?ManualStateText(m):"手动会话状态待确认。";MessageText.Text=reply.Message;Render(reply.Noise);}
         catch(Exception e)when(e is IOException or InvalidDataException or JsonException or OperationCanceledException){Render(null);MessageText.Text="请求结果待确认；请等待后台状态恢复，不重复启动。";}
         finally{_busy=false;UpdateButtons();}
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {
-        try { await NoiseManagementDialog.ConfigureAsync(this, _pipe); }
+        try { await NoiseManagementDialog.ConfigureAsync(WorkspacePanel.DialogOwner(this), _pipe); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         { MessageText.Text = "无法读取后台管理设置，请重试。"; }
     }

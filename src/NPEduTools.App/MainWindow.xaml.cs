@@ -40,6 +40,7 @@ public partial class MainWindow : Window
         _upstream = upstream;
         InitializeComponent();
         InitializeDensity(initializeServices);
+        InitializeStudyWorkspace();
         InitializeBridgeClock();
         Closed += (_, _) => ShutdownExitWarning();
         DataContext = _model;
@@ -61,7 +62,7 @@ public partial class MainWindow : Window
             if (_quick is not null || _tray is not null) HideToEdge();
             else StopClicked(this, new RoutedEventArgs());
         };
-        Closed += (_, _) => { _lifetime.Cancel(); _studyMonitoringWindow?.Shutdown(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _studyWindow?.Shutdown();_manualStudyWindow?.Shutdown(); _studyWindow = null; _studyReportWindow?.Shutdown(); _studyReportWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording?.Detach(); };
+        Closed += (_, _) => { _lifetime.Cancel(); CloseWorkspaceCalibration(); _noiseWindow?.Shutdown(); _studyMonitoringWindow?.Shutdown(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _studyWindow?.Shutdown();_manualStudyWindow?.Shutdown(); _studyWindow = null; _studyReportWindow?.Shutdown(); _studyReportWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording?.Detach(); };
         _model.PropertyChanged += (_, _) =>
         {
             // After success, the next live snapshot owns the quick panel status again.
@@ -159,7 +160,7 @@ public partial class MainWindow : Window
     public void RestoreWindow()
     {
         _quick?.Collapse(false);
-        Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        if (!IsVisible) Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
     }
 
@@ -168,9 +169,10 @@ public partial class MainWindow : Window
     private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
     private void SelectPage(bool settings)
     {
+        HideStudyWorkspace();
         AboutPageView.Visibility = Visibility.Collapsed;
         AboutNav.Tag = null;
-        PageBreadcrumb.Text = settings ? "设置" : "概览";
+        PageBreadcrumb.Text = settings ? "设备与连接" : "主页";
         ShortcutPage.Visibility = Visibility.Collapsed;
         ShortcutNav.Tag = null;
         HomePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;

@@ -7,37 +7,26 @@
       <Style x:Key="NoiseCard" TargetType="Border"><Setter Property="Background" Value="White" /><Setter Property="CornerRadius" Value="16" /><Setter Property="Padding" Value="24" /><Setter Property="Margin" Value="0,0,0,16" /></Style>
     </ResourceDictionary>
   </Window.Resources>
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="28">
-      <TextBlock Text="手动自习" FontSize="30" FontWeight="Bold" />
-      <TextBlock Text="指定可选的开始与结束时间，实际采集最多三小时。学校定时自习优先；关闭设置页不停止采集。" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,22" />
-      <Border Style="{StaticResource NoiseCard}"><StackPanel>
-        <TextBlock Text="监测麦克风" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12" />
-        <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-          <ComboBox x:Name="Microphone" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{StaticResource RecordingChoice}" AutomationProperties.Name="监测麦克风" />
-          <Button x:Name="RefreshButton" Grid.Column="1" Content="刷新设备" Click="RefreshClicked" Margin="12,0,0,0" />
-        </Grid>
-        <StackPanel Margin="0,16,0,0">
-          <CheckBox x:Name="UseStart" Content="指定开始日期与时间（不选则立即开始）"/>
-          <Grid Margin="0,8,0,12"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
-            <DatePicker x:Name="ManualStartDate"/><TextBox x:Name="ManualStartTime" Grid.Column="1" Text="19:00" Margin="12,0,0,0" AutomationProperties.Name="手动开始时间 HH:mm"/>
-          </Grid>
-          <CheckBox x:Name="UseEnd" Content="指定结束日期与时间（不选则主动结束，最多三小时）"/>
-          <Grid Margin="0,8,0,12"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
-            <DatePicker x:Name="ManualEndDate"/><TextBox x:Name="ManualEndTime" Grid.Column="1" Text="21:30" Margin="12,0,0,0" AutomationProperties.Name="手动结束时间 HH:mm"/>
-          </Grid>
-          <WrapPanel><TextBlock Text="临时使用后无操作返回（分钟）" VerticalAlignment="Center"/><TextBox x:Name="ManualHideMinutes" Text="10" Width="72" Margin="12,0"/><CheckBox x:Name="NoManualReturn" Content="不自动返回" VerticalAlignment="Center"/></WrapPanel>
-          <TextBlock x:Name="ManualStatus" Text="正在核对手动自习状态…" TextWrapping="Wrap" Margin="0,12,0,0"/>
-        </StackPanel>
-        <WrapPanel Margin="0,16,0,0">
-          <Button x:Name="SaveDeviceButton" Content="保存麦克风" Click="SaveDeviceClicked" Margin="0,0,12,0" />
-          <Button x:Name="StartButton" Content="安排／开始手动自习" Click="StartClicked" Background="#147D68" Foreground="White" IsEnabled="False" Margin="0,0,12,0" AutomationProperties.AutomationId="NoiseStart" />
-          <Button x:Name="StopButton" Content="结束／取消手动自习" Click="StopClicked" IsEnabled="False" AutomationProperties.AutomationId="NoiseStop" />
-        </WrapPanel>
-        <TextBlock x:Name="StateText" Text="正在连接后台…" TextWrapping="Wrap" Margin="0,16,0,0" />
-        <TextBlock x:Name="StateHintText" TextWrapping="Wrap" Foreground="#64776D" Margin="0,6,0,0" Visibility="Collapsed" />
-        <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="#64776D" Margin="0,6,0,0" />
-      </StackPanel></Border>
+  <Grid><Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <ScrollViewer x:Name="ManualPageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel Margin="4,0,4,12">
+    <Border Style="{StaticResource NoiseCard}" Padding="20"><StackPanel>
+      <TextBlock x:Name="ManualHeading" Text="开始一节手动自习" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="可选开始与结束时间，实际采集最多三小时。学校定时自习优先。" Foreground="#64776D" TextWrapping="Wrap" Margin="0,6,0,16"/>
+      <StackPanel x:Name="ManualConfiguration">
+        <TextBlock Text="什么时候开始" FontWeight="SemiBold"/>
+        <CheckBox x:Name="UseStart" Content="指定日期与时间（默认立即开始）" Checked="ManualOptionsChanged" Unchecked="ManualOptionsChanged" Margin="0,10,0,0"/>
+        <Grid x:Name="StartFields" Visibility="Collapsed" Margin="0,10,0,16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><DatePicker x:Name="ManualStartDate"/><TextBox x:Name="ManualStartTime" Grid.Column="1" Text="19:00" Margin="10,0,0,0" AutomationProperties.Name="手动开始时间 HH:mm"/></Grid>
+        <TextBlock Text="什么时候结束" FontWeight="SemiBold" Margin="0,16,0,0"/>
+        <CheckBox x:Name="UseEnd" Content="指定日期与时间（默认主动结束，最多三小时）" Checked="ManualOptionsChanged" Unchecked="ManualOptionsChanged" Margin="0,10,0,0"/>
+        <Grid x:Name="EndFields" Visibility="Collapsed" Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><DatePicker x:Name="ManualEndDate"/><TextBox x:Name="ManualEndTime" Grid.Column="1" Text="21:30" Margin="10,0,0,0" AutomationProperties.Name="手动结束时间 HH:mm"/></Grid>
+        <Expander Header="临时使用电脑后返回" Margin="0,16,0,0"><StackPanel Margin="0,10,0,0"><WrapPanel><TextBlock Text="无操作返回（分钟）" VerticalAlignment="Center"/><TextBox x:Name="ManualHideMinutes" Text="10" Width="62" Margin="10,0"/><CheckBox x:Name="NoManualReturn" Content="不自动返回" Checked="ManualOptionsChanged" Unchecked="ManualOptionsChanged" VerticalAlignment="Center"/></WrapPanel><TextBlock Text="后台监测继续；操作其他软件也会重新计时。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,0"/></StackPanel></Expander>
+      </StackPanel>
+      <TextBlock x:Name="ManualStatus" Text="正在确认手动会话状态…" TextWrapping="Wrap" Margin="0,14,0,0"/>
+      <TextBlock x:Name="StateText" Text="正在连接后台…" TextWrapping="Wrap" Margin="0,10,0,0"/>
+      <TextBlock x:Name="StateHintText" Foreground="#64776D" TextWrapping="Wrap" Visibility="Collapsed" Margin="0,6,0,0"/>
+      <TextBlock x:Name="MessageText" Foreground="#A55337" TextWrapping="Wrap" Margin="0,6,0,0"/>
+    </StackPanel></Border>
+    <Expander Header="麦克风与输入设备" HorizontalContentAlignment="Stretch" Margin="0,0,0,14"><StackPanel Margin="0,10,0,0"><TextBlock Text="手动与学校定时自习共用输入设备和校准；学校设备锁定规则继续生效。" Foreground="#64776D" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><ComboBox x:Name="Microphone" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{StaticResource RecordingChoice}" AutomationProperties.Name="监测麦克风"/><Button x:Name="RefreshButton" Grid.Column="1" Content="刷新" Click="RefreshClicked" Margin="10,0,0,0"/></Grid><Button x:Name="SaveDeviceButton" Content="保存麦克风" Click="SaveDeviceClicked" HorizontalAlignment="Left" Margin="0,10,0,0"/></StackPanel></Expander>
       <Border Style="{StaticResource NoiseCard}"><StackPanel>
         <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <StackPanel><TextBlock Text="实时信号电平" Foreground="#64776D" /><StackPanel Orientation="Horizontal"><TextBlock x:Name="LevelText" Text="—" FontSize="44" FontWeight="SemiBold" /><TextBlock Text="dBFS" VerticalAlignment="Bottom" Margin="10,0,0,10" Foreground="#64776D" /></StackPanel></StackPanel>
@@ -61,14 +50,18 @@
         <TextBlock x:Name="SummaryText" Text="开始后显示有效采样、覆盖率与能量平均电平。" TextWrapping="Wrap" Margin="0,12,0,0" LineHeight="27" />
         <TextBlock x:Name="SummaryHint" Text="这里只展示本机统计，不代表报告已上传。学校端是否收到，请到 NPClassworks 核对。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,12,0,0" />
       </StackPanel></Border>
-      <Border Style="{StaticResource NoiseCard}"><StackPanel>
+    <Expander Header="管理与运行诊断" HorizontalContentAlignment="Stretch">      <Border Style="{StaticResource NoiseCard}"><StackPanel>
         <TextBlock Text="定时监测保护" FontSize="17" FontWeight="SemiBold" />
-        <TextBlock Text="学校定时监测需验证管理权限才能停止或退出后台。提前设置本机管理口令，可在断网时维护；网页使用学校 PIN。手动自习不受此限制。" TextWrapping="Wrap" Margin="0,12,0,12" Foreground="#64776D" />
+        <TextBlock Text="学校定时监测需验证管理权限才能停止或退出后台。连接 NPEP 后使用学校管理口令，本机口令不再用于学校监测；离线行为以后台权限状态为准。手动自习不受此限制。" TextWrapping="Wrap" Margin="0,12,0,12" Foreground="#64776D" />
         <Button Content="设置／修改本机管理口令" Click="ManagementClicked" HorizontalAlignment="Left" />
         <TextBlock x:Name="DisplayStatusText" Text="定时监测展示：等待后台状态。" TextWrapping="Wrap" Margin="0,16,0,0" Foreground="#64776D" />
         <TextBlock x:Name="GuardStatusText" Text="定时监测守护：等待状态。" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="#64776D" />
       </StackPanel></Border>
-      <TextBlock Text="关闭此窗口后继续监测，手动自习最长三小时。本机实时摘要保留至下次开始；连接学校后，结束报告会暂存并上传，断网恢复后补传。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" />
-    </StackPanel>
-  </ScrollViewer>
+</Expander>
+  </StackPanel></ScrollViewer>
+  <Border Grid.Row="1" BorderBrush="#DFE7E1" BorderThickness="0,1,0,0" Padding="0,12,0,0"><WrapPanel HorizontalAlignment="Right">
+    <Button x:Name="StartButton" Content="开始自习" Click="StartClicked" Style="{StaticResource Primary}" IsEnabled="False" AutomationProperties.AutomationId="NoiseStart"/>
+    <Button x:Name="StopButton" Content="结束自习" Click="StopClicked" Style="{StaticResource Primary}" Visibility="Collapsed" IsEnabled="False" AutomationProperties.AutomationId="NoiseStop"/>
+  </WrapPanel></Border>
+  </Grid>
 </Window>

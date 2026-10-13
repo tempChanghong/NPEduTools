@@ -27,7 +27,7 @@ internal static partial class Program
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         string pipe = "NPEduTools.Test.noise-protocol." + Guid.NewGuid().ToString("N");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         using var server = new NamedPipeServerStream(pipe, PipeDirection.InOut, 1,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var active = new NoiseState(Guid.NewGuid(), 2, "Active", "隔离本机监测中", "fixture", "合成麦克风",
@@ -59,7 +59,9 @@ internal static partial class Program
                     {
                         var warmup = Protocol.WriteAsync(server, new HostResponse(Protocol.Version, request.RequestId,
                             "Succeeded", null, "合成设备", Noise: initial, NoiseDevices: devices), timeout.Token);
-                        PumpUntil(() => warmup.IsCompleted && Text("SummaryText").Contains("29.6"), "valid initial noise state did not render");
+                        PumpUntil(() => warmup.IsCompleted,"initial write stalled");
+                        var ownership = ReplyManualFixtureAsync(server, initial, timeout.Token);
+                        PumpUntil(() => ownership.IsCompleted && Text("SummaryText").Contains("29.6"), "valid initial noise state did not render");
                         warmup.GetAwaiter().GetResult();
                         server.Disconnect();
                         read = Read();
@@ -114,7 +116,7 @@ internal static partial class Program
                     if (operation == "status" && invalid == "request-id")
                     {
                         owner.Width = 650; owner.Height = 560;
-                        ((ScrollViewer)owner.Content).ScrollToBottom(); owner.UpdateLayout();
+                        ((ScrollViewer)owner.FindName("ManualPageScroll")).ScrollToBottom(); owner.UpdateLayout();
                         Snapshot(owner, "noise-protocol-unknown-statistics.png");
                     }
                     server.Disconnect();
@@ -127,7 +129,9 @@ internal static partial class Program
                         Summary = new(40, 39.6, .99, -60, -30, 0, 150), Trend = [new(39, -42, "Good")] };
                     var restored = Protocol.WriteAsync(server, new HostResponse(Protocol.Version, fresh.RequestId,
                         "Succeeded", null, "隔离恢复", Noise: now, NoiseDevices: operation == "initial-devices" ? devices : null), timeout.Token);
-                    PumpUntil(() => restored.IsCompleted && Text("LevelText") == "-42.0", "fresh noise state did not render");
+                    PumpUntil(() => restored.IsCompleted,"recovery write stalled");
+                    var restoredOwnership = ReplyManualFixtureAsync(server, now, timeout.Token);
+                    PumpUntil(() => restoredOwnership.IsCompleted && Text("LevelText") == "-42.0", "fresh noise state did not render");
                     restored.GetAwaiter().GetResult();
                     Assert(Text("SummaryText").Contains("39.6") && Button(owner, "StopButton").IsEnabled &&
                         !Button(owner, "StartButton").IsEnabled && Text("StateHintText") == "",

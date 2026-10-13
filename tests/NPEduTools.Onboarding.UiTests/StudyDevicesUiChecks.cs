@@ -106,8 +106,8 @@ internal static partial class Program
             var main = (MainWindow)typeof(MainWindow).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic).Single().Invoke([pipe, null, false]);
             Exercise(main, owner =>
             {
-                Assert(Find(owner, "HomeOpenNoise") is Button && Find(owner, "HomeOpenStudyMonitoring") is Button, "home did not separate manual and study monitoring");
-                var studyNavigation = (Button)Find(owner, "OpenStudyMonitoring");
+                Assert(Find(owner, "HomeStudyPrimary") is Button, "home primary study entry missing");
+                var studyNavigation = (Button)Find(owner, "StudyTab");
                 var sidebarPoint = studyNavigation.TranslatePoint(new Point(), owner);
                 Assert(sidebarPoint.Y >= 0 && sidebarPoint.Y + studyNavigation.ActualHeight <= owner.ActualHeight, "study navigation is clipped by the fixed sidebar footer");
                 Assert(Find(owner, "OpenRecordingPlan") is Button && Find(owner, "OpenClassroomMode") is Button, "existing classroom navigation was lost");
@@ -118,7 +118,7 @@ internal static partial class Program
                 update.Invoke(main, [homeState]);
                 Assert(((TextBlock)Find(owner, "StudyHomeNext")).Text.Contains("2026-10-13 19:00"), "home did not show next school study during manual monitoring");
                 Snapshot(owner, "home-monitoring-layout.png"); owner.Close();
-                Checks.Add("Main window actual WPF: separate manual noise/self-study entries; existing home tools retained; no production App startup");
+                Checks.Add("Main window actual WPF: unified study entry; existing home tools retained; no production App startup");
             });
         }
         finally

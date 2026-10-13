@@ -16,7 +16,22 @@ public partial class SoundMeterWindow : Window
     private readonly CalibrationUiOrder _order = new();
     private NoiseProtectionState? _access;
     private void ShowAccess(NoiseProtectionState? state)
-    { _access = state; ManagementLabel.Text = CalibrationAccess.Label(state); ManagementHint.Text = CalibrationAccess.Hint(state); ConfigureManagement.IsEnabled = !_busy && state?.ManagementSource != "School"; }
+    {
+        if (CredentialsPanel.Visibility == Visibility.Collapsed && (state?.ManagementSource != _access?.ManagementSource ||
+            state?.CredentialRevision != _access?.CredentialRevision || state?.InstanceId != _access?.InstanceId))
+            ResetCredentials();
+        _access = state; ManagementLabel.Text = CalibrationAccess.Label(state); ManagementHint.Text = CalibrationAccess.Hint(state);
+        ConfigureManagement.IsEnabled = !_busy && state?.ManagementSource != "School";
+    }
+    private void ResetCredentials()
+    {
+        CredentialsPanel.Visibility = Visibility.Visible; ResetVerification.Visibility = Visibility.Collapsed;
+        ManagementSecret.Clear(); Devices.ItemsSource = null;
+        ReadMeter.IsEnabled = OpenReference.IsEnabled = false;
+        ClearReading("请重新验证管理口令并查找仪表。");
+    }
+    private void ResetVerificationClicked(object sender, RoutedEventArgs e)
+    { if (!_busy) ResetCredentials(); }
     private async Task ReadAccessAsync(CancellationToken token, long stamp)
     {
         var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token);
@@ -60,6 +75,8 @@ public partial class SoundMeterWindow : Window
             {
                 Devices.ItemsSource = response.SoundMeter?.Devices ?? [];
                 Message.Text = (_access?.ManagementSource == "School" ? "学校" : "本机") + "管理口令验证通过；" + response.Message;
+                if (response.SoundMeter?.Devices is { Count: > 0 })
+                { CredentialsPanel.Visibility = Visibility.Collapsed; ResetVerification.Visibility = Visibility.Visible; }
             }
             else if (response.SoundMeter?.Reading is { } value)
             {
@@ -82,13 +99,15 @@ public partial class SoundMeterWindow : Window
     private async void ReadClicked(object sender, RoutedEventArgs e) => await ExecuteAsync("read");
     private void DeviceSelected(object sender, SelectionChangedEventArgs e)
     { ClearReading(); if (!_busy) ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
+    internal Action<NoiseReferenceWindow>? OpenWorkspaceReference { get; set; }
     private void ReferenceClicked(object sender, RoutedEventArgs e)
     {
         if (_busy || Devices.SelectedItem is not SoundMeterDevice selected) return;
         ClearReading("单次诊断已撤下；同期参考需新建草稿并明确开始采样。");
-        var reference = new NoiseReferenceWindow(_pipe, selected.Path) { Owner = this };
+        var reference = new NoiseReferenceWindow(_pipe, selected.Path) { Owner = WorkspacePanel.DialogOwner(this) };
         ((PasswordBox)reference.FindName("ManagementSecret")).Password = ManagementSecret.Password;
-        reference.ShowDialog();
+        if (OpenWorkspaceReference is not null && _access is { } verified) reference.UseVerifiedAccess(verified);
+        if (OpenWorkspaceReference is { } open) open(reference); else reference.ShowDialog();
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {
@@ -96,7 +115,7 @@ public partial class SoundMeterWindow : Window
         _busy = true; long stamp = _order.Advance(); ConfigureManagement.IsEnabled = ListDevices.IsEnabled = ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.IsEnabled = false;
         try
         {
-            await NoiseManagementDialog.ConfigureAsync(this, _pipe);
+            await NoiseManagementDialog.ConfigureAsync(WorkspacePanel.DialogOwner(this), _pipe);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
             await ReadAccessAsync(deadline.Token, stamp);
         }

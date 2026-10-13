@@ -22,7 +22,7 @@ internal static class DesktopDialogSizing
         bool fitting = false, closed = false;
         void Fit()
         {
-            if (fitting || closed) return;
+            if (fitting || closed || WorkspacePanel.Embedded(window)) return; // Main window owns embedded page density.
             fitting = true;
             try
             {

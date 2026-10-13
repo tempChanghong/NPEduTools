@@ -109,7 +109,7 @@ internal static partial class Program
                     Assert(((FrameworkElement)window.FindName("PreparePanel")).IsVisible && !((FrameworkElement)window.FindName("SamplePanel")).IsVisible,"lost draft traps calibration in a disabled sampling step");
                     Checks.Add("USB recovery: missing/restarted draft returns to setup, selected workflow instructions survive old-draft polls, disconnected tabs match actions");
                     Checks.Add("USB workflow: strict inputs expand; newer state withdraws obsolete operation receipt; no sensor commands");
-                    ((ScrollViewer)window.Content).ScrollToBottom();window.UpdateLayout();
+                    ((ScrollViewer)window.FindName("ReferencePageScroll")).ScrollToBottom();window.UpdateLayout();
                     Snapshot(window,"usb-reference-strict-settings.png");
                 }
                 // Exercise native recovery of a title bar deliberately moved off screen.

@@ -23,7 +23,7 @@ internal static partial class Program
                     new(30, 29.6, 29.6 / 30, -78.6, -48.3, 0, 100),
                     [new(1, -65, "Good"), new(1.5, -57, "Good")], SessionId: Guid.NewGuid());
                 var render = typeof(NoiseWindow).GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
-                void Show(NoiseState? state) => render.Invoke(window, [state]);
+                void Show(NoiseState? state) { if (state is not null) typeof(NoiseWindow).GetField("_manual", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, ManualFixture(state)); render.Invoke(window, [state]); }
                 string Text(string name) => ((TextBlock)owner.FindName(name)).Text;
                 var choices = (ComboBox)owner.FindName("Microphone");
                 choices.ItemsSource = new[] { new NoiseDevice("fixture", "隔离测试麦克风") };

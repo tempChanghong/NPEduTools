@@ -17,8 +17,8 @@ public partial class StudyMonitoringWindow : Window
         _pipe = pipe; _noise = noise; InitializeComponent(); Devices.Bind(pipe);
         DesktopDialogSizing.Attach(this, pipe);
         Devices.StatusChanged += (_, _) => DeviceSummary.Text = Devices.Summary;
-        _timer.Tick += async (_, _) => await ReadAsync();
-        Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); if (!_lifetime.IsCancellationRequested && IsVisible) await Devices.RefreshAsync(); };
+        _timer.Tick += async (_, _) => { if (WorkspacePanel.Visible(this)) await ReadAsync(); };
+        Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); if (!_lifetime.IsCancellationRequested && WorkspacePanel.Visible(this)) await Devices.RefreshAsync(); };
         Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); Devices.CancelPending(); };
     }
     public void Shutdown() => Close();
@@ -57,11 +57,12 @@ public partial class StudyMonitoringWindow : Window
     private async void RefreshClicked(object sender, RoutedEventArgs e)
     {
         await ReadAsync();
-        if (!_lifetime.IsCancellationRequested && IsVisible) await Devices.RefreshAsync();
+        if (!_lifetime.IsCancellationRequested && WorkspacePanel.Visible(this)) await Devices.RefreshAsync();
     }
     private void NoiseClicked(object sender, RoutedEventArgs e) => _noise();
-    private void SeatingClicked(object sender, RoutedEventArgs e) => new StudySeatingUploadWindow(_pipe) { Owner = this }.ShowDialog();
-    private void CalibrationClicked(object sender, RoutedEventArgs e) => new NoiseCalibrationWindow(_pipe) { Owner = this }.ShowDialog();
-    private void ReferenceClicked(object sender, RoutedEventArgs e) => new NoiseReferenceWindow(_pipe) { Owner = this }.ShowDialog();
-    private void MeterClicked(object sender, RoutedEventArgs e) => new SoundMeterWindow(_pipe) { Owner = this }.ShowDialog();
+    private void SeatingClicked(object sender, RoutedEventArgs e) => new StudySeatingUploadWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
+    private void CalibrationClicked(object sender, RoutedEventArgs e) => new NoiseCalibrationWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
+    private void ReferenceClicked(object sender, RoutedEventArgs e) => new NoiseReferenceWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
+    internal Action? OpenCalibration { get; set; }
+    private void MeterClicked(object sender, RoutedEventArgs e) { if (OpenCalibration is { } open) open(); else new SoundMeterWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog(); }
 }
