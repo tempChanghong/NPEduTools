@@ -145,18 +145,22 @@ public partial class MainWindow
         deadline.CancelAfter(5000);
         try
         {
-            var school = await HostClient.RequestAsync(_pipe, "study.report.status", deadline.Token);
-            var manual = await HostClient.RequestAsync(_pipe, "manual.study.report.status", deadline.Token);
-            if (_lifetime.IsCancellationRequested || generation != _workspaceReportGeneration) return;
-            WorkspaceSchoolReport.Text = ReportText(school);
-            WorkspaceManualReport.Text = ReportText(manual);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        {
-            if (!_lifetime.IsCancellationRequested && generation == _workspaceReportGeneration)
-                WorkspaceSchoolReport.Text = WorkspaceManualReport.Text = "报告状态未确认，请检查后台连接后刷新；不沿用旧结果。";
+            // Each source owns its feedback. A broken or slow reply must not
+            // hide the other report, and both requests share navigation cancellation.
+            await Task.WhenAll(ReadReportAsync("study.report.status", WorkspaceSchoolReport),
+                ReadReportAsync("manual.study.report.status", WorkspaceManualReport));
         }
         finally { if (ReferenceEquals(_workspaceReportRead, deadline)) _workspaceReportRead = null; }
+
+        async Task ReadReportAsync(string capability, System.Windows.Controls.TextBlock target)
+        {
+            string text;
+            try { text = ReportText(await HostClient.RequestAsync(_pipe, capability, deadline.Token)); }
+            catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+            { text = "报告状态未确认，请检查后台连接后刷新；不沿用旧结果。"; }
+            if (!_lifetime.IsCancellationRequested && generation == _workspaceReportGeneration)
+                target.Text = text;
+        }
     }
     private static string ReportText(HostResponse response)
     {

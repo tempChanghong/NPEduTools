@@ -42,7 +42,7 @@ public partial class StudyMonitoringWindow : Window
             if (_lifetime.IsCancellationRequested || generation != _viewGeneration) return;
             Render(response.Outcome == "Succeeded" ? response.Study : null);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested && generation == _viewGeneration) Render(null); }
         finally { _reading = false; }
     }

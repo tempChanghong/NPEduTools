@@ -31,7 +31,9 @@ internal static partial class Program
         try
         {
             var errors = new List<Exception>();
-            foreach (var check in new Action[] { WorkspaceVisibilityRace, WorkspaceLateStartRace, WorkspaceLateStartObserverRace, WorkspaceReportLeaveRace })
+            foreach (var check in new Action[] { WorkspaceVisibilityRace, WorkspaceLateStartRace, WorkspaceLateStartObserverRace, WorkspaceReportLeaveRace,
+                WorkspaceSchoolReportSurvives, WorkspaceManualReportSurvives, WorkspaceSchoolReportSurvivesProtocolFailure, WorkspaceManualReportSurvivesProtocolFailure,
+                WorkspaceCalibrationProtocolFailures, WorkspaceSchoolProtocolFailure })
                 try { check(); } catch (Exception e) { errors.Add(new InvalidOperationException(check.Method.Name + ": " + e.Message, e)); }
             if (errors.Count > 0) throw new AggregateException(errors);
         }
@@ -146,6 +148,8 @@ internal static partial class Program
             {
                 WorkspaceCall(main, "WorkspaceCalibrationClicked", main, new RoutedEventArgs());
                 var view = new NoiseReferenceWindow(pipe, "synthetic-meter");
+                bool referenceClosed = false;
+                view.Closed += (_, _) => referenceClosed = true;
                 ((PasswordBox)view.FindName("ManagementSecret")).Password = secret;
                 WorkspaceCall(main, "ShowWorkspaceReference", view);
                 PumpUntil(() => Button(view, "StartSample").IsEnabled, "reference fixture not connected");
@@ -153,11 +157,11 @@ internal static partial class Program
                 WorkspaceCall(main, "HomeNavClicked", main, new RoutedEventArgs());
                 release.TrySetResult();
                 if (owned)
-                    PumpUntil(() => cancellations == 1 && backend.Disposals == 1 && capture?.Disposed == true,
+                    PumpUntil(() => referenceClosed && cancellations == 1 && backend.Disposals == 1 && capture?.Disposed == true,
                         "leaving during delayed acceptance did not cancel its own capture");
                 else
                 {
-                    PumpUntil(() => ((PasswordBox)view.FindName("ManagementSecret")).Password.Length == 0,"rejected start did not close after delayed receipt");
+                    PumpUntil(() => referenceClosed,"rejected start did not close after delayed receipt");
                     Assert(cancellations == 0 && capture is { Disposed: false } && backend.Disposals == 0, "rejected late start cancelled another client sample");
                 }
                 Assert(((PasswordBox)view.FindName("ManagementSecret")).Password.Length == 0, "closed reference retained credential");
@@ -184,7 +188,7 @@ internal static partial class Program
             {
                 WorkspaceCall(main, "ShowStudyWorkspace", "Reports");
                 PumpUntil(() => received.IsCompleted, "report request not observed");
-                Assert(received.Result.Capability == "study.report.status", "unexpected report request");
+                Assert(received.Result.Capability is "study.report.status" or "manual.study.report.status", "unexpected report request");
                 WorkspaceCall(main, "HomeNavClicked", main, new RoutedEventArgs());
                 var closing = Task.Run(async () => { try { return await waiting.ReadAsync(new byte[1], stop.Token); } catch (IOException) { return 0; } });
                 PumpUntil(() => closing.IsCompleted && closing.Result == 0, "leaving report page retains its pending transport", 2);
@@ -194,5 +198,120 @@ internal static partial class Program
             });
         }
         finally { main.Close(); stop.Cancel(); }
+    }
+    private static void WorkspaceSchoolReportSurvives() => WorkspaceIndependentReport("study.report.status", false);
+    private static void WorkspaceManualReportSurvives() => WorkspaceIndependentReport("manual.study.report.status", false);
+    private static void WorkspaceSchoolReportSurvivesProtocolFailure() => WorkspaceIndependentReport("study.report.status", true);
+    private static void WorkspaceManualReportSurvivesProtocolFailure() => WorkspaceIndependentReport("manual.study.report.status", true);
+    private static void WorkspaceIndependentReport(string successfulCapability, bool invalidProtocol)
+    {
+        string pipe = "NPEduTools.Test.workspace-independent-report." + Guid.NewGuid().ToString("N");
+        var data = new StudyReportData(StudyFixture().Window!, 600, 590, 590d / 600, .1, 100, 2,
+            new("dBFS", 590, -55, -30, 580, 30, 10, []), null, true, []);
+        using var stop = new CancellationTokenSource();
+        var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var server = Task.Run(() => WorkspaceProxy(pipe, request =>
+        {
+            requests.Enqueue(request.Capability);
+            if (request.Capability != successfulCapability && !invalidProtocol) throw new IOException("Fixture closes before replying");
+            return Task.FromResult(request.Capability == successfulCapability
+                ? new HostResponse(1, request.RequestId, "Succeeded", null, "fixture",
+                    StudyReport: new(Guid.NewGuid(), "fixture", true, "Ended", 0, data))
+                : new HostResponse(2, request.RequestId, "Succeeded", null, "deliberate invalid protocol"));
+        }, stop.Token));
+        var main = PrivateWorkspace(pipe);
+        try
+        {
+            Exercise(main, owner =>
+            {
+                WorkspaceCall(main, "ShowStudyWorkspace", "Reports");
+                var school = (TextBlock)main.FindName("WorkspaceSchoolReport");
+                var manual = (TextBlock)main.FindName("WorkspaceManualReport");
+                try { PumpUntil(() => !school.Text.Contains("正在读取") && !manual.Text.Contains("正在读取"), "independent reports did not settle", 7); }
+                finally { File.WriteAllText(Path.Combine(_output, successfulCapability + (invalidProtocol ? ".protocol" : ".disconnect") + ".txt"),
+                    string.Join(",", requests) + "\n" + school.Text + "\n" + manual.Text + "\n" +
+                    typeof(MainWindow).GetField("_workspaceReportGeneration", WorkspaceFlags)!.GetValue(main)); }
+                var successful = successfulCapability == "study.report.status" ? school : manual;
+                var failed = ReferenceEquals(successful, school) ? manual : school;
+                Assert(successful.Text.Contains("dBFS") && successful.Text.Contains("提醒 2 次"), "one failed report erased the independently available report");
+                Assert(failed.Text.Contains("未确认") && !failed.Text.Contains("dBFS"), "failed report reused a successful or stale report");
+                Checks.Add(successfulCapability + ": private " + (invalidProtocol ? "protocol mismatch" : "disconnect") + " in the other source preserves this report and labels only the failed source unknown");
+                main.Close();
+            });
+        }
+        finally { main.Close(); stop.Cancel(); try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { } }
+    }
+    private static void WorkspaceCalibrationProtocolFailures()
+    {
+        var failures = new List<Exception>();
+        foreach (bool brokenAccess in new[] { true, false })
+        foreach (string kind in new[] { "Quick", "Reference", "Usb" })
+        {
+            string pipe = "NPEduTools.Test.workspace-calibration-protocol." + Guid.NewGuid().ToString("N");
+            string folder = Path.Combine(_output, kind + "-" + brokenAccess);
+            var store = new NoiseManagementStore(folder);
+            const string secret = "fixture-protocol-check";
+            Assert(store.Configure(null, secret, false) is null, "fixture credential failed");
+            var noise = new NoiseService(_ => throw new Exception("No physical input allowed"), () => [], directory: folder, management: store);
+            using var stop = new CancellationTokenSource();
+            int recovered = 0;
+            var server = Task.Run(() => WorkspaceProxy(pipe, request => Task.FromResult(
+                Volatile.Read(ref recovered) != 0 ? request.Capability switch
+                {
+                    "noise.management.status" => noise.ManagementHandle(request),
+                    "noise.calibration.status" => noise.CalibrationHandle(request),
+                    "noise.reference.status" => noise.ReferenceHandle(request),
+                    _ => new HostResponse(1, request.RequestId, "Succeeded", null, "empty synthetic list", SoundMeter: new([]))
+                } : !brokenAccess && request.Capability == "noise.management.status" ? noise.ManagementHandle(request) :
+                new HostResponse(2, request.RequestId, "Succeeded", null, "deliberate protocol mismatch")), stop.Token));
+            Window view = kind switch { "Quick" => new NoiseCalibrationWindow(pipe), "Reference" => new NoiseReferenceWindow(pipe), _ => new SoundMeterWindow(pipe) };
+            try
+            {
+                ((PasswordBox)view.FindName("ManagementSecret")).Password = secret;
+                // Invoke without showing: exercise real IPC/UI state, never Load a
+                // device loop or start hardware. Await instead of crashing async void.
+                string method = kind == "Usb" ? "ExecuteAsync" : "ReadCoreAsync";
+                var task = (Task)view.GetType().GetMethod(method, WorkspaceFlags)!.Invoke(view, kind == "Usb" ? ["list"] : [true])!;
+                PumpUntil(() => task.IsCompleted, "protocol fixture timed out");
+                task.GetAwaiter().GetResult();
+                string message = ((TextBlock)view.FindName(kind == "Usb" ? "Message" : "OperationMessage")).Text;
+                Assert(message.Contains("后台") && (message.Contains("未确认") || message.Contains("不可用")), "protocol failure lacks usable retry feedback");
+                Assert((bool)view.GetType().GetField("_busy", WorkspaceFlags)!.GetValue(view)! == false, "protocol failure left calibration busy");
+                Volatile.Write(ref recovered, 1);
+                var retry = (Task)view.GetType().GetMethod(method, WorkspaceFlags)!.Invoke(view, kind == "Usb" ? ["list"] : [true])!;
+                PumpUntil(() => retry.IsCompleted, "recovered calibration retry timed out");
+                retry.GetAwaiter().GetResult();
+                Assert(kind == "Usb" ? ((TextBlock)view.FindName("Message")).Text.Contains("验证通过") :
+                    (bool)view.GetType().GetField("_connected", WorkspaceFlags)!.GetValue(view)!, "valid retry did not recover calibration state");
+                Checks.Add(kind + ": invalid " + (brokenAccess ? "management" : "status/command") + " protocol is handled, states remain unconfirmed, valid retry reconnects; no sensor access");
+            }
+            catch (Exception error) { failures.Add(new InvalidOperationException(kind + "/" + brokenAccess + ": " + error.Message, error)); }
+            finally
+            {
+                view.Close(); stop.Cancel(); try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
+                noise.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
+        if (failures.Count > 0) throw new AggregateException(failures);
+    }
+    private static void WorkspaceSchoolProtocolFailure()
+    {
+        string pipe = "NPEduTools.Test.workspace-school-protocol." + Guid.NewGuid().ToString("N");
+        using var stop = new CancellationTokenSource();
+        var server = Task.Run(() => WorkspaceProxy(pipe, request => Task.FromResult(
+            new HostResponse(2, request.RequestId, "Succeeded", null, "deliberate protocol mismatch")), stop.Token));
+        var view = new StudyMonitoringWindow(pipe, () => { });
+        try
+        {
+            typeof(StudyMonitoringWindow).GetMethod("Render", WorkspaceFlags | BindingFlags.DeclaredOnly)!.Invoke(view, [StudyFixture()]);
+            Assert(((TextBlock)view.FindName("StudyCapture")).Text.Contains("正在采集"), "fresh school fixture was not rendered");
+            var task = (Task)typeof(StudyMonitoringWindow).GetMethod("ReadAsync", WorkspaceFlags)!.Invoke(view, null)!;
+            PumpUntil(() => task.IsCompleted, "school protocol failure timed out");
+            task.GetAwaiter().GetResult();
+            Assert(((TextBlock)view.FindName("StudyCapture")).Text == "采集状态待确认" &&
+                ((TextBlock)view.FindName("StudyPhase")).Text == "学校安排状态待确认", "protocol failure retained fresh school execution claim");
+            Checks.Add("School monitor: invalid private protocol withdraws previous fresh execution state and returns to unknown without throwing or stopping Host");
+        }
+        finally { view.Close(); stop.Cancel(); try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { } }
     }
 }

@@ -63,7 +63,7 @@ public partial class NoiseCalibrationWindow : Window
             if (_connected) Render(r.NoiseCalibration!);
             else OperationMessage.Text = CalibrationAccess.Message(r.ErrorCode, r.Message, _access);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _connected = false; OperationMessage.Text = "后台连接不可用，请刷新；旧状态不能用于保存。"; } }
         finally { if (_activeRead == stamp) _reading = false; UpdateButtons(); }
     }
@@ -126,7 +126,7 @@ public partial class NoiseCalibrationWindow : Window
             if (r.NoiseCalibration is { } state) Render(state);
             OperationMessage.Text = CalibrationAccess.Message(r.ErrorCode, r.Message, _access);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _connected = false; OperationMessage.Text = "结果未确认，请刷新后核对；不会自动重复采样或保存。"; } }
         finally { _busy = false; UpdateButtons(); }
     }
@@ -145,7 +145,7 @@ public partial class NoiseCalibrationWindow : Window
             OperationMessage.Text = reply.Outcome == "Succeeded" ? "管理口令验证通过；刷新仅读取状态，尚未开始采样。" :
                 CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "管理验证响应未确认，请检查后台连接后重试。"; }
         finally { _busy = _verifying = false; UpdateButtons(); }
     }

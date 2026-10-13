@@ -103,7 +103,7 @@ public partial class NoiseReferenceWindow : Window
                 using var deadline = new CancellationTokenSource(3500);
                 await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.reference.command", NoiseReference: command), deadline.Token);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException) { }
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException) { }
             finally { _allowClose = true; Close(); } // Host's per-segment 20/40 s limit is independent of this window.
         };
         UpdateButtons();
@@ -124,7 +124,7 @@ public partial class NoiseReferenceWindow : Window
             if (_connected) Render(reply.NoiseReference!);
             else { _autoFieldDraft = null; OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access); }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "后台连接不可用；已停止自动续采，请刷新，旧状态不能用于保存。"; } }
         finally { if (_activeRead == stamp) _reading = false; UpdateButtons(); }
     }
@@ -332,7 +332,7 @@ public partial class NoiseReferenceWindow : Window
             if (reply.NoiseReference is { } state) Render(state);
             OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "操作结果未确认，已停止自动续采；请刷新核对，不会自动重复采样或保存。"; } }
         finally
         {
@@ -366,7 +366,7 @@ public partial class NoiseReferenceWindow : Window
                 CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
             if (reply.Outcome != "Succeeded") RestoreCredentials(false);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "管理验证响应未确认，请检查后台连接后重试。"; }
         finally { _busy = _verifying = false; UpdateButtons(); }
     }
