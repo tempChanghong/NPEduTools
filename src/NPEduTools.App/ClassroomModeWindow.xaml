@@ -1,76 +1,65 @@
 <Window x:Class="NPEduTools.App.ClassroomModeWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="课堂模式 · NPEduTools" Width="800" Height="740" MinWidth="700" MinHeight="620" WindowStartupLocation="CenterScreen"
-    Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI" Icon="/Assets/npedutools.ico" UseLayoutRounding="True">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="28">
-      <TextBlock Text="课堂模式" FontSize="27" FontWeight="SemiBold"/>
-      <TextBlock Text="一次切换，安排下次登录时启动的软件与自动录课状态。" Foreground="#718089" Margin="0,8,0,22" TextWrapping="Wrap"/>
-      <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16">
-        <StackPanel>
-          <TextBlock x:Name="ModeTitle" Text="正在连接…" FontSize="20" FontWeight="SemiBold" AutomationProperties.AutomationId="ClassroomModeTitle"/>
-          <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.AutomationId="ClassroomModeStatus"/>
-          <TextBlock x:Name="PauseText" Foreground="#718089" Margin="0,10,0,0" TextWrapping="Wrap"/>
-        </StackPanel>
-      </Border>
-      <Border Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16">
-        <StackPanel>
-          <CheckBox x:Name="SwitchRunning" Content="同时切换当前运行的软件" Style="{StaticResource Switch}" IsChecked="False" AutomationProperties.AutomationId="ClassroomSwitchRunning" />
-          <TextBlock Text="切入考试时准备好考试看板，再退出 ClassIsland；返回日常时先正常退出考试看板，再通过管理员任务启动 ClassIsland。" TextWrapping="Wrap" Foreground="#718089" Margin="0,8,0,0"/>
-        </StackPanel>
-      </Border>
-      <Border x:Name="SetupCard" Background="White" CornerRadius="14" Padding="20" Margin="0,0,0,16">
-        <StackPanel>
-          <DockPanel>
-            <Button x:Name="SetupRefresh" DockPanel.Dock="Right" Content="重新检查" Click="SetupRefreshClicked" AutomationProperties.AutomationId="ClassroomSetupRefresh"/>
-            <TextBlock Text="首次配置检查" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
-          </DockPanel>
-          <TextBlock x:Name="SetupSummary" Text="打开页面后自动检查。" TextWrapping="Wrap" Margin="0,12,0,4" AutomationProperties.AutomationId="ClassroomSetupSummary"/>
-          <TextBlock Text="只读取状态，不启动软件、不修改自启动。检查结果仅代表检查时刻，切换时会再次核实。" TextWrapping="Wrap" Foreground="#718089" Margin="0,0,0,10"/>
-          <ItemsControl x:Name="SetupItems" AutomationProperties.AutomationId="ClassroomSetupItems">
-            <ItemsControl.ItemTemplate><DataTemplate>
-              <Border Background="#F6F8F7" CornerRadius="8" Padding="12" Margin="0,0,0,8"><StackPanel>
-                <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Foreground="#718089" Margin="0,5,0,0"/>
-              </StackPanel></Border>
-            </DataTemplate></ItemsControl.ItemTemplate>
-          </ItemsControl>
-          <WrapPanel>
-            <Button Content="ClassIsland 程序位置" Click="SetupClassIslandClicked" Margin="0,4,8,0" AutomationProperties.AutomationId="ClassroomSetupClassIsland"/>
-            <Button Content="管理员自启动设置" Click="SetupAdminClicked" Margin="0,4,8,0" AutomationProperties.AutomationId="ClassroomSetupAdmin"/>
-            <Button Content="考试看板与桥接" Click="SetupExamAwareClicked" Margin="0,4,0,0" AutomationProperties.AutomationId="ClassroomSetupExamAware"/>
-          </WrapPanel>
-        </StackPanel>
-      </Border>
-      <Grid Margin="0,0,0,16">
-        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
-        <Border Background="White" CornerRadius="14" Padding="20">
-          <StackPanel>
-            <TextBlock Text="日常模式" FontSize="18" FontWeight="SemiBold"/>
-            <TextBlock Text="ClassIsland 管理员自启动：开启&#10;ExamAware2 登录自启动：关闭&#10;自动录课：按原计划判断" TextWrapping="Wrap" LineHeight="27" Margin="0,12,0,16"/>
-            <Button x:Name="DailyButton" Content="切换到日常模式" Click="DailyClicked" Style="{StaticResource Primary}" AutomationProperties.AutomationId="ClassroomDaily" IsEnabled="False"/>
-          </StackPanel>
-        </Border>
-        <Border Grid.Column="2" Background="White" CornerRadius="14" Padding="20">
-          <StackPanel>
-            <TextBlock Text="考试模式" FontSize="18" FontWeight="SemiBold"/>
-            <TextBlock Text="ClassIsland 管理员自启动：暂停&#10;ExamAware2 登录自启动：开启&#10;自动录课：暂停，保留原计划" TextWrapping="Wrap" LineHeight="27" Margin="0,12,0,16"/>
-            <Button x:Name="ExamButton" Content="切换到考试模式" Click="ExamClicked" Style="{StaticResource Primary}" AutomationProperties.AutomationId="ClassroomExam" IsEnabled="False"/>
-          </StackPanel>
-        </Border>
-      </Grid>
-      <Border Background="White" CornerRadius="14" Padding="20">
-        <StackPanel>
-          <TextBlock Text="实际设置与恢复" FontSize="16" FontWeight="SemiBold"/>
-          <TextBlock x:Name="ActualText" Text="尚未核实" TextWrapping="Wrap" Margin="0,12,0,10" AutomationProperties.AutomationId="ClassroomActual"/>
-          <TextBlock x:Name="RecoveryText" TextWrapping="Wrap" Foreground="#718089" Margin="0,0,0,12"/>
-          <WrapPanel>
-            <Button x:Name="RefreshButton" Content="核实实际设置" Click="RefreshClicked" Margin="0,0,10,8" AutomationProperties.AutomationId="ClassroomRefresh"/>
-            <Button x:Name="RetryButton" Content="重试即时切换" Click="RetryClicked" Visibility="Collapsed" Margin="0,0,10,8" AutomationProperties.AutomationId="ClassroomRetry"/>
-            <Button x:Name="RestoreButton" Content="恢复切换前设置" Click="RestoreClicked" IsEnabled="False" AutomationProperties.AutomationId="ClassroomRestore" Margin="0,0,0,8"/>
-          </WrapPanel>
-          <TextBlock Text="首次使用：在 ClassIsland 页面配置管理员自启动任务，在考试看板页面完成程序位置与桥接配对。&#10;切换可能请求 Windows 管理员授权。未勾选即时切换时，当前软件不会自动退出；为设置自启动，可能打开 ExamAware2。&#10;自动录制会正常收尾，手动录制继续；原计划保留。遇到编辑器、放映或弹窗阻止退出时，请处理后重试，不会强制结束进程。" TextWrapping="Wrap" Foreground="#718089" LineHeight="23" Margin="0,8,0,0"/>
-        </StackPanel>
-      </Border>
-    </StackPanel>
-  </ScrollViewer>
+ Title="课堂模式 · NPEduTools" Width="800" Height="740" MinWidth="520" MinHeight="440" WindowStartupLocation="CenterScreen"
+ Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI" Icon="/Assets/npedutools.ico" UseLayoutRounding="True">
+ <ScrollViewer x:Name="ModeScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" SizeChanged="ModeSizeChanged"><StackPanel Margin="20">
+  <TextBlock Text="课堂模式" FontSize="27" FontWeight="SemiBold"/>
+  <TextBlock Text="先看切换影响，再核实实际结果。" Foreground="#718089" Margin="0,6,0,16" TextWrapping="Wrap"/>
+  <Border Background="White" CornerRadius="12" Padding="18" Margin="0,0,0,12"><StackPanel>
+   <TextBlock x:Name="ModeTitle" Text="正在连接…" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassroomModeTitle"/>
+   <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="ClassroomModeStatus"/>
+   <TextBlock x:Name="PauseText" Foreground="#718089" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"/>
+  </StackPanel></Border>
+  <CheckBox x:Name="SwitchRunning" Content="同时切换当前运行的软件" Style="{StaticResource Switch}" IsChecked="False" Checked="SwitchOptionsChanged" Unchecked="SwitchOptionsChanged" Margin="0,0,0,12" AutomationProperties.AutomationId="ClassroomSwitchRunning"/>
+  <Grid x:Name="ModeChoices" Margin="0,0,0,12">
+   <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <Border x:Name="DailyCard" Background="White" CornerRadius="12" Padding="16" Margin="0,0,12,0"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock Text="日常模式" FontSize="18" FontWeight="SemiBold"/>
+    <TextBlock Grid.Row="1" Text="ClassIsland 自启动：开启&#10;ExamAware2 自启动：关闭&#10;自动录课：按原计划判断&#10;学校自习：日常排程 · ClassIsland 时间" TextWrapping="Wrap" LineHeight="23" FontSize="13" Margin="0,10,0,8"/>
+    <TextBlock Grid.Row="2" x:Name="DailyRuntimePreview" TextWrapping="Wrap" FontSize="12" Foreground="#536A60" Margin="0,0,0,12" AutomationProperties.AutomationId="DailyRuntimePreview"/>
+    <Button Grid.Row="3" x:Name="DailyButton" Content="切换到日常模式" Click="DailyClicked" Style="{StaticResource Primary}" AutomationProperties.AutomationId="ClassroomDaily" IsEnabled="False"/>
+   </Grid></Border>
+   <Border x:Name="ExamCard" Grid.Column="1" Background="White" CornerRadius="12" Padding="16"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock Text="考试模式" FontSize="18" FontWeight="SemiBold"/>
+    <TextBlock Grid.Row="1" Text="ClassIsland 自启动：暂停&#10;ExamAware2 自启动：开启&#10;自动录课：暂停，保留原计划&#10;学校自习：考试排程 · Windows 时间" TextWrapping="Wrap" LineHeight="23" FontSize="13" Margin="0,10,0,8"/>
+    <TextBlock Grid.Row="2" x:Name="ExamRuntimePreview" TextWrapping="Wrap" FontSize="12" Foreground="#536A60" Margin="0,0,0,12" AutomationProperties.AutomationId="ExamRuntimePreview"/>
+    <Button Grid.Row="3" x:Name="ExamButton" Content="切换到考试模式" Click="ExamClicked" Style="{StaticResource Primary}" AutomationProperties.AutomationId="ClassroomExam" IsEnabled="False"/>
+   </Grid></Border>
+  </Grid>
+  <Border Background="White" CornerRadius="12" Padding="18" Margin="0,0,0,12"><StackPanel>
+   <TextBlock Text="实际结果与恢复" FontSize="16" FontWeight="SemiBold"/>
+   <TextBlock x:Name="ActualCheckedAtText" TextWrapping="Wrap" FontSize="12" Foreground="#718089" Margin="0,8,0,0" AutomationProperties.AutomationId="ClassroomActualCheckedAt"/>
+   <TextBlock x:Name="ActualClassIslandText" TextWrapping="Wrap" Margin="0,10,0,6" AutomationProperties.AutomationId="ClassroomActualClassIsland"/>
+   <TextBlock x:Name="ActualExamAwareText" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.AutomationId="ClassroomActualExamAware"/>
+   <TextBlock x:Name="RuntimeProgressText" TextWrapping="Wrap" FontSize="12" Foreground="#536A60" Margin="0,0,0,10" AutomationProperties.AutomationId="ClassroomRuntimeProgress"/>
+   <TextBlock x:Name="RecoveryText" TextWrapping="Wrap" Foreground="#718089" FontSize="12" Margin="0,0,0,10"/>
+   <WrapPanel>
+    <Button x:Name="RefreshButton" Content="核实实际设置" Click="RefreshClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="ClassroomRefresh"/>
+    <Button x:Name="RetryButton" Content="重试即时切换" Click="RetryClicked" Visibility="Collapsed" Margin="0,0,8,8" AutomationProperties.AutomationId="ClassroomRetry"/>
+    <Button x:Name="RestoreButton" Content="恢复切换前设置" Click="RestoreClicked" IsEnabled="False" AutomationProperties.AutomationId="ClassroomRestore" Margin="0,0,0,8"/>
+   </WrapPanel>
+   <Expander Header="核实时间与切换说明" Margin="0,8,0,0"><StackPanel>
+    <TextBlock x:Name="ActualText" Text="尚未核实" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,10" AutomationProperties.AutomationId="ClassroomActual"/>
+    <TextBlock Text="实际结果只代表核实时刻。自启动登记与当前软件是否运行分别核实。未勾选即时切换时，当前软件不会自动退出；为设置自启动，可能打开 ExamAware2。自动录制正常收尾，手动录制继续。遇到编辑器、放映或弹窗阻止退出时，请处理后重试，不会强制结束进程。手动自习始终使用 Windows 时间。" TextWrapping="Wrap" Foreground="#718089" FontSize="12" LineHeight="22"/>
+   </StackPanel></Expander>
+  </StackPanel></Border>
+  <Border x:Name="SetupCard" Background="White" CornerRadius="12" Padding="18"><StackPanel>
+   <DockPanel><Button x:Name="SetupRefresh" DockPanel.Dock="Right" Content="重新检查" Click="SetupRefreshClicked" AutomationProperties.AutomationId="ClassroomSetupRefresh"/><TextBlock Text="切换前配置检查" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
+   <TextBlock x:Name="SetupSummary" Text="打开页面后自动检查。" TextWrapping="Wrap" Margin="0,10,0,8" AutomationProperties.AutomationId="ClassroomSetupSummary"/>
+   <Expander x:Name="SetupDetails" Header="逐项结果与配置入口" AutomationProperties.AutomationId="ClassroomSetupDetails"><StackPanel Margin="0,10,0,0">
+    <TextBlock Text="只读取状态，不启动软件、不修改自启动。结果只代表检查时刻，切换时再次核实。" TextWrapping="Wrap" Foreground="#718089" FontSize="12" Margin="0,0,0,10"/>
+    <ItemsControl x:Name="SetupItems" AutomationProperties.AutomationId="ClassroomSetupItems"><ItemsControl.ItemTemplate><DataTemplate>
+     <Border BorderBrush="#E0E8E3" BorderThickness="0,0,0,1" Padding="0,8"><StackPanel>
+      <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Foreground="#718089" FontSize="12" Margin="0,4,0,0"/>
+     </StackPanel></Border>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <WrapPanel Margin="0,10,0,0">
+     <Button Content="ClassIsland 程序位置" Click="SetupClassIslandClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="ClassroomSetupClassIsland"/>
+     <Button Content="管理员自启动设置" Click="SetupAdminClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="ClassroomSetupAdmin"/>
+     <Button Content="考试看板与桥接" Click="SetupExamAwareClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ClassroomSetupExamAware"/>
+    </WrapPanel>
+   </StackPanel></Expander>
+  </StackPanel></Border>
+ </StackPanel></ScrollViewer>
 </Window>
