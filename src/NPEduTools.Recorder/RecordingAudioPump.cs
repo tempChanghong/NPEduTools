@@ -36,22 +36,26 @@ internal sealed class RecordingAudioPacing
 internal sealed class RecordingAudioHealth
 {
     private long _writeStarted, _lostMs;
-    private string? _recoveryMessage;
+    private sealed record Recovery(long At, long LostMs, double RecentLossMs);
+    private Recovery? _recovery;
     public void Writing(long? timestamp = null) => Interlocked.Exchange(ref _writeStarted, timestamp ?? Stopwatch.GetTimestamp());
     public void WriteFinished() => Interlocked.Exchange(ref _writeStarted, 0);
     public void Recovered(RecordingAudioPacing.Step step)
     {
         long lost = Interlocked.Add(ref _lostMs, (long)Math.Ceiling(step.GapMs));
-        Volatile.Write(ref _recoveryMessage, step.RecentLossMs >= RecordingAudioPacing.PoorAudioThresholdMs
-            ? $"正在录制；音频频繁卡顿，最近一分钟累计约 {step.RecentLossMs / 1000:F0} 秒补为静音，请检查负载或降低帧率。"
-            : $"正在录制；音频发生卡顿，缺口按静音补齐，本片段累计约 {lost / 1000.0:F1} 秒。");
+        Volatile.Write(ref _recovery, new(Stopwatch.GetTimestamp(), lost, step.RecentLossMs));
     }
     public string? Message(long? timestamp = null)
     {
         long started = Interlocked.Read(ref _writeStarted);
-        if (started != 0 && Stopwatch.GetElapsedTime(started, timestamp ?? Stopwatch.GetTimestamp()) >= TimeSpan.FromSeconds(1))
+        long now = timestamp ?? Stopwatch.GetTimestamp();
+        if (started != 0 && Stopwatch.GetElapsedTime(started, now) >= TimeSpan.FromSeconds(1))
             return $"正在录制；音频写入变慢，正在等待恢复（宽限至多 {RecordingAudioPacing.RecoveryGraceMs / 1000} 秒）。";
-        return Volatile.Read(ref _recoveryMessage);
+        if (Volatile.Read(ref _recovery) is not { } recovery) return null;
+        return recovery.RecentLossMs >= RecordingAudioPacing.PoorAudioThresholdMs &&
+            Stopwatch.GetElapsedTime(recovery.At, now) < TimeSpan.FromMilliseconds(RecordingAudioPacing.QualityWindowMs)
+            ? $"正在录制；音频曾频繁卡顿，上次恢复时最近一分钟累计约 {recovery.RecentLossMs / 1000:F0} 秒补为静音，请检查负载或降低帧率。"
+            : $"正在录制；音频发生过卡顿，缺口按静音补齐，本片段累计约 {recovery.LostMs / 1000.0:F1} 秒。";
     }
 }
 

@@ -142,6 +142,17 @@ public sealed class RecordingAudioPumpTests
     }
 
     [Fact]
+    public void PastQualityWarningDoesNotClaimCurrentMinuteIsStillPoor()
+    {
+        var health = new RecordingAudioHealth();
+        health.Recovered(new(0, true, true, 6000, 36000));
+        Assert.Contains("最近一分钟", health.Message());
+        long later = System.Diagnostics.Stopwatch.GetTimestamp() + 61 * System.Diagnostics.Stopwatch.Frequency;
+        Assert.DoesNotContain("最近一分钟", health.Message(later)!);
+        Assert.Contains("累计约 6.0 秒", health.Message(later));
+    }
+
+    [Fact]
     public async Task SeveralSixSecondGapsContinueThroughActualPumpAndShowQualityWarning()
     {
         using var stop = new CancellationTokenSource();
