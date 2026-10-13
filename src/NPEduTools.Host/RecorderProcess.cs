@@ -58,6 +58,7 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
             {
                 if (line.Length > 16384) throw new InvalidDataException("录制状态过大。");
                 var state = JsonSerializer.Deserialize<RecordingState>(line, RecordingContract.Json) ?? throw new InvalidDataException();
+                RecordingContract.ValidateState(state);
                 // Before start, the worker must be idle and unowned (or report a startup failure).
                 // A parseable object or a receipt from an existing session is not a readiness handshake.
                 if (!receivedHello && (state.Phase is not ("Idle" or "Failed") || state.Control is not null ||
