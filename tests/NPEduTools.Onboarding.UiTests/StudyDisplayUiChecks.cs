@@ -77,7 +77,7 @@ internal static partial class Program
                 Assert(Element<TextBlock>("NoticeTitle").Text == "准备开始" && Element<Border>("StageNotice").Visibility == Visibility.Visible, "preparation overlay missing");
                 Assert(Element<TextBlock>("Clock").Text == "18:58:00", "school wall stamp was shifted by Windows timezone");
                 PumpUntil(() => audio.Ready || audio.Error is not null, "reference audio did not load");
-                Assert(audio.Ready && audio.LastCue == "exam-alert", "preparation audio asset missing or unsupported");
+                Assert(audio.Ready && audio.LastCue == "exam-alert", $"preparation audio asset missing or unsupported: ready={audio.Ready}; cue={audio.LastCue}; error={audio.Error}; path={System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Study", "Audio", "exam-alert.mp3")}; exists={System.IO.File.Exists(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Study", "Audio", "exam-alert.mp3"))}");
                 Snapshot(window, "study-preparing.png");
                 for (int second = 1; second <= 119; second++)
                 { clock.Ms += 1000; surface.Apply(state with { SchoolNow = state.Window!.Start.AddSeconds(second - 120) }, noise); }
