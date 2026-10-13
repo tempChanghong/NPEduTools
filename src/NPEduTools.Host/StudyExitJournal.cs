@@ -27,7 +27,9 @@ public sealed class StudyExitJournal(string root, Func<byte[],bool,byte[]> prote
             if(new FileInfo(file).Length>8192)throw new InvalidDataException();
             byte[] clear=protect(File.ReadAllBytes(file),false);StudyExitPacket packet;
             try{packet=JsonSerializer.Deserialize<StudyExitPacket>(clear,Protocol.Json)??throw new InvalidDataException();}finally{CryptographicOperations.ZeroMemory(clear);}
+            if(packet.Metadata is null || string.IsNullOrWhiteSpace(packet.Scope))throw new InvalidDataException();
             NpepPhotoProtocol.Validate("exitMetadata",packet.Metadata);
+            if(!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file),"N",out var fileId) || fileId!=Guid.Parse(packet.Metadata.Text("eventId")))throw new InvalidDataException();
             if(packet.Scope!=scope){File.Delete(file);continue;}return packet;
         }
         return null;

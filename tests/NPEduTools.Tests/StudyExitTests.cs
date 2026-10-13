@@ -3,7 +3,7 @@ using NPEduTools.Contracts;
 using NPEduTools.Core;
 using NPEduTools.Host;
 namespace NPEduTools.Tests;
-public sealed class StudyExitTests
+public sealed partial class StudyExitTests
 {
     private sealed class Clock:TimeProvider {public long Ms;public override long TimestampFrequency=>1000;public override long GetTimestamp()=>Ms;public override DateTimeOffset GetUtcNow()=>new DateTimeOffset(2026,10,11,12,0,0,TimeSpan.Zero).AddMilliseconds(Ms);}
     // These tests advance verification time abruptly, not microphone sample time.

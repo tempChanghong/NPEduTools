@@ -77,6 +77,7 @@ public sealed class StudyPhotoJournal(string directory, Func<byte[], bool, byte[
                     if (packet.Metadata is null || packet.Bytes is null || string.IsNullOrWhiteSpace(packet.Scope) ||
                         !NoiseContract.ValidDeviceId(packet.Camera) || !NoiseContract.ValidDeviceId(packet.Microphone)) throw new InvalidDataException();
                     NpepPhotoProtocol.Validate("metadata", packet.Metadata);
+                    if (!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out var fileId) || fileId != Guid.Parse(packet.Metadata.Text("eventId"))) throw new InvalidDataException();
                     if (packet.Scope != scope || packet.Camera != camera || packet.Microphone != microphone ||
                         serverNow is { } now && now - DateTimeOffset.Parse(packet.Metadata.Text("capturedAt")) > TimeSpan.FromDays(1)) { File.Delete(file); continue; }
                     if (Convert.ToHexStringLower(SHA256.HashData(packet.Bytes)) != packet.Metadata.Text("hash")) throw new InvalidDataException();

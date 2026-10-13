@@ -8,6 +8,35 @@ namespace NPEduTools.Tests;
 public sealed partial class StudyPhotoTests
 {
     [Fact]
+    public void PhotoFilenameMismatchCannotReturnTheSamePacketAfterAcknowledgement()
+    {
+        using var folder = new Folder(); var journal = new StudyPhotoJournal(folder.Path, FakeProtection);
+        var saved = Packet(); journal.Save(saved);
+        string file = Assert.Single(Directory.GetFiles(folder.Path, "*.photo"));
+        string renamed = Path.Combine(folder.Path, Guid.NewGuid().ToString("N") + ".photo");
+        File.Move(file, renamed); byte[] original = File.ReadAllBytes(renamed);
+        var packet = journal.Next("scope", "camera", "mic", Utc);
+        if (packet is not null) journal.Remove(Guid.Parse(packet.Metadata["eventId"]!.GetValue<string>()));
+        var again = journal.Next("scope", "camera", "mic", Utc);
+        Assert.True(packet is null && again is null && journal.Error == "PHOTO_QUEUE_UNAVAILABLE",
+            $"first={packet is not null}, after acceptance={again is not null}, physical record remains={File.Exists(renamed)}");
+        Assert.Equal(original, File.ReadAllBytes(renamed));
+    }
+
+    [Fact]
+    public void ValidPhotoKeepsCaseInsensitiveFilenameIdentityAndAcknowledgementRemovesIt()
+    {
+        using var folder = new Folder(); var journal = new StudyPhotoJournal(folder.Path, FakeProtection);
+        var saved = Packet(); journal.Save(saved);
+        string file = Assert.Single(Directory.GetFiles(folder.Path, "*.photo"));
+        string upper = Path.Combine(folder.Path, Path.GetFileNameWithoutExtension(file).ToUpperInvariant() + ".photo");
+        File.Move(file, file + ".rename"); File.Move(file + ".rename", upper);
+        Assert.Equal(saved.Metadata.ToJsonString(), journal.Next("scope", "camera", "mic", Utc)!.Metadata.ToJsonString());
+        journal.Remove(Guid.Parse(saved.Metadata["eventId"]!.GetValue<string>()));
+        Assert.Null(journal.Next("scope", "camera", "mic", Utc)); Assert.Equal(0, journal.Pending); Assert.Null(journal.Error);
+    }
+
+    [Fact]
     public async Task TheFormalPendingPhotoBoundaryReportsMalformedDataWithoutOpeningCapture()
     {
         using var folder = new Folder();
