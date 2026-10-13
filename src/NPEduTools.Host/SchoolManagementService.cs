@@ -14,6 +14,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     private readonly string _path;
     private Saved _saved=new(null,0,false,0,null,null,false);
     private string? _error;
+    private string? _credentialError;
     private bool _savePending;
     private sealed record Saved(string? Scope,long Revision,bool Locked,long Applied,string? Microphone,string? Camera,bool Unlocked);
     public SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory)
@@ -54,6 +55,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         {
             _noise.BindSchoolManagement(scope);
             if(_saved.Scope==scope){if(_savePending)Save();return;}
+            _credentialError=null;
             _saved=new(scope,0,scope is not null,0,null,null,false);
             Save();SetLocks();
         }
@@ -65,7 +67,9 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             try
             {
                 if(_saved.Scope is null || !JsonNode.DeepEquals(policy["identity"],JsonNode.Parse(_saved.Scope)))throw new NpepException("SESSION_SUPERSEDED");
-                _error=_noise.ApplySchoolManagement(_saved.Scope!,policy["credential"]?.AsObject());
+                // Credential and equipment acknowledgements are independent; a durable
+                // equipment write cannot erase a rejected credential update.
+                _error=null;_credentialError=_noise.ApplySchoolManagement(_saved.Scope!,policy["credential"]?.AsObject());
                 var p=policy["equipment"]!.AsObject();long revision=p["revision"]!.Deserialize<long>();bool locked=p["locked"]!.GetValue<bool>();
                 string? mic=p["microphoneId"]?.GetValue<string>(),cam=p["cameraId"]?.GetValue<string>();
                 if(revision<0 || revision>NpepProtocol.MaxInteger || revision<_saved.Revision || mic is not null && !NoiseContract.ValidDeviceId(mic) || cam is not null && !NoiseContract.ValidDeviceId(cam))throw new NpepException("INVALID_RESPONSE");
@@ -115,7 +119,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
                 microphones.Outcome!="Succeeded" || cameraReply.Outcome!="Succeeded" || cameras.Error is not null?"EQUIPMENT_UNAVAILABLE":null;
             return new(){["microphones"]=JsonSerializer.SerializeToNode(microphones.NoiseDevices??[],Protocol.Json),["cameras"]=JsonSerializer.SerializeToNode(cameras.Cameras,Protocol.Json),
                 ["unlocked"]=_saved.Unlocked,["appliedRevision"]=_saved.Applied,["credentialRevision"]=_noise.SchoolCredentialRevision,
-                ["selectedMicrophoneId"]=noise.SelectedDeviceId,["selectedCameraId"]=cameras.CameraId,["error"]=_error??_noise.Protection().ErrorCode??inventoryError};
+                ["selectedMicrophoneId"]=noise.SelectedDeviceId,["selectedCameraId"]=cameras.CameraId,["error"]=_error??_credentialError??_noise.Protection().ErrorCode??inventoryError};
         }
     }
 }
