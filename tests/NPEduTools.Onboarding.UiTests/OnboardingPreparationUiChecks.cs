@@ -9,12 +9,12 @@ using NPEduTools.Contracts;
 
 internal static partial class Program
 {
-    private static OnboardingWindow PreparationWindow(string pipe, OnboardingState state, Action<OnboardingState> save)
+    private static OnboardingWindow PreparationWindow(string pipe, OnboardingState state, Action<OnboardingState> save, NpepConnectionSession? schoolSession = null)
     {
         var actionsType = typeof(OnboardingWindow).Assembly.GetType("NPEduTools.App.OnboardingActions")!;
         Action nothing = () => { };
         var actions = Activator.CreateInstance(actionsType, Enumerable.Repeat<object>(nothing, 9).ToArray())!;
-        var session = new NpepConnectionSession((_, _) => Task.FromException<HostResponse>(new IOException("isolated fixture")));
+        var session = schoolSession ?? new NpepConnectionSession((_, _) => Task.FromException<HostResponse>(new IOException("isolated fixture")));
         var constructor = typeof(OnboardingWindow).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic).Single();
         return (OnboardingWindow)constructor.Invoke([pipe, state, save, session, actions, (Action<bool>)(_ => { }), null]);
     }
@@ -24,6 +24,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            RunOnboardingTaskFlowChecks();
             var failures = new List<Exception>();
             foreach (int stage in Enumerable.Range(0, 3))
                 foreach (bool lostReply in new[] { false, true })
@@ -159,7 +160,7 @@ internal static partial class Program
                     Click(owner, "BackButton");
                     Assert(((TextBlock)owner.FindName("StepTitle")).Text == "使用偏好", "back navigation did not leave preparation");
                     Click(owner, "SkipButton");
-                    Assert(((TextBlock)owner.FindName("StepTitle")).Text == (step == "noise" ? "配置监测设备" : "准备考试环境"), "return navigation did not reach the original step");
+                    Assert(((TextBlock)owner.FindName("StepTitle")).Text == (step == "noise" ? "准备自习设备" : "准备考试环境"), "return navigation did not reach the original step");
                     using var currentServer = Server();
                     var currentRead = Read(currentServer);
                     var noise = new NoiseState(Guid.NewGuid(), 1, "Stopped", "隔离旧监测状态", null, null, null, null, "NoData", null, []);
