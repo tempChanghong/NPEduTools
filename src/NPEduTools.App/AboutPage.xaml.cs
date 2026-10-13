@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -19,8 +18,7 @@ public partial class AboutPage : UserControl
             ?? assembly.GetName().Version?.ToString() ?? "未知版本";
         string[] parts = fullVersion.Split('+', 2);
         VersionBadge.Text = parts[0];
-        ReleaseStatus.Text = Regex.IsMatch(parts[0], @"^v?\d+\.\d+\.\d+(?:\s|$)", RegexOptions.CultureInvariant)
-            ? "正式版 · 版本详情与变化请查看发布说明" : "开发预览版 · 功能与正式发布包可能处于不同进度";
+        ReleaseStatus.Text = "当前构建版本 · 发布与下载状态请查看发布页；本地源码与安装包可能处于不同进度";
         BuildInformation.Text = $"NPEduTools {parts[0]}\n程序集：{assembly.GetName().Version}\n运行时：{RuntimeInformation.FrameworkDescription}\n进程架构：{RuntimeInformation.ProcessArchitecture}\n构建基准：{(parts.Length > 1 ? parts[1] : "未附带源码提交信息")}\n本地 Debug 构建可能包含未提交改动。";
         Acknowledgements.ItemsSource = new Acknowledgement[]
         {
