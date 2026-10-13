@@ -8,14 +8,14 @@
       "npedutools.core": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.1.2, )"
+          "NPEduTools.Contracts": "[1.1.5, )"
         }
       },
       "npedutools.integrations.npep": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.1.2, )",
-          "NPEduTools.Core": "[1.1.2, )"
+          "NPEduTools.Contracts": "[1.1.5, )",
+          "NPEduTools.Core": "[1.1.5, )"
         }
       }
     }
