@@ -238,7 +238,7 @@ public static class Protocol
         if (request.Capability == "recording.automatic")
         {
             if (request.Automatic is not { } cmd || cmd.ClientId == Guid.Empty ||
-                cmd.Action is not ("enable" or "disable" or "lease" or "skip-day" or "resume-day" or "skip-next") ||
+                cmd.Action is not ("enable" or "disable" or "lease" or "skip-day" or "resume-day" or "skip-next" or "skip-upcoming") ||
                 (cmd.Action == "enable" ? cmd.Options is null || RecordingContract.Validate(cmd.Options) is not null : cmd.Options is not null)) return "InvalidAutomaticCommand";
         }
         else if (request.Automatic is not null) return "UnexpectedParameters";

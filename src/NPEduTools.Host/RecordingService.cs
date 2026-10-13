@@ -142,8 +142,9 @@ public sealed class RecordingService : IAsyncDisposable
                         _ledger.SkipDate(command.Action == "skip-day" ? DateOnly.FromDateTime(now.Date) : null);
                         if (command.Action == "skip-day") await StopAutomaticAsync("今天不再录制");
                         break;
+                    case "skip-upcoming":
                     case "skip-next":
-                        if (State is { Active: true, Control.Owner: "Automatic" }) await StopAutomaticAsync("用户结束本节");
+                        if (command.Action == "skip-next" && State is { Active: true, Control.Owner: "Automatic" }) await StopAutomaticAsync("用户结束本节");
                         else
                         {
                             var clock = _clock.Read(Elapsed);
