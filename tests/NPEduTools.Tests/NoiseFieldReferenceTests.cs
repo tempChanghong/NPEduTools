@@ -28,7 +28,7 @@ public sealed class NoiseFieldReferenceTests
         var d=Draft();var first=d.Samples[0];var second=d.Samples[1];
         first=fault switch {
             "clipping"=>first with {ClippedPercent=.101},"coverage"=>first with {Coverage=.89},"short"=>first with {Seconds=10},
-            "stale"=>first with {MeterEvidence=first.MeterEvidence! with {MaximumGapSeconds=2}},
+            "stale"=>first with {MeterEvidence=first.MeterEvidence! with {MaximumGapSeconds=2.001}},
             "unconfirmed"=>first with {SameWindowConfirmed=false},"too-variable"=>first with {MinimumDbfs=-61},_=>first};
         second=fault switch {"overlap"=>second with {WindowStartedAt=first.WindowStartedAt,WindowEndedAt=first.WindowEndedAt},
             "range"=>second with {MeterEvidence=second.MeterEvidence! with {Range=1}},_=>second};

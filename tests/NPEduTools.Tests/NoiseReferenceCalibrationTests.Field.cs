@@ -25,6 +25,36 @@ public sealed partial class NoiseReferenceCalibrationTests
         Assert.Equal("Good",f.State.Draft!.Samples.Single(s=>s.Role==role).Quality);
     }
     [Theory]
+    [InlineData(.3)] [InlineData(.4)]
+    public async Task Moderate_USB_latency_keeps_request_cadence_and_both_field_segments_valid(double delay)
+    {
+        await using var f = new UsbFixture();
+        f.Backend.LatencyClock = f.Time;
+        Assert.Equal("Succeeded", FieldBegin(f).Outcome);
+        foreach (string role in new[] { "Primary", "Check" })
+        {
+            f.Backend.ResponseDelay = TimeSpan.Zero;
+            await f.Start(role);
+            int first = f.Backend.RequestTimes.Count;
+            f.Backend.ResponseDelay = TimeSpan.FromSeconds(delay);
+            await f.Frames(350);
+            await Until(() => f.State.State == "Ready");
+            var sample = f.State.Draft!.Samples.Single(s => s.Role == role);
+            Assert.Equal("Good", sample.Quality);
+            Assert.InRange(sample.MeterEvidence!.Readings, 28, 31);
+            Assert.InRange(sample.MeterEvidence.MaximumRoundTripSeconds, delay, .5);
+            var starts = f.Backend.RequestTimes.Skip(first).ToArray();
+            Assert.True(starts.Length >= 28);
+            Assert.All(starts.Zip(starts.Skip(1), (a, b) => (b - a) / 1000d), interval => Assert.InRange(interval, 1, 1.1));
+        }
+        Assert.True(f.State.Evaluation.Ready);
+        Assert.Equal("Succeeded", FieldConfirm(f, false).Outcome);
+        Assert.Equal("Field", f.State.Profile!.Workflow);
+        Assert.Equal(0, f.Reports);
+        Assert.Equal(f.Backend.Opens, f.Backend.Disposals);
+    }
+
+    [Theory]
     [InlineData(0d)][InlineData(4d)][InlineData(6d)]
     public async Task Field_real_Host_with_synthetic_HID_checks_warning_ack_persistence_and_same_level_reference(double error)
     {
@@ -54,7 +84,7 @@ public sealed partial class NoiseReferenceCalibrationTests
         await using var f=new UsbFixture();FieldBegin(f);await f.Start();await f.Frames(160);
         Assert.Equal("Sampling",f.State.State); // The original 20-second workflow cannot stop it here.
         switch(fault){case "Disconnect":f.Backend.DisconnectAt=f.Backend.Reads+1;break;case "Gain":f.Capture!.Signature=Signature+"|changed";break;
-            case "Cancel":f.Command("cancel");break;case "Pause":f.Paused=true;break;case "Gap":f.Time.Advance(2);break;}
+            case "Cancel":f.Command("cancel");break;case "Pause":f.Paused=true;break;case "Gap":f.Time.Advance(3);break;}
         await f.Frames(20);await Until(()=>f.Capture!.Disposed && f.Backend.Disposals==f.Backend.Opens);
         Assert.False(f.State.Evaluation.Ready);Assert.Null(f.State.Profile);Assert.NotEqual("Good",f.State.Draft!.Samples.Single().Quality);Assert.Equal(0,f.Reports);
     }

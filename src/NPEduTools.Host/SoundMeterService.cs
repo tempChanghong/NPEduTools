@@ -23,7 +23,7 @@ public sealed class SoundMeterService(Func<ISoundMeterHidBackend> backend, Func<
         try
         {
             token.ThrowIfCancellationRequested();
-            reader = new(backend(), time, TimeSpan.FromMilliseconds(500));
+            reader = new(backend(), time, TimeSpan.FromMilliseconds(NoiseReferenceContract.UsbReadTimeoutMilliseconds));
             await reader.ConnectAsync(path, token);
             return new ReferenceLease(reader, _gate);
         }

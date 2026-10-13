@@ -61,6 +61,9 @@ public sealed partial class NoiseReferenceCalibrationTests
         public byte Flags;
         public double Level = 50;
         public bool Missing, BlockRead;
+        public TimeProvider? LatencyClock;
+        public TimeSpan ResponseDelay;
+        public readonly List<long> RequestTimes = [];
         public readonly TaskCompletionSource ReadingBlocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly List<byte[]> Writes = [];
         public readonly Queue<byte[]> Queued = new();
@@ -77,6 +80,7 @@ public sealed partial class NoiseReferenceCalibrationTests
             public ValueTask WriteAsync(ReadOnlyMemory<byte> report, CancellationToken token)
             {
                 token.ThrowIfCancellationRequested(); owner.Writes.Add(report.ToArray());
+                if (owner.LatencyClock is { } clock) owner.RequestTimes.Add(clock.GetTimestamp());
                 var response = new byte[9]; BinaryPrimitives.WriteInt16BigEndian(response.AsSpan(1), (short)Math.Round(owner.Level * 10));
                 response[3] = owner.Flags; owner.Queued.Enqueue(response); return ValueTask.CompletedTask;
             }
@@ -84,6 +88,7 @@ public sealed partial class NoiseReferenceCalibrationTests
             {
                 owner.Reads++; if (owner.Reads >= owner.DisconnectAt) throw new IOException("Synthetic unplug");
                 if (owner.BlockRead) { owner.ReadingBlocked.TrySetResult(); await Task.Delay(Timeout.InfiniteTimeSpan, token); }
+                if (owner.ResponseDelay > TimeSpan.Zero) await Task.Delay(owner.ResponseDelay, owner.LatencyClock ?? TimeProvider.System, token);
                 token.ThrowIfCancellationRequested(); owner.Queued.Dequeue().CopyTo(target); return 9;
             }
             public void Dispose() { if (!_disposed) { _disposed = true; owner.Disposals++; } }
@@ -189,7 +194,7 @@ public sealed partial class NoiseReferenceCalibrationTests
             case "Gain": f.Capture!.Signature = Signature + "|changed"; break;
             case "Cancel": Assert.Equal("Succeeded", f.Command("cancel").Outcome); break;
             case "Pause": f.Paused = true; break;
-            case "Gap": f.Time.Advance(2); break;
+            case "Gap": f.Time.Advance(3); break;
         }
         await f.Frames(20); await Until(() => f.Capture!.Disposed && f.Backend.Disposals == f.Backend.Opens);
         Assert.Null(f.State.Meter); Assert.False(f.State.Evaluation.Ready); Assert.Null(f.State.Profile);
