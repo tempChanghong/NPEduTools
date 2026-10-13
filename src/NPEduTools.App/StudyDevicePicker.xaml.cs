@@ -104,6 +104,11 @@ public partial class StudyDevicePicker : UserControl
         SaveMicrophone.IsEnabled = !_busy && _connected && Idle && !locked && StudyMicrophone.SelectedValue is string mic && _microphones.Any(d => d.Id == mic);
         SaveCamera.IsEnabled = !_busy && _connected && Idle && !locked && _camera is not null && _camera.Error is null &&
             StudyCamera.SelectedValue is string cam && (cam.Length == 0 || _camera.Cameras.Any(d => d.Id == cam));
+        if (!_connected)
+        {
+            MicrophoneStatus.Text = "麦克风状态待重新读取";
+            CameraStatus.Text = "摄像头状态待重新读取";
+        }
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
     public async Task<bool> CheckReadyAsync()
@@ -111,8 +116,12 @@ public partial class StudyDevicePicker : UserControl
         await RefreshAsync();
         if (_busy || !_connected || _noise?.SelectedDeviceId is not { } id || !_microphones.Any(d => d.Id == id))
         { DeviceMessage.Text = "请保存当前可用的监测麦克风，或选择跳过此项。"; return false; }
-        if (StudyMicrophone.SelectedValue as string != id || _camera is not null && StudyCamera.SelectedValue as string != (_camera.CameraId ?? ""))
+        // School-locked equipment is read-only. Readiness uses the confirmed Host
+        // preference, not a preserved editable draft that the user cannot save.
+        if (_camera?.Locked != true && (StudyMicrophone.SelectedValue as string != id ||
+            _camera is not null && StudyCamera.SelectedValue as string != (_camera.CameraId ?? "")))
         { DeviceMessage.Text = "设备选择尚未保存，请先点击对应保存按钮；摄像头也可以暂不使用。"; return false; }
+        if (_camera?.Locked == true) DeviceMessage.Text = "学校已锁定设备，将按后台已保存的当前配置完成准备。";
         return true;
     }
     private async void SaveMicrophoneClicked(object sender, RoutedEventArgs e)
@@ -147,7 +156,14 @@ public partial class StudyDevicePicker : UserControl
             }
             if (response.Noise is { } noise) _noise = noise;
             if (response.StudyDevices is { } devices) _camera = devices;
-            if (response.Outcome != "Succeeded") DeviceMessage.Text = DeviceError(response.ErrorCode);
+            if (response.Outcome != "Succeeded")
+            {
+                // A rejection may carry only one device snapshot. A new lock,
+                // capture owner or Host revision invalidates the combined editability claim.
+                if (response.ErrorCode is "EQUIPMENT_LOCKED" or "CameraStateChanged" or "NoiseStateChanged" or "StudyDevicesBusy" or "NoiseBusy" or "NoiseCleanupRequired" or "NoiseStopping")
+                    _connected = false;
+                DeviceMessage.Text = DeviceError(response.ErrorCode);
+            }
             else
             {
                 DeviceMessage.Text = camera ? "摄像头选择已保存，未开始捕获。" : "监测麦克风已保存，未开始采集。";
@@ -167,7 +183,10 @@ public partial class StudyDevicePicker : UserControl
         "NoiseDeviceUnavailable" => "所选麦克风已断开，请刷新；没有自动切换设备。",
         "CameraConfigurationUnavailable" or "NoiseConfigurationUnavailable" => "设备配置无法读取或保存，请检查本机配置目录；原文件保留。",
         "CameraDevicesUnavailable" => "无法枚举摄像头，请检查 Windows 设备状态后刷新。",
-        "StudyDevicesBusy" or "NoiseBusy" => "正在监测，不能更换设备；请在监测结束后设置。",
+        "EQUIPMENT_LOCKED" => "学校已锁定采集设备；请先刷新，再通过学校管理口令解锁。",
+        "StudyDevicesBusy" or "NoiseBusy" => "当前有采集或设备尚未释放，不能更换设备；请等待结束后刷新。",
+        "NoiseCleanupRequired" => "上次麦克风释放未确认；请重启后台后刷新，再设置设备。",
+        "NoiseStopping" => "后台正在退出；请等待重新连接后刷新，当前设备选择保留。",
         "STUDY_UNSUPPORTED" or "UnknownCapability" => "请更新并重启 Host，以使用原生摄像头选择。",
         _ => "设备设置未确认，请刷新后重试。"
     };

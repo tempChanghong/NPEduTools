@@ -31,6 +31,7 @@ internal static partial class Program
             RunStudyDeviceUnlockFeedbackChecks();
             RunStudyDeviceProtocolChecks();
             RunDeviceRefreshSnapshotChecks();
+            RunDeviceRejectionStateChecks();
             Exercise(window, owner =>
             {
                 var picker = (StudyDevicePicker)owner.FindName("StudyDevices");
