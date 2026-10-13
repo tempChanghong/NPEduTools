@@ -55,7 +55,7 @@ public partial class MainWindow
     {
         _recording = new(Dispatcher, _pipe);
         _recording.Changed += RefreshRecording;
-        _recording.AutomaticChanged += state => { _quick?.UpdateAutomaticRecording(state); RefreshHomeRecordingNext(state); };
+        _recording.AutomaticChanged += state => { _quick?.UpdateAutomaticRecording(state, _recording.AutomaticAvailable); RefreshHomeRecordingNext(state); };
         RefreshHomeRecordingNext(_recording.Automatic);
         RefreshRecording(_recording.State);
     }

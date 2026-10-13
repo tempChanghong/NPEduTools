@@ -15,7 +15,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
-            foreach (string scenario in new[] { "request-id", "version", "zero-length", "oversized", "empty-message", "invalid-json", "lease" })
+            foreach (string scenario in new[] { "missing-recording", "missing-automatic", "rejected-status", "request-id", "version", "zero-length", "oversized", "empty-message", "invalid-json", "lease", "rejected-lease" })
                 RunRecordingPollRecoveryCheck(scenario);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
@@ -49,9 +49,12 @@ internal static partial class Program
             PumpUntil(() => read.IsCompleted, "isolated status request did not arrive");
             var request = read.GetAwaiter().GetResult();
             Assert(request.Capability == "recording.status", "unexpected initial request");
+            // Keep the next lease connection open: a later transport timeout must not
+            // conceal acceptance of the malformed status snapshot under test.
+            using var heldLease = scenario is "missing-recording" or "missing-automatic" or "rejected-status" ? Server() : null;
             type.GetMethod("Apply", flags)!.Invoke(client,
                 [new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null, "隔离快照", Recording: active, Automatic: automatic)]);
-            if (scenario == "lease")
+            if (scenario is "lease" or "rejected-lease")
             {
                 var statusReply = Protocol.WriteAsync(broken, new HostResponse(Protocol.Version, request.RequestId,
                     "Succeeded", null, "隔离正常状态", Recording: active, Automatic: automatic), timeout.Token);
@@ -65,7 +68,15 @@ internal static partial class Program
             }
             async Task InvalidReply()
             {
-                if (scenario is "request-id" or "version" or "lease")
+                if (scenario is "missing-recording" or "missing-automatic" or "rejected-status")
+                    await Protocol.WriteAsync(broken, new HostResponse(Protocol.Version, request.RequestId,
+                        scenario == "rejected-status" ? "Rejected" : "Succeeded", null, "隔离不完整状态",
+                        Recording: scenario == "missing-recording" ? null : active,
+                        Automatic: scenario == "missing-automatic" ? null : automatic), timeout.Token);
+                else if (scenario == "rejected-lease")
+                    await Protocol.WriteAsync(broken, new HostResponse(Protocol.Version, request.RequestId,
+                        "Rejected", "FixtureLeaseRejected", "隔离租约未受理", Recording: active, Automatic: automatic), timeout.Token);
+                else if (scenario is "request-id" or "version" or "lease")
                     await Protocol.WriteAsync(broken, new HostResponse(scenario == "version" ? Protocol.Version + 1 : Protocol.Version,
                         scenario == "version" ? request.RequestId : Guid.NewGuid(), "Succeeded", null, "隔离无效回执"), timeout.Token);
                 else if (scenario is "zero-length" or "oversized")
@@ -84,8 +95,10 @@ internal static partial class Program
             Assert(!poll.IsFaulted, scenario + ": malformed response terminated recording polling: " + poll.Exception?.GetBaseException().Message);
             Assert(!Available() && State().Message.Contains("状态未知") && State().Control == active.Control,
                 "invalid reply still claims a confirmed state or discards the last session");
+            Assert(!(bool)type.GetProperty("AutomaticAvailable")!.GetValue(client)!, "invalid status retained a confirmed automatic plan");
             Assert(automaticEvents[^1].Message.Contains("连接中断"), "automatic recording was not notified about unknown state");
 
+            heldLease?.Dispose();
             using var fresh = Server();
             async Task ServeRecovery()
             {

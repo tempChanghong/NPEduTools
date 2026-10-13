@@ -314,10 +314,11 @@ public partial class QuickAccessWindow : Window
     public void ShowEntry() { if (!_autoHidden && !_closing) { if (!IsVisible) Show(); Position(); } }
     public void SetRecordingActions(Action open, Action pause, Action stop, Action plan, Action skipToday)
     { _openRecording = open; _pauseRecording = pause; _stopRecording = stop; _openRecordingPlan = plan; _skipAutomaticToday = skipToday; }
-    public void UpdateAutomaticRecording(AutomaticRecordingState state)
+    public void UpdateAutomaticRecording(AutomaticRecordingState state, bool stateAvailable)
     {
         AutomaticStatus.Text = state.Message;
-        AutomaticSkipDay.Visibility = state.Enabled ? Visibility.Visible : Visibility.Collapsed;
+        AutomaticSkipDay.Visibility = state.Enabled && stateAvailable ? Visibility.Visible : Visibility.Collapsed;
+        AutomaticSkipDay.IsEnabled = stateAvailable;
     }
     private void AutomaticSkipDayClicked(object sender, RoutedEventArgs e) => _skipAutomaticToday?.Invoke();
     public void UpdateRecording(RecordingState state, bool stateAvailable = true)

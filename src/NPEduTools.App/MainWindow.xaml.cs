@@ -493,7 +493,21 @@ public partial class MainWindow : Window
                 var prepared = await NoiseManagementDialog.Request(_pipe, shutdownRequest with { Capability = "noise.management.prepare-exit" });
                 if (prepared.Outcome != "Succeeded") { HomeMessage.Text = prepared.Message; return; }
             }
+            // Do not skip saving based on a cached idle snapshot while the Host
+            // still exists. Closing the window alone remains independent of this command.
+            if ((!_recording.StateAvailable || !_recording.AutomaticAvailable) && Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var recordingHost))
+            {
+                recordingHost.Dispose();
+                HomeMessage.Text = "当前录制状态未确认，请等待后台重新连接后再停止并退出。";
+                ShowRecording(); return;
+            }
             if (_recording.Automatic.Enabled) await _recording.SetAutomaticAsync("disable");
+            if ((!_recording.StateAvailable || !_recording.AutomaticAvailable) && Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var receiptHost))
+            {
+                receiptHost.Dispose();
+                HomeMessage.Text = "自动录课开关已处理，但当前录制状态未确认，请核对后再退出。";
+                ShowRecording(); return;
+            }
             if (_recording.State.Active)
             {
                 HomeMessage.Text = "正在保存微课，完成后退出…";

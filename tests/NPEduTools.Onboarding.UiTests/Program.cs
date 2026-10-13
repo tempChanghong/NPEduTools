@@ -270,7 +270,16 @@ internal static partial class Program
         window.Loaded += (_, _) =>
         {
             try { test(window); }
-            catch (Exception error) { failure = error; if (window is StudyWindow study) study.Shutdown(); else window.Close(); }
+            catch (Exception error)
+            {
+                failure = error;
+                // These controllers normally turn Close into Hide. A failing fixture
+                // must release its modal frame and emit the original assertion.
+                if (window is StudyWindow study) study.Shutdown();
+                else if (window is AutoRecordingWindow automatic) automatic.Shutdown();
+                else if (window is RecordingWindow recording) recording.Shutdown();
+                else window.Close();
+            }
         };
         window.ShowDialog();
         if (failure is not null) throw failure;

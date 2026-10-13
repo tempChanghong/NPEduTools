@@ -28,7 +28,7 @@ internal static partial class Program
                 string Text(string name) => ((TextBlock)owner.FindName(name)).Text;
                 var idle = new AutomaticRecordingState(false, Guid.Empty, "自动录课未启用", null, []);
                 void Show(AutomaticRecordingState state) => apply.Invoke(client,
-                    [new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null, "隔离回执", Automatic: state)]);
+                    [new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null, "隔离回执", Automatic: state, Recording: new("Idle", "隔离空闲"))]);
                 Show(idle);
                 var preview = Text("PreviewStatus");
                 Click(owner, "ToggleReal"); // No saved options: validation exits before any recording command.
@@ -46,6 +46,12 @@ internal static partial class Program
                 Assert(Text("AutomaticFeedbackText").Contains(validation), "validation feedback vanished instead of remaining separate from live status");
                 Assert(Text("PreviewStatus") == preview, "recording status changed the independent trial status");
                 Assert(Button(owner, "ToggleReal").Content.ToString() == "关闭自动录课", "master toggle no longer follows the actual response");
+                clientType.GetMethod("MarkUnavailable", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(client, [null, null]);
+                Assert(!Button(owner, "ToggleReal").IsEnabled && !Button(owner, "RealSkip").IsEnabled && !Button(owner, "RealSkipDay").IsEnabled,
+                    "disconnected automatic page still permits changing today's schedule");
+                Show(active);
+                Assert(Button(owner, "ToggleReal").IsEnabled && Button(owner, "RealSkip").IsEnabled && Button(owner, "RealSkipDay").IsEnabled,
+                    "fresh automatic snapshot did not restore controls");
                 Checks.Add("Missing saved options fails before recording; a later actual recording response replaces live status while retaining separate operation feedback");
 
                 Show(active with { Message = "录制后台连接中断；等待重新连接", Error = "当前运行状态未知" });

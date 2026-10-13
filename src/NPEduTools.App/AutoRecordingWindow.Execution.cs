@@ -30,7 +30,7 @@ public partial class AutoRecordingWindow
         OpenLatestFolder.IsEnabled = state.OutputFile is not null || state.RecoveryDirectory is not null;
         StopCurrent.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
         StopCurrent.IsEnabled = _realRecording.StateAvailable && state.Active && !state.Busy;
-        RealSkip.IsEnabled = !_automaticChanging && _realRecording.StateAvailable;
+        RefreshAutomaticControls();
     }
     private void OpenLatestVideoClicked(object sender, RoutedEventArgs e) => OpenLatestPath(_realRecording.State.OutputFile);
     private void OpenLatestFolderClicked(object sender, RoutedEventArgs e) => OpenLatestPath(_realRecording.State.OutputFile is { } file ? Path.GetDirectoryName(file) : _realRecording.State.RecoveryDirectory);
@@ -47,11 +47,15 @@ public partial class AutoRecordingWindow
         RealStatus.Text = (_realRecording.AutomaticAvailable ? state.Message : "录制后台连接中断或尚未确认；自动录课状态未知。") + (state.Error is null ? "" : " · " + state.Error);
         ToggleReal.Content = state.Enabled ? "关闭自动录课" : "开启自动录课";
         ToggleReal.ToolTip = state.SuspendedByMode ? "课堂模式暂停仍然有效；开启总开关不会解除暂停。" : "使用已保存的录制设置，按计划和学校时间执行。";
-        ToggleReal.IsEnabled = !_automaticChanging && _realRecording.AutomaticAvailable;
-        RealSkip.IsEnabled = !_automaticChanging && _realRecording.StateAvailable;
+        RefreshAutomaticControls();
         RealSkipDay.Content = state.SkipDate is not null && state.SkipDate == _today ? "恢复今日自动录制" : "今天不再录制";
         if (!_recordRows.SequenceEqual(state.Recent)) { _recordRows = state.Recent; RefreshRecordRows(); }
 
+    }
+    private void RefreshAutomaticControls()
+    {
+        bool available = !_automaticChanging && _realRecording.StateAvailable && _realRecording.AutomaticAvailable;
+        ToggleReal.IsEnabled = RealSkip.IsEnabled = RealSkipDay.IsEnabled = available;
     }
     private static string PhaseLabel(string phase) => phase switch
     {
@@ -65,11 +69,11 @@ public partial class AutoRecordingWindow
     }
     private async Task AutomaticActionAsync(string action, RecordingOptions? options = null)
     {
-        if (_automaticChanging) return;
-        _automaticChanging = true; SetAutomaticFeedback("正在等待后台确认…", pending: true); ToggleReal.IsEnabled = false;
+        if (_automaticChanging || !_realRecording.StateAvailable || !_realRecording.AutomaticAvailable) return;
+        _automaticChanging = true; SetAutomaticFeedback("正在等待后台确认…", pending: true); RefreshAutomaticControls();
         try { await _realRecording.SetAutomaticAsync(action, options); SetAutomaticFeedback(null); }
         catch (Exception error) when (error is not OutOfMemoryException) { SetAutomaticFeedback(error.Message); }
-        finally { _automaticChanging = false; ToggleReal.IsEnabled = _realRecording.AutomaticAvailable; RecordingChanged(_realRecording.State); }
+        finally { _automaticChanging = false; RefreshAutomaticControls(); }
     }
     private async void ToggleRealClicked(object sender, RoutedEventArgs e)
     {
