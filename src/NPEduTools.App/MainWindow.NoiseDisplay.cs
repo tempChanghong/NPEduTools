@@ -51,21 +51,38 @@ public partial class MainWindow
                 UpdateStudyHome(studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(3.5) ? studyResponse.Study : null);
                 bool workspaceFresh = studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(3.5);
                 UpdateWorkspaceReadiness(workspaceFresh ? studyResponse.Noise : null, workspaceFresh ? studyResponse.Study?.Settings : null);
-                _quickProjectionAt = studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
+                _quickProjectionAt = studyResponse.Outcome == "Succeeded" && studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
                 if (_quickProjectionAt is not null) UpdateQuickPresentationVisibility();
                 await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
                 long manualAt=Stopwatch.GetTimestamp();
                 var manual=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.status"));
                 var manualAge=Stopwatch.GetElapsedTime(manualAt);
                 UpdateWorkspaceManual(manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(3.5) ? manual.ManualStudy : null);
-                bool schoolPriority=studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
+                bool schoolPriority=studyResponse.Outcome == "Succeeded" && studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
                 if(schoolPriority)_manualStudyWindow?.HideDisplay();
                 else if(studyResponse.Study?.ProjectionPriority != true && !_exitBusy && _exitWarning is not {IsVisible:true} && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
                 {
                     using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
                     long reportAt=Stopwatch.GetTimestamp();var report=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.report.status"));
-                    if(report.StudyReport is {Available:true} mr){_manualStudyWindow?.HideDisplay();_studyReportWindow??=TrackStudyPresentationWindow(new StudyReportWindow());_studyReportWindow.Apply(mr,Stopwatch.GetElapsedTime(reportAt));continue;}
-                    if(manual.Study is {Display.Available:true} ms){_studyReportWindow?.HideDisplay();_studyWindow?.HideDisplay();_manualStudyWindow??=TrackStudyPresentationWindow(new StudyWindow(_pipe,()=>OpenNoiseClicked(this,new RoutedEventArgs()),manual:true));_manualStudyWindow.Apply(ms,manual.Noise,manualAge,studyResponse.StudyPhotos);_manualStudyWindow.ShowDisplay();continue;}
+                    if (report.Outcome == "Succeeded" && report.StudyReport is { Available: true, Data: not null } mr)
+                    {
+                        _manualStudyWindow?.HideDisplay(); _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
+                        _studyReportWindow ??= TrackStudyPresentationWindow(new StudyReportWindow());
+                        _studyReportWindow.Apply(mr, Stopwatch.GetElapsedTime(reportAt));
+                        continue;
+                    }
+                    // A later report/exit read may have consumed the status's freshness budget.
+                    // Re-evaluate age at presentation, including every intervening await.
+                    manualAge = Stopwatch.GetElapsedTime(manualAt);
+                    if (manualAge < TimeSpan.FromSeconds(1.5) && manual.Study is { Display.Available: true } ms)
+                    {
+                        _studyReportWindow?.HideDisplay();
+                        _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
+                        _manualStudyWindow ??= TrackStudyPresentationWindow(new StudyWindow(_pipe, () => OpenNoiseClicked(this, new RoutedEventArgs()), manual: true));
+                        _manualStudyWindow.Apply(ms, manual.Noise, manualAge, studyResponse.StudyPhotos);
+                        _manualStudyWindow.ShowDisplay();
+                        continue;
+                    }
                     _manualStudyWindow?.HideDisplay();
                 }
                 else _manualStudyWindow?.HideDisplay();
@@ -82,7 +99,8 @@ public partial class MainWindow
                         _onboardingWindow?.IsVisible == true || Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible);
                     await UpdateStudyReportAsync(studyBlocked);
                     if (_studyReportWindow?.IsVisible == true) { _studyWindow?.HideDisplay(); continue; }
-                    if (!studyBlocked && studyResponse.Study.Display.Available && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())
+                    studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
+                    if (!studyBlocked && studyRoundTrip < TimeSpan.FromSeconds(1.5) && studyResponse.Study.Display.Available && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())
                     {
                         using var studyProbe = RuntimeOperationFile.TryAcquire(false);
                         if (studyProbe is null) _studyWindow?.HideDisplay();
