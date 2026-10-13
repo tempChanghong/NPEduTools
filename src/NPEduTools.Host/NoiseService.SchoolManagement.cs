@@ -18,9 +18,12 @@ public sealed partial class NoiseService
         {
             if(id is null || id==_selected)return null;
             if(CaptureBusy)return "EQUIPMENT_PENDING";
+            // Use the same recoverable enumeration boundary as local device refresh.
+            // Endpoint/COM failures are device evidence, not policy or storage failures.
+            var listed=Handle(new(1,Guid.NewGuid(),"noise.devices"));
+            if(listed.Outcome!="Succeeded" || listed.NoiseDevices?.Any(d=>d?.Id==id)!=true)return "EQUIPMENT_UNAVAILABLE";
             try
             {
-                if(!devices().Any(d=>d.Id==id))return "EQUIPMENT_UNAVAILABLE";
                 Select(id);_revision++;return null;
             }
             catch(Exception e)when(e is IOException or UnauthorizedAccessException){return "EQUIPMENT_STORE_UNAVAILABLE";}

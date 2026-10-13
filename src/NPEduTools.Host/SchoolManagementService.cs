@@ -104,11 +104,16 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         lock(_sync)
         {
             var microphones=_noise.Handle(new(1,Guid.NewGuid(),"noise.devices"));
-            var cameras=_cameras.Handle(new(1,Guid.NewGuid(),"study.devices.refresh")).StudyDevices!;
+            var cameraReply=_cameras.Handle(new(1,Guid.NewGuid(),"study.devices.refresh"));
+            var cameras=cameraReply.StudyDevices!;
             var noise=microphones.Noise!;
+            // Empty inventory after a failed read is unknown, not a successful no-device result.
+            // Keep operation/credential errors primary; a later healthy refresh clears only this read error.
+            string? inventoryError=cameras.Error=="CameraConfigurationUnavailable"?"EQUIPMENT_STORE_UNAVAILABLE":
+                microphones.Outcome!="Succeeded" || cameraReply.Outcome!="Succeeded" || cameras.Error is not null?"EQUIPMENT_UNAVAILABLE":null;
             return new(){["microphones"]=JsonSerializer.SerializeToNode(microphones.NoiseDevices??[],Protocol.Json),["cameras"]=JsonSerializer.SerializeToNode(cameras.Cameras,Protocol.Json),
                 ["unlocked"]=_saved.Unlocked,["appliedRevision"]=_saved.Applied,["credentialRevision"]=_noise.SchoolCredentialRevision,
-                ["selectedMicrophoneId"]=noise.SelectedDeviceId,["selectedCameraId"]=cameras.CameraId,["error"]=_error??_noise.Protection().ErrorCode};
+                ["selectedMicrophoneId"]=noise.SelectedDeviceId,["selectedCameraId"]=cameras.CameraId,["error"]=_error??_noise.Protection().ErrorCode??inventoryError};
         }
     }
 }
