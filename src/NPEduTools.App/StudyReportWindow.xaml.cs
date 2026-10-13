@@ -11,7 +11,7 @@ namespace NPEduTools.App;
 
 public partial class StudyReportWindow : Window
 {
-    private Guid? _instance, _dismissed;
+    private (Guid InstanceId, string? Version, SchoolNoiseWindow? Window)? _current, _dismissed;
     private StudyReportData? _data;
     private long _received;
     private double _remaining;
@@ -20,19 +20,18 @@ public partial class StudyReportWindow : Window
     public StudyReportWindow()
     {
         InitializeComponent();
-        Closing += (_, e) => { if (_shutdown) return; e.Cancel = true; _dismissed = _instance; HideDisplay(); };
+        Closing += (_, e) => { if (_shutdown) return; e.Cancel = true; _dismissed = _current; HideDisplay(); };
         _timer.Tick += (_, _) => Countdown();
     }
     public void Apply(StudyReportState state, TimeSpan roundTrip)
     {
-        _instance = state.InstanceId;
+        // Manual reports reuse the Host instance; the version identifies each session.
+        _current = (state.InstanceId, state.Version, state.Data?.Window);
         _received = Stopwatch.GetTimestamp();
         _remaining = Math.Max(0, state.RemainingSeconds - Math.Max(0, roundTrip.TotalSeconds));
         if (state.Data is not { } d) { HideDisplay(); return; }
         Completion.Text = d.Complete ? "统计已收尾 · 本机报告" : "统计收尾中 · 暂存数据";
-        if (_data is null || _data.Window != d.Window || _data.Frames != d.Frames || _data.SampledSeconds != d.SampledSeconds ||
-            _data.DisciplineReminders != d.DisciplineReminders || _data.Complete != d.Complete ||
-            _data.Estimated?.SampledSeconds != d.Estimated?.SampledSeconds || !_data.Notes.SequenceEqual(d.Notes))
+        if (_data is null || !SameData(_data, d))
         {
             _data = d;
             SessionTime.Text = $"{d.Window.Start:yyyy年M月d日}   {d.Window.Start:HH:mm} – {d.Window.End:HH:mm} · {(d.Mode == "Manual" ? "手动自习 · Windows 时间" : d.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")}";
@@ -49,9 +48,19 @@ public partial class StudyReportWindow : Window
             Draw(d);
         }
         Countdown();
-        if (state.Available && _remaining > 0 && _dismissed != _instance) { if (!IsVisible) Show(); _timer.Start(); }
+        if (state.Available && _remaining > 0 && _dismissed != _current) { if (!IsVisible) Show(); _timer.Start(); }
         else HideDisplay();
     }
+    private static bool SameData(StudyReportData a, StudyReportData b) =>
+        a.Window == b.Window && a.ExpectedSeconds == b.ExpectedSeconds && a.SampledSeconds == b.SampledSeconds &&
+        a.Coverage == b.Coverage && a.ClippedPercent == b.ClippedPercent && a.Frames == b.Frames &&
+        a.DisciplineReminders == b.DisciplineReminders && a.Complete == b.Complete && a.Mode == b.Mode &&
+        a.ClockSource == b.ClockSource && a.Notes.SequenceEqual(b.Notes) && SameChannel(a.Raw, b.Raw) && SameChannel(a.Estimated, b.Estimated);
+    private static bool SameChannel(StudyReportChannel? a, StudyReportChannel? b) => ReferenceEquals(a, b) ||
+        a is not null && b is not null && a.Unit == b.Unit && a.SampledSeconds == b.SampledSeconds &&
+        a.EnergyMean == b.EnergyMean && a.Maximum == b.Maximum && a.ThresholdSampledSeconds == b.ThresholdSampledSeconds &&
+        a.MediumThresholdSampledSeconds == b.MediumThresholdSampledSeconds && a.MediumSeconds == b.MediumSeconds &&
+        a.HighSeconds == b.HighSeconds && a.Trend.SequenceEqual(b.Trend);
     private static string Number(double? value) => value is { } v && double.IsFinite(v) ? v.ToString("0.0", CultureInfo.InvariantCulture) : "—";
     private static string Values(StudyReportChannel c) => $"{Number(c.EnergyMean)} / {Number(c.Maximum)}";
     private static string Duration(double seconds) => seconds >= 60 ? $"{(int)(seconds / 60)} 分 {seconds % 60:0} 秒" : $"{seconds:0.0} 秒";
@@ -104,7 +113,7 @@ public partial class StudyReportWindow : Window
             Chart.Children.Add(new Line { X1 = x1, X2 = Math.Max(x1 + 2, x2), Y1 = y, Y2 = y, Stroke = brush, StrokeThickness = 4 });
         }
     }
-    private void CloseReportClicked(object sender, RoutedEventArgs e) { _dismissed = _instance; HideDisplay(); }
+    private void CloseReportClicked(object sender, RoutedEventArgs e) { _dismissed = _current; HideDisplay(); }
     public void HideDisplay() { _timer.Stop(); Hide(); }
     public void Shutdown() { _shutdown = true; _timer.Stop(); Close(); }
 }

@@ -55,6 +55,22 @@ internal static partial class Program
             var chart = (Canvas)window.FindName("Chart"); var first = chart.Children[^1];
             for (int i = 0; i < 200; i++) window.Apply(state with { RemainingSeconds = 299 }, TimeSpan.Zero);
             Assert(ReferenceEquals(first, chart.Children[^1]), "unchanged report rebuilds chart every poll");
+            var corrected = data with { Mode = "Manual", ClockSource = "Windows", Raw = raw with { EnergyMean = -30, HighSeconds = 90 },
+                Estimated = estimated with { EnergyMean = 60, Maximum = 80, Trend = [new(0, 60, 60, 80)] } };
+            window.Apply(state with { Data = corrected }, TimeSpan.Zero);
+            Assert(((TextBlock)window.FindName("PrimaryMean")).Text == "60.0" &&
+                ((TextBlock)window.FindName("PrimaryMaximum")).Text == "80.0" &&
+                ((TextBlock)window.FindName("RawValues")).Text.StartsWith("-30.0") &&
+                ((TextBlock)window.FindName("RawThresholds")).Text.Contains("1 分 30 秒") &&
+                ((TextBlock)window.FindName("SessionTime")).Text.Contains("手动自习"), "report correction with unchanged frame/sample counters did not refresh actual content");
+            Assert(!ReferenceEquals(first, chart.Children[^1]), "changed trend retained the old graph");
+            var correctedChart = chart.Children[^1];
+            var equivalent = corrected with { Raw = corrected.Raw with { Trend = corrected.Raw.Trend.ToArray() },
+                Estimated = corrected.Estimated! with { Trend = corrected.Estimated!.Trend.ToArray() }, Notes = corrected.Notes.ToArray() };
+            window.Apply(state with { Data = equivalent }, TimeSpan.Zero);
+            Assert(ReferenceEquals(correctedChart, chart.Children[^1]), "equivalent deserialized report rebuilt its chart");
+            window.Apply(state, TimeSpan.Zero);
+            Checks.Add("Actual report correction: mean/peak, trend, thresholds and session metadata refresh despite identical frame/sample counts; equivalent new collections do not redraw");
             // UI monotonic deadline also closes if the pipe disconnects just before expiry.
             typeof(StudyReportWindow).GetField("_received", flags)!.SetValue(window, Stopwatch.GetTimestamp() - 301L * Stopwatch.Frequency);
             typeof(StudyReportWindow).GetMethod("Countdown", flags)!.Invoke(window, null);
@@ -67,6 +83,13 @@ internal static partial class Program
             window.UpdateLayout(); Snapshot(window, "study-report-dbfs.png");
             var close = ReportVisuals(window).OfType<Button>().Single(b => Equals(b.Content, "关闭报告")); close.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Assert(!window.IsVisible, "manual close failed"); window.Apply(state, TimeSpan.Zero); Assert(!window.IsVisible, "polling reopened dismissed report");
+            var nextManual = state with { Version = "next-manual-session", Data = state.Data! with { Mode = "Manual", ClockSource = "Windows" } };
+            window.Apply(nextManual, TimeSpan.Zero);
+            Assert(window.IsVisible, "closing a report suppressed another manual session from the same Host instance");
+            close.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            window.Apply(nextManual, TimeSpan.Zero);
+            Assert(!window.IsVisible, "fresh polling reopened the dismissed next session");
+            Checks.Add("Report dismissal is session-specific: the same Host instance can present a new manual version, while polling never reopens that session after closing");
             state = state with { InstanceId = Guid.NewGuid(), Data = data with { SampledSeconds = 0, Coverage = 0,
                 Frames = 0, ClippedPercent = 0, DisciplineReminders = 0, Estimated = null,
                 Notes = ["未取得有效采样；没有数据不代表安静。", "采集覆盖不足；空白时段未记作安静。"],
