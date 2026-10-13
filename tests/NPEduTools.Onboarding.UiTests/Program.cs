@@ -19,6 +19,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        bool homeWorkspaceOnly = args.Length == 2 && args[1] == "--home-workspace";
         bool recordingWorkspaceOnly = args.Length == 2 && args[1] == "--recording-workspace";
         bool workspaceRacesOnly = args.Length == 2 && args[1] == "--study-workspace-races";
         bool workspaceOnly = args.Length == 2 && args[1] == "--study-workspace";
@@ -51,7 +52,7 @@ internal static partial class Program
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
         bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
-        if (args.Length != 1 && !recordingWorkspaceOnly && !workspaceRacesOnly && !workspaceOnly && !manualStudyOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--recording-workspace|--study-workspace|--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
+        if (args.Length != 1 && !homeWorkspaceOnly && !recordingWorkspaceOnly && !workspaceRacesOnly && !workspaceOnly && !manualStudyOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--home-workspace|--recording-workspace|--study-workspace|--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -66,6 +67,7 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (homeWorkspaceOnly) { RunHomeWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (recordingWorkspaceOnly) { RunRecordingWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (workspaceRacesOnly) { RunWorkspaceRaceChecks(); WriteResult("PASSED", null); return 0; }
             if (workspaceOnly) { RunStudyWorkspaceChecks(); WriteResult("PASSED", null); return 0; }

@@ -114,6 +114,9 @@ internal static partial class Program
                 Assert(state.Active && ((TabControl)plan.FindName("AutoSections")).SelectedIndex == 4,
                     "records page interrupted recording or showed the wrong section");
                 Invoke("HomeNavClicked", main, new RoutedEventArgs());
+                Click(main, "RecordingHomeButton");
+                Assert(state.Active && ((FrameworkElement)main.FindName("RecordingManualHost")).IsVisible, "homepage active recording action opened setup or ended session");
+                Assert(requests.Count(r => r.Recording is not null || r.Automatic?.Action is not (null or "lease")) == mutations, "homepage manager button mutated recording");
                 Invoke("SettingsNavClicked", main, new RoutedEventArgs());
                 Assert(state.Active && requests.Count(r => r.Recording is not null || r.Automatic?.Action is not (null or "lease")) == mutations,
                     "home/settings navigation stopped or disabled recording");
