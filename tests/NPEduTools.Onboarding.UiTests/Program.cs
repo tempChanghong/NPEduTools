@@ -190,6 +190,15 @@ internal static partial class Program
             {
                 Assert(!Check(window, "AcceptApp").IsChecked.GetValueOrDefault(), "first consent preselected");
                 Assert(!Button(window, "ContinueButton").IsEnabled, "empty consent allowed");
+                foreach (string document in new[] { "ReadAppAgreement", "ReadNpepService", "ReadNpepPrivacy" })
+                {
+                    Click(window, document, true);
+                    string label = ((TextBlock)window.FindName("DocumentVersion")).Text;
+                    Assert(label.Contains("协议版本 " + AgreementDefinition.Version) &&
+                        label.Contains(DateOnly.ParseExact(AgreementDefinition.EffectiveDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+                            .ToString("yyyy年M月d日", System.Globalization.CultureInfo.InvariantCulture)),
+                        "agreement viewer metadata differs from the accepted version/date: " + document);
+                }
                 Click(window, "ReadNpepPrivacy", true);
                 var viewer = (FlowDocumentScrollViewer)window.FindName("DocumentViewer");
                 Assert(new TextRange(viewer.Document.ContentStart, viewer.Document.ContentEnd).Text.Contains("原音频"), "privacy missing");
