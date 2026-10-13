@@ -170,6 +170,7 @@ public partial class MainWindow : Window
     private void SelectPage(bool settings)
     {
         HideStudyWorkspace();
+        HideRecordingWorkspace();
         AboutPageView.Visibility = Visibility.Collapsed;
         AboutNav.Tag = null;
         PageBreadcrumb.Text = settings ? "设备与连接" : "主页";

@@ -96,8 +96,8 @@
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设备与连接" /></StackPanel>
           </Button>
           <TextBlock Text="课堂工具" Foreground="#718089" FontSize="11" Margin="16,18,0,12" />
-          <Button Content="录制微课" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingClicked" AutomationProperties.AutomationId="RecordingNav" />
-          <Button Content="自动录课计划" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="OpenRecordingPlan" />
+          <Button x:Name="RecordingNav" Content="录课" Style="{StaticResource SidebarNavigation}" Click="RecordingNavClicked" AutomationProperties.AutomationId="RecordingNav" />
+
           <Button Content="考试看板" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
           <Button Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
 
@@ -126,6 +126,14 @@
         </StackPanel>
       </Grid>
       <Grid x:Name="Pages" Grid.Row="1" Margin="28,12,28,22">
+        <Grid x:Name="RecordingWorkspace" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <WrapPanel Margin="0,0,0,12">
+            <Button x:Name="RecordingManualTab" Content="立即录制" Style="{StaticResource SidebarNavigation}" Click="RecordingManualTabClicked" AutomationProperties.AutomationId="RecordingManualTab" Margin="0,0,8,4"/>
+            <Button x:Name="RecordingPlanTab" Content="自动安排" Style="{StaticResource SidebarNavigation}" Click="RecordingPlanTabClicked" AutomationProperties.AutomationId="RecordingPlanTab" Margin="0,0,8,4"/>
+            <Button x:Name="RecordingRecordsTab" Content="录制记录" Style="{StaticResource SidebarNavigation}" Click="RecordingRecordsTabClicked" AutomationProperties.AutomationId="RecordingRecordsTab" Margin="0,0,0,4"/>
+          </WrapPanel>
+          <Grid Grid.Row="1"><ContentControl x:Name="RecordingManualHost"/><ContentControl x:Name="RecordingPlanHost" Visibility="Collapsed"/></Grid>
+        </Grid>
         <Grid x:Name="StudyWorkspace" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,12">
             <Button x:Name="ManualWorkspaceTab" Content="手动自习" Click="ManualWorkspaceClicked" Style="{StaticResource Navigation}" Margin="0,0,8,0"/>
@@ -207,7 +215,7 @@
                 <StackPanel>
                   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
                     <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="录制微课" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock Grid.Column="1" Text="立即录课" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                   </Grid>
                   <TextBlock x:Name="RecordingHomeStatus" Text="准备录制" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="RecordingHomeStatus" /><TextBlock x:Name="RecordingHomeAction" Text="配置与录制  →" Foreground="#147D68" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
@@ -216,7 +224,7 @@
                 <StackPanel>
                   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
                     <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="自动录课计划" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock Grid.Column="1" Text="自动安排" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                   </Grid>
                   <TextBlock Text="按课表、周期或日期安排录制" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>

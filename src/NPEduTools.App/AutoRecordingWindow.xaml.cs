@@ -12,7 +12,16 @@ namespace NPEduTools.App;
 public partial class AutoRecordingWindow : Window
 {
     private sealed record SubjectOption(Guid Id, string Name);
-    private sealed record PlanRow(string Key, int Number, string Subject, string ClassTime, string CaptureTime, string Status, string SimulationStatus);
+    private sealed record PlanRow(string Key, int Number, string Subject, string ClassTime, string CaptureTime, string Status, string SimulationStatus)
+    { public string TimeSummary => ClassTime + (CaptureTime == "不安排录制" ? "\n不安排录制" : "\n录 " + CaptureTime); }
+    internal Action? WorkspaceReturn { get; init; }
+    internal void ShowWorkspaceSection(bool records)
+    {
+        ((TabItem)AutoSections.Items[4]).Visibility = records ? Visibility.Visible : Visibility.Collapsed;
+        AutoSections.Tag = records ? "Records" : null;
+        AutoSections.SelectedIndex = records ? 4 : 0;
+        AutoOverview.Visibility = AutoFooter.Visibility = records ? Visibility.Collapsed : Visibility.Visible;
+    }
     private readonly string _pipe;
     private readonly RecordingPreviewStore _store;
     private readonly RecordingPreview _preview;
@@ -37,6 +46,8 @@ public partial class AutoRecordingWindow : Window
         InitializeComponent();
         DesktopDialogSizing.Attach(this, pipe);
         _realRecording.AutomaticChanged += AutomaticChanged;
+        _realRecording.Changed += RecordingChanged;
+        RecordingChanged(_realRecording.State);
         AutomaticChanged(_realRecording.Automatic);
         try { _preview = new(_store.Read()); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
@@ -59,7 +70,7 @@ public partial class AutoRecordingWindow : Window
             _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed);
             bool changed = !ReferenceEquals(_saved, _preview.State);
             Save(); Render(changed);
-            if (IsVisible || _preview.Enabled) await ReadAsync();
+            if (WorkspacePanel.Visible(this) || _preview.Enabled) await ReadAsync();
         };
         Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); };
         Microsoft.Win32.SystemEvents.PowerModeChanged += PowerModeChanged;
@@ -69,6 +80,7 @@ public partial class AutoRecordingWindow : Window
     {
         _shutdown = true; _timer.Stop(); _lifetime.Cancel();
         _realRecording.AutomaticChanged -= AutomaticChanged;
+        _realRecording.Changed -= RecordingChanged;
         Microsoft.Win32.SystemEvents.PowerModeChanged -= PowerModeChanged;
         _preview.SetEnabled(false, EventTime); Save(); Close();
     }
@@ -158,7 +170,7 @@ public partial class AutoRecordingWindow : Window
         DateStatus.Text = _viewDate is { } selectedDate ? $"{selectedDate:yyyy-MM-dd} · {(_viewDate == _today ? "当天生效安排（按 ClassIsland 学校时间执行）" : _forecast is null ? "预计课表未加载；可编辑固定时段" : "预计课表，到当天重新核对")}" : "等待学校日期；也可选明确日期编辑草稿";
         string? selected = (Plans.SelectedItem as PlanRow)?.Key;
         var items = ViewPlans.Select(p => new PlanRow(p.Key, p.Lesson.Number, p.Lesson.Subject,
-            $"{p.Lesson.Start:HH:mm}–{p.Lesson.End:HH:mm}", $"{p.Start:HH:mm}–{p.End:HH:mm}",
+            $"{p.Lesson.Start:HH:mm}–{p.Lesson.End:HH:mm}", p.Selected ? $"{p.Start:HH:mm}–{p.End:HH:mm}" : "不安排录制",
             (string.IsNullOrEmpty(p.Sources) ? "" : p.Sources + " · ") + p.Reason,
             _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _preview.IsMarked(ViewSource?.ProfileId ?? Guid.Empty, p) ? "已试运行 / 已模拟跳过" : "未模拟")).ToArray();
         Plans.ItemsSource = items;
@@ -198,6 +210,6 @@ public partial class AutoRecordingWindow : Window
     }
     private void SubjectsChanged(object sender, RoutedEventArgs e) { if (Subjects is not null) Subjects.IsEnabled = AllSubjects.IsChecked != true; }
     private async void RefreshClicked(object sender, RoutedEventArgs e) { await ReadAsync(); await ReadCalendarAsync(true); }
-    private void HideClicked(object sender, RoutedEventArgs e) => Hide();
+    private void HideClicked(object sender, RoutedEventArgs e) { if (WorkspaceReturn is { } back) back(); else Hide(); }
     private void RecordingSettingsClicked(object sender, RoutedEventArgs e) => _openRecordingSettings();
 }

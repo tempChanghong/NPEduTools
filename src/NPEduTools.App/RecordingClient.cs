@@ -19,6 +19,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     private long _generation;
     public RecordingState State { get; private set; } = new("Idle", "准备录制");
     public bool StateAvailable { get; private set; }
+    public bool AutomaticAvailable { get; private set; }
     public AutomaticRecordingState Automatic { get; private set; } = new(false, Guid.Empty, "自动录制未启用", null, []);
     public event Action<RecordingState>? Changed;
     public event Action<AutomaticRecordingState>? AutomaticChanged;
@@ -73,7 +74,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     private void MarkUnavailable(RecordingState? previous = null, string? error = null)
     {
-        StateAvailable = false;
+        StateAvailable = false; AutomaticAvailable = false;
         // Preserve the last control/session for reconciliation; do not invent a
         // stopped/failed recorder or use an optimistic command phase as evidence.
         State = (previous ?? State) with { Message = "录制后台连接中断，当前状态未知。", Error = error };
@@ -82,7 +83,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     private void Apply(HostResponse response)
     {
-        if (response.Automatic is { } auto) { Automatic = auto; AutomaticChanged?.Invoke(auto); }
+        if (response.Automatic is { } auto) { AutomaticAvailable = true; Automatic = auto; AutomaticChanged?.Invoke(auto); }
         if (response.Recording is not { } state) return;
         bool expected = state.Phase is "Failed" or "Saved" || _pending switch
         {
