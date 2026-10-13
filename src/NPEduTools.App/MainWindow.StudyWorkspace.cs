@@ -13,11 +13,12 @@ public partial class MainWindow
     private string _workspaceTab = "Manual";
     private Window? _workspaceCalibrationController;
     private long _workspaceReportGeneration;
+    private CancellationTokenSource? _workspaceReportRead;
 
     private void InitializeStudyWorkspace()
     {
         InitializeWorkspaceSidebar();
-        Closed += (_, _) => { _workspaceReportGeneration++; };
+        Closed += (_, _) => CancelWorkspaceReports();
     }
     private void RefreshWorkspaceHome()
     {
@@ -48,7 +49,7 @@ public partial class MainWindow
 
     private void HideStudyWorkspace()
     {
-        _workspaceReportGeneration++;
+        CancelWorkspaceReports();
         StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = Visibility.Collapsed;
         StudyNav.Tag = null;
         CloseWorkspaceCalibration();
@@ -69,13 +70,13 @@ public partial class MainWindow
         if (tab == "Manual" && _noiseWindow is null)
         {
             _noiseWindow = new NoiseWindow(_pipe);
-            ManualWorkspaceHost.Content = new WorkspacePanel(_noiseWindow, this);
+            ManualWorkspaceHost.Content = new WorkspacePanel(_noiseWindow, this, _noiseWindow.WorkspaceVisibilityChanged);
         }
         if (tab == "School" && _studyMonitoringWindow is null)
         {
             _studyMonitoringWindow = new StudyMonitoringWindow(_pipe, () => ShowStudyWorkspace("Manual"))
             { OpenCalibration = () => WorkspaceCalibrationClicked(this, new RoutedEventArgs()) };
-            SchoolWorkspaceHost.Content = new WorkspacePanel(_studyMonitoringWindow, this);
+            SchoolWorkspaceHost.Content = new WorkspacePanel(_studyMonitoringWindow, this, _studyMonitoringWindow.WorkspaceVisibilityChanged);
         }
         RestoreWindow();
         if (tab == "Reports") _ = RefreshWorkspaceReportsAsync();
@@ -114,11 +115,19 @@ public partial class MainWindow
     }
     private void ReturnFromCalibrationClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace(_workspaceTab);
     private async void RefreshWorkspaceReportsClicked(object sender, RoutedEventArgs e) => await RefreshWorkspaceReportsAsync();
+    private void CancelWorkspaceReports()
+    {
+        _workspaceReportGeneration++;
+        _workspaceReportRead?.Cancel();
+        _workspaceReportRead = null; // The owning async operation disposes it after settling.
+    }
     private async Task RefreshWorkspaceReportsAsync()
     {
+        CancelWorkspaceReports();
         long generation = ++_workspaceReportGeneration;
         WorkspaceSchoolReport.Text = WorkspaceManualReport.Text = "正在读取本机最近报告…";
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _workspaceReportRead = deadline;
         deadline.CancelAfter(5000);
         try
         {
@@ -133,6 +142,7 @@ public partial class MainWindow
             if (!_lifetime.IsCancellationRequested && generation == _workspaceReportGeneration)
                 WorkspaceSchoolReport.Text = WorkspaceManualReport.Text = "报告状态未确认，请检查后台连接后刷新；不沿用旧结果。";
         }
+        finally { if (ReferenceEquals(_workspaceReportRead, deadline)) _workspaceReportRead = null; }
     }
     private static string ReportText(HostResponse response)
     {

@@ -9,7 +9,7 @@ internal sealed class WorkspacePanel : ContentControl
 {
     internal Window Controller { get; }
     private bool _loaded;
-    internal WorkspacePanel(Window controller, Window owner)
+    internal WorkspacePanel(Window controller, Window owner, Action<bool>? visibilityChanged = null)
     {
         Controller = controller;
         controller.Owner = owner;
@@ -23,6 +23,7 @@ internal sealed class WorkspacePanel : ContentControl
         // Dialogs have their own outer margin; the workspace already provides one.
         var scroll = view as ScrollViewer ?? (view as Panel)?.Children.OfType<ScrollViewer>().FirstOrDefault();
         if (scroll?.Content is StackPanel body) body.Margin = new Thickness(4, 0, 4, 12);
+        IsVisibleChanged += (_, _) => visibilityChanged?.Invoke(IsVisible);
         Loaded += (_, _) =>
         {
             if (_loaded) return;

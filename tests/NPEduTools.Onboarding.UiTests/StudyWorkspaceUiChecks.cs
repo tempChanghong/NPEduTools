@@ -74,6 +74,7 @@ internal static partial class Program
                 Assert(!Element<FrameworkElement>("StudyWorkspace").IsVisible && Element<FrameworkElement>("HomePage").IsVisible, "home left a workspace overlay");
                 Invoke("ShowStudyWorkspace", "Manual");
                 Assert(ReferenceEquals(panel, Field<NoiseWindow>("_noiseWindow")), "tab switch duplicated the manual controller");
+                PumpUntil(() => ((Button)panel.FindName("StopButton")).IsEnabled,"returned manual state was not freshly confirmed");
                 ((Button)panel.FindName("StopButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
                 PumpUntil(() => manual.Status().State == "Cancelled" && ((Button)panel.FindName("StartButton")).IsEnabled, "bound manual cancel did not restore idle form");
                 Checks.Add("Actual WPF/private Host: one study entry, progressive manual form, real future reservation/cancel, tab switching preserves session and controller; zero formal capture");

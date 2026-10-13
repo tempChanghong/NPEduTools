@@ -27,6 +27,12 @@ public partial class NoiseWindow : Window
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
+    internal void WorkspaceVisibilityChanged(bool visible)
+    {
+        if (_lifetime.IsCancellationRequested) return;
+        _uiOperation++;
+        Render(null); // A hidden snapshot cannot become a fresh execution fact on return.
+    }
     private async Task<HostResponse> RequestAsync(string capability, NoiseCommand? command = null)
     {
         var request = new HostRequest(Protocol.Version, Guid.NewGuid(), capability, Noise: command);
@@ -59,7 +65,7 @@ public partial class NoiseWindow : Window
                     if (response.NoiseDevices is not null) { _state = response.Noise; SetDevices(response.NoiseDevices); loadedDevices = true; }
                     using var manualTimeout=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);manualTimeout.CancelAfter(TimeSpan.FromSeconds(4));
                     var manual=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.status"),manualTimeout.Token);
-                    if(operation!=_uiOperation)continue;
+                    if(_lifetime.IsCancellationRequested || operation!=_uiOperation)continue;
                     _manual=manual.ManualStudy;
                     ManualStatus.Text = _manual is { } m ? ManualStateText(m) : "手动会话状态待确认，不能据此判断已结束。";
                     Render(response.Noise);
@@ -190,11 +196,11 @@ public partial class NoiseWindow : Window
     private async Task RunAsync(string capability, NoiseCommand? command = null)
     {
         if (_busy) return;
-        _busy = true; _uiOperation++; UpdateButtons();
+        _busy = true; long operation = ++_uiOperation; UpdateButtons();
         try
         {
             var response = await RequestAsync(capability, command);
-            if (_lifetime.IsCancellationRequested) return;
+            if (_lifetime.IsCancellationRequested || operation != _uiOperation) return;
             if (response.NoiseDevices is not null)
             {
                 SetDevices(response.NoiseDevices);
@@ -204,7 +210,7 @@ public partial class NoiseWindow : Window
             Render(response.Noise);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
-        { Render(null); }
+        { if (!_lifetime.IsCancellationRequested && operation == _uiOperation) Render(null); }
         finally { _busy = false; UpdateButtons(); }
     }
     private async void RefreshClicked(object sender, RoutedEventArgs e) => await RunAsync("noise.devices");
@@ -231,9 +237,9 @@ public partial class NoiseWindow : Window
     }
     private async Task ManualCommandAsync(ManualStudyCommand command)
     {
-        if(_busy)return;_busy=true;_uiOperation++;UpdateButtons();
-        try{using var deadline=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);deadline.CancelAfter(5000);var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",ManualStudy:command),deadline.Token);if(_lifetime.IsCancellationRequested)return;_manual=reply.ManualStudy;ManualStatus.Text=_manual is {} m?ManualStateText(m):"手动会话状态待确认。";MessageText.Text=reply.Message;Render(reply.Noise);}
-        catch(Exception e)when(e is IOException or InvalidDataException or JsonException or OperationCanceledException){Render(null);MessageText.Text="请求结果待确认；请等待后台状态恢复，不重复启动。";}
+        if(_busy)return;_busy=true;long operation=++_uiOperation;UpdateButtons();
+        try{using var deadline=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);deadline.CancelAfter(5000);var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",ManualStudy:command),deadline.Token);if(_lifetime.IsCancellationRequested || operation!=_uiOperation)return;_manual=reply.ManualStudy;ManualStatus.Text=_manual is {} m?ManualStateText(m):"手动会话状态待确认。";MessageText.Text=reply.Message;Render(reply.Noise);}
+        catch(Exception e)when(e is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or JsonException or OperationCanceledException){if(!_lifetime.IsCancellationRequested && operation==_uiOperation){Render(null);MessageText.Text="请求结果待确认；请等待后台状态恢复，不重复启动。";}}
         finally{_busy=false;UpdateButtons();}
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e)

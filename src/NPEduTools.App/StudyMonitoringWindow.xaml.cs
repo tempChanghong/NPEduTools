@@ -12,6 +12,14 @@ public partial class StudyMonitoringWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _reading;
+    private long _viewGeneration;
+    internal void WorkspaceVisibilityChanged(bool visible)
+    {
+        if (_lifetime.IsCancellationRequested) return;
+        _viewGeneration++;
+        Render(null);
+        if (visible) _ = ReadAsync();
+    }
     public StudyMonitoringWindow(string pipe, Action noise)
     {
         _pipe = pipe; _noise = noise; InitializeComponent(); Devices.Bind(pipe);
@@ -26,15 +34,16 @@ public partial class StudyMonitoringWindow : Window
     {
         if (_reading || _lifetime.IsCancellationRequested) return;
         _reading = true;
+        long generation = _viewGeneration;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
         try
         {
             var response = await HostClient.RequestAsync(_pipe, "study.status", deadline.Token);
-            if (_lifetime.IsCancellationRequested) return;
+            if (_lifetime.IsCancellationRequested || generation != _viewGeneration) return;
             Render(response.Outcome == "Succeeded" ? response.Study : null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        { if (!_lifetime.IsCancellationRequested) Render(null); }
+        { if (!_lifetime.IsCancellationRequested && generation == _viewGeneration) Render(null); }
         finally { _reading = false; }
     }
     internal void Render(StudyHostState? state)

@@ -52,6 +52,7 @@ public partial class NoiseReferenceWindow : Window
     private Guid? _ownedSampleDraft;
     private long? _ownedSamplingRevision;
     private bool _busy, _reading, _connected, _closing, _allowClose, _verifying;
+    private TaskCompletionSource? _pendingUsbStart;
     private Guid? _autoFieldDraft;
     private long? _autoPrimaryRevision;
     private bool _autoCheckQueued, _autoCheckStarted, _renderingPreferences;
@@ -84,14 +85,21 @@ public partial class NoiseReferenceWindow : Window
         Closing += async (_, e) =>
         {
             _autoFieldDraft = null;
-            if (_allowClose || _state is not { State: "Sampling", Draft.MeterDevicePath: not null } ||
-                _ownedSampleDraft != _state.Draft.Id || _ownedSamplingRevision != _state.Revision) return;
+            bool OwnsSample() => _state is { State: "Sampling", Draft.MeterDevicePath: not null } &&
+                _ownedSampleDraft == _state.Draft.Id && _ownedSamplingRevision == _state.Revision;
+            if (_allowClose || !_closing && _pendingUsbStart is null && !OwnsSample()) return;
             e.Cancel = true; if (_closing) return; _closing = true;
+            _timer.Stop(); UpdateButtons();
             // A separate deadline permits cancellation even if a status poll is stalled.
             try
             {
-                var command = new NoiseReferenceCommand("cancel", _state.InstanceId, _state.Revision,
-                    ManagementSecret.Password, _state.Draft.Id);
+                // Keep the start transport alive until its bounded response settles. Only its
+                // Accepted receipt can establish ownership; never infer ownership from a poll.
+                if (_pendingUsbStart is { } pending) await pending.Task.WaitAsync(TimeSpan.FromSeconds(4));
+                _autoFieldDraft = null;
+                if (!OwnsSample() || _state is not { Draft: { } currentDraft } current) return;
+                var command = new NoiseReferenceCommand("cancel", current.InstanceId, current.Revision,
+                    ManagementSecret.Password, currentDraft.Id);
                 using var deadline = new CancellationTokenSource(3500);
                 await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.reference.command", NoiseReference: command), deadline.Token);
             }
@@ -103,7 +111,7 @@ public partial class NoiseReferenceWindow : Window
     private Task ReadAsync() => ReadCoreAsync(false);
     private async Task ReadCoreAsync(bool force)
     {
-        if ((!force && (_reading || _busy)) || _lifetime.IsCancellationRequested) return;
+        if ((!force && (_reading || _busy)) || _closing || _lifetime.IsCancellationRequested) return;
         long stamp = _order.Advance(); _activeRead = stamp; _reading = true;
         try
         {
@@ -242,15 +250,15 @@ public partial class NoiseReferenceWindow : Window
     private void UpdateButtons()
     {
         if (BeginDraft is null) return;
-        bool idle = !_busy && _connected && _state is { State: "Ready", Error: null };
-        RefreshStatus.IsEnabled = !_busy && !_verifying && !_lifetime.IsCancellationRequested;
-        ConfigureManagement.IsEnabled = !_busy && !_verifying && _access?.ManagementSource != "School";
+        bool idle = !_busy && !_closing && _connected && _state is { State: "Ready", Error: null };
+        RefreshStatus.IsEnabled = !_busy && !_closing && !_verifying && !_lifetime.IsCancellationRequested;
+        ConfigureManagement.IsEnabled = !_busy && !_closing && !_verifying && _access?.ManagementSource != "School";
         bool draft = idle && _state!.Draft is not null;
         bool matchingDraft = draft && _state!.Draft!.MeterDevicePath == _meterPath && _state.Draft.Workflow==SelectedWorkflow;
         WorkflowChoice.IsEnabled=idle;
         BeginDraft.IsEnabled = idle && _state!.DeviceId is not null;
         StartSample.IsEnabled = matchingDraft;
-        CancelSample.IsEnabled = !_busy && _connected && _state is { State: "Sampling" };
+        CancelSample.IsEnabled = !_busy && !_closing && _connected && _state is { State: "Sampling" };
         RemoveSample.IsEnabled = matchingDraft && SampleList.SelectedItem is SampleRow;
         AttachReference.IsEnabled = RemoveSample.IsEnabled && _state!.Draft!.MeterDevicePath is null;
         ConfirmProfile.IsEnabled = matchingDraft && _state!.Evaluation.Ready && (_state.Evaluation.Assessment?.WarningRequired!=true || AcceptReferenceWarning.IsChecked==true);
@@ -265,8 +273,8 @@ public partial class NoiseReferenceWindow : Window
         SamplePanel.Visibility = _step == 2 ? Visibility.Visible : Visibility.Collapsed;
         ResultPanel.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
         if (_displayedStep != _step) { _displayedStep = _step; ReferencePageScroll.ScrollToTop(); }
-        bool navigating = _connected && !_busy && !_verifying && _state?.State != "Sampling" && _autoFieldDraft is null;
-        SetupStep.IsEnabled = !_busy && !_verifying && (!_connected || navigating);
+        bool navigating = _connected && !_busy && !_closing && !_verifying && _state?.State != "Sampling" && _autoFieldDraft is null;
+        SetupStep.IsEnabled = !_busy && !_closing && !_verifying && (!_connected || navigating);
         SamplingStep.IsEnabled = ReviewSamples.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath;
         ResultStep.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath && _state?.Draft?.Samples.Count is > 0;
         SetupStep.Style = TryFindResource(_step == 1 ? (object)"Primary" : typeof(Button)) as Style;
@@ -275,7 +283,7 @@ public partial class NoiseReferenceWindow : Window
     }
     private void Navigate(int step)
     {
-        if (_busy || _verifying || _connected && (_state?.State == "Sampling" || _autoFieldDraft is not null)) return;
+        if (_busy || _closing || _verifying || _connected && (_state?.State == "Sampling" || _autoFieldDraft is not null)) return;
         if (!_connected && step != 1) return;
         if (step != 1 && _state?.Draft?.MeterDevicePath != _meterPath) return;
         _step = step; UpdateSteps(); ReferencePageScroll.ScrollToTop();
@@ -286,7 +294,7 @@ public partial class NoiseReferenceWindow : Window
     private async Task SendAsync(string action, string? role = null, Guid? sample = null,
         double? reference = null, double? minimum = null, double? maximum = null)
     {
-        if (_busy || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
+        if (_busy || _closing || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
         double? stability = null, tolerance = null;
         if (action == "begin")
         {
@@ -303,6 +311,8 @@ public partial class NoiseReferenceWindow : Window
             action=="confirm" && AcceptReferenceWarning.IsChecked==true);
         if (!NoiseReferenceContract.Valid(command)) { OperationMessage.Text = "请检查口令、草稿和输入值，并确认参考读数的时段与仪表设置。"; return; }
         long stamp = _order.Advance(); _busy = true; UpdateButtons();
+        TaskCompletionSource? pendingStart = action == "start" && _meterPath is not null ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+        if (pendingStart is not null) _pendingUsbStart = pendingStart;
         if (action is "begin" or "cancel" or "remove" or "clear") _autoFieldDraft=null;
         try
         {
@@ -313,7 +323,7 @@ public partial class NoiseReferenceWindow : Window
             if (reply.NoiseProtection is not null) ShowAccess(reply.NoiseProtection);
             if (action == "start" && reply.Outcome == "Accepted" && reply.NoiseReference is { State: "Sampling", Draft: { } owned } started)
             { _ownedSampleDraft = owned.Id; _ownedSamplingRevision = started.Revision;
-              if (owned.Workflow=="Field" && role=="Primary") {_autoFieldDraft=owned.Id;_autoPrimaryRevision=started.Revision;_autoCheckQueued=false;_autoCheckStarted=false;}
+              if (!_closing && owned.Workflow=="Field" && role=="Primary") {_autoFieldDraft=owned.Id;_autoPrimaryRevision=started.Revision;_autoCheckQueued=false;_autoCheckStarted=false;}
               if (owned.Workflow=="Field" && role=="Check") _autoCheckStarted=true;
             }
             else if(action=="start") _autoFieldDraft=null;
@@ -324,7 +334,13 @@ public partial class NoiseReferenceWindow : Window
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "操作结果未确认，已停止自动续采；请刷新核对，不会自动重复采样或保存。"; } }
-        finally { _busy = false; UpdateButtons(); }
+        finally
+        {
+            _busy = false;
+            if (ReferenceEquals(_pendingUsbStart, pendingStart)) _pendingUsbStart = null;
+            pendingStart?.TrySetResult();
+            UpdateButtons();
+        }
     }
     private void SampleSelected(object sender, SelectionChangedEventArgs e)
     {
@@ -336,7 +352,7 @@ public partial class NoiseReferenceWindow : Window
     }
     private async void RefreshClicked(object sender, RoutedEventArgs e)
     {
-        if (_busy || _verifying || _lifetime.IsCancellationRequested) return;
+        if (_busy || _closing || _verifying || _lifetime.IsCancellationRequested) return;
         _busy = _verifying = true; _order.Advance(); UpdateButtons();
         await ReadCoreAsync(true);
         long stamp = _order.Advance();
@@ -356,7 +372,7 @@ public partial class NoiseReferenceWindow : Window
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {
-        if (_busy || _verifying || _lifetime.IsCancellationRequested) return;
+        if (_busy || _closing || _verifying || _lifetime.IsCancellationRequested) return;
         _busy = true; _order.Advance(); UpdateButtons();
         try { await NoiseManagementDialog.ConfigureAsync(WorkspacePanel.DialogOwner(this), _pipe); }
         finally { _busy = false; }
