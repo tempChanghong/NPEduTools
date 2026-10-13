@@ -49,9 +49,16 @@ public partial class StudyDevicePicker : UserControl
         {
             var microphones = await HostClient.RequestAsync(_pipe, "noise.devices", token);
             if (generation != _generation) return;
-            if (microphones.Outcome != "Succeeded" || microphones.Noise is null || microphones.NoiseDevices is null) throw new IOException();
+            if (microphones.Outcome != "Succeeded" || microphones.Noise is not { } microphoneState ||
+                microphoneState.InstanceId == Guid.Empty || microphoneState.Revision < 0 || microphones.NoiseDevices is null ||
+                microphones.NoiseDevices.Any(device => device is null)) throw new InvalidDataException("麦克风配置回执不完整。");
             var cameras = await HostClient.RequestAsync(_pipe, "study.devices.refresh", token);
             if (generation != _generation) return;
+            // The camera snapshot also carries the school equipment lock. A
+            // missing/rejected snapshot cannot certify microphone editability.
+            if (cameras.Outcome != "Succeeded" || cameras.StudyDevices is not { } cameraState ||
+                cameraState.InstanceId == Guid.Empty || cameraState.Revision < 0 || cameraState.Cameras is null ||
+                cameraState.Cameras.Any(device => device is null)) throw new InvalidDataException("摄像头与设备锁定状态未确认。");
             _noise = microphones.Noise; _microphones = DistinguishMicrophones(microphones.NoiseDevices); _camera = cameras.StudyDevices;
             _connected = true; _rendering = true;
             var micList = _microphones.ToList();
