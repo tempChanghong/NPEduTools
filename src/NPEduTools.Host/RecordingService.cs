@@ -216,10 +216,13 @@ public sealed class RecordingService : IAsyncDisposable
         {
             while (await timer.WaitForNextTickAsync(_lifetime.Token))
             {
+                // Command handlers legitimately own this gate while preparing or
+                // finalizing a recorder. Their wait is not a pause of this loop.
+                long observedTick = Stopwatch.GetTimestamp();
                 await _gate.WaitAsync(_lifetime.Token);
                 try
                 {
-                    if (_enabled && _enabledAt < previous && Stopwatch.GetElapsedTime(previous) > TimeSpan.FromSeconds(5))
+                    if (_enabled && _enabledAt < previous && Stopwatch.GetElapsedTime(previous, observedTick) > TimeSpan.FromSeconds(5))
                     {
                         _enabled = false; _message = "后台经历暂停或长时间停顿，请核对学校时间后重新启用";
                         await StopAutomaticAsync(_message);
