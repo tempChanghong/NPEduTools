@@ -7,7 +7,7 @@ namespace NPEduTools.Recorder;
 // or aborting the whole lesson. Repeated gaps lower quality, not session lifetime.
 internal sealed class RecordingAudioPacing
 {
-    internal const int RecoveryGraceMs = 10000;
+    internal const int RecoveryGraceMs = 60000;
     internal const int QualityWindowMs = 60000;
     internal const int PoorAudioThresholdMs = 30000;
     private long _blocks, _silenceUntil;

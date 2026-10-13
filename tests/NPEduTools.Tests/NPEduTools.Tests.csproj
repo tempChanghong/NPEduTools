@@ -42,6 +42,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../src/NPEduTools.Recorder/RecordingAudioPump.cs" Link="Recorder/RecordingAudioPump.cs" />
+    <Compile Include="../../src/NPEduTools.Recorder/RecordingProgressWatch.cs" Link="Recorder/RecordingProgressWatch.cs" />
     <Compile Include="../../src/NPEduTools.App/HomeRecordingPresentation.cs" Link="App/HomeRecordingPresentation.cs" />
     <Compile Include="../../src/NPEduTools.App/StartupPreferences.cs" Link="App/StartupPreferences.cs" />
     <Compile Include="../../src/NPEduTools.App/ClassroomModePresentation.cs" Link="App/ClassroomModePresentation.cs" />

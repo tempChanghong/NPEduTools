@@ -22,7 +22,8 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
     private AudioInput? _audio;
     private Task? _progress, _errors, _monitor;
     private TaskCompletionSource? _ready;
-    private long _frames, _dropped, _completedFrames, _completedDropped, _overruns, _lastProgress;
+    private long _frames, _dropped, _completedFrames, _completedDropped, _overruns;
+    private readonly RecordingProgressWatch _progressWatch = new();
     private double _seconds, _completedSeconds;
     private string _lastError = "";
     public RecordingState State => Volatile.Read(ref _state);
@@ -96,7 +97,7 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
         var options = _options!;
         _frames = _dropped = 0; _seconds = 0; _lastError = "";
         _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        _lastProgress = Stopwatch.GetTimestamp();
+        _progressWatch.Advanced(Stopwatch.GetTimestamp());
         string part = $"part-{_parts.Count + 1:D4}.mkv";
         if (options.SystemAudio || options.Microphone)
         {
@@ -139,7 +140,7 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
             switch (line[..equal])
             {
                 case "frame":
-                    if (value > Interlocked.Read(ref _frames)) Interlocked.Exchange(ref _lastProgress, Stopwatch.GetTimestamp());
+                    if (value > Interlocked.Read(ref _frames)) _progressWatch.Advanced(Stopwatch.GetTimestamp());
                     Interlocked.Exchange(ref _frames, value);
                     if (value > 0) _ready?.TrySetResult();
                     break;
@@ -237,7 +238,7 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
                     {
                         string? failure = _encoder?.HasExited == true ? "编码进程已退出。" :
                             _audio?.Error is not null ? "音频采集已中断：" + _audio.Error.Message :
-                            Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastProgress)) > TimeSpan.FromSeconds(15) ? "连续 15 秒没有新的编码画面。" :
+                            _progressWatch.Stalled(Stopwatch.GetTimestamp()) ? $"连续 {RecordingProgressWatch.GraceSeconds} 秒没有新的编码画面。" :
                             MediaTools.FreeSpace(_directory!) < 256L * 1024 * 1024 ? "磁盘剩余空间不足 256 MB。" : null;
                         if (failure is not null) { await AbortPartAsync(); SetState("Failed", "录制已中断，未完成片段已保留", failure); }
                         else SetState("Recording", _audio?.Message ?? "正在录制");

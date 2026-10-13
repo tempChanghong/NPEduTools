@@ -7,6 +7,7 @@ public sealed class RecordingAudioPumpTests
     [Theory]
     [InlineData(501)] [InlineData(1000)] [InlineData(2500)] [InlineData(3000)]
     [InlineData(6000)] [InlineData(10000)]
+    [InlineData(30000)] [InlineData(59999)] [InlineData(60000)]
     public void TransientGapKeepsAudioTimelineAndThenReturnsToLiveSamples(double gap)
     {
         var pacing = new RecordingAudioPacing();
@@ -23,7 +24,7 @@ public sealed class RecordingAudioPumpTests
     [Fact]
     public void ProlongedSingleGapStillStopsButRepeatedRecoverableGapsDoNot()
     {
-        Assert.Throws<IOException>(() => new RecordingAudioPacing().Next(10001));
+        Assert.Throws<IOException>(() => new RecordingAudioPacing().Next(60001));
         var pacing = new RecordingAudioPacing();
         for (int i = 1; i <= 6; i++)
         {
@@ -106,13 +107,43 @@ public sealed class RecordingAudioPumpTests
             await Task.Delay(Timeout.Infinite, cancellationToken);
     }
 
+    private sealed class RecoveringSink(Action<ReadOnlyMemory<byte>> write) : Sink(write)
+    {
+        private bool _first = true;
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_first) { _first = false; await Task.Delay(TimeSpan.FromSeconds(12), cancellationToken); }
+            await base.WriteAsync(buffer, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task ActualWriterCanRecoverBeyondFormerTenSecondLimitAndContinue()
+    {
+        using var stop = new CancellationTokenSource();
+        var health = new RecordingAudioHealth();
+        int writes = 0, recoveries = 0, silence = 0, resumedLive = 0;
+        using var sink = new RecoveringSink(bytes =>
+        {
+            writes++;
+            if (BitConverter.ToSingle(bytes.Span) == 0) silence++;
+            else if (writes > 1) { resumedLive++; stop.Cancel(); }
+        });
+        await RecordingAudioPump.RunAsync(sink, samples => Array.Fill(samples, .1f), () => { }, () => recoveries++,
+            stop.Token, health: health).WaitAsync(TimeSpan.FromSeconds(25));
+        Assert.Equal(1, recoveries);
+        Assert.True(silence >= 500);
+        Assert.Equal(1, resumedLive);
+        Assert.Contains("静音", health.Message());
+    }
+
     [Fact]
     public async Task ActualPumpStopsBlockedWriterWithinItsDeadline()
     {
         using var sink = new BlockedSink();
         var error = await Assert.ThrowsAsync<IOException>(() => RecordingAudioPump.RunAsync(sink, _ => { },
-            () => { }, () => { }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20)));
-        Assert.Contains("10 秒", error.Message);
+            () => { }, () => { }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(75)));
+        Assert.Contains("60 秒", error.Message);
     }
 
     [Fact]
