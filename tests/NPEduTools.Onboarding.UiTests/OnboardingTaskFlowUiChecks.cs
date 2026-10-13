@@ -123,9 +123,15 @@ internal static partial class Program
             Assert(((TextBlock)window.FindName("StepTitle")).Text == "使用偏好", "failed edit save returned to review prematurely");
             failSave = false; Click(window, "NextButton"); Assert(saves.Last().Step == "review", "retry lost the return-to-review path");
             int savedCount = saves.Count;
+            var focusedAction = FlowElements<Button>(items).Single(b => b.Tag as string == "preferences");
+            Assert(focusedAction.Focus() && focusedAction.IsKeyboardFocused, "review fixture could not focus the current action");
+            var existingRows = items.ItemsSource;
             school = school with { State = "ACTIVE", Connection = "ONLINE" };
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(FlowElements<TextBlock>(items).Any(t => t.Text.Contains("当前在线")), "live school status did not refresh in review");
+            Assert(ReferenceEquals(items.ItemsSource, existingRows) && focusedAction.IsKeyboardFocused &&
+                ReferenceEquals(FlowElements<Button>(items).Single(b => b.Tag as string == "preferences"), focusedAction),
+                "live school status update replaced other review actions and lost keyboard focus");
             Assert(saves.Count == savedCount && requests.All(r => r.Capability == "npep.status" && r.Npep is null),
                 "review status refresh completed onboarding or mutated school settings");
             window.Close();

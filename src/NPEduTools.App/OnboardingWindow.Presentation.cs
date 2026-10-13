@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -6,7 +7,22 @@ namespace NPEduTools.App;
 public partial class OnboardingWindow
 {
     private bool _returnToReview, _purposeLayoutInitialized, _compactPurposes;
-    private sealed record PreparationRow(string Step, string Title, string Status);
+    private sealed class PreparationRow(string step, string title, string status) : INotifyPropertyChanged
+    {
+        public string Step { get; } = step;
+        public string Title { get; } = title;
+        private string _status = status;
+        public string Status
+        {
+            get => _status;
+            set
+            {
+                if (_status == value) return;
+                _status = value; PropertyChanged?.Invoke(this, new(nameof(Status)));
+            }
+        }
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
     private PreparationRow[] _reviewRows = [];
 
     private void PageSizeChanged(object sender, SizeChangedEventArgs e)
@@ -34,10 +50,15 @@ public partial class OnboardingWindow
     {
         ReviewText.Text = (_state.Skipped ?? []).Length == 0 ? "逐项核对准备情况；需要调整时可直接返回对应步骤。" :
             $"有 {(_state.Skipped ?? []).Length} 项选择稍后配置；可以现在处理，也可以完成后继续。";
-        var rows = _state.Steps.Where(s => s is not ("welcome" or "review"))
-            .Select(s => new PreparationRow(s, Label(s), ReviewStatus(s))).ToArray();
-        if (_reviewRows.SequenceEqual(rows)) return;
-        _reviewRows = rows; ReviewItems.ItemsSource = rows;
+        var steps = _state.Steps.Where(s => s is not ("welcome" or "review")).ToArray();
+        if (_reviewRows.Select(row => row.Step).SequenceEqual(steps))
+        {
+            // Live status changes must not remove the focused "go to step" button.
+            foreach (var row in _reviewRows) row.Status = ReviewStatus(row.Step);
+            return;
+        }
+        _reviewRows = steps.Select(s => new PreparationRow(s, Label(s), ReviewStatus(s))).ToArray();
+        ReviewItems.ItemsSource = _reviewRows;
     }
     private void ReviewStepClicked(object sender, RoutedEventArgs e)
     {
