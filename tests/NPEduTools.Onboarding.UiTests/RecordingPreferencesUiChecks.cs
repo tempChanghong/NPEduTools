@@ -69,6 +69,7 @@ internal static partial class Program
                             ((ComboBox)owner.FindName("FpsChoice")).SelectedIndex == 1 &&
                             ((ComboBox)owner.FindName("QualityChoice")).SelectedIndex == 1, "valid preferences were not restored");
                     }
+                    Click(owner, "EditSettings");
                     Check(owner, "SystemSound").IsChecked = Check(owner, "MicrophoneSound").IsChecked = false;
                     Click(owner, "SaveSettings"); // Saves only isolated preferences; never click Start.
                     if (invalid)

@@ -110,7 +110,7 @@ internal static partial class Program
                 var studyNavigation = (Button)Find(owner, "StudyTab");
                 var sidebarPoint = studyNavigation.TranslatePoint(new Point(), owner);
                 Assert(sidebarPoint.Y >= 0 && sidebarPoint.Y + studyNavigation.ActualHeight <= owner.ActualHeight, "study navigation is clipped by the fixed sidebar footer");
-                Assert(Find(owner, "OpenRecordingPlan") is Button && Find(owner, "OpenClassroomMode") is Button, "existing classroom navigation was lost");
+                Assert(Find(owner, "RecordingNav") is Button && Find(owner, "HomeRecordingPlan") is Button && Find(owner, "OpenClassroomMode") is Button, "existing classroom navigation was lost");
                 Assert(Find(owner, "StudyHomeNext") is TextBlock, "home next-study summary missing");
                 var homeState = new StudyHostState("fixture", "APPLIED", "NOT_INTEGRATED", "MANUAL", "Active", "WINDOW_ACTIVE", true,
                     new(2026,10,12,19,0,0,TimeSpan.Zero), null, new(new(2026,10,13,19,0,0,TimeSpan.Zero),new(2026,10,13,21,30,0,TimeSpan.Zero)), null);

@@ -32,7 +32,7 @@ internal static partial class Program
                 Show(idle);
                 var preview = Text("PreviewStatus");
                 Click(owner, "ToggleReal"); // No saved options: validation exits before any recording command.
-                string validation = "请先到“微课录制”配置屏幕、音源和目录";
+                string validation = "请先到“立即录制 → 修改录制设置”配置屏幕、音源和目录";
                 bool visibleValidation = Descendants<TextBlock>(owner).Any(block => block.Text.Contains(validation));
                 Assert(visibleValidation, "missing recording settings were not explained");
 
@@ -57,6 +57,16 @@ internal static partial class Program
                 Assert(((TextBlock)owner.FindName("RealEventsEmpty")).Visibility == Visibility.Collapsed, "real records show an empty-state message");
                 Checks.Add("Disconnect and recovery remain visible after an operation error; execution history still lists the saved-video path");
 
+                var sameRows = list.ItemsSource;
+                Show(active);
+                Assert(ReferenceEquals(sameRows, list.ItemsSource), "identical polling snapshot rebuilt history and reset reading position");
+                var recordFilter = (ComboBox)window.FindName("RecordFilter");
+                recordFilter.SelectedIndex = 1;
+                Assert(list.Items.Count == 0, "attention filter includes a successfully saved recording");
+                recordFilter.SelectedIndex = 2;
+                Assert(list.Items.Count == 1, "saved filter lost a recorded video");
+                recordFilter.SelectedIndex = 0;
+                Checks.Add("Actual record filters distinguish saved/attention states; unchanged polling keeps the history ItemsSource and reading position");
                 Show(idle);
                 File.WriteAllText(preferences.Replace(".startup.json", ".recording.json", StringComparison.Ordinal), "{");
                 Click(owner, "ToggleReal");
