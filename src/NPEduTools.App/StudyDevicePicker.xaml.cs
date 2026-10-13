@@ -49,9 +49,16 @@ public partial class StudyDevicePicker : UserControl
         {
             var microphones = await HostClient.RequestAsync(_pipe, "noise.devices", token);
             if (generation != _generation) return;
-            if (microphones.Outcome != "Succeeded" || microphones.Noise is null || microphones.NoiseDevices is null) throw new IOException();
+            if (microphones.Outcome != "Succeeded" || microphones.Noise is not { } microphoneState ||
+                microphoneState.InstanceId == Guid.Empty || microphoneState.Revision < 0 || microphones.NoiseDevices is null ||
+                microphones.NoiseDevices.Any(device => device is null)) throw new InvalidDataException("麦克风配置回执不完整。");
             var cameras = await HostClient.RequestAsync(_pipe, "study.devices.refresh", token);
             if (generation != _generation) return;
+            // The camera snapshot also carries the school equipment lock. A
+            // missing/rejected snapshot cannot certify microphone editability.
+            if (cameras.Outcome != "Succeeded" || cameras.StudyDevices is not { } cameraState ||
+                cameraState.InstanceId == Guid.Empty || cameraState.Revision < 0 || cameraState.Cameras is null ||
+                cameraState.Cameras.Any(device => device is null)) throw new InvalidDataException("摄像头与设备锁定状态未确认。");
             _noise = microphones.Noise; _microphones = DistinguishMicrophones(microphones.NoiseDevices); _camera = cameras.StudyDevices;
             _connected = true; _rendering = true;
             var micList = _microphones.ToList();
@@ -71,7 +78,7 @@ public partial class StudyDevicePicker : UserControl
             _rendering = false; RenderStatus();
             if (cameras.Outcome != "Succeeded" || _camera?.Error is not null) DeviceMessage.Text = DeviceError(cameras.ErrorCode ?? _camera?.Error);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         {
             if (generation != _generation) return;
             _connected = false; DeviceMessage.Text = "设备状态暂不可用，请检查后台连接后刷新；旧列表不能用于保存。";
@@ -97,6 +104,11 @@ public partial class StudyDevicePicker : UserControl
         SaveMicrophone.IsEnabled = !_busy && _connected && Idle && !locked && StudyMicrophone.SelectedValue is string mic && _microphones.Any(d => d.Id == mic);
         SaveCamera.IsEnabled = !_busy && _connected && Idle && !locked && _camera is not null && _camera.Error is null &&
             StudyCamera.SelectedValue is string cam && (cam.Length == 0 || _camera.Cameras.Any(d => d.Id == cam));
+        if (!_connected)
+        {
+            MicrophoneStatus.Text = "麦克风状态待重新读取";
+            CameraStatus.Text = "摄像头状态待重新读取";
+        }
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
     public async Task<bool> CheckReadyAsync()
@@ -104,8 +116,12 @@ public partial class StudyDevicePicker : UserControl
         await RefreshAsync();
         if (_busy || !_connected || _noise?.SelectedDeviceId is not { } id || !_microphones.Any(d => d.Id == id))
         { DeviceMessage.Text = "请保存当前可用的监测麦克风，或选择跳过此项。"; return false; }
-        if (StudyMicrophone.SelectedValue as string != id || _camera is not null && StudyCamera.SelectedValue as string != (_camera.CameraId ?? ""))
+        // School-locked equipment is read-only. Readiness uses the confirmed Host
+        // preference, not a preserved editable draft that the user cannot save.
+        if (_camera?.Locked != true && (StudyMicrophone.SelectedValue as string != id ||
+            _camera is not null && StudyCamera.SelectedValue as string != (_camera.CameraId ?? "")))
         { DeviceMessage.Text = "设备选择尚未保存，请先点击对应保存按钮；摄像头也可以暂不使用。"; return false; }
+        if (_camera?.Locked == true) DeviceMessage.Text = "学校已锁定设备，将按后台已保存的当前配置完成准备。";
         return true;
     }
     private async void SaveMicrophoneClicked(object sender, RoutedEventArgs e)
@@ -127,9 +143,27 @@ public partial class StudyDevicePicker : UserControl
         {
             var response = await HostClient.RequestAsync(_pipe!, request, token);
             if (generation != _generation) return;
+            if (response.Outcome == "Succeeded")
+            {
+                bool confirmed = camera
+                    ? request.StudyCamera is { } cameraCommand && response.StudyDevices is { Error: null } cameraResult &&
+                        cameraResult.InstanceId == cameraCommand.InstanceId && cameraResult.Revision >= cameraCommand.Revision &&
+                        cameraResult.CameraId == cameraCommand.DeviceId
+                    : request.Noise is { } microphoneCommand && response.Noise is { } microphoneResult &&
+                        microphoneResult.InstanceId == microphoneCommand.InstanceId && microphoneResult.Revision >= microphoneCommand.Revision &&
+                        microphoneResult.SelectedDeviceId == microphoneCommand.DeviceId;
+                if (!confirmed) throw new InvalidDataException("后台尚未确认本次设备选择。");
+            }
             if (response.Noise is { } noise) _noise = noise;
             if (response.StudyDevices is { } devices) _camera = devices;
-            if (response.Outcome != "Succeeded") DeviceMessage.Text = DeviceError(response.ErrorCode);
+            if (response.Outcome != "Succeeded")
+            {
+                // A rejection may carry only one device snapshot. A new lock,
+                // capture owner or Host revision invalidates the combined editability claim.
+                if (response.ErrorCode is "EQUIPMENT_LOCKED" or "CameraStateChanged" or "NoiseStateChanged" or "StudyDevicesBusy" or "NoiseBusy" or "NoiseCleanupRequired" or "NoiseStopping")
+                    _connected = false;
+                DeviceMessage.Text = DeviceError(response.ErrorCode);
+            }
             else
             {
                 DeviceMessage.Text = camera ? "摄像头选择已保存，未开始捕获。" : "监测麦克风已保存，未开始采集。";
@@ -138,7 +172,7 @@ public partial class StudyDevicePicker : UserControl
             }
             RenderStatus();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (generation == _generation) { _connected = false; DeviceMessage.Text = "保存结果未确认，请刷新核对；不会自动重新保存或开始采集。"; } }
         finally { if (generation == _generation) { _busy = false; UpdateButtons(); } }
     }
@@ -149,7 +183,10 @@ public partial class StudyDevicePicker : UserControl
         "NoiseDeviceUnavailable" => "所选麦克风已断开，请刷新；没有自动切换设备。",
         "CameraConfigurationUnavailable" or "NoiseConfigurationUnavailable" => "设备配置无法读取或保存，请检查本机配置目录；原文件保留。",
         "CameraDevicesUnavailable" => "无法枚举摄像头，请检查 Windows 设备状态后刷新。",
-        "StudyDevicesBusy" or "NoiseBusy" => "正在监测，不能更换设备；请在监测结束后设置。",
+        "EQUIPMENT_LOCKED" => "学校已锁定采集设备；请先刷新，再通过学校管理口令解锁。",
+        "StudyDevicesBusy" or "NoiseBusy" => "当前有采集或设备尚未释放，不能更换设备；请等待结束后刷新。",
+        "NoiseCleanupRequired" => "上次麦克风释放未确认；请重启后台后刷新，再设置设备。",
+        "NoiseStopping" => "后台正在退出；请等待重新连接后刷新，当前设备选择保留。",
         "STUDY_UNSUPPORTED" or "UnknownCapability" => "请更新并重启 Host，以使用原生摄像头选择。",
         _ => "设备设置未确认，请刷新后重试。"
     };
@@ -166,15 +203,31 @@ public partial class StudyDevicePicker : UserControl
         string secret=EquipmentSecret.Password;EquipmentSecret.Clear();
         if(!NoiseManagementContract.SecretValid(secret)){DeviceMessage.Text="请输入8至128位学校管理口令。";return;}
         var token=Begin();long generation=_generation;
+        string feedback = "解锁结果未确认，请刷新检查。";
+        bool accepted = false;
         try
         {
             var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"noise.management.command",NoiseManagement:new("unlock",Secret:secret)),token);
             if(generation!=_generation)return;
-            DeviceMessage.Text=reply.Outcome=="Succeeded"?"设备已解锁，学校再次锁定前可在监测结束后更换。":reply.Message;
+            accepted = reply.Outcome == "Succeeded";
+            feedback = accepted ? "设备已解锁，学校再次锁定前可在监测结束后更换。" : reply.Message;
+            DeviceMessage.Text = feedback;
         }
-        catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        {if(generation==_generation)DeviceMessage.Text="解锁结果未确认，请刷新检查。";}
+        catch(Exception ex)when(ex is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        {if(generation==_generation)DeviceMessage.Text=feedback;}
         finally{if(generation==_generation){_busy=false;UpdateButtons();}}
-        if(generation==_generation)await RefreshAsync();
+        if (generation == _generation)
+        {
+            var refresh = RefreshAsync(); long refreshGeneration = _generation;
+            await refresh;
+            if (refreshGeneration != _generation) return;
+            // Refresh clears form feedback. Restore this operation's outcome
+            // only after that same read settles, without overriding its lock state.
+            if (accepted && (!_connected || _camera?.Locked != false))
+                feedback = "解锁请求已受理，但刷新后未确认设备已解锁，请核对学校配置。";
+            DeviceMessage.Text = _connected ? feedback : feedback + "\n" + DeviceMessage.Text;
+            if (accepted && _connected && _camera?.Locked == false)
+                DeviceMessage.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 125, 104));
+        }
     }
 }

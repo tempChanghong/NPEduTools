@@ -57,6 +57,6 @@ public sealed partial class StudyWindow
             _surface.SeatingRevision, _surface.SeatingHash, visible, visible ? _surface.FreshRenderAgeMs : null);
         try { using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "study.seating.presentation", SeatingPresentation: p), timeout.Token);
-        } catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or System.Text.Json.JsonException) { }
+        } catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException or TimeoutException) { }
     }
 }

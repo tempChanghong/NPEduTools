@@ -34,8 +34,9 @@ public sealed record NoiseReferenceState(Guid InstanceId, long Revision, string 
 public static class NoiseReferenceContract
 {
     public const int UsbPollMilliseconds = 1000; // SoundLab's default ~995 ms; no unverified high-rate polling.
-    public const double UsbMaximumGapSeconds = 1.5;
-    public const double UsbMaximumRoundTripSeconds = .25;
+    public const double UsbMaximumGapSeconds = 2;
+    public const double UsbMaximumRoundTripSeconds = .5;
+    public const int UsbReadTimeoutMilliseconds = 750;
     public const double UsbMaximumBoundarySkewSeconds = 1.25;
     public const double UsbMinimumSpanSeconds = 8;
     public static bool Limit(double? value) => value is { } v && double.IsFinite(v) && v is >= 0.1 and <= 5;

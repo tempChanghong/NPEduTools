@@ -12,7 +12,7 @@ public sealed partial class NoiseService
             double requested = _time.GetElapsedTime(s.Started, observation.RequestedTimestamp).TotalSeconds;
             double received = _time.GetElapsedTime(s.Started, observation.ReceivedTimestamp).TotalSeconds;
             double age = _time.GetElapsedTime(observation.ReceivedTimestamp).TotalSeconds;
-            if (age is < 0 or > .25 || !s.UsbReference.Receive(observation.Reading, requested, received, observation.QueuedInputDiscarded))
+            if (age < 0 || age > NoiseReferenceContract.UsbMaximumRoundTripSeconds || !s.UsbReference.Receive(observation.Reading, requested, received, observation.QueuedInputDiscarded))
             {
                 s.MeterReading = null; s.MeterReceived = null; s.CalibrationInterrupted = true;
                 Fail(s, s.UsbReference.Error ?? "USB 读数已陈旧，本段作废。"); return;
@@ -34,9 +34,15 @@ public sealed partial class NoiseService
     {
         try
         {
+            long previousRequest = _time.GetTimestamp();
+            var period = TimeSpan.FromMilliseconds(NoiseReferenceContract.UsbPollMilliseconds);
             while (!s.Stop.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(NoiseReferenceContract.UsbPollMilliseconds), _time, s.Stop.Token);
+                // Keep requests at ~1 Hz rather than adding each reply's latency
+                // to the next interval. No overlapping or burst catch-up requests.
+                var remaining = period - _time.GetElapsedTime(previousRequest);
+                if (remaining > TimeSpan.Zero) await Task.Delay(remaining, _time, s.Stop.Token);
+                previousRequest = _time.GetTimestamp();
                 AcceptMeter(s, await meter.ReadAsync(s.Stop.Token));
             }
         }

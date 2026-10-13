@@ -95,7 +95,7 @@ public sealed class ManualStudyService : IAsyncDisposable
                 _phase=now>=_start!.Value.AddSeconds(-_displayLeadSeconds)?"Preparing":"Waiting";
                 if(now>=_start)
                 {
-                    var reply=_noise.StartManualStudy(_session!.Value,_device!,Math.Min(10800,(_end!.Value-now).TotalSeconds));
+                    var reply=_noise.StartManualStudy(_session!.Value,_device!,Math.Min(10800,(_end!.Value-now).TotalSeconds),_hasEnd);
                     if(reply.Outcome!="Accepted"){_phase="Cancelled";_reason=reply.ErrorCode;_revision++;return;}
                     _start=now;_started=_time.GetTimestamp();_phase="Starting";_revision++;
                 }

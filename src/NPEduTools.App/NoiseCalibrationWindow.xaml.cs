@@ -63,12 +63,19 @@ public partial class NoiseCalibrationWindow : Window
             if (_connected) Render(r.NoiseCalibration!);
             else OperationMessage.Text = CalibrationAccess.Message(r.ErrorCode, r.Message, _access);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _connected = false; OperationMessage.Text = "后台连接不可用，请刷新；旧状态不能用于保存。"; } }
         finally { if (_activeRead == stamp) _reading = false; UpdateButtons(); }
     }
     internal void Render(NoiseCalibrationState state)
     {
+        // Validate before caching or rendering. Unsupported sample identifiers
+        // and incomplete suggestions must not reach First()/nullable Value or
+        // be advertised as a calibration that can be confirmed.
+        if (state.Samples is null || state.Suggestion is null || state.Samples.Any(sample => sample is null ||
+            !NoiseCalibrationContract.Scenes.Contains(sample.Scene) || !NoiseCalibrationContract.Labels.Contains(sample.Label)) ||
+            state.Suggestion.Ready && !NoiseCalibrationContract.Thresholds(state.Suggestion.MediumDbfs, state.Suggestion.HighDbfs))
+            throw new InvalidDataException("校准状态格式不兼容，请刷新或更新后台。");
         bool samplesChanged = _state?.Revision != state.Revision || _state.InstanceId != state.InstanceId;
         _state = state;
         DeviceStatus.Text = state.DeviceId is null ? "请先在自习设备中保存麦克风" :
@@ -108,6 +115,11 @@ public partial class NoiseCalibrationWindow : Window
         ConfirmThresholds.IsEnabled = draft && _state!.Context is not null;
         ClearThresholds.IsEnabled = draft && _state!.Profile is not null;
         UseSuggestion.IsEnabled = draft && _state!.Suggestion.Ready;
+        if (!_connected)
+        {
+            ProfileStatus.Text = "校准状态待确认 · 旧信息不能证明当前已应用";
+            SamplingStatus.Text = "采样状态待确认，请刷新核对；未宣称后台采样已停止。";
+        }
     }
     private async Task SendAsync(string action, string? scene = null, string? label = null, Guid? sample = null, double? medium = null, double? high = null)
     {
@@ -126,7 +138,7 @@ public partial class NoiseCalibrationWindow : Window
             if (r.NoiseCalibration is { } state) Render(state);
             OperationMessage.Text = CalibrationAccess.Message(r.ErrorCode, r.Message, _access);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _connected = false; OperationMessage.Text = "结果未确认，请刷新后核对；不会自动重复采样或保存。"; } }
         finally { _busy = false; UpdateButtons(); }
     }
@@ -145,7 +157,7 @@ public partial class NoiseCalibrationWindow : Window
             OperationMessage.Text = reply.Outcome == "Succeeded" ? "管理口令验证通过；刷新仅读取状态，尚未开始采样。" :
                 CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) OperationMessage.Text = "管理验证响应未确认，请检查后台连接后重试。"; }
         finally { _busy = _verifying = false; UpdateButtons(); }
     }

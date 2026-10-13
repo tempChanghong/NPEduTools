@@ -46,6 +46,7 @@ public partial class ClassroomModeWindow : Window
     private void Render(ClassroomModeState state)
     {
         _state = state;
+        RenderActualResults(state);
         ModeTitle.Text = ClassroomModePresentation.From(state).Title;
         StatusText.Text = state.Message;
         PauseText.Text = state.AutomaticPaused ? "自动录课已由课堂模式暂停；原录制规则保留。" : "自动录课按原有启用状态、学校时间与录制计划运行。";
@@ -88,6 +89,7 @@ public partial class ClassroomModeWindow : Window
     {
         _generation++;
         _state = null;
+        RenderActualResults(null);
         var presentation = ClassroomModePresentation.From(null);
         ModeTitle.Text = presentation.Title;
         PauseText.Text = presentation.Detail;
@@ -180,6 +182,7 @@ public partial class ClassroomModeWindow : Window
                 return false;
             }
             SetupItems.ItemsSource = report.Items;
+            if (!report.CanProceed) SetupDetails.IsExpanded = true;
             SetupSummary.Text = (report.AllReady ? "四项已就绪。" : report.CanProceed ? "程序与任务已就绪，桥接仍需连接确认。" : "还有配置需要处理，请按下列提示完成设置。") +
                 $" 检查于 {report.CheckedAt:HH:mm:ss}。";
             return report.CanProceed;

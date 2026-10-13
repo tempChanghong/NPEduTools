@@ -25,7 +25,36 @@ public sealed class NoiseUsbReferenceTests
         Assert.True(NoiseReferenceContract.MeterEvidenceValid(result.MeterEvidence));
     }
     [Theory]
-    [InlineData(false, 0, .01)] [InlineData(true, 0, .251)]
+    [InlineData(0)] [InlineData(1)]
+    public void ModerateReplyLatencyAndOneMissingPollKeepBoundedFieldCoverage(int missing)
+    {
+        var collector = new NoiseUsbReference("Slow", "Field");
+        for (int i = 0; i <= 35; i++)
+        {
+            if (missing == 1 && i == 15) continue;
+            Assert.True(collector.Receive(Reading(), i, i + .4, true));
+        }
+        var sample = Sample() with { Seconds = 30, WindowEndedAt = Epoch.AddSeconds(35) };
+        var result = collector.Attach(sample, Epoch);
+        Assert.Equal("Good", result.Quality);
+        Assert.Equal(30 - missing, result.MeterEvidence!.Readings);
+        Assert.InRange(result.ReferenceDbA!.Value, 59.99999, 60.00001);
+        Assert.True(NoiseReferenceContract.MeterEvidenceValid(result.MeterEvidence, "Field"));
+    }
+
+    [Fact]
+    public void RelaxedTimingDoesNotAllowInsufficientFieldReadingCoverage()
+    {
+        var collector = new NoiseUsbReference("Slow", "Field");
+        for (int i = 0; i <= 35; i++)
+            if (i is not (10 or 15 or 20)) Assert.True(collector.Receive(Reading(), i, i + .4, true));
+        var result = collector.Attach(Sample() with { Seconds = 30, WindowEndedAt = Epoch.AddSeconds(35) }, Epoch);
+        Assert.Equal("Incomplete", result.Quality);
+        Assert.Null(result.ReferenceDbA);
+    }
+
+    [Theory]
+    [InlineData(false, 0, .01)] [InlineData(true, 0, .501)]
     [InlineData(true, 0, -1)] [InlineData(true, double.NaN, .1)]
     public void UnflushedDelayedAndMalformedBracketsCannotBecomeReference(bool flushed, double requested, double received)
     {
@@ -34,7 +63,7 @@ public sealed class NoiseUsbReferenceTests
         Assert.NotEqual("Good", collector.Attach(Sample(), Epoch).Quality);
     }
     [Theory]
-    [InlineData(1.8, 1.81)] [InlineData(.009, .02)] [InlineData(.02, .01)]
+    [InlineData(2.1, 2.11)] [InlineData(.009, .02)] [InlineData(.02, .01)]
     public void GapsDuplicatesAndReversedTimePoisonTheWholeWindow(double requested, double received)
     {
         var collector = new NoiseUsbReference("Slow"); Assert.True(collector.Receive(Reading(), 0, .01, true));

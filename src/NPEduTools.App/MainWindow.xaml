@@ -96,8 +96,8 @@
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设备与连接" /></StackPanel>
           </Button>
           <TextBlock Text="课堂工具" Foreground="#718089" FontSize="11" Margin="16,18,0,12" />
-          <Button Content="录制微课" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingClicked" AutomationProperties.AutomationId="RecordingNav" />
-          <Button Content="自动录课计划" Style="{StaticResource SidebarNavigation}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="OpenRecordingPlan" />
+          <Button x:Name="RecordingNav" Content="录课" Style="{StaticResource SidebarNavigation}" Click="RecordingNavClicked" AutomationProperties.AutomationId="RecordingNav" />
+
           <Button Content="考试看板" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
           <Button Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
 
@@ -126,6 +126,14 @@
         </StackPanel>
       </Grid>
       <Grid x:Name="Pages" Grid.Row="1" Margin="28,12,28,22">
+        <Grid x:Name="RecordingWorkspace" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <WrapPanel Margin="0,0,0,12">
+            <Button x:Name="RecordingManualTab" Content="立即录制" Style="{StaticResource SidebarNavigation}" Click="RecordingManualTabClicked" AutomationProperties.AutomationId="RecordingManualTab" Margin="0,0,8,4"/>
+            <Button x:Name="RecordingPlanTab" Content="自动安排" Style="{StaticResource SidebarNavigation}" Click="RecordingPlanTabClicked" AutomationProperties.AutomationId="RecordingPlanTab" Margin="0,0,8,4"/>
+            <Button x:Name="RecordingRecordsTab" Content="录制记录" Style="{StaticResource SidebarNavigation}" Click="RecordingRecordsTabClicked" AutomationProperties.AutomationId="RecordingRecordsTab" Margin="0,0,0,4"/>
+          </WrapPanel>
+          <Grid Grid.Row="1"><ContentControl x:Name="RecordingManualHost"/><ContentControl x:Name="RecordingPlanHost" Visibility="Collapsed"/></Grid>
+        </Grid>
         <Grid x:Name="StudyWorkspace" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,12">
             <Button x:Name="ManualWorkspaceTab" Content="手动自习" Click="ManualWorkspaceClicked" Style="{StaticResource Navigation}" Margin="0,0,8,0"/>
@@ -158,26 +166,34 @@
             <TextBlock x:Name="HomeMessage" Foreground="#7D602B" Background="#FFF5E6" Padding="12,10" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" AutomationProperties.AutomationId="HomeMessage">
               <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
             </TextBlock>
-            <Border Style="{StaticResource Surface}" Padding="20" Background="#EFF7F3" BorderBrush="#CCE1D5"><StackPanel>
-              <TextBlock Text="当前自习任务" Foreground="#526A60" FontSize="12"/>
-              <TextBlock x:Name="WorkspaceTaskTitle" Text="正在确认后台状态" FontSize="23" FontWeight="SemiBold" Margin="0,8,0,0" TextWrapping="Wrap"/>
-              <TextBlock x:Name="StudyHomeStatus" Text="监测状态待确认" Foreground="#61786B" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="StudyHomeStatus"/>
-              <Button x:Name="WorkspacePrimary" Content="进入自习" Click="WorkspacePrimaryClicked" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,16,0,0" AutomationProperties.AutomationId="HomeStudyPrimary"/>
+            <Border Style="{StaticResource Surface}" Padding="16" Margin="0,0,0,10" Background="#EFF7F3" BorderBrush="#CCE1D5"><StackPanel>
+              <TextBlock Text="当前任务" FontSize="12" Foreground="#526A60" Margin="0,0,0,10"/>
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,16,0"><TextBlock x:Name="WorkspaceTaskTitle" Text="自习状态待确认" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock x:Name="StudyHomeStatus" Text="正在读取后台状态" FontSize="12" Foreground="#61786B" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,6,0,0" AutomationProperties.AutomationId="StudyHomeStatus"/></StackPanel>
+                <Button x:Name="WorkspacePrimary" Grid.Column="1" Content="进入自习" Click="WorkspacePrimaryClicked" Style="{StaticResource Primary}" VerticalAlignment="Center" AutomationProperties.AutomationId="HomeStudyPrimary"/>
+              </Grid>
+              <Border BorderBrush="#D8E6DD" BorderThickness="0,1,0,0" Margin="0,12,0,0" Padding="0,12,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,16,0"><TextBlock x:Name="RecordingHomeTitle" Text="录课状态待确认" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock x:Name="RecordingHomeStatus" Text="正在读取后台状态" FontSize="12" Foreground="#61786B" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,6,0,0" AutomationProperties.AutomationId="RecordingHomeStatus"/></StackPanel>
+                <Button x:Name="RecordingHomeButton" Grid.Column="1" Click="HomeRecordingPrimaryClicked" VerticalAlignment="Center" AutomationProperties.AutomationId="OpenRecording" AutomationProperties.Name="录课"><TextBlock x:Name="RecordingHomeAction" Text="进入录课"/></Button>
+              </Grid></Border>
             </StackPanel></Border>
-            <Border Style="{StaticResource Surface}" Padding="16"><DockPanel>
-              <Button DockPanel.Dock="Right" Content="查看安排 →" Click="OpenStudyMonitoringClicked" Style="{StaticResource Quiet}" Margin="12,0,0,0"/>
-              <StackPanel><TextBlock Text="下一次学校自习" FontSize="12" Foreground="#61786B"/><TextBlock x:Name="StudyHomeNext" Text="学校安排待确认" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="StudyHomeNext"/></StackPanel>
-            </DockPanel></Border>
-            <Border Style="{StaticResource Surface}" Padding="16"><DockPanel>
-              <Button DockPanel.Dock="Right" Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{StaticResource Quiet}" Margin="12,0,0,0"/>
-              <StackPanel><TextBlock Text="设备准备" FontSize="12" Foreground="#61786B"/><TextBlock x:Name="WorkspaceReadiness" Text="设备状态待确认" TextWrapping="Wrap" Margin="0,8,0,0"/><TextBlock x:Name="WorkspaceReference" Text="参考状态请在校准页核对" Foreground="#61786B" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel>
-            </DockPanel></Border>
-            <Border x:Name="ClassroomModeCard" Style="{StaticResource Surface}" Padding="16,14" Margin="0,0,0,18" Background="#EAF6F2" BorderBrush="#C8E4D9">
+            <Border Style="{StaticResource Surface}" Padding="16" Margin="0,0,0,10"><StackPanel>
+              <TextBlock Text="接下来的安排" FontSize="12" Foreground="#526A60" Margin="0,0,0,10"/>
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,16,0"><TextBlock Text="学校自习" FontWeight="SemiBold"/><TextBlock x:Name="StudyHomeNext" Text="学校安排待确认" FontSize="12" Foreground="#61786B" TextWrapping="Wrap" Margin="0,5,0,0" AutomationProperties.AutomationId="StudyHomeNext"/></StackPanel>
+                <Button Grid.Column="1" Content="查看安排" Click="OpenStudyMonitoringClicked" Style="{StaticResource Quiet}" VerticalAlignment="Center"/>
+              </Grid>
+              <Grid Margin="0,12,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,16,0"><TextBlock Text="下一节自动录课" FontWeight="SemiBold"/><TextBlock x:Name="HomeRecordingNext" Text="录课安排待确认" FontSize="12" Foreground="#61786B" TextWrapping="Wrap" Margin="0,5,0,0" AutomationProperties.AutomationId="HomeRecordingNext"/></StackPanel>
+                <Button Grid.Column="1" Content="查看安排" Click="OpenRecordingPlanClicked" Style="{StaticResource Quiet}" VerticalAlignment="Center" AutomationProperties.AutomationId="HomeRecordingPlan"/>
+              </Grid>
+            </StackPanel></Border>
+            <Border x:Name="ClassroomModeCard" Style="{StaticResource Surface}" Padding="12,8" Margin="0,0,0,12" Background="#EAF6F2" BorderBrush="#C8E4D9">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <StackPanel Margin="0,0,14,0">
                   <TextBlock x:Name="ClassroomModeTitle" Text="课堂模式 · 正在连接…" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="HomeClassroomModeTitle" />
-                  <TextBlock x:Name="ClassroomModeDetail" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" Margin="0,6,0,0" AutomationProperties.AutomationId="HomeClassroomModeDetail" />
+                  <Expander x:Name="HomeClassroomModeDetails" Header="模式详情" FontSize="12"><TextBlock x:Name="ClassroomModeDetail" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" AutomationProperties.AutomationId="HomeClassroomModeDetail" /></Expander>
                 </StackPanel>
                 <Button Grid.Column="1" Content="管理模式" Style="{StaticResource Quiet}" Click="OpenClassroomModeClicked" Padding="12,8" VerticalAlignment="Center" AutomationProperties.AutomationId="HomeClassroomMode" />
               </Grid>
@@ -203,24 +219,6 @@
             </TextBlock>
             <TextBlock Text="课堂工具" Style="{StaticResource HomeSection}" Margin="0,8,0,10" />
             <UniformGrid x:Name="HomeToolsGrid" Columns="2" Margin="0,0,-10,12">
-              <Button x:Name="RecordingHomeButton" Style="{StaticResource HomeTool}" Click="OpenRecordingClicked" AutomationProperties.AutomationId="OpenRecording" AutomationProperties.Name="录制微课">
-                <StackPanel>
-                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="录制微课" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
-                  </Grid>
-                  <TextBlock x:Name="RecordingHomeStatus" Text="准备录制" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="RecordingHomeStatus" /><TextBlock x:Name="RecordingHomeAction" Text="配置与录制  →" Foreground="#147D68" FontSize="11" Margin="0,6,0,0" />
-                </StackPanel>
-              </Button>
-              <Button Style="{StaticResource HomeTool}" Click="OpenRecordingPlanClicked" AutomationProperties.AutomationId="HomeRecordingPlan" AutomationProperties.Name="自动录课计划">
-                <StackPanel>
-                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="自动录课计划" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
-                  </Grid>
-                  <TextBlock Text="按课表、周期或日期安排录制" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-              </Button>
               <Button Style="{StaticResource HomeTool}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="HomeOpenSecRandom" AutomationProperties.Name="课堂点名">
                 <StackPanel>
                   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
@@ -251,7 +249,11 @@
               </Button>
             </UniformGrid>
 
-            <TextBlock Text="课堂辅助状态" Style="{StaticResource HomeSection}" />
+            <Expander Header="设备准备与课堂辅助" FontSize="14" Margin="0,8,0,0"><StackPanel>
+            <Border Style="{StaticResource Surface}" Padding="16"><DockPanel>
+              <Button DockPanel.Dock="Right" Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{StaticResource Quiet}" Margin="12,0,0,0"/>
+              <StackPanel><TextBlock x:Name="WorkspaceReadiness" Text="设备状态待确认" TextWrapping="Wrap"/><TextBlock x:Name="WorkspaceReference" Text="参考状态请在校准页核对" FontSize="12" Foreground="#61786B" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel>
+            </DockPanel></Border>
             <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="12" /><ColumnDefinition /></Grid.ColumnDefinitions>
               <Border Style="{StaticResource Surface}" Padding="16" Margin="0,0,0,12">
@@ -274,6 +276,7 @@
                 </StackPanel>
               </Border>
             </Grid>
+          </StackPanel></Expander>
           </StackPanel>
         </ScrollViewer>
         <ScrollViewer x:Name="ShortcutPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
@@ -463,25 +466,27 @@
             <StackPanel x:Name="ConnectionsSettingsPanel" Visibility="Collapsed">
             <Border Style="{StaticResource Surface}" Background="#EAF6F2"><DockPanel>
               <Button Content="管理课堂模式" DockPanel.Dock="Right" Click="OpenClassroomModeClicked" Margin="16,0,0,0" />
-              <StackPanel><TextBlock Text="统一管理日常与考试环境" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="切换两款软件的自启动，并检查首次配置。" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,8,0,0" /></StackPanel>
+              <StackPanel><TextBlock x:Name="ConnectionsModeTitle" Text="课堂模式 · 状态未知" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="先核对当前模式，再查看切换影响；软件连接和模式设置分别核实。" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,8,0,0" /></StackPanel>
             </DockPanel></Border>
             <Border Style="{StaticResource Surface}">
               <StackPanel>
                 <TextBlock Text="ClassIsland · 课表与时间" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,16" />
-                <TextBlock Text="程序路径（选择可执行文件后，点击保存）" FontSize="12" Foreground="#64776D" Margin="0,0,0,8" />
+
+                <TextBlock Text="学校时间与连接" FontSize="13" Margin="0,4,0,6" />
+                <TextBlock x:Name="ClassIslandProgramStatus" Text="程序位置：等待检查" TextWrapping="Wrap" Foreground="#526A60" FontSize="12" Margin="0,0,0,8" AutomationProperties.AutomationId="ClassIslandProgramStatus"/><TextBlock x:Name="ClassIslandClockText" Text="--:--:--" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassIslandClock" />
+                <TextBlock x:Name="ClassIslandClockDetail" Text="尚未读取桥接时间；不使用 Windows 时间代替。" FontSize="12" TextWrapping="Wrap" Foreground="#526A60" Margin="0,6,0,12" />
+                <WrapPanel><Button Content="程序位置" Click="ConfigureClassIslandClicked" Style="{StaticResource Quiet}" MinHeight="40" Padding="12,6" AutomationProperties.AutomationId="ConfigureClassIsland"/><Button Content="检查时间桥接插件" Click="RefreshClassIslandBridgeClicked" Style="{StaticResource Quiet}" MinHeight="40" Padding="12,6" AutomationProperties.AutomationId="RefreshClassIslandBridge" /></WrapPanel>
+                <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#718089" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
+                <Expander x:Name="ClassIslandConfiguration" Header="程序位置与保存" IsExpanded="True" Margin="0,12,0,0" AutomationProperties.AutomationId="ClassIslandConfiguration"><StackPanel Margin="0,10,0,0"><TextBlock Text="程序路径（选择可执行文件后，点击保存）" FontSize="12" Foreground="#64776D" Margin="0,0,0,8" />
                 <TextBox x:Name="ExecutablePathBox" AutomationProperties.AutomationId="ExecutablePath" AutomationProperties.Name="ClassIsland 程序路径" />
                 <WrapPanel Margin="0,12,0,6">
                   <Button Content="选择文件" Click="BrowseClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="BrowseExecutable" />
                   <Button Content="保存" Style="{StaticResource Primary}" Click="SavePathClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SaveExecutable" />
                   <Button Content="重新读取" Style="{StaticResource Quiet}" Click="ReloadClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ReloadConfiguration" />
                 </WrapPanel>
-                <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,12,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
-                <TextBlock Text="ClassIsland 学校时间" FontSize="13" Margin="0,4,0,6" />
-                <TextBlock x:Name="ClassIslandClockText" Text="--:--:--" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassIslandClock" />
-                <TextBlock x:Name="ClassIslandClockDetail" Text="尚未读取桥接时间；不使用 Windows 时间代替。" FontSize="12" TextWrapping="Wrap" Foreground="#526A60" Margin="0,6,0,12" />
-                <Button Content="检查时间桥接插件" Click="RefreshClassIslandBridgeClicked" HorizontalAlignment="Left" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="RefreshClassIslandBridge" />
-                <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#718089" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
-                <Expander Header="启动记录与连接详情" FontSize="13" Margin="0,20,0,0" AutomationProperties.AutomationId="ClassIslandDetails">
+                </StackPanel></Expander>
+                <Expander Header="连接诊断与启动记录" Margin="0,8,0,0" AutomationProperties.AutomationId="ClassIslandDetails"><StackPanel>
+                  <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,10,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
                   <StackPanel Margin="0,12,0,0">
                     <TextBlock x:Name="LaunchResultText" Text="暂无启动记录" TextWrapping="Wrap" AutomationProperties.AutomationId="LaunchResult" />
                     <TextBlock x:Name="LaunchTimeText" Foreground="#718089" FontSize="12" Margin="0,5,0,14" TextWrapping="Wrap" />
@@ -492,9 +497,15 @@
                     <TextBlock Text="{Binding Updated}" Foreground="#718089" />
                     <TextBlock Text="{Binding Events}" Foreground="#718089" TextWrapping="Wrap" />
                   </StackPanel>
-                </Expander>
+                </StackPanel></Expander>
               </StackPanel>
             </Border>
+
+            <Border Style="{StaticResource Surface}"><DockPanel>
+              <Button Content="打开连接管理" DockPanel.Dock="Right" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="SettingsExamAware" Margin="16,0,0,0" />
+              <StackPanel><TextBlock Text="ExamAware2 · 考试看板" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="配置程序路径、桥接配对与自启动，查看连接状态。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,0" /></StackPanel>
+            </DockPanel></Border>
+            <Border Style="{StaticResource Surface}"><DockPanel><Button Content="打开点名管理" DockPanel.Dock="Right" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="SettingsSecRandom" Margin="16,0,0,0"/><StackPanel><TextBlock Text="SecRandom · 课堂点名" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="查看接口检查与操作结果，管理点名和浮窗。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,8,0,0"/></StackPanel></DockPanel></Border>
             <Border x:Name="AdminSection" Style="{StaticResource Surface}">
               <Expander x:Name="AdminSettingsExpander" Header="高级 · ClassIsland 管理员自启动" FontSize="14" AutomationProperties.AutomationId="AdminSettingsExpander"><StackPanel Margin="0,16,0,0">
                 <TextBlock Text="ClassIsland 管理员自启动" FontSize="16" FontWeight="SemiBold" />
@@ -515,10 +526,6 @@
                 <TextBlock Text="需要时由 Windows 请求管理员授权。删除任务不会关闭当前程序；管理员重启会先请求原实例正常退出。" FontSize="11" Foreground="#7B8991" TextWrapping="Wrap" Margin="0,6,0,0" />
               </StackPanel></Expander>
             </Border>
-            <Border Style="{StaticResource Surface}"><DockPanel>
-              <Button Content="打开连接管理" DockPanel.Dock="Right" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="SettingsExamAware" Margin="16,0,0,0" />
-              <StackPanel><TextBlock Text="ExamAware2 · 考试看板" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="配置程序路径、桥接配对与自启动，查看连接状态。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,0" /></StackPanel>
-            </DockPanel></Border>
             </StackPanel>
           </StackPanel>
           </ScrollViewer>

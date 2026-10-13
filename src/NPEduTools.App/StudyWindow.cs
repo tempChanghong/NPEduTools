@@ -34,7 +34,7 @@ public sealed partial class StudyWindow : Window
             using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), _manual?"manual.study.presentation":"study.presentation", StudyPresentation: pulse), timeout.Token);
         }
-        catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or System.Text.Json.JsonException) { }
+        catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException) { }
         if(!_manual)await ReportSeatingAsync();
     }
     private CancellationTokenSource? _homeworkRead;
@@ -133,10 +133,13 @@ public sealed partial class StudyWindow : Window
     private async Task EndAsync()
     {
         if(_state?.Manual is not {SessionId:not null} current)return;
+        bool Current() => !_shutdown && _state?.Manual is { State: "Starting" or "Active" or "Stopping" } shown &&
+            shown.InstanceId == current.InstanceId && shown.SessionId == current.SessionId;
         try{using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(4));var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",
             ManualStudy:new("end",current.InstanceId,current.Revision,current.SessionId)),timeout.Token);
-            if(reply.Outcome!="Succeeded")_surface.ReturnError(reply.Message);}
-        catch(Exception e)when(e is IOException or OperationCanceledException or InvalidDataException or JsonException){_surface.ReturnError("结束请求待确认，请核对后台状态；未停止其他会话。");}
+            if(Current() && reply.Outcome!="Succeeded")_surface.ReturnError(reply.Message);}
+        catch(Exception e)when(e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException)
+        { if(Current())_surface.ReturnError("结束请求待确认，请核对后台状态；未停止其他会话。"); }
     }
     private async Task HideAsync()
     {
@@ -147,8 +150,10 @@ public sealed partial class StudyWindow : Window
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var reply = await HostClient.RequestAsync(_pipe, new HostRequest(1, id, _manual?"manual.study.hide":"study.hide", StudyHide: new(display.InstanceId, version, window)), timeout.Token);
             if (_shutdown || _state?.Display?.InstanceId != display.InstanceId || _state.Window != window || _state.Version != version) return;
-            if (reply.Outcome == "Succeeded" && reply.Study is { Display: { } confirmation } confirmed &&
-                confirmation.InstanceId == display.InstanceId && confirmed.Version == version && confirmed.Window == window && confirmation.HiddenRemainingSeconds>0 && confirmation.HiddenRemainingSeconds<=(_manual?10801:180))
+            if (reply.Outcome == "Succeeded" && reply.Study is { Display: { Available: false } confirmation } confirmed &&
+                confirmation.InstanceId == display.InstanceId && confirmed.Version == version && confirmed.Window == window &&
+                double.IsFinite(confirmation.HiddenRemainingSeconds) && confirmation.HiddenRemainingSeconds>0 &&
+                confirmation.HiddenRemainingSeconds<=(_manual?10801:StudyIdleReturn.DefaultSeconds))
             { _surface.ReturnError(null); HideDisplay(); }
             else _surface.ReturnError("后台尚未确认收起期限，请重试；没有停止监测。");
             if (_hideRequest == id) _hideRequest = null;

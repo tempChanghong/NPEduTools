@@ -5,6 +5,50 @@ namespace NPEduTools.Tests;
 public sealed class RecordingTests
 {
     [Theory]
+    [InlineData("Idle")]
+    [InlineData("Starting")]
+    [InlineData("Recording")]
+    [InlineData("Pausing")]
+    [InlineData("Paused")]
+    [InlineData("Saving")]
+    [InlineData("Saved")]
+    [InlineData("Failed")]
+    public void ValidStatesRemainCompatibleWithoutAnOwnerOrNonemptyMessage(string phase)
+    {
+        RecordingContract.ValidateState(new(phase, "", Seconds: 86400, Frames: 100, Bytes: 1024));
+    }
+
+    [Theory]
+    [InlineData("phase")]
+    [InlineData("message")]
+    [InlineData("negative-seconds")]
+    [InlineData("infinite-seconds")]
+    [InlineData("nan-seconds")]
+    [InlineData("overflow-seconds")]
+    [InlineData("frames")]
+    [InlineData("bytes")]
+    [InlineData("dropped")]
+    [InlineData("audio")]
+    public void UnrenderableOrUnknownStatesAreRejectedBeforePublication(string defect)
+    {
+        var state = new RecordingState("Recording", "test");
+        state = defect switch
+        {
+            "phase" => state with { Phase = "Unknown" },
+            "message" => state with { Message = null! },
+            "negative-seconds" => state with { Seconds = -1 },
+            "infinite-seconds" => state with { Seconds = double.PositiveInfinity },
+            "nan-seconds" => state with { Seconds = double.NaN },
+            "overflow-seconds" => state with { Seconds = TimeSpan.MaxValue.TotalSeconds },
+            "frames" => state with { Frames = -1 },
+            "bytes" => state with { Bytes = -1 },
+            "dropped" => state with { DroppedFrames = -1 },
+            _ => state with { AudioOverruns = -1 }
+        };
+        Assert.Throws<InvalidDataException>(() => RecordingContract.ValidateState(state));
+    }
+
+    [Theory]
     [InlineData(3840, 2160, 1080, 1920, 1080)]
     [InlineData(2560, 1600, 1080, 1728, 1080)]
     [InlineData(1080, 1920, 1080, 606, 1080)]

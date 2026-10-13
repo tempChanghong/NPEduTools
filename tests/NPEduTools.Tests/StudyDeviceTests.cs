@@ -17,6 +17,59 @@ public sealed class StudyDeviceTests
     }
     private static HostRequest Select(StudyDeviceState s, string? id) => new(1, Guid.NewGuid(), "study.devices.select",
         StudyCamera: new(id is null ? "clear" : "select", s.InstanceId, s.Revision, id));
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void School_clear_loads_saved_camera_before_comparison_and_waits_for_capture(bool busy)
+    {
+        using var folder = new Folder();
+        string path = System.IO.Path.Combine(folder.Path, "study-camera.json");
+        File.WriteAllText(path, JsonSerializer.Serialize("saved-camera"));
+        int enumerations = 0;
+        var service = new StudyDeviceService(() => { enumerations++; throw new InvalidOperationException("Clear must not enumerate or capture"); }, folder.Path, () => busy)
+        { EquipmentLocked = true };
+
+        Assert.Equal(busy ? "EQUIPMENT_PENDING" : null, service.SelectSchoolCamera(null));
+        Assert.Equal(busy ? "saved-camera" : null, service.Snapshot().CameraId);
+        Assert.Equal(busy ? 0 : 1, service.Snapshot().Revision);
+        Assert.True(service.Snapshot().Locked);
+        Assert.Equal(busy ? "saved-camera" : null, JsonSerializer.Deserialize<string?>(File.ReadAllText(path)));
+        Assert.Equal(0, enumerations);
+        if (busy)
+        {
+            busy = false;
+            Assert.Null(service.SelectSchoolCamera(null));
+            Assert.Null(new StudyDeviceService(() => [], folder.Path).Snapshot().CameraId);
+        }
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void School_clear_cannot_certify_an_unreadable_configuration_even_after_a_status_read(bool readFirst)
+    {
+        using var folder = new Folder();
+        string path = System.IO.Path.Combine(folder.Path, "study-camera.json");
+        const string original = "{broken camera configuration";
+        File.WriteAllText(path, original);
+        var service = new StudyDeviceService(() => throw new InvalidOperationException("No real device"), folder.Path);
+        if (readFirst) Assert.Equal("CameraConfigurationUnavailable", service.Snapshot().Error);
+
+        Assert.Equal("EQUIPMENT_UNAVAILABLE", service.SelectSchoolCamera(null));
+        Assert.Equal("CameraConfigurationUnavailable", service.Snapshot().Error);
+        Assert.Equal(0, service.Snapshot().Revision);
+        Assert.Equal(original, File.ReadAllText(path));
+    }
+    [Fact]
+    public void School_selection_already_saved_is_a_noop_without_enumeration_or_capture()
+    {
+        using var folder = new Folder();
+        string path = System.IO.Path.Combine(folder.Path, "study-camera.json");
+        File.WriteAllText(path, JsonSerializer.Serialize("saved-camera"));
+        var service = new StudyDeviceService(() => throw new InvalidOperationException("No real device"), folder.Path, () => true);
+        Assert.Null(service.SelectSchoolCamera("saved-camera"));
+        Assert.Equal("saved-camera", service.Snapshot().CameraId);
+        Assert.Equal(0, service.Snapshot().Revision);
+    }
     [Fact]
     public void Read_does_not_enumerate_and_selection_survives_restart_without_fallback()
     {

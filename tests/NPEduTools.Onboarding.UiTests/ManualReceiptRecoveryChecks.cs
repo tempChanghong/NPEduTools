@@ -92,7 +92,8 @@ internal static partial class Program
                         Assert(request.Capability == "recording.status" || request.Automatic?.Action == "lease",
                             "recovery replayed a manual mutation");
                         await Protocol.WriteAsync(fresh, new HostResponse(Protocol.Version, request.RequestId,
-                            "Succeeded", null, "隔离核对", Recording: reconciled), timeout.Token);
+                            "Succeeded", null, "隔离核对", Recording: reconciled,
+                            Automatic: new(false, Guid.Empty, "隔离自动录课未启用", null, [])), timeout.Token);
                         fresh.Disconnect();
                     }
                 }

@@ -15,10 +15,80 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            foreach (string scenario in new[] { "partial-idle", "confirmed-idle", "confirmed-active", "unknown-phase" }) RunRecordingExitCheck(scenario);
             foreach (string scenario in new[] { "dropped", "missing", "mismatch", "rejected", "confirmed" })
                 RunAutomaticReceiptCheck(scenario);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
+    private static void RunRecordingExitCheck(string scenario)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        string pipe = "NPEduTools.Test.exit-snapshot." + Guid.NewGuid().ToString("N");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var oldQuery = new NamedPipeServerStream(pipe, PipeDirection.InOut, 2, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        using var commandServer = new NamedPipeServerStream(pipe, PipeDirection.InOut, 2, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        var type = typeof(RecordingWindow).Assembly.GetType("NPEduTools.App.RecordingClient")!;
+        var client = Activator.CreateInstance(type, [Application.Current.Dispatcher, pipe])!;
+        var poll = (Task)type.GetField("_poll", flags)!.GetValue(client)!;
+        async Task HoldQuery()
+        {
+            await oldQuery.WaitForConnectionAsync(timeout.Token);
+            Assert((await Protocol.ReadAsync<HostRequest>(oldQuery, timeout.Token)).Capability == "recording.status", "unexpected initial query");
+        }
+        try
+        {
+            var held = HoldQuery(); PumpUntil(() => held.IsCompleted, "exit fixture did not hold the old query"); held.GetAwaiter().GetResult();
+            var recording = new RecordingState(scenario == "confirmed-active" ? "Recording" : scenario == "unknown-phase" ? "Unknown" : "Idle", "隔离录制快照",
+                Control: new("Manual", Guid.NewGuid(), "", 0, 0));
+            var automatic = new AutomaticRecordingState(false, Guid.NewGuid(), "自动录课已关闭", null, []);
+            type.GetMethod("Apply", flags)!.Invoke(client, [new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null,
+                "旧的录制快照", Recording: scenario == "unknown-phase" ? recording with { Phase = "Idle" } : recording,
+                Automatic: automatic with { Enabled = true })]);
+            async Task Reply()
+            {
+                await commandServer.WaitForConnectionAsync(timeout.Token);
+                var request = await Protocol.ReadAsync<HostRequest>(commandServer, timeout.Token);
+                Assert(request.Automatic?.Action == "disable", "exit fixture submitted an unexpected command");
+                await Protocol.WriteAsync(commandServer, new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null,
+                    "确认自动开关已关闭", Recording: scenario == "partial-idle" ? null : recording, Automatic: automatic), timeout.Token);
+                if (scenario == "confirmed-active")
+                {
+                    commandServer.Disconnect();
+                    await commandServer.WaitForConnectionAsync(timeout.Token);
+                    var stop = await Protocol.ReadAsync<HostRequest>(commandServer, timeout.Token);
+                    Assert(stop.Recording?.Action == "stop" && stop.Recording.Control == recording.Control, "exit stop lost the active session fence");
+                    await Protocol.WriteAsync(commandServer, new HostResponse(Protocol.Version, stop.RequestId, "Succeeded", null,
+                        "当前录制已保存", Recording: recording with { Phase = "Saved" }, Automatic: automatic), timeout.Token);
+                }
+            }
+            var reply = Reply();
+            var exit = (Task<bool>)type.GetMethod("StopAndSaveAsync")!.Invoke(client, null)!;
+            PumpUntil(() => reply.IsCompleted && exit.IsCompleted, "unconfirmed exit did not settle");
+            reply.GetAwaiter().GetResult();
+            if (scenario == "unknown-phase")
+            {
+                Assert(exit.Exception?.InnerException is IOException { InnerException: InvalidDataException }, "unknown phase must invalidate the exit receipt");
+                Assert(!(bool)type.GetProperty("StateAvailable")!.GetValue(client)! &&
+                    !(bool)type.GetProperty("AutomaticAvailable")!.GetValue(client)!, "corrupt exit receipt retained a confirmed status");
+            }
+            else
+            {
+                Assert(exit.GetAwaiter().GetResult() == (scenario is "confirmed-idle" or "confirmed-active"), "exit completion disagrees with fresh recorder evidence: " + scenario);
+                Assert((bool)type.GetProperty("StateAvailable")!.GetValue(client)! == (scenario != "partial-idle"), "partial automatic receipt retained confirmed recorder state");
+                Assert((bool)type.GetProperty("AutomaticAvailable")!.GetValue(client)!, "confirmed automatic disable receipt was discarded");
+            }
+            Checks.Add(scenario + ": exit/save requires fresh recorder evidence; confirmed idle exits, active recording stops its own session and saves, partial receipt cannot certify cached idle or replay an unknown stop");
+        }
+        finally
+        {
+            type.GetMethod("Detach")!.Invoke(client, null);
+            PumpUntil(() => poll.IsCompleted, "exit fixture poll did not stop");
+            ((IAsyncDisposable)client).DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
     private static void RunAutomaticReceiptCheck(string scenario)
@@ -72,6 +142,8 @@ internal static partial class Program
             }
             var reply = Reply();
             var action = (Task)typeof(AutoRecordingWindow).GetMethod("AutomaticActionAsync", flags)!.Invoke(window, ["disable", null])!;
+            Assert(!Button(window, "ToggleReal").IsEnabled && !Button(window, "RealSkip").IsEnabled && !Button(window, "RealSkipDay").IsEnabled,
+                "pending automatic command leaves another schedule mutation available");
             PumpUntil(() => action.IsCompleted && reply.IsCompleted, "automatic operation did not settle");
             action.GetAwaiter().GetResult(); reply.GetAwaiter().GetResult();
             Assert(commands == 1, "automatic mutation was replayed");
@@ -123,6 +195,7 @@ internal static partial class Program
             PumpUntil(() => Available() && Text("RealStatus").Contains(recovered.Message), "fresh poll did not recover automatic state");
             Assert(observations.Skip(beforeOldReply).All(state => state.Message != enabled.Message), "pre-command status briefly restored an obsolete automatic state");
             Assert(commands == 1 && Button(window, "ToggleReal").Content.ToString() == "开启自动录课", "recovery replayed mutation or retained wrong master toggle");
+            Assert(Button(window, "RealSkip").IsEnabled && Button(window, "RealSkipDay").IsEnabled, "fresh reconciliation did not restore automatic operations");
             timeout.Cancel();
             PumpUntil(() => recovery.IsCompleted, "recovery test server did not stop");
             recovery.GetAwaiter().GetResult();

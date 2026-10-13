@@ -10,6 +10,7 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/NPEduTools.Core/NPEduTools.Core.csproj" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <Page Include="../../src/NPEduTools.App/Resources/RecordingControls.xaml" Link="Resources/RecordingControls.xaml" />

@@ -58,7 +58,7 @@ NPEssentials 的检查使用 `git show master:<文件>`，没有切换工作区�
 
 例如，早期资料中的“N3 只是设计”“不修改自启动”“必须另外开启本地许可”“通知通过 ClassIsland 展示”，均不足以描述本次源码。现在已有完整考试／日常切换、配对派生授权、独立 WPF 通知、原生噪音监测与学校排程。
 
-主要依据：[最初的 NPEP 定位](NPEP-FOUNDATION-PLAN.md)、[后续规则索引](npep/README.md)、[当前后端路由](../../NPClassworksKV/routes/v2/npep.js)。
+主要依据：[最初的 NPEP 定位](archive/research/NPEP-FOUNDATION-PLAN.md)、[后续规则索引](npep/README.md)、[当前后端路由](../../NPClassworksKV/routes/v2/npep.js)。
 
 <a id="system"></a>
 ## 2. 整体关系与数据所有权
@@ -672,7 +672,7 @@ Host 启动会持久化新的 `controlEpoch`。它与 N1 运行会话不同，�
 
 已记录的上游边界是 ExamAware 1.5.2 的编辑器退出协商：编辑器未关闭时，退出过程中可能先失去桥接，无法可靠完成未保存提示。使用前先保存并关闭编辑器；该限制没有通过本综合文档得到修复或重新验收。
 
-依据：[方案服务](../../NPClassworksKV/services/npepExamPlanService.js)、[方案联网层](../src/NPEduTools.Integrations.Npep/NpepRuntime.Plans.cs)、[方案执行](../src/NPEduTools.Host/ExamPlanTransport.cs)、[插件播放器适配](../plugins/npedutools-examaware-bridge/src/plans.ts)、[方案流程记录](npep/EXAMAWARE-PLAN-REMOTE.md)。
+依据：[方案服务](../../NPClassworksKV/services/npepExamPlanService.js)、[方案联网层](../src/NPEduTools.Integrations.Npep/NpepRuntime.Plans.cs)、[方案执行](../src/NPEduTools.Host/ExamPlanTransport.cs)、[插件播放器适配](../plugins/npedutools-examaware-bridge/src/plans.ts)、[方案流程记录](archive/npep/EXAMAWARE-PLAN-REMOTE.md)。
 
 <a id="noise"></a>
 ## 9. 噪音监测与学校排程
@@ -819,7 +819,7 @@ Host 依靠 App 更新约 12 秒的管理租约，App 正常约 2 秒续约。Ap
 | 主执行者 | `RecordingService + Recorder` | `NoiseScheduleService + NoiseService` |
 | 时间依据 | ClassIsland 学校时间 | ClassIsland 学校时间 |
 
-依据：[计划册](../src/NPEduTools.Core/RecordingPlanBook.cs)、[规划器](../src/NPEduTools.Core/RecordingPlanner.cs)、[执行账本](../src/NPEduTools.Core/RecordingExecutionLedger.cs)、[自动录课说明](AUTO-RECORDING-EXECUTION.md)。
+依据：[计划册](../src/NPEduTools.Core/RecordingPlanBook.cs)、[规划器](../src/NPEduTools.Core/RecordingPlanner.cs)、[执行账本](../src/NPEduTools.Core/RecordingExecutionLedger.cs)、[自动录课说明](archive/recording/AUTO-RECORDING-EXECUTION.md)。
 
 <a id="essentials"></a>
 ## 11. NPEssentials：部署代理与备份

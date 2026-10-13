@@ -5,14 +5,15 @@ public sealed partial class NoiseService
 {
     private bool _scheduledPriority;
     internal bool IsManualStudy(Guid? id) { lock (_sync) return id is not null && _session is { ManualStudy: true } s && s.Id == id; }
-    internal HostResponse StartManualStudy(Guid id, string device, double seconds)
+    internal HostResponse StartManualStudy(Guid id, string device, double seconds, bool hasPlannedEnd = false)
     {
         lock (_sync)
         {
             if (_scheduledPriority || ScheduledLive) return new(1,id,"Rejected","SCHEDULE_PRIORITY","学校定时自习优先。");
             var s=Snapshot();
             var reply=Handle(new(1,id,"noise.command",Noise:new("start",s.InstanceId,s.Revision,device)),id,seconds,false);
-            if(reply.Outcome=="Accepted" && _session is {} current)current.ManualStudy=true;
+            if(reply.Outcome=="Accepted" && _session is {} current)
+            { current.ManualStudy=true;current.TimeLimitReason=hasPlannedEnd?"PlannedEnd":"ThreeHourLimit"; }
             return reply;
         }
     }

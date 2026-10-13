@@ -8,6 +8,7 @@ namespace NPEduTools.App;
 public partial class MainWindow
 {
     private ClassroomModeWindow? _classroomModeWindow;
+    private bool _homeModeAttention;
     private void OpenClassroomModeClicked(object sender, RoutedEventArgs e) => ShowClassroomMode();
     private void ShowClassroomMode()
     {
@@ -44,7 +45,10 @@ public partial class MainWindow
     private void ShowClassroomModeState(ClassroomModeState? state)
     {
         var view = ClassroomModePresentation.From(state);
+        if (view.Attention && !_homeModeAttention) HomeClassroomModeDetails.IsExpanded = true;
+        _homeModeAttention = view.Attention;
         ClassroomModeTitle.Text = view.Title;
+        ConnectionsModeTitle.Text = view.Title;
         ClassroomModeDetail.Text = view.Detail;
         ClassroomModeCard.Background = new System.Windows.Media.SolidColorBrush(
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(view.Attention ? "#FFF5E6" : "#EAF6F2"));

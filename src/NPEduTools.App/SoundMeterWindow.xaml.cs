@@ -44,7 +44,7 @@ public partial class SoundMeterWindow : Window
         _expiry.Tick += (_, _) => { if (_received is { } at && Stopwatch.GetElapsedTime(at).TotalSeconds >= 3) ClearReading("读数已过期，请显式重新读取。"); };
         Loaded += async (_, _) => { _expiry.Start(); long stamp = _order.Advance(); using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
             try { await ReadAccessAsync(deadline.Token, stamp); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException) { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) ShowAccess(null); } }; // Never enumerates/opens hardware on load.
+            catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException) { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) ShowAccess(null); } }; // Never enumerates/opens hardware on load.
         Closed += (_, _) => { _expiry.Stop(); _order.Advance(); _lifetime.Cancel(); ManagementSecret.Clear(); ClearReading("窗口已关闭。"); };
     }
     private void ClearReading(string? message = null)
@@ -87,7 +87,7 @@ public partial class SoundMeterWindow : Window
                     : "已读取一次，连接已释放。此值未自动填入参考，也不证明它与麦克风采样来自同一时段。";
             }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) ClearReading("后台响应未确认，请检查连接后重试；未沿用旧读数。"); }
         finally
         {
@@ -119,7 +119,7 @@ public partial class SoundMeterWindow : Window
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
             await ReadAccessAsync(deadline.Token, stamp);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { if (!_lifetime.IsCancellationRequested) ShowAccess(null); }
         finally
         {

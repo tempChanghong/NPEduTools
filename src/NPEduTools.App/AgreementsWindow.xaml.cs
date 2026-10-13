@@ -53,7 +53,7 @@ public partial class AgreementsWindow : Window
     {
         DocumentVersion.Text = agreement.Id == "gpl-3.0"
             ? "GNU GPL · 第三版\n保障许可证授予的使用、修改及再分发权利，不另行要求服务同意。"
-            : "协议版本 1.0\n生效：2026年10月4日";
+            : $"协议版本 {AgreementDefinition.Version}\n生效：{DateOnly.ParseExact(AgreementDefinition.EffectiveDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture).ToString("yyyy年M月d日", System.Globalization.CultureInfo.InvariantCulture)}";
         var document = new FlowDocument { FontFamily = FontFamily, FontSize = 14, PagePadding = new Thickness(6), LineHeight = 25 };
         Table? table = null;
         foreach (string raw in agreement.Text.Split('\n'))

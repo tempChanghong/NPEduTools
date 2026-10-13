@@ -28,6 +28,11 @@ public partial class NpepConnectionControl : UserControl
         ClearComparison(); _session = session; DataContext = session;
         if (IsLoaded) ObserveSession();
     }
+    internal void UseGuidedSetup()
+    {
+        ServerIdentityDetails.IsExpanded = false;
+        WebPairingOptions.IsExpanded = false;
+    }
     private void ObserveSession()
     {
         if (_session is not { } session) return;

@@ -13,7 +13,7 @@ public partial class SecRandomWindow : Window
     private SecRandomState? _state;
     private SecRandomState? _lastKnownState;
     private long _generation;
-    private bool _loaded, _busy, _closing;
+    private bool _loaded, _busy, _closing, _configurationPresented;
     public SecRandomWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent();
@@ -29,7 +29,7 @@ public partial class SecRandomWindow : Window
         Message.Text = message;
         if (!_closing)
         {
-            Show();
+            if (!IsVisible) Show();
             if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             Activate();
         }
@@ -73,6 +73,19 @@ public partial class SecRandomWindow : Window
     private void Render(SecRandomState? state)
     {
         _state = state;
+        NextActionText.Text = state is null ? "等待后台连接；上次接口检查与抽取结果仅供核对。" :
+            state.Error is not null ? "请先核对下方错误与程序配置，恢复后再操作。" :
+            string.IsNullOrWhiteSpace(state.ExecutablePath) ? "先在连接配置中选择并保存 SecRandom 程序位置。" :
+            state.Operation?.State == "Unknown" ? "先查看 SecRandom 的窗口与历史，再核实上次操作；不要重复闪抽。" :
+            state.Operation?.State == "Running" ? "等待当前操作完成，再进行下一次操作。" :
+            state.Connection == "Ready" ? "上次接口检查已就绪；点名、浮窗与闪抽沿用 SecRandom 的名单和规则。" :
+            "可打开点名页，或在软件已运行时检查接口；无需桥接插件。";
+        if (state is not null && !_configurationPresented)
+        {
+            _configurationPresented = true;
+            if (!ProgramConfiguration.IsKeyboardFocusWithin)
+                ProgramConfiguration.IsExpanded = string.IsNullOrWhiteSpace(state.ExecutablePath) || state.Error is not null;
+        }
         if (state is not null) _lastKnownState = state;
         if (!_loaded && state is not null) { Executable.Text = state.ExecutablePath ?? ""; _loaded = true; }
         Connection.Text = state?.Error ?? state?.Connection switch
@@ -140,6 +153,12 @@ public partial class SecRandomWindow : Window
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
         { Render(null); Message.Text = "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。"; }
         finally { _busy = false; Render(_state); }
+    }
+    private void ConfigureClicked(object sender, RoutedEventArgs e)
+    {
+        ProgramConfiguration.IsExpanded = true;
+        _configurationPresented = true;
+        Executable.BringIntoView(); Executable.Focus();
     }
     private void BrowseClicked(object sender, RoutedEventArgs e)
     {

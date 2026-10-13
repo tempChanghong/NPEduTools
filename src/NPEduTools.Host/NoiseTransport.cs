@@ -47,6 +47,7 @@ public sealed class NoiseTransport : INpepNoise, INpepNoiseManagement, INpepNois
                 if (new FileInfo(_path).Length > 16777216) throw new InvalidDataException();
                 _store = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject ?? throw new InvalidDataException();
                 if (_store["reports"] is not JsonArray || _store["commands"] is not JsonArray) throw new InvalidDataException();
+                if (_store["checkpoint"] is not null && _store["checkpoint"] is not JsonObject) throw new InvalidDataException();
                 if (_store["scope"] is not null && (_store["scope"] is not JsonValue scope || !scope.TryGetValue<string>(out var scopeText) || scopeText.Length > 2048)) throw new InvalidDataException();
                 if (_store["excludedSessionId"] is not null && (_store["excludedSessionId"] is not JsonValue excluded ||
                     !excluded.TryGetValue<string>(out var excludedText) || !Guid.TryParseExact(excludedText, "D", out var excludedId) || excludedId == Guid.Empty)) throw new InvalidDataException();

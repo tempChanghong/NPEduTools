@@ -6,15 +6,17 @@
       <Style TargetType="CheckBox" BasedOn="{StaticResource RecordingCheck}"><Setter Property="MinHeight" Value="36" /><Setter Property="FontSize" Value="14" /></Style>
     </ResourceDictionary>
   </Window.Resources>
-  <Grid Margin="24">
+  <Grid Margin="4">
     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
     <Grid Margin="0,0,0,18"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-      <StackPanel><TextBlock Text="录制微课" FontSize="25" FontWeight="SemiBold" /><TextBlock Text="课件、板书与讲解，录成一节课。" FontSize="12" Foreground="#718089" Margin="0,7,0,0" /></StackPanel>
+      <StackPanel><TextBlock x:Name="RecordingHeading" Text="立即录制" FontSize="25" FontWeight="SemiBold" /><TextBlock Text="课件、板书与讲解，录成一节课。" FontSize="12" Foreground="#718089" Margin="0,7,0,0" /></StackPanel>
       <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock x:Name="RecordingClock" Text="00:00:00" FontFamily="Consolas" FontSize="25" HorizontalAlignment="Right" AutomationProperties.AutomationId="RecordingClock" /><TextBlock x:Name="RecordingPhase" Text="准备录制" FontSize="11" Foreground="#718089" HorizontalAlignment="Right" Margin="0,3,0,0" /></StackPanel>
     </Grid>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
       <StackPanel>
-        <StackPanel x:Name="RecordingSettings">
+        <TextBlock x:Name="LiveRecordingClock" Text="{Binding Text, ElementName=RecordingClock}" FontFamily="Consolas" FontSize="50" Margin="0,12,0,12" Visibility="Collapsed"/>
+        <StackPanel x:Name="IdleRecordingSummary" Margin="0,8,0,18"><TextBlock Text="画面与声音" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="ReadySummary" Text="正在读取录制设置…" TextWrapping="Wrap" Margin="0,8,0,8"/><TextBlock x:Name="ReadyDirectory" TextWrapping="Wrap" FontSize="12" Foreground="#718089"/><Button x:Name="EditSettings" Content="修改录制设置" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Click="EditSettingsClicked" Margin="0,8,0,0" AutomationProperties.AutomationId="RecordingEditSettings"/></StackPanel>
+        <StackPanel x:Name="RecordingSettings" Visibility="Collapsed">
           <TextBlock Text="录制屏幕" FontSize="13" Margin="0,0,0,8" />
           <ComboBox x:Name="DisplayChoice" DisplayMemberPath="Label" SelectedValuePath="Id" SelectionChanged="ChoicesChanged" AutomationProperties.AutomationId="RecordingDisplay" />
           <Grid Margin="0,16,0,0"><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="12" /><ColumnDefinition /></Grid.ColumnDefinitions>
@@ -40,10 +42,11 @@
     </ScrollViewer>
     <WrapPanel Grid.Row="2" Margin="0,18,0,0">
       <Button x:Name="RecordStart" Content="开始录制" Style="{StaticResource Primary}" IsEnabled="False" Click="StartClicked" AutomationProperties.AutomationId="RecordingStart" Margin="0,0,8,8" />
-      <Button x:Name="SaveSettings" Content="保存设置" Click="SaveSettingsClicked" AutomationProperties.AutomationId="RecordingSaveSettings" Margin="0,0,8,8" />
+      <Button x:Name="SaveSettings" Content="保存录制设置" Click="SaveSettingsClicked" AutomationProperties.AutomationId="RecordingSaveSettings" Margin="0,0,8,8" />
+      <Button x:Name="ReturnRecordingSettings" Content="返回录制" Click="EditSettingsClicked" AutomationProperties.AutomationId="RecordingReturnSettings" Visibility="Collapsed" Margin="0,0,8,8"/>
       <Button x:Name="RecordPause" Content="暂停" Visibility="Collapsed" Click="PauseClicked" AutomationProperties.AutomationId="RecordingPause" Margin="0,0,8,8" />
       <Button x:Name="RecordStop" Content="停止并保存" Visibility="Collapsed" Click="StopClicked" AutomationProperties.AutomationId="RecordingStop" Margin="0,0,8,8" />
-      <Button Content="收起窗口" Style="{StaticResource Quiet}" Click="HideClicked" AutomationProperties.AutomationId="RecordingHide" />
+      <Button Content="返回主页" Style="{StaticResource Quiet}" Click="HideClicked" AutomationProperties.AutomationId="RecordingHide" />
     </WrapPanel>
     <WrapPanel Grid.Row="3"><Button x:Name="OpenVideo" Content="打开视频" Visibility="Collapsed" Click="OpenVideoClicked" AutomationProperties.AutomationId="RecordingOpenVideo" Margin="0,0,8,0" /><Button x:Name="OpenFolder" Content="打开文件夹" Visibility="Collapsed" Click="OpenFolderClicked" AutomationProperties.AutomationId="RecordingOpenFolder" /></WrapPanel>
   </Grid>

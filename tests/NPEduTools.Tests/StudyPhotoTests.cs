@@ -5,7 +5,7 @@ using NPEduTools.Core;
 using NPEduTools.Host;
 namespace NPEduTools.Tests;
 [Collection(ProcessIntegrationCollection.Name)] // Keep the bounded child-process probe out of parallel CPU-heavy fixtures.
-public sealed class StudyPhotoTests
+public sealed partial class StudyPhotoTests
 {
     private sealed class Clock : TimeProvider
     { public long Ms; public override long TimestampFrequency => 1000; public override long GetTimestamp() => Ms; }

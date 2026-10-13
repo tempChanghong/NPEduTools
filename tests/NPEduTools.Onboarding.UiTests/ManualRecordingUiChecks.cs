@@ -94,6 +94,13 @@ internal static partial class Program
                 quick.UpdateRecording(active, true);
                 Assert(((TextBlock)quick.FindName("RecordingStatus")).Text.Contains("00:02:00") &&
                     ((Button)quick.FindName("RecordingPause")).IsEnabled, "sidebar does not recover on a fresh state");
+                var enabledAutomatic = new AutomaticRecordingState(true, Guid.NewGuid(), "隔离自动快照", null, []);
+                quick.UpdateAutomaticRecording(enabledAutomatic, false);
+                Assert(((Button)quick.FindName("AutomaticSkipDay")).Visibility == Visibility.Collapsed &&
+                    !((Button)quick.FindName("AutomaticSkipDay")).IsEnabled, "sidebar exposes an unconfirmed automatic pause");
+                quick.UpdateAutomaticRecording(enabledAutomatic, true);
+                Assert(((Button)quick.FindName("AutomaticSkipDay")).Visibility == Visibility.Visible &&
+                    ((Button)quick.FindName("AutomaticSkipDay")).IsEnabled, "fresh automatic snapshot did not restore sidebar pause");
                 Checks.Add("Actual sidebar controls: unknown hides stale timing/control actions; a confirmed recording restores them");
             }
             finally { quick.Shutdown(); }
@@ -163,7 +170,8 @@ internal static partial class Program
             var blocked = (Task)type.GetMethod("SendAsync")!.Invoke(client, ["start", null])!;
             Assert(blocked.IsCompleted && generation == (long)type.GetField("_generation", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(client)!, "unknown state submitted a new recording command");
             var recoveredReply = Protocol.WriteAsync(freshStatus, new HostResponse(Protocol.Version, freshRequest.RequestId,
-                "Succeeded", null, "隔离恢复", Recording: new("Idle", "恢复后准备录制")), timeout.Token);
+                "Succeeded", null, "隔离恢复", Recording: new("Idle", "恢复后准备录制"),
+                Automatic: new(false, Guid.Empty, "隔离自动录课未启用", null, [])), timeout.Token);
             PumpUntil(() => recoveredReply.IsCompleted, "isolated status reply did not finish");
             recoveredReply.GetAwaiter().GetResult();
             PumpUntil(() => Available() && changes[^1].Phase == "Idle", "fresh polling response did not recover unknown state");
@@ -182,7 +190,8 @@ internal static partial class Program
                     }
                     // The normal client may renew its lease between test steps.
                     await Protocol.WriteAsync(lostCommand, new HostResponse(Protocol.Version, request.RequestId,
-                        "Succeeded", null, "隔离状态", Recording: new("Idle", "准备录制")), timeout.Token);
+                        "Succeeded", null, "隔离状态", Recording: new("Idle", "准备录制"),
+                        Automatic: new(false, Guid.Empty, "隔离自动录课未启用", null, [])), timeout.Token);
                     lostCommand.Disconnect();
                 }
             }

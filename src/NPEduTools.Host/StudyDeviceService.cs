@@ -22,7 +22,10 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
     {
         lock(_sync)
         {
-            if(id==_selected)return null;
+            // The first school policy can arrive before any inventory/status read.
+            // Compare persisted preferences, and never certify unreadable settings as a no-op.
+            Load();
+            if(!_configurationError && id==_selected)return null;
             _schoolSelection=true;
             try
             {

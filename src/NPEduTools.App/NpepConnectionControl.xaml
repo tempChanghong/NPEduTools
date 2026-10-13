@@ -29,20 +29,22 @@
       <TextBox Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" MaxLength="64" AutomationProperties.AutomationId="NpepDeviceName" />
       <Button Content="检查服务" Click="InspectClicked" HorizontalAlignment="Left" Margin="0,10,0,0" IsEnabled="{Binding CanInspect}" AutomationProperties.AutomationId="NpepInspect" />
       <StackPanel Visibility="{Binding ShowServer, Converter={StaticResource VisibleWhenTrue}}" Margin="0,14,0,0">
-        <TextBlock Text="{Binding ServerIdentity}" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" AutomationProperties.AutomationId="NpepServerIdentity" />
+        <Expander x:Name="ServerIdentityDetails" Header="学校服务识别信息" IsExpanded="True"><TextBlock Text="{Binding ServerIdentity}" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" AutomationProperties.AutomationId="NpepServerIdentity" /></Expander>
         <CheckBox IsChecked="{Binding ServerConfirmed}" IsEnabled="{Binding CanEdit}" Style="{StaticResource Switch}" Margin="0,8,0,8" AutomationProperties.AutomationId="NpepServerConfirmed"><TextBlock Text="我已与管理员核对这是学校的服务" TextWrapping="Wrap" /></CheckBox>
         <StackPanel Visibility="{Binding HasClasses,Converter={StaticResource VisibleWhenTrue}}">
           <TextBlock Text="选择学校、班级与大屏" Margin="0,8,0,6"/>
           <ComboBox x:Name="RequestedClass" ItemsSource="{Binding Classes}" DisplayMemberPath="Name" SelectedValuePath="Id" IsEnabled="{Binding CanEdit}" MinHeight="38"/>
-          <Button Content="A · 向学校申请连接" Click="ApplyClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left" Margin="0,10,0,8"/>
-          <TextBlock Text="B · 学校已预授权：输入本班管理口令直接连接。正式服务须使用 HTTPS。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12"/>
+          <Button Content="向学校申请连接（尚无管理口令）" Click="ApplyClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left" Margin="0,10,0,12"/>
+          <TextBlock Text="学校已预授权？输入本班管理口令直接连接。正式服务须使用 HTTPS。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12"/>
           <PasswordBox x:Name="ClassManagementSecret" MaxLength="128" MinHeight="38" Margin="0,8,0,8" IsEnabled="{Binding CanEdit}"/>
           <Button Content="验证口令并连接" Click="PasswordClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left"/>
         </StackPanel>
-        <TextBlock Text="推荐：学校预先开放后，在对应班级大屏的 NPClassworks → 课堂工具 → 连接 NPEduTools 生成配对码，输入下面。无需管理员再次现场批准。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,8,0,8" />
+        <Expander x:Name="WebPairingOptions" Header="其他连接方式：网页配对码或管理员逐次批准" IsExpanded="True" Margin="0,12,0,0"><StackPanel>
+        <TextBlock Text="学校预先开放后，可在对应班级大屏的 NPClassworks → 课堂工具 → 连接 NPEduTools 生成配对码。没有班级列表时，也可以使用下方方式。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,8,0,8" />
         <TextBox Text="{Binding UserCode, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" MaxLength="16" AutomationProperties.Name="网页生成的8位配对码" AutomationProperties.AutomationId="NpepWebPairingCode" />
         <Button Content="使用网页配对码" Click="ClaimClicked" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,10,0,0" IsEnabled="{Binding CanClaim}" AutomationProperties.AutomationId="NpepClaim" />
         <Expander Header="其他方式：由管理员逐次批准" Margin="0,12,0,0"><Button Content="创建配对码，等待管理员批准" HorizontalAlignment="Left" Click="PairClicked" IsEnabled="{Binding CanPair}" AutomationProperties.AutomationId="NpepPair" /></Expander>
+        </StackPanel></Expander>
       </StackPanel>
     </StackPanel>
     <StackPanel Visibility="{Binding ShowCode, Converter={StaticResource VisibleWhenTrue}}" Margin="0,14,0,0">
@@ -57,7 +59,7 @@
       <TextBlock Text="{Binding BoundOrigin}" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,6,0,0" />
       <Expander Header="归属核对编号" FontSize="12" Margin="0,8,0,0"><TextBlock Text="{Binding BindingIdentity}" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,0" /></Expander>
       <StackPanel Visibility="{Binding ShowConfirm, Converter={StaticResource VisibleWhenTrue}}">
-        <TextBlock Text="确认连接后，学校可接收设备状态、投递通知、切换考试 / 日常模式（含 Windows 登录自启动）及投递考试方案；配对的大屏网页可启停噪音监测，学校也可下发定时排程。监测只上传统计，不上传原音频。" TextWrapping="Wrap" Foreground="#526A60" FontSize="12" Margin="0,12,0,8" />
+        <TextBlock Text="确认后，学校可接收设备状态、投递通知、管理日常 / 考试环境与放映，并下发自习排程和设备策略。噪音监测只上传统计，不上传原音频；学校开启照片策略时按规则上传单张捕获画面。请先核对归属与隐私告知。" TextWrapping="Wrap" Foreground="#526A60" FontSize="12" Margin="0,12,0,8" />
         <CheckBox IsChecked="{Binding BindingConfirmed}" IsEnabled="{Binding CanReviewBinding}" Style="{StaticResource Switch}" Margin="0,4,0,10" AutomationProperties.AutomationId="NpepBindingConfirmed"><TextBlock Text="学校、班级和大屏归属正确，同意上述连接功能" TextWrapping="Wrap" /></CheckBox>
         <Button Content="确认连接" Click="ConfirmClicked" HorizontalAlignment="Left" Style="{StaticResource Primary}" IsEnabled="{Binding CanConfirm}" AutomationProperties.AutomationId="NpepConfirm" />
       </StackPanel>

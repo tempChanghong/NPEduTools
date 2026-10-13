@@ -17,8 +17,9 @@ public sealed record RecorderCommand(string Action, RecordingOptions? Options = 
 public sealed record AutomaticRecordingCommand(string Action, Guid ClientId, RecordingOptions? Options = null);
 public sealed record RecordingExecution(string Key, Guid ProfileId, DateOnly Date, bool Fixed, DateTimeOffset Start,
     DateTimeOffset End, string Subject, Guid SessionId, string Phase, string Reason, string? OutputFile = null, string? RecoveryDirectory = null);
+public sealed record UpcomingRecording(string Subject, DateTimeOffset Start, DateTimeOffset End, string ClockSource = "ClassIsland");
 public sealed record AutomaticRecordingState(bool Enabled, Guid ClientId, string Message, DateOnly? SkipDate,
-    RecordingExecution[] Recent, string? Error = null, bool SuspendedByMode = false);
+    RecordingExecution[] Recent, string? Error = null, bool SuspendedByMode = false, UpcomingRecording? Next = null, string NextState = "Unknown");
 public sealed record RecordingState(string Phase, string Message, double Seconds = 0, long Frames = 0,
     long Bytes = 0, long DroppedFrames = 0, long AudioOverruns = 0, string? OutputFile = null,
     string? RecoveryDirectory = null, string? Error = null, RecorderControl? Control = null)
@@ -30,6 +31,16 @@ public sealed record RecordingState(string Phase, string Message, double Seconds
 public static class RecordingContract
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    public static void ValidateState(RecordingState state)
+    {
+        // This is transport validation, not a recording-duration policy. Keep
+        // empty messages and unowned idle/error snapshots compatible.
+        if (state.Phase is not ("Idle" or "Starting" or "Recording" or "Pausing" or "Paused" or "Saving" or "Saved" or "Failed") ||
+            state.Message is null || !double.IsFinite(state.Seconds) || state.Seconds < 0 ||
+            state.Seconds >= TimeSpan.MaxValue.TotalSeconds || state.Frames < 0 || state.Bytes < 0 ||
+            state.DroppedFrames < 0 || state.AudioOverruns < 0)
+            throw new InvalidDataException("录制状态格式无效；当前状态未确认。");
+    }
     public static string? Validate(RecordingOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.Display) || options.Display.Length > 256) return "请选择要录制的屏幕。";

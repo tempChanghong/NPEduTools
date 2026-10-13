@@ -5,31 +5,47 @@
     <Style TargetType="ComboBox" BasedOn="{StaticResource RecordingChoice}" />
     <Style TargetType="CheckBox" BasedOn="{StaticResource RecordingCheck}" />
     <Style TargetType="DataGrid" BasedOn="{StaticResource RecordingTable}" />
-    <Style TargetType="TabControl" BasedOn="{StaticResource SoftTabs}" />
+    <Style TargetType="TabControl" BasedOn="{StaticResource SoftTabs}">
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><WrapPanel x:Name="Headers" IsItemsHost="True"/><Border Grid.Row="1" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="4"><ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/></Border></Grid><ControlTemplate.Triggers><Trigger Property="Tag" Value="Records"><Setter TargetName="Headers" Property="Visibility" Value="Collapsed"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+    </Style>
     </ResourceDictionary>
   </Window.Resources>
-  <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-    <DockPanel Margin="0,0,0,12"><Button DockPanel.Dock="Right" Content="刷新课表" Click="RefreshClicked" AutomationProperties.AutomationId="AutoRefresh" VerticalAlignment="Center" /><StackPanel><TextBlock Text="自动录课" FontSize="25" FontWeight="SemiBold" /><TextBlock Text="1 保存录制设置　→　2 安排要录的课　→　3 开启自动录课" TextWrapping="Wrap" Foreground="#718089" Margin="0,7,16,0" /></StackPanel></DockPanel>
-    <Border Grid.Row="1" Background="#EAF2EC" CornerRadius="12" Padding="16" Margin="0,0,0,14">
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-        <StackPanel Margin="0,0,16,0">
-          <TextBlock Text="实际录制状态" FontSize="12" Foreground="#61786B" />
-          <TextBlock x:Name="RealStatus" Text="自动录制未启用" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,5,0,8" AutomationProperties.AutomationId="AutoRealStatus" />
-          <TextBlock x:Name="AutomaticFeedbackText" TextWrapping="Wrap" FontSize="12" Foreground="#AA5337" Margin="0,0,0,8" Visibility="Collapsed" AutomationProperties.AutomationId="AutoOperationFeedback" />
-          <TextBlock x:Name="SourceStatus" Text="正在读取 ClassIsland 课表…" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoSourceStatus" />
-          <TextBlock x:Name="ClockStatus" Text="等待学校时间" FontSize="12" Foreground="#61786B" Margin="0,4,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoClockStatus" />
-        </StackPanel>
-        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-          <Button x:Name="ToggleReal" Content="开启自动录课" Style="{StaticResource Primary}" Click="ToggleRealClicked" AutomationProperties.AutomationId="AutoToggleReal" />
-          <Button Content="录制设置" Click="RecordingSettingsClicked" Margin="0,8,0,0" AutomationProperties.AutomationId="AutoRecordingSettings" />
-        </StackPanel>
+  <Grid Margin="4"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Border x:Name="AutoOverview" BorderBrush="#DFE7E1" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,8"><StackPanel>
+      <WrapPanel><Button x:Name="ToggleReal" Content="开启自动录课" Style="{StaticResource Primary}" Click="ToggleRealClicked" AutomationProperties.AutomationId="AutoToggleReal" Margin="0,0,8,6"/><Button Content="录制设置" Click="RecordingSettingsClicked" AutomationProperties.AutomationId="AutoRecordingSettings" Margin="0,0,8,6"/><Button Content="刷新课表" Click="RefreshClicked" AutomationProperties.AutomationId="AutoRefresh" Margin="0,0,0,6"/></WrapPanel>
+      <TextBlock x:Name="RealStatus" Text="自动录制未启用" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoRealStatus"/>
+      <TextBlock x:Name="AutomaticFeedbackText" TextWrapping="Wrap" Foreground="#AA5337" FontSize="12" Visibility="Collapsed" AutomationProperties.AutomationId="AutoOperationFeedback"/>
+      <Expander Header="学校课表与时间状态" FontSize="12" Margin="0,6,0,0"><StackPanel><TextBlock x:Name="SourceStatus" Text="正在读取 ClassIsland 课表…" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoSourceStatus"/><TextBlock x:Name="ClockStatus" Text="等待学校时间" TextWrapping="Wrap" AutomationProperties.AutomationId="AutoClockStatus"/></StackPanel></Expander>
+    </StackPanel></Border>
+    <TabControl x:Name="AutoSections" Grid.Row="1" AutomationProperties.AutomationId="AutoSections">
+      <TabItem Header="当天课程" AutomationProperties.AutomationId="AutoPlanTab"><ScrollViewer x:Name="DayScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+
+      <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <WrapPanel Margin="0,0,0,8"><DatePicker x:Name="PlanDate" SelectedDateChanged="PlanDateChanged" Width="148" AutomationProperties.AutomationId="AutoPlanDate" /><Button x:Name="TodayButton" Content="今天" Tag="0" Click="RelativeDayClicked" Padding="10,4" Margin="6,0" AutomationProperties.AutomationId="AutoToday" /><Button x:Name="TomorrowButton" Content="明天" Tag="1" Click="RelativeDayClicked" Padding="10,4" AutomationProperties.AutomationId="AutoTomorrow" /><Button x:Name="AfterTomorrowButton" Content="后天" Tag="2" Click="RelativeDayClicked" Padding="10,4" Margin="6,0" AutomationProperties.AutomationId="AutoAfterTomorrow" /></WrapPanel>
+        <TextBlock x:Name="DateStatus" Grid.Row="1" Text="等待学校日期" TextWrapping="Wrap" Foreground="#718089" Margin="0,0,0,8" AutomationProperties.AutomationId="AutoDateStatus" />
+          <Grid Grid.Row="2"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <CheckBox x:Name="OnlyExplicit" Content="这天只录手动安排的课程和时段（不使用每周安排）" Click="OnlyExplicitClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="AutoOnlyExplicit" />
+            <Border Grid.Row="1" Background="White" BorderBrush="#E1EAE4" BorderThickness="1" CornerRadius="12" Padding="6">
+              <DataGrid x:Name="Plans" MinHeight="140" MaxHeight="340" SelectionChanged="PlanSelected" AutomationProperties.AutomationId="AutoPlans"><DataGrid.Columns>
+                <DataGridTextColumn Header="课程 / 名称" Binding="{Binding Subject}" Width="*" MinWidth="85" ElementStyle="{StaticResource RecordingTableSubject}" />
+                <DataGridTextColumn Header="上课 / 录制" Binding="{Binding TimeSummary}" Width="120" ElementStyle="{StaticResource RecordingTableText}" />
+                <DataGridTextColumn Header="安排说明" Binding="{Binding Status}" Width="2*" MinWidth="100" ElementStyle="{StaticResource RecordingTableText}" />
+              </DataGrid.Columns></DataGrid>
+            </Border>
+            <WrapPanel Grid.Row="2" Margin="0,8"><Button Content="这天录制并保存" Tag="Include" Click="OverrideClicked" Padding="10,5" AutomationProperties.AutomationId="AutoInclude" /><Button Content="这天不录并保存" Tag="Exclude" Click="OverrideClicked" Padding="10,5" Margin="6,0" AutomationProperties.AutomationId="AutoExclude" /><Button Content="取消这天的手动安排" Tag="Inherit" Click="OverrideClicked" Padding="10,5" AutomationProperties.AutomationId="AutoInherit" /></WrapPanel>
+            <StackPanel Grid.Row="3">
+              <TextBlock Text="选中课程后保存当天安排；采用当前每周规则的课前/课后余量，不会开启自动录课。" FontSize="11" TextWrapping="Wrap" Foreground="#718089" Margin="0,0,0,8" />
+              <Expander Header="另加一次录课（指定时间段）" AutomationProperties.AutomationId="AutoDatedEditor">
+                <StackPanel Margin="0,8,0,4"><TextBlock Text="仅在所选日期，按学校时间执行。" FontSize="12" Foreground="#718089" /><WrapPanel Margin="0,6"><TextBox x:Name="DatedName" Text="单次录课" Width="130" ToolTip="录课名称" AutomationProperties.Name="录课名称" AutomationProperties.AutomationId="AutoDatedName" /><TextBox x:Name="DatedStart" Text="10:00" Width="75" Margin="6,0" ToolTip="开始时间，格式 HH:mm" AutomationProperties.Name="开始时间" AutomationProperties.AutomationId="AutoDatedStart" /><TextBlock Text="至" VerticalAlignment="Center" /><TextBox x:Name="DatedEnd" Text="10:40" Width="75" Margin="6,0" ToolTip="结束时间，格式 HH:mm" AutomationProperties.Name="结束时间" AutomationProperties.AutomationId="AutoDatedEnd" />
+              <Button Content="新时段" Click="NewDatedClicked" Padding="10,5" Margin="6,0,0,0" /><Button Content="保存时段" Click="SaveDatedClicked" Padding="10,5" Margin="6,0" AutomationProperties.AutomationId="AutoSaveDated" /><Button Content="删除选中时段" Click="DeleteDatedClicked" Padding="10,5" AutomationProperties.AutomationId="AutoDeleteDated" /></WrapPanel>
+              <TextBlock Text="固定时段按输入时间录制，不加课前/课后余量、不按科目排除。" FontSize="11" TextWrapping="Wrap" Foreground="#718089" Margin="0,6,0,0" />
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </Grid>
       </Grid>
-    </Border>
-    <TabControl Grid.Row="2" AutomationProperties.AutomationId="AutoSections">
-      <TabItem Header="录课计划" AutomationProperties.AutomationId="AutoPlanTab">
-    <Grid Margin="8"><Grid.ColumnDefinitions><ColumnDefinition Width="300" /><ColumnDefinition Width="18" /><ColumnDefinition /></Grid.ColumnDefinitions>
-      <TabControl><TabItem Header="每周安排"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+</ScrollViewer></TabItem>
+      <TabItem Header="每周安排"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
         <TextBlock Text="每周重复执行；保存后还需开启上方总开关。" TextWrapping="Wrap" FontSize="12" Foreground="#718089" Margin="0,0,0,10" />
                 <ComboBox x:Name="RuleList" SelectionChanged="RuleSelected" AutomationProperties.AutomationId="AutoRuleList" />
         <WrapPanel Margin="0,8"><Button Content="新建" Click="NewRuleClicked" Padding="10,5" AutomationProperties.AutomationId="AutoNewRule" /><Button Content="删除" Click="DeleteRuleClicked" Padding="10,5" Margin="6,0" AutomationProperties.AutomationId="AutoDeleteRule" /></WrapPanel>
@@ -56,44 +72,7 @@
         <TextBlock Text="选中右侧课程，可以长期允许或排除这个科目（同一课表档案内改名后仍保留）。" TextWrapping="Wrap" Margin="0,8" />
         <Button Content="总是允许此科目" Click="AllowSubjectClicked" /><Button Content="总是排除此科目" Click="ExcludeSubjectClicked" Margin="0,6" /><Button Content="此科目恢复默认" Click="ResetSubjectClicked" />
         <TextBlock Text="暂停录课至指定日期（含当天）" Margin="0,16,0,4" /><DatePicker x:Name="PauseThrough" /><Button Content="保存暂停日期（清空后保存可恢复）" Click="PauseThroughClicked" Margin="0,8" />
-      </StackPanel></ScrollViewer></TabItem></TabControl>
-      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <WrapPanel Margin="0,0,0,8"><DatePicker x:Name="PlanDate" SelectedDateChanged="PlanDateChanged" Width="148" AutomationProperties.AutomationId="AutoPlanDate" /><Button x:Name="TodayButton" Content="今天" Tag="0" Click="RelativeDayClicked" Padding="10,4" Margin="6,0" AutomationProperties.AutomationId="AutoToday" /><Button x:Name="TomorrowButton" Content="明天" Tag="1" Click="RelativeDayClicked" Padding="10,4" AutomationProperties.AutomationId="AutoTomorrow" /><Button x:Name="AfterTomorrowButton" Content="后天" Tag="2" Click="RelativeDayClicked" Padding="10,4" Margin="6,0" AutomationProperties.AutomationId="AutoAfterTomorrow" /></WrapPanel>
-        <TextBlock x:Name="DateStatus" Grid.Row="1" Text="等待学校日期" TextWrapping="Wrap" Foreground="#718089" Margin="0,0,0,8" AutomationProperties.AutomationId="AutoDateStatus" />
-          <Grid Grid.Row="2"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-            <CheckBox x:Name="OnlyExplicit" Content="这天只录手动安排的课程和时段（不使用每周安排）" Click="OnlyExplicitClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="AutoOnlyExplicit" />
-            <Border Grid.Row="1" Background="White" BorderBrush="#E1EAE4" BorderThickness="1" CornerRadius="12" Padding="6">
-              <DataGrid x:Name="Plans" MinHeight="140" MaxHeight="340" SelectionChanged="PlanSelected" AutomationProperties.AutomationId="AutoPlans"><DataGrid.Columns>
-                <DataGridTextColumn Header="节次" Binding="{Binding Number}" Width="58" ElementStyle="{StaticResource RecordingTableText}" />
-                <DataGridTextColumn Header="课程 / 名称" Binding="{Binding Subject}" Width="116" ElementStyle="{StaticResource RecordingTableSubject}" />
-                <DataGridTextColumn Header="上课时间" Binding="{Binding ClassTime}" Width="110" ElementStyle="{StaticResource RecordingTableTime}" />
-                <DataGridTextColumn Header="录制时间" Binding="{Binding CaptureTime}" Width="110" ElementStyle="{StaticResource RecordingTableTime}" />
-                <DataGridTextColumn Header="计划说明" Binding="{Binding Status}" Width="*" MinWidth="160" ElementStyle="{StaticResource RecordingTableText}" />
-              </DataGrid.Columns></DataGrid>
-            </Border>
-            <WrapPanel Grid.Row="2" Margin="0,8"><Button Content="这天录制" Tag="Include" Click="OverrideClicked" Padding="10,5" AutomationProperties.AutomationId="AutoInclude" /><Button Content="这天不录" Tag="Exclude" Click="OverrideClicked" Padding="10,5" Margin="6,0" AutomationProperties.AutomationId="AutoExclude" /><Button Content="取消这天的手动安排" Tag="Inherit" Click="OverrideClicked" Padding="10,5" AutomationProperties.AutomationId="AutoInherit" /></WrapPanel>
-            <StackPanel Grid.Row="3">
-              <TextBlock Text="选课后点“这天录制”，使用左侧课前/课后余量；保存安排不等于开启录制。" FontSize="11" TextWrapping="Wrap" Foreground="#718089" Margin="0,0,0,8" />
-              <Expander Header="另加一次录课（指定时间段）" AutomationProperties.AutomationId="AutoDatedEditor">
-                <StackPanel Margin="0,8,0,4"><TextBlock Text="仅在所选日期，按学校时间执行。" FontSize="12" Foreground="#718089" /><WrapPanel Margin="0,6"><TextBox x:Name="DatedName" Text="单次录课" Width="130" ToolTip="录课名称" AutomationProperties.Name="录课名称" AutomationProperties.AutomationId="AutoDatedName" /><TextBox x:Name="DatedStart" Text="10:00" Width="75" Margin="6,0" ToolTip="开始时间，格式 HH:mm" AutomationProperties.Name="开始时间" AutomationProperties.AutomationId="AutoDatedStart" /><TextBlock Text="至" VerticalAlignment="Center" /><TextBox x:Name="DatedEnd" Text="10:40" Width="75" Margin="6,0" ToolTip="结束时间，格式 HH:mm" AutomationProperties.Name="结束时间" AutomationProperties.AutomationId="AutoDatedEnd" />
-              <Button Content="新时段" Click="NewDatedClicked" Padding="10,5" Margin="6,0,0,0" /><Button Content="保存时段" Click="SaveDatedClicked" Padding="10,5" Margin="6,0" AutomationProperties.AutomationId="AutoSaveDated" /><Button Content="删除选中时段" Click="DeleteDatedClicked" Padding="10,5" AutomationProperties.AutomationId="AutoDeleteDated" /></WrapPanel>
-              <TextBlock Text="固定时段按输入时间录制，不加课前/课后余量、不按科目排除。" FontSize="11" TextWrapping="Wrap" Foreground="#718089" Margin="0,6,0,0" />
-                </StackPanel>
-              </Expander>
-            </StackPanel>
-          </Grid>
-      </Grid>
-      </ScrollViewer>
-    </Grid>
-      </TabItem>
-      <TabItem Header="录制记录" AutomationProperties.AutomationId="AutoRecordsTab">
-        <Grid Margin="12"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
-          <TextBlock Text="这里只显示实际执行结果。已保存的记录会列出视频位置；模拟记录在“试运行（高级）”中查看。" TextWrapping="Wrap" Foreground="#718089" Margin="0,0,0,12" />
-          <ListBox x:Name="RealEvents" Grid.Row="1" AutomationProperties.AutomationId="AutoRealEvents"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="13" Margin="8,8" /></DataTemplate></ListBox.ItemTemplate></ListBox>
-          <TextBlock x:Name="RealEventsEmpty" Grid.Row="1" Text="暂无自动录课记录。开启自动录课后，到达计划时间才会执行。" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#718089" TextWrapping="Wrap" MaxWidth="500" IsHitTestVisible="False" />
-        </Grid>
-      </TabItem>
+      </StackPanel></ScrollViewer></TabItem>
       <TabItem Header="试运行（高级）" AutomationProperties.AutomationId="AutoTrialTab">
         <Grid Margin="12"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
           <Border Background="#EDF2F4" CornerRadius="10" Padding="14" Margin="0,0,0,10"><StackPanel>
@@ -116,15 +95,17 @@
           <ListBox x:Name="Events" Grid.Row="3" BorderBrush="#E5EBE7" AutomationProperties.AutomationId="AutoEvents"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" Margin="4,5" /></DataTemplate></ListBox.ItemTemplate></ListBox>
         </Grid>
       </TabItem>
+      <TabItem Header="录制记录" AutomationProperties.AutomationId="AutoRecordsTab">
+        <Grid Margin="12"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
+          <StackPanel><TextBlock x:Name="LatestRecording" Text="正在确认当前录制状态" TextWrapping="Wrap" FontWeight="SemiBold"/><TextBlock x:Name="LatestRecordingPath" TextWrapping="Wrap" FontSize="12" Foreground="#61786B" Margin="0,8,0,0"/><WrapPanel Margin="0,8,0,8"><Button x:Name="OpenLatestVideo" Content="打开最近视频" Click="OpenLatestVideoClicked"/><Button x:Name="OpenLatestFolder" Content="打开最近保留位置" Click="OpenLatestFolderClicked" Margin="8,0,0,0"/></WrapPanel><ComboBox x:Name="RecordFilter" SelectedIndex="0" SelectionChanged="RecordFilterChanged" Width="200" HorizontalAlignment="Left" Margin="0,0,0,8"><ComboBoxItem Content="全部自动记录"/><ComboBoxItem Content="需要处理"/><ComboBoxItem Content="已保存"/></ComboBox><TextBlock x:Name="RecordsError" Foreground="#AA5337" TextWrapping="Wrap"/><TextBlock Text="下方是自动录课的实际执行记录；试运行不生成视频，单独保存在高级页。手动录课这里只显示后台返回的最近一次结果。" TextWrapping="Wrap" Foreground="#718089" FontSize="12" Margin="0,0,0,8"/></StackPanel>
+          <ListBox x:Name="RealEvents" Grid.Row="1" AutomationProperties.AutomationId="AutoRealEvents"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="13" Margin="8,8" /></DataTemplate></ListBox.ItemTemplate></ListBox>
+          <TextBlock x:Name="RealEventsEmpty" Grid.Row="1" Text="暂无自动录课记录。开启自动录课后，到达计划时间才会执行。" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#718089" TextWrapping="Wrap" MaxWidth="500" IsHitTestVisible="False" />
+        </Grid>
+      </TabItem>
     </TabControl>
-    <StackPanel Grid.Row="3" Margin="0,8,0,0">
-      <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="#AA5337" FontSize="12" Margin="0,0,0,8" AutomationProperties.AutomationId="AutoError" />
-      <DockPanel LastChildFill="False">
-        <Button DockPanel.Dock="Right" Content="收起窗口" Style="{StaticResource Quiet}" Click="HideClicked" AutomationProperties.AutomationId="AutoHide" />
-        <Button Content="结束当前自动录课 / 跳过下一项" Click="RealSkipClicked" Margin="0,0,8,0" AutomationProperties.AutomationId="AutoRealSkip" />
-        <Button x:Name="RealSkipDay" Content="今天不再录制" Click="RealSkipDayClicked" AutomationProperties.AutomationId="AutoRealSkipDay" />
-      </DockPanel>
-      <TextBlock Text="收起窗口后仍在后台执行；完整退出并重开软件后，需要重新开启自动录课。" FontSize="11" Foreground="#718089" Margin="0,6,0,0" TextWrapping="Wrap" />
+    <StackPanel x:Name="AutoFooter" Grid.Row="2" Margin="0,8,0,0"><TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="#AA5337" FontSize="12" Margin="0,0,0,8" AutomationProperties.AutomationId="AutoError"/>
+      <WrapPanel><Button x:Name="RealSkip" Content="跳过下一节" Click="RealSkipClicked" Margin="0,0,8,6" AutomationProperties.AutomationId="AutoRealSkip"/><Button x:Name="StopCurrent" Content="停止当前录制" Click="StopCurrentClicked" Margin="0,0,8,6" AutomationProperties.AutomationId="AutoStopCurrent"/><Button x:Name="RealSkipDay" Content="今天不再录制" Click="RealSkipDayClicked" Margin="0,0,8,6" AutomationProperties.AutomationId="AutoRealSkipDay"/><Button Content="返回主页" Style="{StaticResource Quiet}" Click="HideClicked" AutomationProperties.AutomationId="AutoHide" Margin="0,0,0,6"/></WrapPanel>
+      <TextBlock Text="切页和收起界面不会停止录制；关闭后台后需重新开启自动录课。" FontSize="11" Foreground="#718089" TextWrapping="Wrap"/>
     </StackPanel>
   </Grid>
 </Window>

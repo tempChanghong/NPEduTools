@@ -22,7 +22,8 @@ public partial class RecordingWindow : Window
     private readonly RecordingClient _client;
     private readonly Func<Task<RecordingEnvironment>> _probe;
     private readonly string _preferencesPath;
-    private bool _shutdown, _readable = true, _probing;
+    private bool _shutdown, _readable = true, _probing, _viewReady, _editing, _probeWhenIdle;
+    internal Action? WorkspaceReturn { get; init; }
     private string? _stateError;
     private RecordingEnvironment? _environment;
     private RecordingOptions? _saved;
@@ -52,9 +53,10 @@ public partial class RecordingWindow : Window
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
         { _readable = false; RecordingError.Text = "保存的录制偏好无法读取，原文件已保留。本次仍可选择设置并录制。"; }
         _client.Changed += Apply;
-        Loaded += async (_, _) => { await ProbeAsync(); Apply(_client.State); };
+        Loaded += async (_, _) => { _viewReady = true; _probeWhenIdle = _client.State.Active; await ProbeAsync(); Apply(_client.State); };
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _client.Changed -= Apply;
+        Apply(_client.State);
     }
     public void Shutdown() { _shutdown = true; Close(); }
     private async Task ProbeAsync()
@@ -76,7 +78,7 @@ public partial class RecordingWindow : Window
             if (MicrophoneChoice.SelectedIndex < 0) MicrophoneChoice.SelectedIndex = 0;
             if (_environment.Error is not null) RecordingError.Text = _environment.Error;
             else if (_readable) RecordingError.Text = "";
-            UpdateSummary(); UpdateSound();
+            UpdateSummary(); UpdateSound(); UpdateReadySummary();
         }
         catch (Exception error) when (error is not OutOfMemoryException) { RecordingError.Text = error.Message; _environment = null; }
         finally { _probing = false; Apply(_client.State); }
@@ -89,14 +91,14 @@ public partial class RecordingWindow : Window
         var (width, height) = RecordingContract.OutputSize(display.Width, display.Height, MaximumHeight);
         CaptureSummary.Text = $"采集 {display.Width} × {display.Height} → 保存 {width} × {height} · {Fps} fps · MP4";
     }
-    private void ChoicesChanged(object sender, SelectionChangedEventArgs e) { if (IsLoaded) UpdateSummary(); }
-    private void SoundChanged(object sender, RoutedEventArgs e) { if (IsLoaded) UpdateSound(); }
+    private void ChoicesChanged(object sender, SelectionChangedEventArgs e) { if (_viewReady) { UpdateSummary(); UpdateReadySummary(); } }
+    private void SoundChanged(object sender, RoutedEventArgs e) { if (_viewReady) UpdateSound(); }
     private void UpdateSound() { SpeakerChoice.IsEnabled = SystemSound.IsChecked == true; MicrophoneChoice.IsEnabled = MicrophoneSound.IsChecked == true; }
     private async void RefreshClicked(object sender, RoutedEventArgs e) => await ProbeAsync();
     private void BrowseClicked(object sender, RoutedEventArgs e)
     {
         var picker = new Microsoft.Win32.OpenFolderDialog { Title = "选择微课保存位置" };
-        if (picker.ShowDialog(this) == true) OutputDirectory.Text = picker.FolderName;
+        if (picker.ShowDialog(WorkspacePanel.DialogOwner(this)) == true) OutputDirectory.Text = picker.FolderName;
     }
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
@@ -114,7 +116,7 @@ public partial class RecordingWindow : Window
         { RecordingError.Text = "所选音源没有可用设备。请连接设备并重新检测，或取消该音源。"; return null; }
         return options;
     }
-    private void SavePreferences(RecordingOptions options)
+    private bool SavePreferences(RecordingOptions options)
     {
         if (_readable)
         {
@@ -123,18 +125,36 @@ public partial class RecordingWindow : Window
                 Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
                 File.WriteAllText(_preferencesPath + ".tmp", JsonSerializer.Serialize(new Preferences(1, options)));
                 File.Move(_preferencesPath + ".tmp", _preferencesPath, true); _saved = options;
-                RecordingError.Text = "录制设置已保存，可在自动录课计划中启用。";
+                RecordingError.Text = "录制设置已保存，可在自动安排中启用。"; return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RecordingError.Text = "录制设置未能保存；本次使用当前选项。"; }
         }
+        return false;
     }
     private void SaveSettingsClicked(object sender, RoutedEventArgs e)
-    { if (OptionsFromForm() is { } options) SavePreferences(options); }
+    { if (OptionsFromForm() is { } options) { if (SavePreferences(options)) _editing = false; Apply(_client.State); } }
+    internal void ShowSettingsPanel() { if (!_client.State.Active) { _editing = true; Apply(_client.State); } }
+    private void EditSettingsClicked(object sender, RoutedEventArgs e) { _editing = !_editing; Apply(_client.State); }
+    private void UpdateReadySummary()
+    {
+        ReadySummary.Text = CaptureSummary.Text + " · " + (MicrophoneSound.IsChecked == true && SystemSound.IsChecked == true ? "麦克风＋系统声音" : MicrophoneSound.IsChecked == true ? "麦克风" : SystemSound.IsChecked == true ? "系统声音" : "无音频");
+        ReadyDirectory.Text = "保存到 " + OutputDirectory.Text;
+    }
     private async void PauseClicked(object sender, RoutedEventArgs e) => await _client.SendAsync(_client.State.Phase == "Paused" ? "resume" : "pause");
     private async void StopClicked(object sender, RoutedEventArgs e) => await _client.SendAsync("stop");
     private void Apply(RecordingState state)
     {
         bool available = _client.StateAvailable;
+        if (_viewReady && _probeWhenIdle && !state.Active && available && !_probing)
+        { _probeWhenIdle = false; _ = ProbeAsync(); }
+        RecordingHeading.Text = !available ? "录制状态未确认" : state.Active ? state.Control?.Owner == "Automatic" ? "自动录课进行中" : "当前录课" : "立即录制";
+        LiveRecordingClock.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
+        RecordingClock.Visibility = state.Active ? Visibility.Collapsed : Visibility.Visible;
+        RecordingSettings.Visibility = !state.Active && _editing ? Visibility.Visible : Visibility.Collapsed;
+        IdleRecordingSummary.Visibility = !state.Active && !_editing ? Visibility.Visible : Visibility.Collapsed;
+        EditSettings.Content = _editing ? "返回录制" : "修改录制设置";
+        SaveSettings.Visibility = ReturnRecordingSettings.Visibility = !state.Active && _editing ? Visibility.Visible : Visibility.Collapsed;
+        UpdateReadySummary();
         RecordingClock.Text = available ? TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss") : "—";
         RecordingPhase.Text = available ? state.Phase switch { "Starting" => "准备中", "Recording" => "录制中", "Paused" => "已暂停", "Pausing" => "暂停中", "Saving" => "保存中", "Saved" => "已保存", "Failed" => "未完成", _ => "准备录制" } : "状态未知";
         RecordingMessage.Text = available ? state.Message : "录制后台未确认当前状态，等待重新连接；不能据此判断录制已经停止。";
@@ -156,13 +176,15 @@ public partial class RecordingWindow : Window
         OpenFolder.Visibility = Visibility.Visible;
         OpenFolder.Content = state.Phase == "Failed" ? "打开保留片段" : "打开文件夹";
     }
-    private void HideClicked(object sender, RoutedEventArgs e) => Hide();
+    private void HideClicked(object sender, RoutedEventArgs e) { if (WorkspaceReturn is { } back) back(); else Hide(); }
     private void OpenVideoClicked(object sender, RoutedEventArgs e) => OpenPath(_client.State.OutputFile);
     private void OpenFolderClicked(object sender, RoutedEventArgs e) => OpenPath(_client.State.OutputFile is { } file ? Path.GetDirectoryName(file) : _client.State.RecoveryDirectory ?? OutputDirectory.Text.Trim());
     private void OpenPath(string? path)
     {
-        if (path is null) return;
+        if (string.IsNullOrWhiteSpace(path))
+        { RecordingError.Text = "请先填写有效的保存位置，或选择要打开的视频。"; return; }
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
-        catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception) { RecordingError.Text = "无法打开该位置，请检查文件是否已移动。"; }
+        catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception or ArgumentException or InvalidOperationException)
+        { RecordingError.Text = "无法打开该位置，请检查保存位置是否有效、文件是否已移动。"; }
     }
 }

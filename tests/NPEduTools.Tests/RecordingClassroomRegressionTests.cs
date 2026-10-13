@@ -103,7 +103,7 @@ public sealed class RecordingClassroomRegressionTests
     [Fact]
     public void AutomaticPageReceivesAudioWaitingAndQualityWarnings()
     {
-        var state = new RecordingState("Recording", "正在录制；音频写入变慢，正在等待恢复（宽限至多 10 秒）。",
+        var state = new RecordingState("Recording", "正在录制；音频写入变慢，正在等待恢复（宽限至多 60 秒）。",
             Control: new("Automatic", Guid.NewGuid(), "course", 0, 0));
         Assert.Contains("等待恢复", RecordingService.AutomaticRecordingMessage(state));
         Assert.StartsWith("正在自动录制；", RecordingService.AutomaticRecordingMessage(state));

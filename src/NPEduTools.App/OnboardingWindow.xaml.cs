@@ -40,7 +40,10 @@ public partial class OnboardingWindow : Window
         InitializeComponent();
         DesktopDialogSizing.Attach(this, endpoint);
         SchoolConnection.Bind(schoolConnection);
+        SchoolConnection.UseGuidedSetup();
         StudyDevices.Bind(endpoint);
+        _schoolConnection.PropertyChanged += PreparationStatusChanged;
+        StudyDevices.StatusChanged += PreparationStatusChanged;
         StudyDevices.SelectionSaved += (_, _) => { if (_state.Step == "noise" && _deviceReadinessFailed) { ErrorText.Text = ""; _deviceReadinessFailed = false; } };
         UseShortcuts.IsChecked = state.Features.HasFlag(OnboardingFeatures.Shortcuts);
         UseTouch.IsChecked = state.Features.HasFlag(OnboardingFeatures.Touch);
@@ -67,7 +70,7 @@ public partial class OnboardingWindow : Window
         {
             if (!_closing && !Persist(CurrentChoices() with { Deferred = true })) e.Cancel = true;
         };
-        Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); StudyDevices.CancelPending(); };
+        Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); _schoolConnection.PropertyChanged -= PreparationStatusChanged; StudyDevices.StatusChanged -= PreparationStatusChanged; StudyDevices.CancelPending(); };
         Render();
         ErrorText.Text = initialError ?? "";
         LeaveWithoutSave.Visibility = initialError is null ? Visibility.Collapsed : Visibility.Visible;
@@ -104,18 +107,21 @@ public partial class OnboardingWindow : Window
     {
         "welcome" => "选择用途", "preferences" => "使用偏好", "secrandom" => "配置课堂点名", "classisland" => "连接学校时间",
         "recording" => "录制准备", "classroom" => "准备考试环境", "school" => "连接学校（NPEP）",
-        "noise" => "配置监测设备", _ => "准备好开始了"
+        "noise" => "准备自习设备", _ => "核对准备情况"
     };
 
     private void RefreshProgress(OnboardingState state)
     {
         int current = Array.IndexOf(state.Steps, state.Step);
         ProgressText.Text = $"初始设置 · {current + 1} / {state.Steps.Length}";
-        StepList.ItemsSource = state.Steps.Select((step, index) => new
+        string[] stages = state.Steps.Any(s => s is not ("welcome" or "preferences" or "review"))
+            ? ["选择用途", "基本偏好", "准备功能", "核对完成"] : ["选择用途", "基本偏好", "核对完成"];
+        int stage = state.Step switch { "welcome" => 0, "preferences" => 1, "review" => stages.Length - 1, _ => 2 };
+        StepList.ItemsSource = stages.Select((title, index) => new
         {
-            Title = $"{index + 1}  {Label(step)}",
-            Background = index == current ? "#EAF6F2" : "#EEF2F0",
-            Foreground = index == current ? "#147D68" : "#718089"
+            Title = $"{index + 1}  {title}",
+            Background = index == stage ? "#EAF6F2" : "#EEF2F0",
+            Foreground = index == stage ? "#147D68" : "#718089"
         }).ToArray();
     }
     private void ChoicesChanged(object sender, RoutedEventArgs e)
@@ -125,14 +131,14 @@ public partial class OnboardingWindow : Window
 
     private string ReviewStatus(string step)
     {
-        if ((_state.Skipped ?? []).Contains(step)) return "已跳过，待配置";
+        if ((_state.Skipped ?? []).Contains(step)) return step == "school" ? "稍后继续 · " + _schoolConnection.Title : "已跳过，待配置";
         if (!(_state.Reviewed ?? []).Contains(step)) return "尚待处理";
         return step switch
         {
             "preferences" => "已查看，使用现有设置",
-            "school" => "本步已处理；配对与在线状态以学校互联页为准",
+            "school" => _schoolConnection.Title,
             "classroom" => "已查看准备说明；配置以管理页实时状态为准",
-            "noise" => "已核对设备选择；运行状态以管理页实时状态为准",
+            "noise" => "上次设备核对：" + StudyDevices.Summary + "；输入电平尚需实测",
             "secrandom" => "已保存程序位置；接口和名单请在点名页检查",
             _ => "本次已检查（非持续状态）"
         };
@@ -145,13 +151,21 @@ public partial class OnboardingWindow : Window
             (SchoolPage, "school"), (NoisePage, "noise"), (SecRandomPage, "secrandom"), (ReviewPage, "review") })
             panel.Visibility = _state.Step == step ? Visibility.Visible : Visibility.Collapsed;
         StepTitle.Text = Label(_state.Step);
+        StepSubtitle.Text = _state.Step switch {
+            "welcome" => "选择这台电脑的用途，只准备你需要的功能。",
+            "preferences" => "核对常用偏好，默认设置也可以直接保留。",
+            "school" => "填写学校服务地址，申请连接或使用预授权班级的管理口令。",
+            "noise" => "选择并保存麦克风。摄像头、实测与校准可以稍后准备。",
+            "review" => "检查已保存的内容和待办项，完成后进入工作台。",
+            _ => "先完成本页的主要操作，其他说明可按需查看。" };
+        PageScroll.ScrollToTop();
         RefreshProgress(_state);
         BackButton.Visibility = _state.Step == "welcome" ? Visibility.Hidden : Visibility.Visible;
         SkipButton.Visibility = _state.Step is "welcome" or "review" ? Visibility.Collapsed : Visibility.Visible;
         NextButton.Content = _state.Step switch
         {
             "welcome" => "开始设置", "review" => "完成并开始使用",
-            "classroom" => "已了解，下一步", "noise" => "已保存设备，下一步", _ => "下一步"
+            "classroom" => "已了解，下一步", "noise" => "核对设备并继续", _ => "下一步"
         };
         ShortcutHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Shortcuts) ? Visibility.Visible : Visibility.Collapsed;
         TouchHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Touch) ? Visibility.Visible : Visibility.Collapsed;
@@ -168,8 +182,7 @@ public partial class OnboardingWindow : Window
         { RecordingText.Text = "请检查已保存的设置；检查不会开始采集。"; }
         if (_state.Step == "review")
         {
-            ReviewText.Text = string.Join("\n", _state.Steps.Where(s => s is not ("welcome" or "review")).Select(s =>
-                $"{Label(s)}：{ReviewStatus(s)}"));
+            RefreshReviewItems();
             FinishHint.Text = _state.Features.HasFlag(OnboardingFeatures.Automatic)
                 ? "下一步打开自动录课计划。安排每周或指定日期的录课，核对学校时间后再开启自动录课；试运行只作模拟。完成引导本身不会开启录制。"
                 : "完成后保留主窗口，可从课堂工作台打开常用工具，或展开侧边栏。尚未配置的功能可以稍后继续。";
@@ -245,14 +258,18 @@ public partial class OnboardingWindow : Window
                 return;
             }
         }
-        var next = CurrentChoices().Advance(false);
+        var next = AdvancePreparation(false);
         if (!Persist(next)) return;
+        _returnToReview = false;
         if (next.Completed)
         { _closing = true; Close(); _finish(next.Features.HasFlag(OnboardingFeatures.Automatic)); }
         else Render();
     }
-    private void BackClicked(object sender, RoutedEventArgs e) { if (Persist(CurrentChoices().Back())) Render(); }
-    private void SkipClicked(object sender, RoutedEventArgs e) { if (Persist(_state.Advance(true))) Render(); }
+    private void BackClicked(object sender, RoutedEventArgs e) {
+        var next = _returnToReview ? _state with { Step = "review" } : CurrentChoices().Back();
+        if (Persist(next)) { _returnToReview = false; Render(); }
+    }
+    private void SkipClicked(object sender, RoutedEventArgs e) { if (Persist(AdvancePreparation(true))) { _returnToReview = false; Render(); } }
     private void LaterClicked(object sender, RoutedEventArgs e) => Close();
     private void LeaveWithoutSaveClicked(object sender, RoutedEventArgs e) { _closing = true; Close(); }
     private void PreferencesClicked(object sender, RoutedEventArgs e) => _preferences();

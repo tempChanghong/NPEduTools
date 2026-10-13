@@ -34,10 +34,13 @@ public partial class MainWindow
     private void ShowClassIslandPathSettings()
     {
         ShowConnectionSettings();
+        _classIslandConfigurationPresented = true;
+        ClassIslandConfiguration.IsExpanded = true;
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
         {
             ExecutablePathBox.BringIntoView();
             ExecutablePathBox.Focus();
         });
     }
+    private void ConfigureClassIslandClicked(object sender, RoutedEventArgs e) => ShowClassIslandPathSettings();
 }

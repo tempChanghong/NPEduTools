@@ -39,6 +39,24 @@ public sealed class ManualStudyTests
         public async ValueTask DisposeAsync(){await Noise.DisposeAsync();await Manual.DisposeAsync();if(Directory.Exists(Folder)){Assert.Equal(Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar),Path.GetDirectoryName(Path.GetFullPath(Folder)));Directory.Delete(Folder,true);}}
     }
     [Fact]
+    public async Task Consecutive_manual_reports_keep_Host_identity_but_have_distinct_session_versions()
+    {
+        await using var f = new Fixture();
+        async Task<StudyReportState> Finish()
+        {
+            Assert.Equal("Succeeded", f.Start().Outcome); await f.Active();
+            f.Time.Ms += 6000; f.Captures.Last().Sample(); f.Manual.Tick();
+            Assert.Equal("Succeeded", f.Manual.Handle(f.End(f.Manual.Status())).Outcome); await f.Ended();
+            f.Time.Ms += 5000;
+            var report = f.Manual.Report(); Assert.True(report.Available); return report;
+        }
+        var first = await Finish(); var second = await Finish();
+        Assert.Equal(first.InstanceId, second.InstanceId);
+        Assert.NotEqual(first.Version, second.Version);
+        Assert.NotEqual(first.Data!.Window, second.Data!.Window);
+    }
+
+    [Fact]
     public async Task Immediate_start_shares_noise_device_has_no_planned_progress_and_ends_with_a_saved_report()
     {
         await using var f=new Fixture();Assert.Equal("Succeeded",f.Start().Outcome);await f.Active();

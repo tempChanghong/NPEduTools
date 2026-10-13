@@ -6,6 +6,16 @@ namespace NPEduTools.Tests;
 
 public sealed class NpepDiagnosticsTests
 {
+    [Theory]
+    [InlineData("v1.1.5 · EVA-02（二号机）", "1.1.5")]
+    [InlineData("v1.1.5 · EVA-02（二号机）+abcdef1234567890", "1.1.5+abcdef1234567890")]
+    [InlineData("v1.1.5 · PRIVATE-CREDENTIAL", null)]
+    [InlineData("v1.1.5 · EVA-02（二号机）\nsecret", null)]
+    public void CurrentDesktopVersionIsExportedWithoutArbitraryMetadata(string value, string? expected)
+    {
+        var report = NpepDiagnostics.Create(value, At, null, null, null, null);
+        Assert.Equal(expected, report["appVersion"]?.GetValue<string>());
+    }
     private static readonly DateTimeOffset At = DateTimeOffset.Parse("2026-10-04T18:00:00+08:00");
     private static readonly Guid Binding = Guid.Parse("fd6298d3-a8ad-4dac-847d-b4d831410092");
     private static HostResponse Reply(HostRequest request, NpepState? state = null) => new(Protocol.Version, request.RequestId, "Succeeded", null, "not exported", Npep: state);

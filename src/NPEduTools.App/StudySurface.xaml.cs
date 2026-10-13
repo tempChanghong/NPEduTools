@@ -69,14 +69,15 @@ public partial class StudySurface : UserControl
             if (_holdAt is not { } at) return;
             if (!_timeline.Fresh || _timeline.State?.Phase != "Active") { CancelHold(); return; }
             if (_time.GetElapsedTime(at).TotalSeconds < 2) return;
-            bool ending=_endHold; CancelHold(); if(ending && _end is not null)await _end();else await HideAsync();
+            bool ending=_endHold; CancelHold(); if(ending)await EndStudyAsync();else await HideAsync();
         };
     }
     public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default)
     {
         if (_timeline.State is not { } previous || previous.Phase != state.Phase || previous.Version != state.Version ||
-            previous.Window != state.Window || previous.Display?.InstanceId != state.Display?.InstanceId || previous.ClockReady != state.ClockReady)
-            _reminderGeneration++;
+            previous.Window != state.Window || previous.Display?.InstanceId != state.Display?.InstanceId || previous.ClockReady != state.ClockReady ||
+            previous.Manual?.SessionId != state.Manual?.SessionId)
+        { _reminderGeneration++; CancelHold(); }
         _paused = false; _timeline.Apply(state, transportAge); _noise = noise; _timer.Start(); Render();
     }
     public void Suspend()
@@ -253,6 +254,13 @@ public partial class StudySurface : UserControl
     }
     private void DismissNotice()
     { _animationGeneration++; _shownNotice = null; StageNotice.Visibility = Visibility.Collapsed; NoticeCopy.BeginAnimation(OpacityProperty, null); }
+    private async Task EndStudyAsync()
+    {
+        if (_end is null || _busy || !_timeline.Fresh || _timeline.State is not { Phase: "Active", Manual.SessionId: not null }) return;
+        _busy = true; Render();
+        try { await _end(); }
+        finally { _busy = false; if (!_paused) Render(); }
+    }
     public async Task HideAsync()
     {
         if (_busy || !_timeline.Fresh || _timeline.State?.Phase != "Active") return;

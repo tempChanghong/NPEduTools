@@ -5,7 +5,7 @@ using NPEduTools.Host;
 using NPEduTools.Integrations.Npep;
 
 namespace NPEduTools.Tests;
-public sealed class NoiseTransportTests
+public sealed partial class NoiseTransportTests
 {
     [Theory]
     [InlineData(null)]

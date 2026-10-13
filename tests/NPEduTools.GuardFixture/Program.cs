@@ -6,7 +6,8 @@ using System.Text.Json;
 if (args.Length == 2 && args[0] == "--fixture-window" && args[1] is
     "recorder-null" or "recorder-oversized" or "recorder-malformed" or "recorder-empty" or
     "recorder-unknown" or "recorder-missing-message" or "recorder-owned-idle" or "recorder-saved" or
-    "recorder-ready" or "recorder-failed" or "recorder-finalizing")
+    "recorder-ready" or "recorder-failed" or "recorder-finalizing" or "recorder-active-eof" or
+    "recorder-invalid-phase" or "recorder-invalid-seconds" or "recorder-invalid-counter")
 {
     string? outputDirectory = null;
     Console.WriteLine(args[1] switch
@@ -25,12 +26,32 @@ if (args.Length == 2 && args[0] == "--fixture-window" && args[1] is
     });
     while (await Console.In.ReadLineAsync() is { } line)
     {
-        if (args[1] is not ("recorder-ready" or "recorder-finalizing")) continue;
+        if (args[1] is not ("recorder-ready" or "recorder-finalizing" or "recorder-active-eof" or
+            "recorder-invalid-phase" or "recorder-invalid-seconds" or "recorder-invalid-counter")) continue;
         var command = JsonSerializer.Deserialize<RecorderCommand>(line, RecordingContract.Json)!;
         if (command.Options is { } options) outputDirectory = options.OutputDirectory;
+        if (args[1] == "recorder-active-eof" && command.Action == "lease" && outputDirectory is not null)
+            await File.AppendAllTextAsync(Path.Combine(outputDirectory, "leases-after-eof.txt"), "lease\n");
         if (command.Action is "start" or "stop")
-            Console.WriteLine(JsonSerializer.Serialize(new RecordingState(
-                command.Action == "start" ? "Recording" : "Saved", command.Action, Control: command.Control), RecordingContract.Json));
+        {
+            var state = new RecordingState(command.Action == "start" ? "Recording" : "Saved", command.Action, Control: command.Control);
+            if (command.Action == "start") state = args[1] switch
+            {
+                "recorder-invalid-phase" => state with { Phase = "Unknown" },
+                "recorder-invalid-seconds" => state with { Seconds = double.MaxValue },
+                "recorder-invalid-counter" => state with { Frames = -1 },
+                _ => state
+            };
+            Console.WriteLine(JsonSerializer.Serialize(state, RecordingContract.Json));
+        }
+        if (args[1] == "recorder-active-eof" && command.Action == "start")
+        {
+            // Close only this synthetic worker's redirected stdout handle. Keep
+            // stdin open so the test can detect continued leases after status EOF.
+            Console.Out.Flush();
+            if (!FixtureStandardOutput.CloseHandle(FixtureStandardOutput.GetStdHandle(-11))) return 6;
+            Console.SetOut(TextWriter.Null);
+        }
     }
     if (args[1] == "recorder-finalizing" && outputDirectory is not null)
     {
@@ -66,3 +87,12 @@ else
     await Task.Delay(Timeout.Infinite);
 }
 return 0;
+
+internal static class FixtureStandardOutput
+{
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    internal static extern nint GetStdHandle(int handle);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    internal static extern bool CloseHandle(nint handle);
+}

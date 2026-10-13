@@ -65,4 +65,35 @@ public sealed class SchoolManagementTests
         }
         finally{if(Directory.Exists(path))Directory.Delete(path,true);}
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SchoolCameraClearReceiptMatchesPersistedSelectionAfterHostRestart(bool brokenConfiguration)
+    {
+        string path=Path.Combine(Path.GetTempPath(),"school-camera-startup-"+Guid.NewGuid());
+        var identity=new JsonObject{["deviceId"]=Guid.NewGuid().ToString()};
+        try
+        {
+            Directory.CreateDirectory(path);
+            string cameraPath=Path.Combine(path,"study-camera.json");
+            string original=brokenConfiguration?"{broken camera configuration":"\"saved-camera\"";
+            File.WriteAllText(cameraPath,original);
+            await using var noise=new NoiseService(_=>throw new InvalidOperationException("No real capture"),()=>[],directory:path,management:new NoiseManagementStore(path));
+            var camera=new StudyDeviceService(()=>[],path);
+            var management=new SchoolManagementService(noise,camera,path);
+            management.BindSchool(identity.ToJsonString());
+            var policy=new JsonObject{["identity"]=identity.DeepClone(),["credential"]=Credential(),["equipment"]=new JsonObject{["revision"]=1,["locked"]=true,["microphoneId"]=null,["cameraId"]=null}};
+
+            // No inventory/status read has loaded the camera preference yet.
+            management.ApplySchool(policy);
+            var observation=management.ObserveSchool();
+            Assert.Equal(brokenConfiguration?0:1,observation["appliedRevision"]!.GetValue<long>());
+            Assert.Equal(brokenConfiguration?"EQUIPMENT_UNAVAILABLE":null,observation["error"]?.GetValue<string>());
+            Assert.Null(observation["selectedCameraId"]);
+            Assert.True(camera.Snapshot().Locked);
+            if(brokenConfiguration) Assert.Equal(original,File.ReadAllText(cameraPath));
+            else Assert.Null(new StudyDeviceService(()=>[],path).Snapshot().CameraId);
+        }
+        finally{if(Directory.Exists(path))Directory.Delete(path,true);}
+    }
 }

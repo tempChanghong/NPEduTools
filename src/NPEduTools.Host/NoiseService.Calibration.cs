@@ -28,6 +28,7 @@ public sealed partial class NoiseService
 
     private static bool ValidSample(NoiseCalibrationSample? s) => s is not null && s.Id != Guid.Empty &&
         NoiseCalibrationContract.Scenes.Contains(s.Scene) && NoiseCalibrationContract.Labels.Contains(s.Label) &&
+        s.Quality is "Good" or "Interrupted" or "Invalid" or "Clipping" or "Incomplete" &&
         double.IsFinite(s.Seconds) && s.Seconds is >= 0 and <= 30 && double.IsFinite(s.Coverage) && s.Coverage is >= 0 and <= 1 &&
         double.IsFinite(s.ClippedPercent) && s.ClippedPercent is >= 0 and <= 100 &&
         new[] { s.P10Dbfs, s.MedianDbfs, s.P90Dbfs }.All(v => v is null || double.IsFinite(v.Value) && v is >= -160 and <= 20) &&
@@ -46,11 +47,16 @@ public sealed partial class NoiseService
             if (saved is not { Version: 1 }) throw new InvalidDataException();
             if (saved.Draft is { } d && (d.Id == Guid.Empty || !NoiseContract.ValidDeviceId(d.DeviceId) ||
                 d.Samples is null || d.Samples.Count > 20 || d.Samples.Any(s => !ValidSample(s)) ||
+                d.Samples.Select(s => s.Id).Distinct().Count() != d.Samples.Count ||
                 d.Context is { Length: not 64 } || d.Signature is { Length: > 4096 })) throw new InvalidDataException();
             if (saved.Profile is { } p && (p.Version != 1 || !NoiseContract.ValidDeviceId(p.DeviceId) ||
                 !NoiseCalibrationContract.Thresholds(p.MediumDbfs, p.HighDbfs) || p.Context is not { Length: 64 } ||
                 p.Signature is not { Length: > 0 and <= 4096 } || p.Samples is null || p.Samples.Count is < 2 or > 20 ||
-                p.Samples.Any(s => !ValidSample(s)))) throw new InvalidDataException();
+                // Loading a confirmed profile must enforce the same evidence invariants
+                // as confirm. Overlapping levels still permit manual confirmation.
+                p.Samples.Any(s => !ValidSample(s) || s.Quality != "Good") ||
+                p.Samples.Select(s => s.Id).Distinct().Count() != p.Samples.Count ||
+                !p.Samples.Any(s => s.Label == "Acceptable") || !p.Samples.Any(s => s.Label == "Discipline"))) throw new InvalidDataException();
             _calDraft = saved.Draft; _calProfile = saved.Profile;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)

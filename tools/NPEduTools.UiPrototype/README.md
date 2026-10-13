@@ -28,3 +28,22 @@
 ```
 
 验证实际 WPF 按钮、页面切换、错误反馈、断线与离页恢复、显式确认、参考失效及底部操作可达性，并输出截图和 `result.json`。逻辑窗口大小覆盖 1280×680 至 760×520，帮助检查高缩放下的紧凑空间；不宣称已经在真实 200% 缩放的一体机通过触控验收。
+
+## 录课工作区原型
+
+```powershell
+./scripts/dotnet.ps1 build tools/NPEduTools.UiPrototype/NPEduTools.UiPrototype.csproj -c Release -p:RestoreLockedMode=true
+./scripts/dotnet.ps1 tools/NPEduTools.UiPrototype/bin/Release/net10.0-windows/NPEduTools.UiPrototype.dll --recording
+./scripts/dotnet.ps1 tools/NPEduTools.UiPrototype/bin/Release/net10.0-windows/NPEduTools.UiPrototype.dll --verify-recording .artifacts/recording-ui-prototype
+```
+
+默认不带参数仍打开原工作台与自习原型。录课原型新增以下可点击流程：
+
+- **立即录制**：主页进入、开始演示、暂停／继续、停止并保存。会话开始后用状态与控制替代设置；切页继续演示。
+- **自动安排**：默认查看今天课表，逐课选择当天录制／不录。每周规则独立编辑；草稿、保存、开启自动录课明确分开。相邻的周测排除后仍能安排 08:00 第一节课。跳过下一节不停止当前手动会话。
+- **录制记录**：区分已保存、未完成与已跳过，展示示例位置及原因。没有真实文件索引、打开文件或目录操作。
+- **录制设置**：画面、声音与保存位置集中配置，只修改演示内存。
+
+复用 Core 的纯排程计算器，不调用 Host、录制器或学校服务。示例学校日期固定为 2026-10-13；“演示到下一课”推进冻结的模拟学校时钟。墙钟只推进演示录制时长，不会触发真实自动任务。所有状态随关闭丢弃。固定时段、指定日期、试运行及完整文件历史尚未接入这个原型，正式功能保持现状。
+
+验证使用实际 WPF 控件与按钮事件，覆盖 1280×700 到 640×480 的逻辑窗口：校验课程可滚动查看、底部动作可达、没有横向溢出。小窗口将说明与课表一起滚动，不以缩小触控按钮换空间。这不等同于真实 200% 一体机触控验收。

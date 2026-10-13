@@ -159,7 +159,7 @@
       "npedutools.core": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.1.2, )"
+          "NPEduTools.Contracts": "[1.1.5, )"
         }
       }
     }

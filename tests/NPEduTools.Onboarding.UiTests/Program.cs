@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -19,6 +19,12 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        bool aboutVersionOnly = args.Length == 2 && args[1] == "--about-version";
+        bool quickBoundariesOnly = args.Length == 2 && args[1] == "--quick-boundaries";
+        bool quickWorkspaceOnly = args.Length == 2 && args[1] == "--quick-workspace";
+        bool homeWorkspaceOnly = args.Length == 2 && args[1] == "--home-workspace";
+        bool connectionWorkspaceOnly = args.Length == 2 && args[1] == "--connection-workspace";
+        bool recordingWorkspaceOnly = args.Length == 2 && args[1] == "--recording-workspace";
         bool workspaceRacesOnly = args.Length == 2 && args[1] == "--study-workspace-races";
         bool workspaceOnly = args.Length == 2 && args[1] == "--study-workspace";
         bool manualStudyOnly = args.Length == 2 && args[1] == "--manual-study";
@@ -50,7 +56,7 @@ internal static partial class Program
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
         bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
-        if (args.Length != 1 && !workspaceRacesOnly && !workspaceOnly && !manualStudyOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--study-workspace|--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
+        if (args.Length != 1 && !aboutVersionOnly && !quickBoundariesOnly && !quickWorkspaceOnly && !connectionWorkspaceOnly && !homeWorkspaceOnly && !recordingWorkspaceOnly && !workspaceRacesOnly && !workspaceOnly && !manualStudyOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--about-version|--quick-boundaries|--quick-workspace|--connection-workspace|--home-workspace|--recording-workspace|--study-workspace|--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -65,6 +71,12 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (aboutVersionOnly) { RunAboutVersionChecks(); WriteResult("PASSED", null); return 0; }
+            if (quickBoundariesOnly) { RunQuickBoundaryChecks(); WriteResult("PASSED", null); return 0; }
+            if (quickWorkspaceOnly) { RunQuickWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
+            if (connectionWorkspaceOnly) { RunConnectionWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
+            if (homeWorkspaceOnly) { RunHomeWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
+            if (recordingWorkspaceOnly) { RunRecordingWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (workspaceRacesOnly) { RunWorkspaceRaceChecks(); WriteResult("PASSED", null); return 0; }
             if (workspaceOnly) { RunStudyWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (manualStudyOnly) { RunManualStudyChecks(); WriteResult("PASSED", null); return 0; }
@@ -186,6 +198,15 @@ internal static partial class Program
             {
                 Assert(!Check(window, "AcceptApp").IsChecked.GetValueOrDefault(), "first consent preselected");
                 Assert(!Button(window, "ContinueButton").IsEnabled, "empty consent allowed");
+                foreach (string document in new[] { "ReadAppAgreement", "ReadNpepService", "ReadNpepPrivacy" })
+                {
+                    Click(window, document, true);
+                    string label = ((TextBlock)window.FindName("DocumentVersion")).Text;
+                    Assert(label.Contains("协议版本 " + AgreementDefinition.Version) &&
+                        label.Contains(DateOnly.ParseExact(AgreementDefinition.EffectiveDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+                            .ToString("yyyy年M月d日", System.Globalization.CultureInfo.InvariantCulture)),
+                        "agreement viewer metadata differs from the accepted version/date: " + document);
+                }
                 Click(window, "ReadNpepPrivacy", true);
                 var viewer = (FlowDocumentScrollViewer)window.FindName("DocumentViewer");
                 Assert(new TextRange(viewer.Document.ContentStart, viewer.Document.ContentEnd).Text.Contains("原音频"), "privacy missing");
@@ -266,7 +287,19 @@ internal static partial class Program
         window.Loaded += (_, _) =>
         {
             try { test(window); }
-            catch (Exception error) { failure = error; if (window is StudyWindow study) study.Shutdown(); else window.Close(); }
+            catch (Exception error)
+            {
+                failure = error;
+                // These controllers normally turn Close into Hide. A failing fixture
+                // must release its modal frame and emit the original assertion.
+                if (window is StudyWindow study) study.Shutdown();
+                else if (window is AutoRecordingWindow automatic) automatic.Shutdown();
+                else if (window is RecordingWindow recording) recording.Shutdown();
+                else if (window is ExamAwareWindow examAware) examAware.Shutdown();
+                else if (window is SecRandomWindow secRandom) secRandom.Shutdown();
+                else if (window is ClassroomModeWindow classroom) classroom.Shutdown();
+                else window.Close();
+            }
         };
         window.ShowDialog();
         if (failure is not null) throw failure;

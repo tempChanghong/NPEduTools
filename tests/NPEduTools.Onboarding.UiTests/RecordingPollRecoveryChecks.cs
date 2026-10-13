@@ -15,7 +15,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
-            foreach (string scenario in new[] { "request-id", "version", "zero-length", "oversized", "empty-message", "invalid-json", "lease" })
+            foreach (string scenario in new[] { "unknown-recording-phase", "overflow-recording-seconds", "negative-recording-counter", "null-history", "null-history-entry", "missing-recording", "missing-automatic", "rejected-status", "request-id", "version", "zero-length", "oversized", "empty-message", "invalid-json", "lease", "rejected-lease" })
                 RunRecordingPollRecoveryCheck(scenario);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
@@ -43,15 +43,23 @@ internal static partial class Program
         var active = new RecordingState("Recording", "隔离已确认录制", Control: new("Manual", Guid.NewGuid(), "", 0, 0));
         var automaticEvents = new List<AutomaticRecordingState>();
         type.GetEvent("AutomaticChanged")!.AddEventHandler(client, (Action<AutomaticRecordingState>)(automaticEvents.Add));
+        AutoRecordingWindow? historyView = null;
+        string preferences = StartupPreferencesStore.PathFor(pipe);
         try
         {
             var read = Read(broken);
             PumpUntil(() => read.IsCompleted, "isolated status request did not arrive");
             var request = read.GetAwaiter().GetResult();
             Assert(request.Capability == "recording.status", "unexpected initial request");
+            // Keep the next lease connection open: a later transport timeout must not
+            // conceal acceptance of the malformed status snapshot under test.
+            bool invalidRecording = scenario is "unknown-recording-phase" or "overflow-recording-seconds" or "negative-recording-counter";
+            using var heldLease = invalidRecording || scenario is "missing-recording" or "missing-automatic" or "rejected-status" or "null-history" or "null-history-entry" ? Server() : null;
+            if (scenario is "null-history" or "null-history-entry")
+                historyView = (AutoRecordingWindow)typeof(AutoRecordingWindow).GetConstructors(flags).Single().Invoke([pipe, client, (Action)(() => { })]);
             type.GetMethod("Apply", flags)!.Invoke(client,
                 [new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null, "隔离快照", Recording: active, Automatic: automatic)]);
-            if (scenario == "lease")
+            if (scenario is "lease" or "rejected-lease")
             {
                 var statusReply = Protocol.WriteAsync(broken, new HostResponse(Protocol.Version, request.RequestId,
                     "Succeeded", null, "隔离正常状态", Recording: active, Automatic: automatic), timeout.Token);
@@ -65,7 +73,26 @@ internal static partial class Program
             }
             async Task InvalidReply()
             {
-                if (scenario is "request-id" or "version" or "lease")
+                if (invalidRecording)
+                    await Protocol.WriteAsync(broken, new HostResponse(1, request.RequestId, "Succeeded", null, "corrupt recording",
+                        Recording: scenario switch
+                        {
+                            "unknown-recording-phase" => active with { Phase = "Unknown" },
+                            "overflow-recording-seconds" => active with { Seconds = double.MaxValue },
+                            _ => active with { Frames = -1 }
+                        }, Automatic: automatic), timeout.Token);
+                else if (scenario is "null-history" or "null-history-entry")
+                    await Protocol.WriteAsync(broken, new HostResponse(1, request.RequestId, "Succeeded", null, "corrupt history",
+                        Recording: active, Automatic: automatic with { Recent = scenario == "null-history" ? null! : [null!] }), timeout.Token);
+                else if (scenario is "missing-recording" or "missing-automatic" or "rejected-status")
+                    await Protocol.WriteAsync(broken, new HostResponse(Protocol.Version, request.RequestId,
+                        scenario == "rejected-status" ? "Rejected" : "Succeeded", null, "隔离不完整状态",
+                        Recording: scenario == "missing-recording" ? null : active,
+                        Automatic: scenario == "missing-automatic" ? null : automatic), timeout.Token);
+                else if (scenario == "rejected-lease")
+                    await Protocol.WriteAsync(broken, new HostResponse(Protocol.Version, request.RequestId,
+                        "Rejected", "FixtureLeaseRejected", "隔离租约未受理", Recording: active, Automatic: automatic), timeout.Token);
+                else if (scenario is "request-id" or "version" or "lease")
                     await Protocol.WriteAsync(broken, new HostResponse(scenario == "version" ? Protocol.Version + 1 : Protocol.Version,
                         scenario == "version" ? request.RequestId : Guid.NewGuid(), "Succeeded", null, "隔离无效回执"), timeout.Token);
                 else if (scenario is "zero-length" or "oversized")
@@ -84,8 +111,17 @@ internal static partial class Program
             Assert(!poll.IsFaulted, scenario + ": malformed response terminated recording polling: " + poll.Exception?.GetBaseException().Message);
             Assert(!Available() && State().Message.Contains("状态未知") && State().Control == active.Control,
                 "invalid reply still claims a confirmed state or discards the last session");
+            Assert(!(bool)type.GetProperty("AutomaticAvailable")!.GetValue(client)!, "invalid status retained a confirmed automatic plan");
             Assert(automaticEvents[^1].Message.Contains("连接中断"), "automatic recording was not notified about unknown state");
+            if (historyView is not null)
+            {
+                Assert(!Button(historyView, "StopCurrent").IsEnabled && !Button(historyView, "ToggleReal").IsEnabled,
+                    "malformed history kept commands enabled in the actual recording page");
+                Assert(((System.Windows.Controls.TextBlock)historyView.FindName("LatestRecording")).Text.Contains("未确认"),
+                    "malformed history left a fresh claim in the actual recording page");
+            }
 
+            heldLease?.Dispose();
             using var fresh = Server();
             async Task ServeRecovery()
             {
@@ -113,10 +149,17 @@ internal static partial class Program
         }
         finally
         {
+            historyView?.Shutdown();
             type.GetMethod("Detach")!.Invoke(client, null);
             PumpUntil(() => poll.IsCompleted, "isolated recording poll did not stop");
             try { ((IAsyncDisposable)client).DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             catch (Exception) when (poll.IsFaulted) { _ = poll.Exception; } // Preserve the regression assertion on the old implementation.
+            if (historyView is not null)
+                foreach (string suffix in new[] { ".recording-preview.json", ".recording-plans.json" })
+                {
+                    string path = preferences.Replace(".startup.json", suffix, StringComparison.Ordinal);
+                    if (File.Exists(path)) File.Delete(path);
+                }
         }
     }
 }

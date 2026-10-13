@@ -58,6 +58,7 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
             {
                 if (line.Length > 16384) throw new InvalidDataException("录制状态过大。");
                 var state = JsonSerializer.Deserialize<RecordingState>(line, RecordingContract.Json) ?? throw new InvalidDataException();
+                RecordingContract.ValidateState(state);
                 // Before start, the worker must be idle and unowned (or report a startup failure).
                 // A parseable object or a receipt from an existing session is not a readiness handshake.
                 if (!receivedHello && (state.Phase is not ("Idle" or "Failed") || state.Control is not null ||
@@ -68,8 +69,12 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
                     Volatile.Write(ref _state, state);
                 _hello.TrySetResult();
             }
+            // stdout can close while the worker remains alive. Withdraw its
+            // active claim now so the independent lease loop cannot keep an
+            // unobservable capture alive while this reader waits for process exit.
+            if (State.Active) Fail("录制状态连接提前结束；当前状态未确认，请检查输出文件和保留片段。录制器将按截止或租约结束。");
+            _hello.TrySetResult();
             await process.WaitForExitAsync();
-            if (State.Active) Fail("录制进程意外退出；已写入的片段保留。");
         }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or InvalidOperationException)
         { Fail("录制状态连接中断，录制器将按截止或租约结束。"); }

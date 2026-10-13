@@ -19,6 +19,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     private long _generation;
     public RecordingState State { get; private set; } = new("Idle", "准备录制");
     public bool StateAvailable { get; private set; }
+    public bool AutomaticAvailable { get; private set; }
     public AutomaticRecordingState Automatic { get; private set; } = new(false, Guid.Empty, "自动录制未启用", null, []);
     public event Action<RecordingState>? Changed;
     public event Action<AutomaticRecordingState>? AutomaticChanged;
@@ -52,11 +53,15 @@ internal sealed class RecordingClient : IAsyncDisposable
                 try
                 {
                     var response = await RequestAsync("recording.status");
+                    if (response.Outcome != "Succeeded" || response.Recording is null || response.Automatic is null)
+                        throw new InvalidDataException("后台未返回完整的录课状态。");
                     await _dispatcher.InvokeAsync(() => { if (!_closing && !_sending && generation == _generation) Apply(response); });
                     // UI synchronization context: a frozen/dead App cannot renew control indefinitely.
                     if (Stopwatch.GetElapsedTime(leased) >= TimeSpan.FromSeconds(2))
                     {
-                        await RequestAsync("recording.automatic", automatic: new("lease", _client)); leased = Stopwatch.GetTimestamp();
+                        var lease = await RequestAsync("recording.automatic", automatic: new("lease", _client));
+                        if (lease.Outcome != "Succeeded") throw new InvalidDataException("录课管理租约未确认。");
+                        leased = Stopwatch.GetTimestamp();
                     }
                 }
                 catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
@@ -73,7 +78,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     private void MarkUnavailable(RecordingState? previous = null, string? error = null)
     {
-        StateAvailable = false;
+        StateAvailable = false; AutomaticAvailable = false;
         // Preserve the last control/session for reconciliation; do not invent a
         // stopped/failed recorder or use an optimistic command phase as evidence.
         State = (previous ?? State) with { Message = "录制后台连接中断，当前状态未知。", Error = error };
@@ -82,8 +87,25 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     private void Apply(HostResponse response)
     {
-        if (response.Automatic is { } auto) { Automatic = auto; AutomaticChanged?.Invoke(auto); }
-        if (response.Recording is not { } state) return;
+        if (response.Recording is { } recording) RecordingContract.ValidateState(recording);
+        // Validate before publishing: a corrupt history must not reach the
+        // page's collection renderer or become the cached recovery snapshot.
+        if (response.Automatic is { } snapshot &&
+            (snapshot.Recent is null || snapshot.Recent.Any(entry => entry is null)))
+            throw new InvalidDataException("后台录课记录格式无效；当前状态未确认。");
+        if (response.Automatic is { } auto) { AutomaticAvailable = true; Automatic = auto; AutomaticChanged?.Invoke(auto); }
+        else
+        {
+            AutomaticAvailable = false;
+            AutomaticChanged?.Invoke(Automatic with { Message = "后台未确认自动录课状态", Error = "等待完整状态回执。" });
+        }
+        if (response.Recording is not { } state)
+        {
+            StateAvailable = false;
+            State = State with { Message = "后台未确认当前录制状态。", Error = "等待完整状态回执。" };
+            Changed?.Invoke(State);
+            return;
+        }
         bool expected = state.Phase is "Failed" or "Saved" || _pending switch
         {
             "start" or "resume" => state.Phase is "Starting" or "Recording",
@@ -145,13 +167,15 @@ internal sealed class RecordingClient : IAsyncDisposable
     public async Task<bool> StopAndSaveAsync()
     {
         await SetAutomaticAsync("disable");
+        if (!StateAvailable || !AutomaticAvailable || Automatic.Enabled) return false;
         var deadline = Stopwatch.StartNew();
         while (_pending is not null || State.Phase is "Starting" or "Pausing")
-        { if (deadline.Elapsed > TimeSpan.FromSeconds(30)) return false; await Task.Delay(100); }
-        if (!State.Active) return State.Phase != "Failed";
+        { if (!StateAvailable || deadline.Elapsed > TimeSpan.FromSeconds(30)) return false; await Task.Delay(100); }
+        if (!StateAvailable) return false;
+        if (!State.Active) return State.Phase is "Idle" or "Saved";
         if (State.Phase != "Saving") await SendAsync("stop");
-        while (State.Active) { if (deadline.Elapsed > TimeSpan.FromMinutes(3)) return false; await Task.Delay(100); }
-        return State.Phase == "Saved";
+        while (State.Active) { if (!StateAvailable || deadline.Elapsed > TimeSpan.FromMinutes(3)) return false; await Task.Delay(100); }
+        return StateAvailable && State.Phase == "Saved";
     }
     public void Detach() { if (_closing) return; _closing = true; _lifetime.Cancel(); }
     public async ValueTask DisposeAsync() { Detach(); await _poll; _lifetime.Dispose(); }

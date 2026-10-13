@@ -15,7 +15,7 @@ public static class NpepDiagnostics
         {
             ["schemaVersion"] = 1, ["kind"] = "npep-desktop-diagnostics",
             ["generatedAt"] = generatedAt.ToUniversalTime().ToString("O"),
-            ["appVersion"] = Version(appVersion), ["protocolVersion"] = Protocol.Version,
+            ["appVersion"] = ApplicationVersion(appVersion), ["protocolVersion"] = Protocol.Version,
             ["privacy"] = "Includes service origin and binding identifiers. No pairing codes, credentials, names, paths, lesson content, logs or audio. Review before sharing.",
             ["observation"] = "Read-only local snapshots; sections collected separately. This is not a live probe or a remote execution receipt.",
             ["connection"] = new JsonObject
@@ -63,6 +63,16 @@ public static class NpepDiagnostics
     private static string? Timestamp(string? value) => DateTimeOffset.TryParse(value, out var at) ? At(at) : null;
     private static string? Origin(string? value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
         uri.Scheme is "http" or "https" && uri.UserInfo == "" ? uri.GetLeftPart(UriPartial.Authority) : null;
+    private static string? ApplicationVersion(string? value)
+    {
+        if (Version(value) is { } plain) return plain;
+        if (value is not { Length: > 0 and <= 160 }) return null;
+        // Only the application's known build label is stripped; arbitrary metadata stays excluded.
+        var match = System.Text.RegularExpressions.Regex.Match(value,
+            @"\Av(\d+\.\d+\.\d+) · EVA-02（二号机）(\+[a-fA-F0-9]{7,64})?\z",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups[1].Value + match.Groups[2].Value : null;
+    }
     private static string? Version(string? value) => value is { Length: > 0 and <= 160 } &&
         System.Text.RegularExpressions.Regex.IsMatch(value, @"^(?:InDev \d{8}|\d+\.\d+\.\d+(?:[-.][a-zA-Z0-9.]+)?)(?:\+[a-fA-F0-9]{7,64})?$") ? value : null;
     private static string? Error(string? value) => value is null ? null : Choice(value,
