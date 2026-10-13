@@ -4,11 +4,13 @@ using System.Windows;
 using System.Windows.Controls;
 using NPEduTools.App;
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 
 internal static partial class Program
 {
     private static void RunAutomaticRecordingChecks()
     {
+        RunCorruptRecordingPreviewChecks();
         string pipe = "NPEduTools.Test.automatic-ui." + Guid.NewGuid().ToString("N");
         string preferences = StartupPreferencesStore.PathFor(pipe);
         var clientType = typeof(AutoRecordingWindow).Assembly.GetType("NPEduTools.App.RecordingClient")!;
@@ -105,6 +107,43 @@ internal static partial class Program
             {
                 string path = preferences.Replace(".startup.json", suffix, StringComparison.Ordinal);
                 if (File.Exists(path)) File.Delete(path);
+            }
+        }
+    }
+    private static void RunCorruptRecordingPreviewChecks()
+    {
+        string pipe = "NPEduTools.Test.corrupt-preview-ui." + Guid.NewGuid().ToString("N");
+        string preferences = StartupPreferencesStore.PathFor(pipe);
+        string path = preferences.Replace(".startup.json", ".recording-preview.json", StringComparison.Ordinal);
+        var clientType = typeof(AutoRecordingWindow).Assembly.GetType("NPEduTools.App.RecordingClient")!;
+        var client = Activator.CreateInstance(clientType, [Application.Current.Dispatcher, pipe])!;
+        clientType.GetMethod("Detach")!.Invoke(client, null);
+        var constructor = typeof(AutoRecordingWindow).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic).Single();
+        var original = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new PreviewState(2, new(), [new(null, "应开始", "语文", null!)], []));
+        AutoRecordingWindow? window = null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, original);
+            window = (AutoRecordingWindow)constructor.Invoke([pipe, client, (Action)(() => { })]);
+            Assert(((TextBlock)window.FindName("ErrorText")).Text.Contains("原文件已保留"), "corrupt trial history is not explained");
+            Assert(!Button(window, "TogglePreview").IsEnabled, "corrupt history still permits trial writes");
+            clientType.GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(client,
+                [new HostResponse(1, Guid.NewGuid(), "Succeeded", null, "isolated active recording",
+                    Recording: new("Recording", "隔离后台仍在录制", Control: new("Automatic", Guid.NewGuid(), "fixture", 0, 0)),
+                    Automatic: new(true, Guid.NewGuid(), "隔离自动录课仍在运行", null, []))]);
+            Assert(Button(window, "StopCurrent").IsEnabled && ((TextBlock)window.FindName("LatestRecording")).Text.Contains("仍在录制"),
+                "corrupt rehearsal history interfered with actual recording controls/status");
+            Assert(File.ReadAllBytes(path).SequenceEqual(original), "opening the recording page changed corrupt history");
+            Checks.Add("Malformed local trial history: null event text cannot crash page construction; preserve bytes, disable trial writes, retain fresh actual recording status and stop control; no recorder/sensors");
+        }
+        finally
+        {
+            window?.Shutdown(); clientType.GetMethod("Detach")!.Invoke(client, null);
+            foreach (string suffix in new[] { ".recording-preview.json", ".recording-plans.json", ".recording-preview.json.pre-plan-book.bak" })
+            {
+                string item = preferences.Replace(".startup.json", suffix, StringComparison.Ordinal);
+                if (File.Exists(item)) File.Delete(item);
             }
         }
     }

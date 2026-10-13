@@ -145,7 +145,8 @@ public sealed class RecordingPreviewStore(string path)
         var state = JsonSerializer.Deserialize<PreviewState>(File.ReadAllText(path));
         if (state is not { Version: 1 or 2 } || state.Rules is null || RecordingPlanner.Validate(state.Rules) is not null ||
             state.Events is null or { Length: > 200 } || state.Marks is null or { Length: > 512 } ||
-            state.Marks.Any(m => m is null || m.End <= m.Start) || state.Events.Any(e => e is null) ||
+            state.Marks.Any(m => m is null || m.End <= m.Start) ||
+            state.Events.Any(e => e is null || e.Action is null || e.Subject is null || e.Message is null) ||
             (state.Active is { } active && (active.Plan?.Lesson is null || active.Plan.End <= active.Plan.Start)))
             throw new InvalidDataException("预演配置或记录无效，原文件已保留。");
         if (state.Version == 1)
