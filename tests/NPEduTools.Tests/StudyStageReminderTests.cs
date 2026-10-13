@@ -145,19 +145,31 @@ public sealed class StudyStageReminderTests
         using var f = new Fixture(); var first = f.Host(); var old = Fixture.Claim(first.Snapshot()); Assert.Equal("Succeeded", first.Handle(old).Outcome);
         var restarted = f.Host(); string pipe = "NPEduTools.Test.stage-recovery." + Guid.NewGuid().ToString("N");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var server = Task.Run(async () =>
+        async Task<HostResponse> RoundTrip(HostRequest claim)
         {
-            for (int i = 0; i < 2; i++)
+            // Establish each listener synchronously before the real client connects.
+            // Task.Run allowed thread-pool pressure to consume its 1.5s connect budget.
+            using var stream = new System.IO.Pipes.NamedPipeServerStream(pipe, System.IO.Pipes.PipeDirection.InOut, 1,
+                System.IO.Pipes.PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+            async Task Serve()
             {
-                using var stream = new System.IO.Pipes.NamedPipeServerStream(pipe, System.IO.Pipes.PipeDirection.InOut, 1,
-                    System.IO.Pipes.PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
                 await stream.WaitForConnectionAsync(timeout.Token); var request = await Protocol.ReadAsync<HostRequest>(stream, timeout.Token);
                 Assert.Null(Protocol.Validate(request)); await Protocol.WriteAsync(stream, restarted.Handle(request), timeout.Token);
             }
-        });
-        Assert.Equal("Rejected", (await HostClient.RequestAsync(pipe, old, timeout.Token)).Outcome);
-        Assert.Equal("Suppressed", (await HostClient.RequestAsync(pipe, Fixture.Claim(restarted.Snapshot()), timeout.Token)).Outcome);
-        await server;
+            var server = Serve();
+            HostResponse response;
+            try { response = await HostClient.RequestAsync(pipe, claim, timeout.Token); }
+            catch
+            {
+                timeout.Cancel();
+                try { await server; } catch { } // Observe fixture shutdown while retaining the client failure.
+                throw;
+            }
+            await server;
+            return response;
+        }
+        Assert.Equal("Rejected", (await RoundTrip(old)).Outcome);
+        Assert.Equal("Suppressed", (await RoundTrip(Fixture.Claim(restarted.Snapshot()))).Outcome);
     }
 
     [Fact]
