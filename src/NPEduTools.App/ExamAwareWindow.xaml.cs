@@ -14,7 +14,7 @@ public partial class ExamAwareWindow : Window
     private long _generation;
     private ExamAwareStatus? _state;
     private string? _savedExecutablePath;
-    private bool _loadedPath, _busy, _closing;
+    private bool _loadedPath, _busy, _closing, _configurationPresented;
     public ExamAwareWindow(string pipe)
     {
         _pipe = pipe;
@@ -37,7 +37,17 @@ public partial class ExamAwareWindow : Window
     private void Render(ExamAwareStatus? state)
     {
         _state = state;
-        Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = !_busy && state is not null;
+        RuntimeActions.IsEnabled = Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = !_busy && state is not null;
+        NextActionText.Text = state is null ? "等待后台连接后再操作；旧回执不代表当前状态。" :
+            string.IsNullOrWhiteSpace(state.ExecutablePath) ? "先在连接配置中选择并保存程序位置。" :
+            state.BridgeState != "Connected" ? "可先打开考试看板；首次使用请在连接配置中安装插件并配对。" :
+            "桥接已连接。放映和自启动分别按当前授权与实际状态判断。";
+        if (state is not null && !_configurationPresented)
+        {
+            _configurationPresented = true;
+            if (!ConnectionConfiguration.IsKeyboardFocusWithin)
+                ConnectionConfiguration.IsExpanded = string.IsNullOrWhiteSpace(state.ExecutablePath) || state.BridgeState != "Connected";
+        }
         bool ready = !_busy && state?.BridgeState == "Connected" && state.ExecutablePath is not null &&
             state.Quit?.State is not ("Sending" or "AwaitingExit") && state.AutoStartChange?.State != "Sending" && state.PlanOperation?.State != "Sending";
         RenderPlan(state, ready);
@@ -47,7 +57,7 @@ public partial class ExamAwareWindow : Window
         AutoStartMessage.Text = state?.AutoStartChange is { } change ?
             (change.State == "Sending" ? change.Message : "上次设置结果：" + change.Message) :
             (state?.BridgeState == "Connected" && !state.CanSetAutoStart ? "修改自启动需要桥接 0.3.0 或兼容版本，并授权设置权限。" : "连接桥接并保存程序位置后，可设置当前程序的登录自启动。");
-        QuitStatus.Text = state?.Quit?.Message ?? "连接桥接并保存程序位置后可用。";
+        QuitStatus.Text = state?.Quit?.Message ?? (ready ? "退出前请保存并关闭编辑器、结束放映。" : "连接桥接并保存程序位置后可用。");
         if (state is null)
         {
             Connection.Text = "后台连接未确认，等待重新连接。";
@@ -101,6 +111,12 @@ public partial class ExamAwareWindow : Window
     {
         var dialog = new OpenFileDialog { Title = "选择 ExamAware2", Filter = "ExamAware 程序|ExamAware.exe", CheckFileExists = true };
         if (dialog.ShowDialog(this) == true) Executable.Text = dialog.FileName;
+    }
+    private void ConfigureClicked(object sender, RoutedEventArgs e)
+    {
+        ConnectionConfiguration.IsExpanded = true;
+        _configurationPresented = true;
+        Executable.BringIntoView(); Executable.Focus();
     }
     private async void SaveClicked(object sender, RoutedEventArgs e) => await RunAsync("examaware.config.set", true);
     private async void StartClicked(object sender, RoutedEventArgs e) => await RunAsync("examaware.start");

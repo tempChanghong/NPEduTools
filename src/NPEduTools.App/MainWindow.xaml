@@ -466,25 +466,27 @@
             <StackPanel x:Name="ConnectionsSettingsPanel" Visibility="Collapsed">
             <Border Style="{StaticResource Surface}" Background="#EAF6F2"><DockPanel>
               <Button Content="管理课堂模式" DockPanel.Dock="Right" Click="OpenClassroomModeClicked" Margin="16,0,0,0" />
-              <StackPanel><TextBlock Text="统一管理日常与考试环境" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="切换两款软件的自启动，并检查首次配置。" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,8,0,0" /></StackPanel>
+              <StackPanel><TextBlock x:Name="ConnectionsModeTitle" Text="课堂模式 · 状态未知" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="先核对当前模式，再查看切换影响；软件连接和模式设置分别核实。" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,8,0,0" /></StackPanel>
             </DockPanel></Border>
             <Border Style="{StaticResource Surface}">
               <StackPanel>
                 <TextBlock Text="ClassIsland · 课表与时间" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,16" />
-                <TextBlock Text="程序路径（选择可执行文件后，点击保存）" FontSize="12" Foreground="#64776D" Margin="0,0,0,8" />
+
+                <TextBlock Text="学校时间与连接" FontSize="13" Margin="0,4,0,6" />
+                <TextBlock x:Name="ClassIslandProgramStatus" Text="程序位置：等待检查" TextWrapping="Wrap" Foreground="#526A60" FontSize="12" Margin="0,0,0,8" AutomationProperties.AutomationId="ClassIslandProgramStatus"/><TextBlock x:Name="ClassIslandClockText" Text="--:--:--" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassIslandClock" />
+                <TextBlock x:Name="ClassIslandClockDetail" Text="尚未读取桥接时间；不使用 Windows 时间代替。" FontSize="12" TextWrapping="Wrap" Foreground="#526A60" Margin="0,6,0,12" />
+                <WrapPanel><Button Content="程序位置" Click="ConfigureClassIslandClicked" Style="{StaticResource Quiet}" MinHeight="40" Padding="12,6" AutomationProperties.AutomationId="ConfigureClassIsland"/><Button Content="检查时间桥接插件" Click="RefreshClassIslandBridgeClicked" Style="{StaticResource Quiet}" MinHeight="40" Padding="12,6" AutomationProperties.AutomationId="RefreshClassIslandBridge" /></WrapPanel>
+                <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#718089" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
+                <Expander x:Name="ClassIslandConfiguration" Header="程序位置与保存" IsExpanded="True" Margin="0,12,0,0" AutomationProperties.AutomationId="ClassIslandConfiguration"><StackPanel Margin="0,10,0,0"><TextBlock Text="程序路径（选择可执行文件后，点击保存）" FontSize="12" Foreground="#64776D" Margin="0,0,0,8" />
                 <TextBox x:Name="ExecutablePathBox" AutomationProperties.AutomationId="ExecutablePath" AutomationProperties.Name="ClassIsland 程序路径" />
                 <WrapPanel Margin="0,12,0,6">
                   <Button Content="选择文件" Click="BrowseClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="BrowseExecutable" />
                   <Button Content="保存" Style="{StaticResource Primary}" Click="SavePathClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SaveExecutable" />
                   <Button Content="重新读取" Style="{StaticResource Quiet}" Click="ReloadClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ReloadConfiguration" />
                 </WrapPanel>
-                <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,12,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
-                <TextBlock Text="ClassIsland 学校时间" FontSize="13" Margin="0,4,0,6" />
-                <TextBlock x:Name="ClassIslandClockText" Text="--:--:--" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassIslandClock" />
-                <TextBlock x:Name="ClassIslandClockDetail" Text="尚未读取桥接时间；不使用 Windows 时间代替。" FontSize="12" TextWrapping="Wrap" Foreground="#526A60" Margin="0,6,0,12" />
-                <Button Content="检查时间桥接插件" Click="RefreshClassIslandBridgeClicked" HorizontalAlignment="Left" Style="{StaticResource Quiet}" AutomationProperties.AutomationId="RefreshClassIslandBridge" />
-                <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="#718089" FontSize="12" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
-                <Expander Header="启动记录与连接详情" FontSize="13" Margin="0,20,0,0" AutomationProperties.AutomationId="ClassIslandDetails">
+                </StackPanel></Expander>
+                <Expander Header="连接诊断与启动记录" Margin="0,8,0,0" AutomationProperties.AutomationId="ClassIslandDetails"><StackPanel>
+                  <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="12" Foreground="#526A60" Margin="0,10,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
                   <StackPanel Margin="0,12,0,0">
                     <TextBlock x:Name="LaunchResultText" Text="暂无启动记录" TextWrapping="Wrap" AutomationProperties.AutomationId="LaunchResult" />
                     <TextBlock x:Name="LaunchTimeText" Foreground="#718089" FontSize="12" Margin="0,5,0,14" TextWrapping="Wrap" />
@@ -495,9 +497,15 @@
                     <TextBlock Text="{Binding Updated}" Foreground="#718089" />
                     <TextBlock Text="{Binding Events}" Foreground="#718089" TextWrapping="Wrap" />
                   </StackPanel>
-                </Expander>
+                </StackPanel></Expander>
               </StackPanel>
             </Border>
+
+            <Border Style="{StaticResource Surface}"><DockPanel>
+              <Button Content="打开连接管理" DockPanel.Dock="Right" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="SettingsExamAware" Margin="16,0,0,0" />
+              <StackPanel><TextBlock Text="ExamAware2 · 考试看板" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="配置程序路径、桥接配对与自启动，查看连接状态。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,0" /></StackPanel>
+            </DockPanel></Border>
+            <Border Style="{StaticResource Surface}"><DockPanel><Button Content="打开点名管理" DockPanel.Dock="Right" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="SettingsSecRandom" Margin="16,0,0,0"/><StackPanel><TextBlock Text="SecRandom · 课堂点名" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="查看接口检查与操作结果，管理点名和浮窗。" TextWrapping="Wrap" Foreground="#64776D" FontSize="12" Margin="0,8,0,0"/></StackPanel></DockPanel></Border>
             <Border x:Name="AdminSection" Style="{StaticResource Surface}">
               <Expander x:Name="AdminSettingsExpander" Header="高级 · ClassIsland 管理员自启动" FontSize="14" AutomationProperties.AutomationId="AdminSettingsExpander"><StackPanel Margin="0,16,0,0">
                 <TextBlock Text="ClassIsland 管理员自启动" FontSize="16" FontWeight="SemiBold" />
@@ -518,10 +526,6 @@
                 <TextBlock Text="需要时由 Windows 请求管理员授权。删除任务不会关闭当前程序；管理员重启会先请求原实例正常退出。" FontSize="11" Foreground="#7B8991" TextWrapping="Wrap" Margin="0,6,0,0" />
               </StackPanel></Expander>
             </Border>
-            <Border Style="{StaticResource Surface}"><DockPanel>
-              <Button Content="打开连接管理" DockPanel.Dock="Right" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="SettingsExamAware" Margin="16,0,0,0" />
-              <StackPanel><TextBlock Text="ExamAware2 · 考试看板" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="配置程序路径、桥接配对与自启动，查看连接状态。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,0" /></StackPanel>
-            </DockPanel></Border>
             </StackPanel>
           </StackPanel>
           </ScrollViewer>

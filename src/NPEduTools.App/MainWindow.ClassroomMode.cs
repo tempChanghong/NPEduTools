@@ -48,6 +48,7 @@ public partial class MainWindow
         if (view.Attention && !_homeModeAttention) HomeClassroomModeDetails.IsExpanded = true;
         _homeModeAttention = view.Attention;
         ClassroomModeTitle.Text = view.Title;
+        ConnectionsModeTitle.Text = view.Title;
         ClassroomModeDetail.Text = view.Detail;
         ClassroomModeCard.Background = new System.Windows.Media.SolidColorBrush(
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(view.Attention ? "#FFF5E6" : "#EAF6F2"));
