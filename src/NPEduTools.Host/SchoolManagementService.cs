@@ -24,9 +24,11 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             if(File.Exists(_path))
             {
                 if(new FileInfo(_path).Length>16384)throw new InvalidDataException();
-                _saved=JsonSerializer.Deserialize<Saved>(File.ReadAllText(_path))??throw new InvalidDataException();
-                if(_saved.Revision<0||_saved.Applied<0||_saved.Applied>_saved.Revision||_saved.Scope is {Length:>4096}||
-                    _saved.Microphone is not null && !NoiseContract.ValidDeviceId(_saved.Microphone)||_saved.Camera is not null && !NoiseContract.ValidDeviceId(_saved.Camera))throw new InvalidDataException();
+                var saved=JsonSerializer.Deserialize<Saved>(File.ReadAllText(_path))??throw new InvalidDataException();
+                if(saved.Revision<0||saved.Revision>NpepProtocol.MaxInteger||saved.Applied<0||saved.Applied>saved.Revision||saved.Scope is {Length:>4096}||
+                    saved.Microphone is not null && !NoiseContract.ValidDeviceId(saved.Microphone)||saved.Camera is not null && !NoiseContract.ValidDeviceId(saved.Camera))throw new InvalidDataException();
+                // Do not publish a partially parsed policy when validation fails.
+                _saved=saved;
             }
         }
         catch(Exception e)when(e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
@@ -66,7 +68,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
                 _error=_noise.ApplySchoolManagement(_saved.Scope!,policy["credential"]?.AsObject());
                 var p=policy["equipment"]!.AsObject();long revision=p["revision"]!.Deserialize<long>();bool locked=p["locked"]!.GetValue<bool>();
                 string? mic=p["microphoneId"]?.GetValue<string>(),cam=p["cameraId"]?.GetValue<string>();
-                if(revision<0 || revision<_saved.Revision || mic is not null && !NoiseContract.ValidDeviceId(mic) || cam is not null && !NoiseContract.ValidDeviceId(cam))throw new NpepException("INVALID_RESPONSE");
+                if(revision<0 || revision>NpepProtocol.MaxInteger || revision<_saved.Revision || mic is not null && !NoiseContract.ValidDeviceId(mic) || cam is not null && !NoiseContract.ValidDeviceId(cam))throw new NpepException("INVALID_RESPONSE");
                 if(revision!=_saved.Revision || revision==0 && (locked!=_saved.Locked || mic!=_saved.Microphone || cam!=_saved.Camera))
                 {
                     _saved=new(_saved.Scope,revision,locked,_saved.Applied,mic,cam,false);

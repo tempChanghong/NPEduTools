@@ -5,7 +5,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class SchoolEquipmentPersistenceTests
+public sealed partial class SchoolEquipmentPersistenceTests
 {
     private sealed class Fixture : IAsyncDisposable
     {
