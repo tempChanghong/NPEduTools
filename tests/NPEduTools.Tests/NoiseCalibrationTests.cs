@@ -5,7 +5,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class NoiseCalibrationTests
+public sealed partial class NoiseCalibrationTests
 {
     private const string Secret = "calibration-admin-2026";
     private const string Scope = "synthetic-school/class/screen";
