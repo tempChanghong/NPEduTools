@@ -11,6 +11,7 @@ public partial class MainWindow
     private StudyHostState? _workspaceSchool;
     private ManualStudyState? _workspaceManual;
     private string _workspaceTab = "Manual";
+    private string _homeStudyTarget = "Manual";
     private Window? _workspaceCalibrationController;
     private long _workspaceReportGeneration;
     private CancellationTokenSource? _workspaceReportRead;
@@ -24,10 +25,24 @@ public partial class MainWindow
     {
         bool school = _workspaceSchool is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active" or "Preparing" };
         bool manual = _workspaceManual?.State is "Waiting" or "Preparing" or "Starting" or "Active" or "Stopping";
-        WorkspaceTaskTitle.Text = school ? (_workspaceSchool!.Phase == "Active" ? "学校自习时段" : "学校自习即将开始") :
-            manual ? (_workspaceManual!.State is "Waiting" or "Preparing" ? "已有手动自习预约" : "手动自习会话") :
-            _workspaceSchool is null || _workspaceManual is null ? "后台状态待确认" : "当前没有自习任务";
-        WorkspacePrimary.Content = school ? "查看学校自习" : manual ? "管理手动自习" : "进入自习";
+        school |= !manual && (_workspaceSchool is { Phase: "Active" or "Preparing" } or { Execution: { Owner: "Schedule", State: "Active" } });
+        _homeStudyTarget = school ? "School" : "Manual";
+        WorkspaceTaskTitle.Text = school ? _workspaceSchool!.PolicyState != "APPLIED" || !_workspaceSchool.ClockReady ? "学校自习状态待确认" : (_workspaceSchool!.Phase == "Active" ? "学校自习时段" : "学校自习即将开始") :
+            manual ? _workspaceManual!.State switch { "Waiting" => "已有手动自习预约", "Preparing" => "手动自习即将开始", "Starting" => "手动自习启动中", "Stopping" => "正在结束手动自习", _ => "手动自习进行中" } :
+            _workspaceSchool is null || _workspaceManual is null ? "自习状态待确认" : "当前没有自习任务";
+        WorkspacePrimary.Content = school ? "查看学校自习" : manual ? "管理手动自习" :
+            _workspaceSchool is null || _workspaceManual is null ? "检查自习状态" : "开始自习";
+        StudyHomeStatus.Text = school ? _workspaceSchool!.PolicyState != "APPLIED" ? "学校安排尚未应用，采集状态请在自习页核对" : !_workspaceSchool.ClockReady ? "学校时间待确认，采集状态请在自习页核对" : _workspaceSchool.Phase == "Preparing" ? "准备自习，到点后才开始采集" :
+            _workspaceSchool is { Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "自习进行中 · 新鲜采样已确认" : "自习时段内 · 采集待确认" :
+            manual ? _workspaceManual!.State switch
+            {
+                "Waiting" => _workspaceManual.StartUtc is { } start ? $"预约 {start.ToLocalTime():yyyy-MM-dd HH:mm} · Windows 时间" : "手动预约时间待确认",
+                "Preparing" => "准备手动自习，到点后才开始采集",
+                "Starting" => "正在启动手动会话，等待后台确认",
+                "Stopping" => "正在结束手动会话，等待后台确认",
+                _ => "手动会话已由后台确认；采样详情请在自习页查看"
+            } : _workspaceSchool is null || _workspaceManual is null ? "状态尚未确认，不能据此判断后台任务已经停止" : "可立即开始手动自习，或查看学校定时安排";
+
     }
     private void UpdateWorkspaceManual(ManualStudyState? state)
     { _workspaceManual = state; RefreshWorkspaceHome(); }
@@ -40,8 +55,7 @@ public partial class MainWindow
             ? "原始 dBFS 与估算 dB(A) 分别展示 · " + NoiseSignalPresentation.EstimateReason(estimate)
             : "原始电平为 dBFS；估算参考是否可用请在校准页核对。";
     }
-    private void WorkspacePrimaryClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace(
-        _workspaceSchool is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active" or "Preparing" } ? "School" : "Manual");
+    private void WorkspacePrimaryClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace(_homeStudyTarget);
     private void StudyNavClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace(_workspaceTab);
     private void ManualWorkspaceClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace("Manual");
     private void SchoolWorkspaceClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace("School");

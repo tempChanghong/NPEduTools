@@ -55,7 +55,8 @@ public partial class MainWindow
     {
         _recording = new(Dispatcher, _pipe);
         _recording.Changed += RefreshRecording;
-        _recording.AutomaticChanged += state => _quick?.UpdateAutomaticRecording(state);
+        _recording.AutomaticChanged += state => { _quick?.UpdateAutomaticRecording(state); RefreshHomeRecordingNext(state); };
+        RefreshHomeRecordingNext(_recording.Automatic);
         RefreshRecording(_recording.State);
     }
     private void OpenRecordingClicked(object sender, RoutedEventArgs e) => ShowRecording();
@@ -64,10 +65,18 @@ public partial class MainWindow
     private void RefreshRecording(RecordingState state)
     {
         string clock = TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss");
+        RecordingHomeTitle.Text = HomeRecordingPresentation.Title(state, _recording.StateAvailable);
         RecordingHomeStatus.Text = !_recording.StateAvailable ? "录制后台未确认当前状态，等待重新连接。" : state.Active ? $"{state.Message} · {clock}" : state.Message;
-        RecordingHomeAction.Text = !_recording.StateAvailable ? "检查录制状态  →" : state.Active ? "录制控制  →" : "立即录课  →";
+        RecordingHomeAction.Text = HomeRecordingPresentation.Action(state, _recording.StateAvailable);
         _quick?.UpdateRecording(state, _recording.StateAvailable);
     }
+    private void HomeRecordingPrimaryClicked(object sender, RoutedEventArgs e)
+    {
+        if (_recording?.StateAvailable == true && _recording.State.Phase is "Saved" or "Failed") ShowRecordingWorkspace("Records");
+        else ShowRecording();
+    }
+    private void RefreshHomeRecordingNext(AutomaticRecordingState state) =>
+        HomeRecordingNext.Text = HomeRecordingPresentation.Next(state, _recording.AutomaticAvailable);
     private async void SkipAutomaticToday()
     {
         try { await _recording.SetAutomaticAsync("skip-day"); }
