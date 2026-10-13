@@ -6,6 +6,17 @@ namespace NPEduTools.Tests;
 public sealed class HomeRecordingTests
 {
     [Theory]
+    [InlineData(null)]
+    [InlineData("Unknown")]
+    public void MissingOwnerIsNotPresentedAsManualRecording(string? owner)
+    {
+        var state = new RecordingState("Recording", "fixture", Control: owner is null ? null : new(owner, Guid.NewGuid(), "", 0, 0));
+        Assert.DoesNotContain("手动", HomeRecordingPresentation.Title(state, true));
+        Assert.Contains("来源待确认", HomeRecordingPresentation.Title(state, true));
+        Assert.Contains("管理", HomeRecordingPresentation.Action(state, true));
+    }
+
+    [Theory]
     [InlineData("Recording", "进行中", "管理")]
     [InlineData("Paused", "暂停", "管理")]
     [InlineData("Saving", "保存", "管理")]

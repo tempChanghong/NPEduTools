@@ -6,7 +6,8 @@ internal static class HomeRecordingPresentation
 {
     public static string Title(RecordingState state, bool confirmed) => !confirmed ? "录课状态待确认" : state.Phase switch
     {
-        "Starting" => "录课准备中", "Recording" => state.Control?.Owner == "Automatic" ? "自动录课进行中" : "手动录课进行中",
+        "Starting" => "录课准备中", "Recording" => state.Control?.Owner switch
+        { "Automatic" => "自动录课进行中", "Manual" => "手动录课进行中", _ => "录课进行中 · 来源待确认" },
         "Paused" => "录课已暂停", "Pausing" => "正在暂停录课", "Saving" => "正在保存录课", "Saved" => "上次录课已保存",
         "Failed" => "上次录课未完成", "Idle" => "当前没有录课任务", _ => "录课状态待确认"
     };
