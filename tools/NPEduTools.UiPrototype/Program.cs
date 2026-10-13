@@ -13,13 +13,23 @@ internal static class Program
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         try
         {
+            if (args.Length == 1 && args[0] == "--recording" || args.Length == 2 && args[0] == "--verify-recording")
+            {
+                var recording = new RecordingWorkspaceWindow();
+                if (args.Length == 2)
+                {
+                    recording.Show(); recording.UpdateLayout();
+                    RecordingPrototypeChecks.Run(recording, Path.GetFullPath(args[1])); recording.Close(); return 0;
+                }
+                recording.Closed += (_, _) => app.Shutdown(); app.Run(recording); return 0;
+            }
             var window = new WorkspaceWindow();
             if (args.Length == 2 && args[0] == "--verify")
             {
                 window.Show(); window.UpdateLayout();
                 PrototypeChecks.Run(window, Path.GetFullPath(args[1])); window.Close(); return 0;
             }
-            if (args.Length != 0) throw new ArgumentException("Usage: NPEduTools.UiPrototype [--verify <output-directory>]");
+            if (args.Length != 0) throw new ArgumentException("Usage: NPEduTools.UiPrototype [--recording | --verify-recording <output-directory> | --verify <output-directory>]");
             window.Closed += (_, _) => app.Shutdown(); app.Run(window); return 0;
         }
         catch (Exception error)
