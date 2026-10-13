@@ -15,7 +15,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
-            foreach (string scenario in new[] { "null-history", "null-history-entry", "missing-recording", "missing-automatic", "rejected-status", "request-id", "version", "zero-length", "oversized", "empty-message", "invalid-json", "lease", "rejected-lease" })
+            foreach (string scenario in new[] { "unknown-recording-phase", "overflow-recording-seconds", "negative-recording-counter", "null-history", "null-history-entry", "missing-recording", "missing-automatic", "rejected-status", "request-id", "version", "zero-length", "oversized", "empty-message", "invalid-json", "lease", "rejected-lease" })
                 RunRecordingPollRecoveryCheck(scenario);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
@@ -53,7 +53,8 @@ internal static partial class Program
             Assert(request.Capability == "recording.status", "unexpected initial request");
             // Keep the next lease connection open: a later transport timeout must not
             // conceal acceptance of the malformed status snapshot under test.
-            using var heldLease = scenario is "missing-recording" or "missing-automatic" or "rejected-status" or "null-history" or "null-history-entry" ? Server() : null;
+            bool invalidRecording = scenario is "unknown-recording-phase" or "overflow-recording-seconds" or "negative-recording-counter";
+            using var heldLease = invalidRecording || scenario is "missing-recording" or "missing-automatic" or "rejected-status" or "null-history" or "null-history-entry" ? Server() : null;
             if (scenario is "null-history" or "null-history-entry")
                 historyView = (AutoRecordingWindow)typeof(AutoRecordingWindow).GetConstructors(flags).Single().Invoke([pipe, client, (Action)(() => { })]);
             type.GetMethod("Apply", flags)!.Invoke(client,
@@ -72,7 +73,15 @@ internal static partial class Program
             }
             async Task InvalidReply()
             {
-                if (scenario is "null-history" or "null-history-entry")
+                if (invalidRecording)
+                    await Protocol.WriteAsync(broken, new HostResponse(1, request.RequestId, "Succeeded", null, "corrupt recording",
+                        Recording: scenario switch
+                        {
+                            "unknown-recording-phase" => active with { Phase = "Unknown" },
+                            "overflow-recording-seconds" => active with { Seconds = double.MaxValue },
+                            _ => active with { Frames = -1 }
+                        }, Automatic: automatic), timeout.Token);
+                else if (scenario is "null-history" or "null-history-entry")
                     await Protocol.WriteAsync(broken, new HostResponse(1, request.RequestId, "Succeeded", null, "corrupt history",
                         Recording: active, Automatic: automatic with { Recent = scenario == "null-history" ? null! : [null!] }), timeout.Token);
                 else if (scenario is "missing-recording" or "missing-automatic" or "rejected-status")

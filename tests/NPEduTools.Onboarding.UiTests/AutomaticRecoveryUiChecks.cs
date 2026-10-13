@@ -46,7 +46,8 @@ internal static partial class Program
                 Control: new("Manual", Guid.NewGuid(), "", 0, 0));
             var automatic = new AutomaticRecordingState(false, Guid.NewGuid(), "自动录课已关闭", null, []);
             type.GetMethod("Apply", flags)!.Invoke(client, [new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null,
-                "旧的录制快照", Recording: recording, Automatic: automatic with { Enabled = true })]);
+                "旧的录制快照", Recording: scenario == "unknown-phase" ? recording with { Phase = "Idle" } : recording,
+                Automatic: automatic with { Enabled = true })]);
             async Task Reply()
             {
                 await commandServer.WaitForConnectionAsync(timeout.Token);
@@ -68,9 +69,18 @@ internal static partial class Program
             var exit = (Task<bool>)type.GetMethod("StopAndSaveAsync")!.Invoke(client, null)!;
             PumpUntil(() => reply.IsCompleted && exit.IsCompleted, "unconfirmed exit did not settle");
             reply.GetAwaiter().GetResult();
-            Assert(exit.GetAwaiter().GetResult() == (scenario is "confirmed-idle" or "confirmed-active"), "exit completion disagrees with fresh recorder evidence: " + scenario);
-            Assert((bool)type.GetProperty("StateAvailable")!.GetValue(client)! == (scenario != "partial-idle"), "partial automatic receipt retained confirmed recorder state");
-            Assert((bool)type.GetProperty("AutomaticAvailable")!.GetValue(client)!, "confirmed automatic disable receipt was discarded");
+            if (scenario == "unknown-phase")
+            {
+                Assert(exit.Exception?.InnerException is IOException { InnerException: InvalidDataException }, "unknown phase must invalidate the exit receipt");
+                Assert(!(bool)type.GetProperty("StateAvailable")!.GetValue(client)! &&
+                    !(bool)type.GetProperty("AutomaticAvailable")!.GetValue(client)!, "corrupt exit receipt retained a confirmed status");
+            }
+            else
+            {
+                Assert(exit.GetAwaiter().GetResult() == (scenario is "confirmed-idle" or "confirmed-active"), "exit completion disagrees with fresh recorder evidence: " + scenario);
+                Assert((bool)type.GetProperty("StateAvailable")!.GetValue(client)! == (scenario != "partial-idle"), "partial automatic receipt retained confirmed recorder state");
+                Assert((bool)type.GetProperty("AutomaticAvailable")!.GetValue(client)!, "confirmed automatic disable receipt was discarded");
+            }
             Checks.Add(scenario + ": exit/save requires fresh recorder evidence; confirmed idle exits, active recording stops its own session and saves, partial receipt cannot certify cached idle or replay an unknown stop");
         }
         finally

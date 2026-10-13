@@ -87,6 +87,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     private void Apply(HostResponse response)
     {
+        if (response.Recording is { } recording) RecordingContract.ValidateState(recording);
         // Validate before publishing: a corrupt history must not reach the
         // page's collection renderer or become the cached recovery snapshot.
         if (response.Automatic is { } snapshot &&
