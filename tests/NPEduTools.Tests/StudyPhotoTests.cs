@@ -4,6 +4,7 @@ using NPEduTools.Contracts;
 using NPEduTools.Core;
 using NPEduTools.Host;
 namespace NPEduTools.Tests;
+[Collection(ProcessIntegrationCollection.Name)] // Keep the bounded child-process probe out of parallel CPU-heavy fixtures.
 public sealed class StudyPhotoTests
 {
     private sealed class Clock : TimeProvider
