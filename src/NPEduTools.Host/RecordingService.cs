@@ -32,6 +32,8 @@ public sealed class RecordingService : IAsyncDisposable
     private long _enabledAt;
     private Guid _manualClient;
     private long _manualLease;
+    private sealed record UpcomingSnapshot(PlannedRecording? Plan, Guid Profile, string State);
+    private UpcomingSnapshot _upcoming = new(null, Guid.Empty, "Pending");
     private string _message = "自动录制未启用", _error = "";
     private RecordingState _last = new("Idle", "准备录制");
     private static TimeSpan Elapsed => Stopwatch.GetElapsedTime(0);
@@ -56,14 +58,28 @@ public sealed class RecordingService : IAsyncDisposable
         get
         {
             bool localPause = _modePaused(), remotePause = _remoteExamPaused();
+            var upcoming = ReadUpcoming(localPause || remotePause);
             var value = new AutomaticRecordingState(_enabled, _client,
                 remotePause ? "远程考试状态已暂停自动录制；原计划保留。" : localPause ? "课堂模式已暂停自动录制；原计划保留。" : _message, _ledger.Document.SkipDate,
-                _ledger.Document.Entries.TakeLast(20).Reverse().ToArray(), string.IsNullOrEmpty(_error) ? null : _error, localPause || remotePause);
+                _ledger.Document.Entries.TakeLast(20).Reverse().ToArray(), string.IsNullOrEmpty(_error) ? null : _error, localPause || remotePause, upcoming.Next, upcoming.State);
             // Long Unicode paths/reasons must not make the entire status endpoint exceed its frame limit.
             while (value.Recent.Length > 0 && JsonSerializer.SerializeToUtf8Bytes(value, Protocol.Json).Length > 32000)
                 value = value with { Recent = value.Recent[..^1] };
             return value;
         }
+    }
+    private (UpcomingRecording? Next, string State) ReadUpcoming(bool suspended)
+    {
+        if (!_enabled) return (null, "Disabled");
+        if (suspended) return (null, "Suspended");
+        if (Volatile.Read(ref _runtimeReserved) != 0 || _runtimeGate.ExamRequested) return (null, "Pending");
+        var clock = _clock.Read(Elapsed);
+        if (!clock.CanStart || clock.Now is not { } now) return (null, "ClockPending");
+        if (_ledger.Document.SkipDate == DateOnly.FromDateTime(now.Date)) return (null, "SkippedToday");
+        var snapshot = _upcoming;
+        if (snapshot.Plan is not { } next) return (null, snapshot.State);
+        if (next.Start <= now || _ledger.Contains(snapshot.Profile, next)) return (null, "Pending");
+        return (new(next.Lesson.Subject, next.Start, next.End), "Ready");
     }
     private RecordingPlanBook ReadBook()
     {
@@ -222,6 +238,7 @@ public sealed class RecordingService : IAsyncDisposable
     }
     private async Task TickAsync()
     {
+        _upcoming = new(null, Guid.Empty, "Pending");
         _clock.Accept(_snapshot(), Elapsed, 0);
         var reading = _clock.Read(Elapsed); var now = reading.Now;
         var state = State;
@@ -293,6 +310,7 @@ public sealed class RecordingService : IAsyncDisposable
             break;
         }
         var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p));
+        _upcoming = new(next, source?.ProfileId ?? Guid.Empty, next is null ? "None" : "Ready");
         _message = State is { Active: true, Control.Owner: "Automatic" } ? AutomaticRecordingMessage(State) :
             next is null ? "自动录制已启用，本日暂无待开始任务" : $"下次自动录制：{next.Lesson.Subject} · 学校时间 {next.Start:HH:mm:ss}，可跳过下一项";
     }
