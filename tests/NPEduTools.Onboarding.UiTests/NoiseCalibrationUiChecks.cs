@@ -30,6 +30,7 @@ internal static partial class Program
     }
     private static void RunNoiseCalibrationChecks()
     {
+        RunQuickCalibrationSnapshotChecks();
         RunCalibrationOrderingChecks(false);
         const string secret = "fixture-calibration-admin";
         var previous = SynchronizationContext.Current;

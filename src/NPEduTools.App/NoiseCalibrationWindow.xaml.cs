@@ -69,6 +69,13 @@ public partial class NoiseCalibrationWindow : Window
     }
     internal void Render(NoiseCalibrationState state)
     {
+        // Validate before caching or rendering. Unsupported sample identifiers
+        // and incomplete suggestions must not reach First()/nullable Value or
+        // be advertised as a calibration that can be confirmed.
+        if (state.Samples is null || state.Suggestion is null || state.Samples.Any(sample => sample is null ||
+            !NoiseCalibrationContract.Scenes.Contains(sample.Scene) || !NoiseCalibrationContract.Labels.Contains(sample.Label)) ||
+            state.Suggestion.Ready && !NoiseCalibrationContract.Thresholds(state.Suggestion.MediumDbfs, state.Suggestion.HighDbfs))
+            throw new InvalidDataException("校准状态格式不兼容，请刷新或更新后台。");
         bool samplesChanged = _state?.Revision != state.Revision || _state.InstanceId != state.InstanceId;
         _state = state;
         DeviceStatus.Text = state.DeviceId is null ? "请先在自习设备中保存麦克风" :
@@ -108,6 +115,11 @@ public partial class NoiseCalibrationWindow : Window
         ConfirmThresholds.IsEnabled = draft && _state!.Context is not null;
         ClearThresholds.IsEnabled = draft && _state!.Profile is not null;
         UseSuggestion.IsEnabled = draft && _state!.Suggestion.Ready;
+        if (!_connected)
+        {
+            ProfileStatus.Text = "校准状态待确认 · 旧信息不能证明当前已应用";
+            SamplingStatus.Text = "采样状态待确认，请刷新核对；未宣称后台采样已停止。";
+        }
     }
     private async Task SendAsync(string action, string? scene = null, string? label = null, Guid? sample = null, double? medium = null, double? high = null)
     {
