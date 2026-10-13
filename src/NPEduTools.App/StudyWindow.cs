@@ -133,10 +133,13 @@ public sealed partial class StudyWindow : Window
     private async Task EndAsync()
     {
         if(_state?.Manual is not {SessionId:not null} current)return;
+        bool Current() => !_shutdown && _state?.Manual is { State: "Starting" or "Active" or "Stopping" } shown &&
+            shown.InstanceId == current.InstanceId && shown.SessionId == current.SessionId;
         try{using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(4));var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",
             ManualStudy:new("end",current.InstanceId,current.Revision,current.SessionId)),timeout.Token);
-            if(reply.Outcome!="Succeeded")_surface.ReturnError(reply.Message);}
-        catch(Exception e)when(e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException){_surface.ReturnError("结束请求待确认，请核对后台状态；未停止其他会话。");}
+            if(Current() && reply.Outcome!="Succeeded")_surface.ReturnError(reply.Message);}
+        catch(Exception e)when(e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException)
+        { if(Current())_surface.ReturnError("结束请求待确认，请核对后台状态；未停止其他会话。"); }
     }
     private async Task HideAsync()
     {
