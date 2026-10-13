@@ -10,11 +10,12 @@ internal static partial class Program
 {
     private sealed class FixtureTouch : TouchDevice
     {
-        private readonly Point _point;
+        private Point _point;
         public FixtureTouch(int id, Window window, Point point) : base(id)
         { _point = point; SetActiveSource(PresentationSource.FromVisual(window)); Activate(); }
         public override TouchPoint GetTouchPoint(IInputElement? relativeTo) => new(this, _point, new Rect(_point, new Size(1, 1)), TouchAction.Move);
         public override TouchPointCollection GetIntermediateTouchPoints(IInputElement? relativeTo) => [GetTouchPoint(relativeTo)];
+        public void MoveTo(Point point) => _point = point;
         public void Stop() { if (IsActive) Deactivate(); }
     }
 
@@ -51,6 +52,19 @@ internal static partial class Program
             TouchEvent(first, UIElement.PreviewTouchUpEvent);
             PumpUntil(() => panel.IsVisible, "single touch failed to expand panel after capture release");
             Assert(!edge.TouchesCaptured.Any() && !openedWhileCaptured, "completed touch retained capture while expanding");
+            quick.Collapse(false); quick.UpdateLayout();
+            first.MoveTo(new Point(30, 30)); TouchEvent(first, UIElement.PreviewTouchDownEvent);
+            double gestureScale = (double)typeof(QuickAccessWindow).GetField("_gestureScale", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(quick)!;
+            double windowScale = VisualTreeHelper.GetDpi(quick).DpiScaleY;
+            first.MoveTo(new Point(30, 30 + 10 * gestureScale / windowScale)); TouchEvent(first, UIElement.PreviewTouchMoveEvent); TouchEvent(first, UIElement.PreviewTouchUpEvent);
+            PumpUntil(() => panel.IsVisible, "routed touch jitter did not click");
+            quick.Collapse(false); quick.UpdateLayout();
+            first.MoveTo(new Point(30, 30)); TouchEvent(first, UIElement.PreviewTouchDownEvent);
+            first.MoveTo(new Point(30, 30 - 20 * gestureScale / windowScale)); TouchEvent(first, UIElement.PreviewTouchMoveEvent); TouchEvent(first, UIElement.PreviewTouchUpEvent);
+            Assert(panel.Visibility == Visibility.Collapsed && !edge.TouchesCaptured.Any(), "routed touch drag clicks or retains capture");
+            first.MoveTo(new Point(30, 30)); TouchEvent(first, UIElement.PreviewTouchDownEvent); edge.ReleaseTouchCapture(first); TouchEvent(first, UIElement.PreviewTouchUpEvent);
+            Assert(panel.Visibility == Visibility.Collapsed && !edge.TouchesCaptured.Any(), "lost touch capture still clicks");
+            quick.OpenPanel(); quick.UpdateLayout();
             Snapshot(quick, "quick-pointer-expanded.png");
             other = new Window { Title = "NPEduTools.Test.focus", Width = 240, Height = 160 };
             other.Show(); other.Activate(); quick.Activate();
