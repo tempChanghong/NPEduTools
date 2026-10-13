@@ -29,7 +29,7 @@ internal static partial class Program
         }
         Checks.Add("All three shipped MP3 cues decoded fully to non-silent stereo PCM without opening speakers");
 
-        Assert(audio.LastCue == "exam-alert", "preparation requested the wrong audio cue");
+        Assert(audio.LastCue == "exam-alert", "reminder requested the wrong audio cue");
         if (audio.Ready) return;
         // Do not hide codec/file failures or sound-device problems on a normal PC.
         bool headless = Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true" &&

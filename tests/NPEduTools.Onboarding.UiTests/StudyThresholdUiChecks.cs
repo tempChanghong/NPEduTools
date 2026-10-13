@@ -154,7 +154,8 @@ internal static partial class Program
                 window.Apply(state, noise); PumpUntil(() => title.Text == "注意纪律" && stage.Visibility == Visibility.Visible, "authorized discipline not presented");
                 PumpUntil(() => ((StackPanel)surface.FindName("NoticeCopy")).Opacity == 1, "discipline intro did not settle");
                 PumpUntil(() => StudyAudio(surface).Ready || StudyAudio(surface).Error is not null, "discipline audio did not load");
-                Assert(StudyAudio(surface).Ready && StudyAudio(surface).LastCue == "exam-alert" && StudyAudio(surface).Requests == 1, "discipline reference sound failed");
+                AssertReminderPlayback(StudyAudio(surface));
+                Assert(StudyAudio(surface).Requests == 1, "discipline reference sound request count incorrect");
                 Assert(((SolidColorBrush)stage.Background).Color.R == 158 && !title.Text.Contains("摄像"), "discipline color/text incorrect");
                 Snapshot(window, "study-discipline.png");
                 for (int i = 1; i <= 5; i++) { clock.Ms = i * 1000; window.Apply(state with { Threshold = new(noise.SessionId!.Value, "None") }, noise with { CurrentDbfs = -60 }); }
