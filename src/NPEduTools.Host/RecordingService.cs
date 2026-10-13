@@ -292,8 +292,16 @@ public sealed class RecordingService : IAsyncDisposable
             break;
         }
         var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p));
-        _message = State is { Active: true, Control.Owner: "Automatic" } ? "正在自动录制；暂停不会延长截止" :
+        _message = State is { Active: true, Control.Owner: "Automatic" } ? AutomaticRecordingMessage(State) :
             next is null ? "自动录制已启用，本日暂无待开始任务" : $"下次自动录制：{next.Lesson.Subject} · 学校时间 {next.Start:HH:mm:ss}，可跳过下一项";
+    }
+    internal static string AutomaticRecordingMessage(RecordingState state)
+    {
+        const string prefix = "正在录制；";
+        return state is { Phase: "Recording", Control.Owner: "Automatic" } &&
+            state.Message is { } message && message.StartsWith(prefix, StringComparison.Ordinal)
+            ? "正在自动录制；" + message[prefix.Length..]
+            : "正在自动录制；暂停不会延长截止";
     }
     private async Task StopAutomaticAsync(string reason)
     {

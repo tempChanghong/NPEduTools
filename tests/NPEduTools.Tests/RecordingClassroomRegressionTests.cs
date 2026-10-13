@@ -99,4 +99,17 @@ public sealed class RecordingClassroomRegressionTests
         Assert.False(RecordingService.CanWaitForAutomaticHandoff(state, rows[0], rows[1], rows[1].Start, Profile, Guid.NewGuid()));
         Assert.False(RecordingService.CanWaitForAutomaticHandoff(state, rows[0], rows[1], Morning, Profile, Profile));
     }
+
+    [Fact]
+    public void AutomaticPageReceivesAudioWaitingAndQualityWarnings()
+    {
+        var state = new RecordingState("Recording", "正在录制；音频写入变慢，正在等待恢复（宽限至多 10 秒）。",
+            Control: new("Automatic", Guid.NewGuid(), "course", 0, 0));
+        Assert.Contains("等待恢复", RecordingService.AutomaticRecordingMessage(state));
+        Assert.StartsWith("正在自动录制；", RecordingService.AutomaticRecordingMessage(state));
+        state = state with { Message = "正在录制；音频频繁卡顿，缺口按静音补齐。" };
+        Assert.Contains("频繁卡顿", RecordingService.AutomaticRecordingMessage(state));
+        Assert.Contains("暂停不会延长截止", RecordingService.AutomaticRecordingMessage(state with { Message = "正在录制" }));
+        Assert.Contains("暂停不会延长截止", RecordingService.AutomaticRecordingMessage(state with { Phase = "Saving" }));
+    }
 }

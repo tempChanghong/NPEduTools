@@ -15,9 +15,11 @@ internal sealed class AudioInput : IAsyncDisposable
     private Task? _pump;
     private long _overruns;
     private Exception? _error;
+    private readonly RecordingAudioHealth _health = new();
     public string PipePath { get; }
     public long Overruns => Interlocked.Read(ref _overruns);
     public Exception? Error => Volatile.Read(ref _error);
+    public string? Message => _health.Message();
 
     public AudioInput(RecordingOptions options)
     {
@@ -86,7 +88,7 @@ internal sealed class AudioInput : IAsyncDisposable
                     for (int i = 0; i < read; i++) mixed[i] += input[i] / _sources.Count;
                 }
             }, () => { foreach (var source in _sources) source.Buffer.ClearBuffer(); },
-                () => Interlocked.Increment(ref _overruns), token);
+                () => Interlocked.Increment(ref _overruns), token, health: _health);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception error) when (error is not OutOfMemoryException) { Volatile.Write(ref _error, error); }

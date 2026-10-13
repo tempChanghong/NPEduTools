@@ -240,7 +240,7 @@ internal sealed class RecordingSession(Action<RecordingState> publish, string? f
                             Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastProgress)) > TimeSpan.FromSeconds(15) ? "连续 15 秒没有新的编码画面。" :
                             MediaTools.FreeSpace(_directory!) < 256L * 1024 * 1024 ? "磁盘剩余空间不足 256 MB。" : null;
                         if (failure is not null) { await AbortPartAsync(); SetState("Failed", "录制已中断，未完成片段已保留", failure); }
-                        else SetState("Recording", "正在录制");
+                        else SetState("Recording", _audio?.Message ?? "正在录制");
                     }
                     else publish(State);
                 }
