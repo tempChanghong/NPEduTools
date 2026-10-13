@@ -20,8 +20,9 @@ public sealed partial class NoiseManagementStore
         {
             if (new FileInfo(SchoolPath).Length > 8192) throw new InvalidDataException();
             var saved = JsonSerializer.Deserialize<SchoolCredential>(File.ReadAllText(SchoolPath)) ?? throw new InvalidDataException();
-            if (saved.Version != 1 || saved.Revision < 0 || saved.Scope is {Length: > 4096} ||
-                saved.Credential is { } c && (c.Version != 1 || Convert.FromBase64String(c.Salt).Length != 16 || Convert.FromBase64String(c.Hash).Length != 32))
+            if (saved.Version != 1 || saved.Revision < 0 || saved.Revision > NPEduTools.Integrations.Npep.NpepProtocol.MaxInteger || saved.Scope is {Length: > 4096} ||
+                saved.Credential is { } c && (c.Version != 1 || string.IsNullOrWhiteSpace(c.Salt) || string.IsNullOrWhiteSpace(c.Hash) ||
+                    Convert.FromBase64String(c.Salt).Length != 16 || Convert.FromBase64String(c.Hash).Length != 32))
                 throw new InvalidDataException();
             _schoolScope = saved.Scope; _schoolRevision = saved.Revision; _credential = saved.Credential; _error = null;
         }
