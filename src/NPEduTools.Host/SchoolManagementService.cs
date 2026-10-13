@@ -14,6 +14,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     private readonly string _path;
     private Saved _saved=new(null,0,false,0,null,null,false);
     private string? _error;
+    private bool _savePending;
     private sealed record Saved(string? Scope,long Revision,bool Locked,long Applied,string? Microphone,string? Camera,bool Unlocked);
     public SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory)
     {
@@ -35,12 +36,13 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     private void SetLocks(){_noise.EquipmentLocked=_cameras.EquipmentLocked=_saved.Locked&&!_saved.Unlocked;}
     private bool Save()
     {
+        _savePending=true;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             using(var stream=new FileStream(_path+".tmp",FileMode.Create,FileAccess.Write,FileShare.None,4096,FileOptions.WriteThrough))
             {JsonSerializer.Serialize(stream,_saved);stream.Flush(true);}
-            File.Move(_path+".tmp",_path,true);_error=null;return true;
+            File.Move(_path+".tmp",_path,true);_savePending=false;_error=null;return true;
         }
         catch(Exception e)when(e is IOException or UnauthorizedAccessException){_error="EQUIPMENT_STORE_UNAVAILABLE";return false;}
     }
@@ -49,7 +51,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         lock(_sync)
         {
             _noise.BindSchoolManagement(scope);
-            if(_saved.Scope==scope)return;
+            if(_saved.Scope==scope){if(_savePending)Save();return;}
             _saved=new(scope,0,scope is not null,0,null,null,false);
             Save();SetLocks();
         }
@@ -70,11 +72,18 @@ public sealed class SchoolManagementService : INpepSchoolManagement
                     _saved=new(_saved.Scope,revision,locked,_saved.Applied,mic,cam,false);
                     if(!Save()){SetLocks();return;}
                 }
+                // A matching revision does not prove the previous write succeeded.
+                // Retry the durable policy before switching devices or skipping as already applied.
+                if(_savePending && !Save()){SetLocks();return;}
                 SetLocks();
                 if(_saved.Applied==revision || revision==0 || _saved.Unlocked)return;
                 if(_noise.CaptureBusy){_error="EQUIPMENT_PENDING";return;}
                 _error=_noise.SelectSchoolMicrophone(mic)??_cameras.SelectSchoolCamera(cam);
-                if(_error is null){_saved=_saved with{Applied=revision};Save();}
+                if(_error is null)
+                {
+                    var old=_saved;_saved=_saved with{Applied=revision};
+                    if(!Save())_saved=old;
+                }
             }
             catch(Exception e)when(e is InvalidOperationException or FormatException or NullReferenceException or JsonException)
             {throw new NpepException("INVALID_RESPONSE");}
