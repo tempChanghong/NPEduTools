@@ -76,6 +76,30 @@ public sealed class RecorderProcessTests
         while (recorder.State.Phase != phase) await Task.Delay(20, timeout.Token);
     }
 
+    [Fact]
+    public async Task LiveWorkerWithClosedStatusPipeCannotRetainActiveStateOrReceiveContinuedLeases()
+    {
+        string directory = Directory.CreateTempSubdirectory("NPEduTools-recorder-eof-").FullName;
+        string executable = Path.Combine(AppContext.BaseDirectory, "GuardFixture", "NPEduTools.GuardFixture.exe");
+        var recorder = new RecorderProcess(executable, "recorder-active-eof");
+        try
+        {
+            var control = new RecorderControl("Manual", Guid.NewGuid(), "", 0, RecorderDeadline.After(TimeSpan.FromSeconds(8)));
+            await recorder.StartAsync(new("synthetic", directory), control);
+            var observed = Stopwatch.StartNew();
+            while (recorder.State.Phase != "Failed" && observed.Elapsed < TimeSpan.FromSeconds(4)) await Task.Delay(20);
+            Assert.Equal("Failed", recorder.State.Phase);
+            Assert.True(recorder.Alive, "fixture must still be alive to distinguish status EOF from process exit");
+            Assert.False(recorder.State.Active);
+            Assert.True(control.Matches(recorder.State.Control));
+            Assert.NotNull(recorder.State.Error);
+            await Task.Delay(TimeSpan.FromSeconds(2.3));
+            Assert.False(File.Exists(Path.Combine(directory, "leases-after-eof.txt")), "Host kept renewing an unconfirmed live worker");
+        }
+        finally { await recorder.DisposeAsync(); Directory.Delete(directory, true); }
+        Assert.False(recorder.Alive);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
