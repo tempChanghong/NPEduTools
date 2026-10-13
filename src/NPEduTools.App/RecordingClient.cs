@@ -87,6 +87,11 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     private void Apply(HostResponse response)
     {
+        // Validate before publishing: a corrupt history must not reach the
+        // page's collection renderer or become the cached recovery snapshot.
+        if (response.Automatic is { } snapshot &&
+            (snapshot.Recent is null || snapshot.Recent.Any(entry => entry is null)))
+            throw new InvalidDataException("后台录课记录格式无效；当前状态未确认。");
         if (response.Automatic is { } auto) { AutomaticAvailable = true; Automatic = auto; AutomaticChanged?.Invoke(auto); }
         else
         {
