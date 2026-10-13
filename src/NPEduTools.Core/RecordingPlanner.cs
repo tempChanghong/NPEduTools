@@ -35,22 +35,37 @@ public static class RecordingPlanner
             return new PlannedRecording(key, lesson, lesson.Start.AddMinutes(-rules.BeforeMinutes),
                 lesson.End.AddMinutes(rules.AfterMinutes), reason == "已纳入计划", false, reason);
         }).ToArray();
+        return FitCourseWindows(rows);
+    }
+
+    // The preview and executable calendar use the same boundary policy. Margins
+    // yield to formal lessons; genuinely overlapping lessons remain conflicts.
+    internal static PlannedRecording[] FitCourseWindows(PlannedRecording[] rows)
+    {
         for (int i = 0; i < rows.Length; i++)
         {
-            if (!rows[i].Selected) continue;
+            if (rows[i].Fixed || !rows[i].Selected || rows[i].Conflict) continue;
             var row = rows[i];
-            if (rows.Any(other => other != row && other.Lesson.Enabled &&
+            if (rows.Any(other => !other.Fixed && other != row && other.Lesson.Enabled &&
                 row.Lesson.Start < other.Lesson.End && other.Lesson.Start < row.Lesson.End))
             { rows[i] = row with { Conflict = true, Reason = "正式课时重叠，暂不预演" }; continue; }
-            var previous = rows.Take(i).LastOrDefault(r => r.Lesson.Enabled);
+            var previous = rows.Where(r => !r.Fixed && r != row && r.Lesson.Enabled && r.Lesson.End <= row.Lesson.Start)
+                .OrderBy(r => r.Lesson.End).LastOrDefault();
             if (previous is not null && row.Start < previous.Lesson.End)
-            { rows[i] = row with { Conflict = true, Reason = "课前窗口进入上一节正式课时，请缩短提前量" }; continue; }
-            var next = rows.Skip(i + 1).FirstOrDefault(r => r.Lesson.Enabled);
+                rows[i] = row with { Start = previous.Lesson.End, Reason = row.Reason + "；课前余量已缩短" };
+        }
+        // Apply tails only after all lead windows have been fitted.
+        for (int i = 0; i < rows.Length; i++)
+        {
+            var row = rows[i];
+            if (row.Fixed || !row.Selected || row.Conflict) continue;
+            var next = rows.Where(r => !r.Fixed && r != row && r.Lesson.Enabled && r.Lesson.Start >= row.Lesson.End)
+                .OrderBy(r => r.Lesson.Start).FirstOrDefault();
             if (next is not null)
             {
-                var boundary = next.Selected ? next.Start : next.Lesson.Start;
+                var boundary = next.Selected && !next.Conflict ? next.Start : next.Lesson.Start;
                 if (boundary < row.Lesson.End) boundary = row.Lesson.End;
-                if (boundary < row.End) rows[i] = row with { End = boundary, Reason = "课后余量已缩短，为下一节让出时间" };
+                if (boundary < row.End) rows[i] = row with { End = boundary, Reason = row.Reason + "；课后余量已缩短，为下一节让出时间" };
             }
         }
         return rows;

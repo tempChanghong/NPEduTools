@@ -20,11 +20,11 @@ public sealed record RecordingDayPolicy(DateOnly Date, Guid ProfileId, bool Only
 public sealed record SubjectPreference(Guid ProfileId, Guid SubjectId, bool Allow, bool Explicit = true);
 public sealed record RecordingPlanBook(int Version, RecurringRecordingRule[] Recurring, DatedRecording[] Dated,
     LessonDateOverride[] Overrides, RecordingDayPolicy[] Days, string[] ExcludedNames,
-    SubjectPreference[] Subjects, DateOnly? PauseThrough = null)
+    SubjectPreference[] Subjects, DateOnly? PauseThrough = null, int DefaultExclusionsRevision = 1)
 {
     public static readonly string[] DefaultExcluded = ["心理", "体育", "书法", "体育(室内)", "选修课", "班会", "技术", "艺术", "美术", "音乐",
-        "物理(实验)", "化学(实验)", "生物(实验)", "晨测", "早读", "午自习", "报告厅活动"];
-    public static RecordingPlanBook Create() => new(1, [new(Guid.NewGuid(), "默认课程", true, new())], [], [], [], [.. DefaultExcluded], []);
+        "物理(实验)", "化学(实验)", "生物(实验)", "晨测", "周测", "早读", "午自习", "报告厅活动"];
+    public static RecordingPlanBook Create() => new(1, [new(Guid.NewGuid(), "默认课程", true, new())], [], [], [], [.. DefaultExcluded], [], DefaultExclusionsRevision: 2);
 }
 
 public static class CalendarRecordingPlanner
@@ -32,7 +32,7 @@ public static class CalendarRecordingPlanner
     public static string NormalizeSubject(string value) => Regex.Replace(value.Normalize(NormalizationForm.FormKC).Trim(), @"\s*([()])\s*", "$1");
     public static string? Validate(RecordingPlanBook book)
     {
-        if (book.Version != 1 || book.Recurring is null or { Length: > 64 } || book.Dated is null or { Length: > 256 } ||
+        if (book.Version != 1 || book.DefaultExclusionsRevision is < 1 or > 2 || book.Recurring is null or { Length: > 64 } || book.Dated is null or { Length: > 256 } ||
             book.Overrides is null or { Length: > 512 } || book.Days is null or { Length: > 256 } ||
             book.ExcludedNames is null or { Length: > 128 } || book.Subjects is null or { Length: > 1024 }) return "计划格式或数量无效。";
         if (book.Recurring.Any(r => r is null || r.Id == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 80 ||
@@ -129,22 +129,7 @@ public static class CalendarRecordingPlanner
             rows.Add(Fixed(rule.Id, rule.Name, date, rule.FixedStart!.Value, rule.FixedEnd!.Value, !paused && !only, "周期固定时段"));
         foreach (var item in book.Dated.Where(d => d.Date == date && d.Enabled))
             rows.Add(Fixed(item.Id, item.Name, date, item.Start, item.End, !paused, "指定日期固定时段"));
-        var sorted = rows.OrderBy(p => p.Start).ToArray();
-        for (int i = 0; i < sorted.Length; i++)
-        {
-            var p = sorted[i]; if (p.Fixed || !p.Selected || p.Conflict) continue;
-            var others = sorted.Where(x => !x.Fixed && x != p && x.Lesson.Enabled).OrderBy(x => x.Lesson.Start).ToArray();
-            if (others.Any(x => p.Lesson.Start < x.Lesson.End && x.Lesson.Start < p.Lesson.End) ||
-                others.Any(x => x.Lesson.Start < p.Lesson.Start && p.Start < x.Lesson.End))
-            { sorted[i] = p with { Conflict = true, Reason = "正式课时或课前窗口冲突" }; continue; }
-            var next = others.FirstOrDefault(x => x.Lesson.Start >= p.Lesson.End);
-            if (next is not null)
-            {
-                var boundary = next.Selected && !next.Conflict ? next.Start : next.Lesson.Start;
-                if (boundary < p.Lesson.End) boundary = p.Lesson.End;
-                if (boundary < p.End) sorted[i] = p with { End = boundary, Reason = p.Reason + "；课后余量已缩短" };
-            }
-        }
+        var sorted = RecordingPlanner.FitCourseWindows(rows.OrderBy(p => p.Start).ToArray()).OrderBy(p => p.Start).ToArray();
         for (int i = 0; i < sorted.Length; i++)
             for (int j = i + 1; j < sorted.Length; j++)
             {
@@ -168,6 +153,7 @@ public static class CalendarRecordingPlanner
 public sealed class RecordingPlanBookStore(string path)
 {
     public bool Migrated { get; private set; }
+    public bool DefaultExclusionsUpdated { get; private set; }
     public RecordingPlanBook Read(PreviewState? legacy = null)
     {
         if (!File.Exists(path))
@@ -179,6 +165,16 @@ public sealed class RecordingPlanBookStore(string path)
         if (new FileInfo(path).Length > 512 * 1024) throw new InvalidDataException("录课计划文件过大，原文件已保留。");
         var book = JsonSerializer.Deserialize<RecordingPlanBook>(File.ReadAllText(path)) ?? throw new InvalidDataException("计划为空。");
         if (CalendarRecordingPlanner.Validate(book) is { } error) throw new InvalidDataException(error + "原文件已保留。");
+        DefaultExclusionsUpdated = false;
+        if (book.DefaultExclusionsRevision == 1)
+        {
+            // Upgrade untouched old defaults once, without adding exclusions to
+            // a user's custom list or overriding explicit subject/date choices.
+            var oldDefaults = RecordingPlanBook.DefaultExcluded.Where(n => n != "周测").ToHashSet(StringComparer.Ordinal);
+            DefaultExclusionsUpdated = oldDefaults.SetEquals(book.ExcludedNames.Select(CalendarRecordingPlanner.NormalizeSubject));
+            book = book with { DefaultExclusionsRevision = 2,
+                ExcludedNames = DefaultExclusionsUpdated ? [.. book.ExcludedNames, "周测"] : book.ExcludedNames };
+        }
         return book;
     }
     public void Save(RecordingPlanBook book)

@@ -274,7 +274,13 @@ public sealed class RecordingService : IAsyncDisposable
             { _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, plan.Conflict ? "Conflict" : "Missed", plan.Conflict ? plan.Reason : "正式时段已结束，不补录课后余量"); continue; }
             if (plan.Conflict) continue;
             if (State.Active || _worker is { Alive: true })
-            { _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, "Skipped", "录制器被手动或上一会话占用，本次不再补开"); continue; }
+            {
+                // A just-ended automatic lesson may still be saving its file.
+                // Do not permanently skip the adjoining lesson during this handoff.
+                if (CanWaitForAutomaticHandoff(State, _activePlan, plan, now.Value,
+                    _activeProfile, source?.ProfileId ?? Guid.Empty)) continue;
+                _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, "Skipped", "录制器被手动或上一会话占用，本次不再补开"); continue;
+            }
             await RetireAsync();
             var entry = _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, "Starting", "启动意图已保存，等待录制器确认");
             _activePlan = plan; _activeProfile = source?.ProfileId ?? Guid.Empty;
@@ -298,6 +304,11 @@ public sealed class RecordingService : IAsyncDisposable
             finally { await _worker.CommandAsync("stop", c); }
         }
     }
+    internal static bool CanWaitForAutomaticHandoff(RecordingState state, PlannedRecording? previous,
+        PlannedRecording next, DateTimeOffset now, Guid previousProfile, Guid nextProfile) =>
+        state.Control is { Owner: "Automatic" } && previous is { Fixed: false } && !next.Fixed &&
+        state.Control.OccurrenceId == previous.Key && previousProfile == nextProfile && previous.Key != next.Key && previous.End <= now &&
+        previous.Lesson.End <= next.Lesson.Start && now < next.Lesson.End;
     public async Task PauseForClassroomModeAsync()
     {
         await _gate.WaitAsync();

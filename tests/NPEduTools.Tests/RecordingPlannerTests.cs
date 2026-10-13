@@ -43,12 +43,15 @@ public sealed class RecordingPlannerTests
         Assert.DoesNotContain(plans, p => p.Conflict);
     }
     [Fact]
-    public void OverlappingFormalLessonsOrLeadInPreviousClassAreFlagged()
+    public void OverlappingFormalLessonsAreFlaggedButLeadMarginYields()
     {
         var day = Day(new(1, Math, "一", Start, Start.AddMinutes(40), true), new(2, Math, "二", Start.AddMinutes(39), Start.AddMinutes(79), true));
         Assert.All(RecordingPlanner.Build(day, new()), p => Assert.True(p.Conflict));
         day = day with { Lessons = [day.Lessons[0], day.Lessons[1] with { Start = Start.AddMinutes(41) }] };
-        Assert.True(RecordingPlanner.Build(day, new())[1].Conflict);
+        var plans = RecordingPlanner.Build(day, new());
+        Assert.False(plans[1].Conflict);
+        Assert.Equal(Start.AddMinutes(40), plans[1].Start);
+        Assert.Equal(plans[0].End, plans[1].Start);
     }
     [Fact]
     public void DisabledLessonsAreNeverSelected()

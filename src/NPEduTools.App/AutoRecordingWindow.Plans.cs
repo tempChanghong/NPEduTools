@@ -39,7 +39,8 @@ public partial class AutoRecordingWindow
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         { _writable = false; ErrorText.Text = "录课计划无法读取，原文件已保留；修改及试运行已停用。"; }
-        if (_writable && _bookStore.Migrated) ErrorText.Text = "旧规则已备份并作为停用草稿迁入。新规则默认排除 17 项科目，旧草稿保留原筛选，请核对后启用。";
+        if (_writable && _bookStore.Migrated) ErrorText.Text = $"旧规则已备份并作为停用草稿迁入。新规则默认排除 {RecordingPlanBook.DefaultExcluded.Length} 项科目，旧草稿保留原筛选，请核对后启用。";
+        else if (_writable && _bookStore.DefaultExclusionsUpdated) ErrorText.Text = "原默认排除科目已补充周测；明确指定录制的科目和单日安排继续有效。请保存设置。";
         ExcludedNames.Text = string.Join(Environment.NewLine, _book.ExcludedNames);
         PauseThrough.SelectedDate = _book.PauseThrough?.ToDateTime(TimeOnly.MinValue);
         _ready = true; RefreshRuleList();

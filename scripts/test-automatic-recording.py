@@ -215,6 +215,32 @@ try:
         LEDGER.rmdir(); backup.rename(LEDGER)
     passed('Ledger commit failure prevents capture; original journal is preserved and automatic mode is disabled')
     auto('disable'); rpc('host.stop'); host.wait(timeout=15); host = None
+    # Fresh private bridge instances give each exact-adjacency scenario its own clock.
+    # Only our dynamic fixture window is recorded; both audio sources stay off.
+    for exclude_morning in [True, False]:
+        peer.kill(); peer.wait(timeout=5)
+        write(CLOCK, dict(lessonLengthSeconds=10, adjacentLessons=True))
+        peer = subprocess.Popen([str(PEER), UPSTREAM, 'bridge'], env=dict(os.environ, NPEEDUTOOLS_TEST_BRIDGE_CONTROL=str(CLOCK)),
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8', creationflags=FLAGS)
+        assert peer.stdout.readline().strip() == 'READY'
+        # Use a fresh ledger directory without altering any previous case's evidence.
+        previous_ledger = LEDGER.with_name('recording-executions-before-adjacent-' + str(exclude_morning) + '.json')
+        LEDGER.rename(previous_ledger)
+        host = start_host()
+        write(BOOK, dict(Version=1, Recurring=[dict(Id=str(uuid.uuid4()), Name='相邻课程', Enabled=True,
+            Filter=dict(BeforeMinutes=2, AfterMinutes=0))], Dated=[], Overrides=[], Days=[],
+            ExcludedNames=['周测'] if exclude_morning else [], Subjects=[]))
+        idle(2)
+        assert auto('enable', options=options)['outcome'] == 'Succeeded'
+        expected_count = 1 if exclude_morning else 2
+        result = wait(lambda s: len(s['automatic']['recent']) == expected_count and
+            all(e['phase'] == 'Recorded' for e in s['automatic']['recent']), 40)
+        assert any(e['subject'] == '相邻第一节' for e in result['automatic']['recent'])
+        for entry in result['automatic']['recent']:
+            assert verify(entry['outputFile']) > 1
+        passed(('Excluded morning slot' if exclude_morning else 'Saving prior automatic lesson') +
+            ' does not skip the adjoining first lesson; real worker saves and complete MP4 decode passes')
+        auto('disable'); rpc('host.stop'); host.wait(timeout=15); host = None
     # Independent recorder guard: controller keeps stdin open but ceases lease traffic.
     events = queue.Queue()
     direct = subprocess.Popen([str(REC), '--fixture-window', TITLE], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
