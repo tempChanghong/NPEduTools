@@ -34,7 +34,7 @@ public sealed partial class StudyWindow : Window
             using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), _manual?"manual.study.presentation":"study.presentation", StudyPresentation: pulse), timeout.Token);
         }
-        catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or System.Text.Json.JsonException) { }
+        catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException) { }
         if(!_manual)await ReportSeatingAsync();
     }
     private CancellationTokenSource? _homeworkRead;
@@ -136,7 +136,7 @@ public sealed partial class StudyWindow : Window
         try{using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(4));var reply=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.command",
             ManualStudy:new("end",current.InstanceId,current.Revision,current.SessionId)),timeout.Token);
             if(reply.Outcome!="Succeeded")_surface.ReturnError(reply.Message);}
-        catch(Exception e)when(e is IOException or OperationCanceledException or InvalidDataException or JsonException){_surface.ReturnError("结束请求待确认，请核对后台状态；未停止其他会话。");}
+        catch(Exception e)when(e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException){_surface.ReturnError("结束请求待确认，请核对后台状态；未停止其他会话。");}
     }
     private async Task HideAsync()
     {

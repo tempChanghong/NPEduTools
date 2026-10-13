@@ -33,7 +33,8 @@ internal static partial class Program
             var errors = new List<Exception>();
             foreach (var check in new Action[] { WorkspaceVisibilityRace, WorkspaceLateStartRace, WorkspaceLateStartObserverRace, WorkspaceReportLeaveRace,
                 WorkspaceSchoolReportSurvives, WorkspaceManualReportSurvives, WorkspaceSchoolReportSurvivesProtocolFailure, WorkspaceManualReportSurvivesProtocolFailure,
-                WorkspaceCalibrationProtocolFailures, WorkspaceSchoolProtocolFailure })
+                WorkspaceCalibrationProtocolFailures, WorkspaceSchoolProtocolFailure,
+                WorkspacePresentationAccessFailure, WorkspaceSeatingAccessFailure, WorkspaceManualEndAccessFailure })
                 try { check(); } catch (Exception e) { errors.Add(new InvalidOperationException(check.Method.Name + ": " + e.Message, e)); }
             foreach (string scenario in new[] { "rejected-report", "empty-report", "accepted-report", "delayed-manual", "delayed-school", "school-report" })
                 try { WorkspaceDisplayPipelineCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
