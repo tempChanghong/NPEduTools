@@ -21,8 +21,8 @@ public sealed partial class NpepRuntime
                 Guid? id=null;
                 try {
                     var state=Snapshot();
-                    if(state is {State:"UNPAIRED" or "SUSPENDED"} or {ReportingPaused:true} or {Busy:true})events.ExitFailed("EXIT_NOT_ELIGIBLE");
-                    else if((unsupportedAt is null || System.Diagnostics.Stopwatch.GetElapsedTime(unsupportedAt.Value).TotalSeconds>=60) && state is {State:"ACTIVE",Connection:"ONLINE"} && events.PendingExit() is {} packet){
+                    if(state is {State:"UNPAIRED" or "SUSPENDED"} or {ReportingPaused:true} || state.Busy && !ContinuingStudyResume)events.ExitFailed("EXIT_NOT_ELIGIBLE");
+                    else if((unsupportedAt is null || System.Diagnostics.Stopwatch.GetElapsedTime(unsupportedAt.Value).TotalSeconds>=60) && state is {State:"ACTIVE",Connection:"ONLINE",Busy:false} && events.PendingExit() is {} packet){
                         id=Guid.Parse(packet.Metadata.Text("eventId"));var context=await StudyContextAsync(_lifetime.Token);
                         if(!JsonNode.DeepEquals(JsonNode.Parse(packet.Scope),context["identity"]))throw new NpepException("BINDING_CHANGED");
                         var body=new JsonObject{["requestId"]=NpepProtocol.Id(),["context"]=context.Copy(),["event"]=packet.Metadata.Copy()};

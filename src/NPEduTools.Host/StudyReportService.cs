@@ -9,6 +9,7 @@ public sealed class StudyReportService : IAsyncDisposable
     private readonly object _sync = new();
     private readonly Func<(string? Scope, bool Selected, StudyHostState State)> _sample;
     private readonly Func<StudySessionReport?> _statistics;
+    private readonly Func<Guid, StudySessionReport?>? _finishedStatistics;
     private readonly Action<string, string, Guid, StudyNoise>? _observePolicy;
     private readonly TimeProvider _time;
     private readonly Func<bool>? _projection;
@@ -26,9 +27,10 @@ public sealed class StudyReportService : IAsyncDisposable
     private StudyReportData? _frozen;
     public StudyReportService(Func<(string? Scope, bool Selected, StudyHostState State)> sample,
         Func<StudySessionReport?> statistics, TimeProvider? time = null, bool background = true,
-        Action<string, string, Guid, StudyNoise>? observePolicy = null, Func<bool>? projection = null)
+        Action<string, string, Guid, StudyNoise>? observePolicy = null, Func<bool>? projection = null,
+        Func<Guid, StudySessionReport?>? finishedStatistics = null)
     {
-        _projection = projection;
+        _projection = projection; _finishedStatistics = finishedStatistics;
         _sample = sample; _statistics = statistics; _time = time ?? TimeProvider.System; _observePolicy = observePolicy;
         _loop = background ? Task.Run(LoopAsync) : Task.CompletedTask;
     }
@@ -42,6 +44,17 @@ public sealed class StudyReportService : IAsyncDisposable
         lock (_sync)
         {
             var (scope, selected, s) = _sample();
+            // A temporary configuration read failure is not revocation of the
+            // witnessed window's collected statistics. Quarantine the collection
+            // without displaying it; reuse only after the same context is fresh again.
+            if (selected && scope is not null && scope == _scope && _mode == s.Mode &&
+                _version is not null && (s.Version is null || s.Version == _version) &&
+                _window is not null && _ended is null && s.PolicyState != "APPLIED" && s.Phase == "Blocked" &&
+                s.Reason is "STUDY_OFFLINE" or "CONFIGURATION_STALE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED")
+            {
+                Observe(s, _window.Start); // Updates only already tracked session IDs while blocked.
+                return State(false, "Unavailable", 0);
+            }
             if (_scope != scope || _version != s.Version || _mode != s.Mode) { Clear(); _scope = scope; _version = s.Version; _mode = s.Mode; }
             if (!selected || scope is null || s.Version is null || s.PolicyState != "APPLIED" || !s.ClockReady || s.SchoolNow is not { } now ||
                 s.Phase is not ("Active" or "Outside" or "Ended"))
@@ -81,8 +94,13 @@ public sealed class StudyReportService : IAsyncDisposable
         if (s.Phase == "Active" && _statisticsAt is { } at && _time.GetElapsedTime(at).TotalSeconds < 1 &&
             s.Execution?.SessionId is { } current && _sessions.ContainsKey(current)) return;
         _statisticsAt = _time.GetTimestamp();
+        if (_finishedStatistics is not null)
+            foreach (var (id, cached) in _sessions.ToArray())
+                if (!cached.Report.Complete && _finishedStatistics(id) is { Complete: true } final && final.SessionId == id)
+                    _sessions[id] = (cached.Offset, final);
         if (_statistics() is not { } report) return;
-        if (_sessions.TryGetValue(report.SessionId, out var old)) _sessions[report.SessionId] = (old.Offset, report);
+        if (_sessions.TryGetValue(report.SessionId, out var old))
+        { if (!old.Report.Complete) _sessions[report.SessionId] = (old.Offset, report); }
         else if (_window is { } window && s.Phase == "Active" &&
             s.Execution is { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null } execution && execution.SessionId == report.SessionId && _sessions.Count < 16)
             _sessions[report.SessionId] = (Math.Max(0, (now - window.Start).TotalSeconds - report.ElapsedSeconds), report);

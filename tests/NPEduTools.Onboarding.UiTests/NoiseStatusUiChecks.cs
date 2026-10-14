@@ -8,6 +8,7 @@ internal static partial class Program
 {
     private static void RunNoiseStatusChecks()
     {
+        RunCalibrationLastReviewChecks();
         RunNoiseAccessChecks();
         RunNoiseManagementChecks();
         RunNoiseProtocolChecks();

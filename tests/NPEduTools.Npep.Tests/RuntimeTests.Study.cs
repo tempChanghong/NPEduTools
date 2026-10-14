@@ -81,7 +81,7 @@ public sealed partial class RuntimeTests
     private sealed class StudyFixture : INpepStudySettings
     {
         private JsonObject? _configuration;
-        public int Applied, Granted, Resumed;
+        public int Applied, Granted, Resumed, Unbound;
         public bool ExecutionEnabled, ResumeEnabled;
         public bool SupportsResume => ResumeEnabled;
         public JsonObject? ObserveStudyResumeReceipt() => new() { ["commandId"] = "11111111-1111-4111-8111-111111111111", ["outcome"] = "ACCEPTED" };
@@ -92,7 +92,7 @@ public sealed partial class RuntimeTests
             ["reason"] = "POLICY_EXPIRED", ["clockReady"] = false, ["schoolNow"] = null, ["window"] = null, ["signalFresh"] = false };
         public void ConfirmStudyExecution(JsonObject configuration, JsonObject response, TimeSpan roundTrip = default)
         { NpepStudyProtocol.Validate("executionResponse", response); Assert.True(response["confirmed"]!.GetValue<bool>()); Assert.True(roundTrip >= TimeSpan.Zero); Granted++; }
-        public void BindStudy(string? scope) { if (scope is null) _configuration = null; }
+        public void BindStudy(string? scope) { if (scope is null) { Unbound++; _configuration = null; } }
         public void ApplyStudy(JsonObject configuration) { Applied++; _configuration = configuration.Copy(); }
         public void StudyFailed(string code) => _configuration = null;
         public JsonObject? ObserveStudy() => _configuration is null ? null : new() {

@@ -101,6 +101,24 @@ public sealed class StudySettingsTests
         await using var restart = new StudySettingsService(()=>SchoolClockFrame.Unavailable("no synthetic clock"),()=>false,f.Time,false);
         Assert.Null(restart.Snapshot().Version);Assert.Equal("UNAVAILABLE",restart.Snapshot().PolicyState);
     }
+
+    [Fact]
+    public async Task No_policy_is_distinct_from_disabled_and_expired_configuration()
+    {
+        await using var f = new Fixture();
+        f.Config["effective"] = new JsonObject { ["source"] = "None", ["settings"] = null };
+        f.Service.ApplyStudy(f.Config);
+        Assert.Equal("APPLIED", f.Service.Snapshot().PolicyState);
+        Assert.Equal("NOT_CONFIGURED", f.Service.Snapshot().Reason);
+        Assert.Null(f.Service.Snapshot().Next);
+        f.Config["effective"] = new JsonObject { ["source"] = "Disabled", ["settings"] = null };
+        f.Service.ApplyStudy(f.Config);
+        Assert.Equal("DISABLED", f.Service.Snapshot().Reason);
+        f.Tick(15000, false);
+        Assert.Equal("UNAVAILABLE", f.Service.Snapshot().PolicyState);
+        Assert.Equal("CONFIGURATION_STALE", f.Service.Snapshot().Reason);
+        Assert.Null(f.Service.Snapshot().Settings);
+    }
     [Fact]
     public void Overnight_end_is_exclusive_and_effective_date_is_start_date()
     {
@@ -167,5 +185,38 @@ public sealed class StudySettingsTests
             Assert.Equal("UnexpectedParameters",Protocol.Validate(new(Protocol.Version,Guid.NewGuid(),"study.status",ObserveMs:100)));
         }
         finally {await lifetime.CancelAsync();try{await running;}catch(OperationCanceledException){}}
+    }
+    [Fact, System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task Study_status_piggybacks_redacted_connection_without_new_network_or_device_reads()
+    {
+        await using var f = new Fixture(); f.Tick(); f.Tick();
+        string directory = Path.Combine(Path.GetTempPath(), "NPEduTools.StudySync." + Guid.NewGuid().ToString("N"));
+        await using var connection = new NPEduTools.Integrations.Npep.NpepRuntime(directory, "fixture",
+            () => throw new InvalidOperationException("Unpaired fixture must never send a status."));
+        // Device remains unpaired: only the read-only runtime presentation is synthetic.
+        var observed = new NpepState(1, "ACTIVE", "ONLINE", "fixture", Origin: "https://fixture.invalid",
+            Server: new() { ["canary"] = "server" }, Pairing: new() { ["canary"] = "pairing" },
+            Approval: new() { ["canary"] = "approval" }, Catalogue: new() { ["canary"] = "catalogue" },
+            LastReceivedAt: "2026-10-14T12:00:00.000Z");
+        typeof(NPEduTools.Integrations.Npep.NpepRuntime).GetField("_state", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(connection, observed);
+        typeof(NPEduTools.Integrations.Npep.NpepRuntime).GetField("_receivedAt", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(connection, System.Diagnostics.Stopwatch.GetTimestamp());
+        string pipe = "NPEduTools.Test.Study.Sync." + Guid.NewGuid().ToString("N");
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var running = new PipeServer(pipe, new ForbiddenReader(), _ => { }, study: f.Service, npep: connection).RunAsync(lifetime.Token);
+        try
+        {
+            foreach (string capability in new[] { "study.status", "study.status.seating", "study.status.photos" })
+            {
+                var reply = await HostClient.RequestAsync(pipe, capability, lifetime.Token);
+                Assert.Equal("Succeeded", reply.Outcome); Assert.NotNull(reply.Study);
+                Assert.Equal("ONLINE", reply.Npep!.Connection); Assert.Equal(observed.LastReceivedAt, reply.Npep.LastReceivedAt);
+                Assert.Null(reply.Npep.Origin); Assert.Null(reply.Npep.Server); Assert.Null(reply.Npep.Pairing);
+                Assert.Null(reply.Npep.Approval); Assert.Null(reply.Npep.Catalogue);
+                Assert.DoesNotContain("canary", JsonSerializer.Serialize(reply, Protocol.Json));
+                Assert.Equal(reply.Npep, JsonSerializer.Deserialize<HostResponse>(JsonSerializer.Serialize(reply, Protocol.Json), Protocol.Json)!.Npep);
+            }
+            Assert.Null((await HostClient.RequestAsync(pipe, "host.cached-status", lifetime.Token)).Npep);
+        }
+        finally { await lifetime.CancelAsync(); try { await running; } catch (OperationCanceledException) { } }
     }
 }

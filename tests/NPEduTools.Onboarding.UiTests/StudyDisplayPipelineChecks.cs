@@ -19,17 +19,25 @@ internal static partial class Program
         var availableReport = new StudyReportState(Guid.NewGuid(), study.Version, true, "Report", 300, data);
         var server = Task.Run(() => WorkspaceProxy(pipe, async request =>
         {
+            bool calibrationRequested = NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null;
+            request = request with { Capability = NoiseCalibrationStatusContract.BaseCapability(request.Capability) ?? request.Capability };
+            var noise = new NoiseState(Guid.Parse("bce3d36c-765c-49eb-b70f-3c25efc16ff2"), 7, "Idle", "fixture", null, null, null, null, "Waiting", null, []);
             HostResponse Reply(string outcome = "Succeeded", StudyHostState? state = null, StudyReportState? report = null) =>
-                new(1, request.RequestId, outcome, outcome == "Rejected" ? "FixtureRejected" : null, "isolated display pipeline", Study: state, StudyReport: report);
+                new(1, request.RequestId, outcome, outcome == "Rejected" ? "FixtureRejected" : null, "isolated display pipeline", Study: state, StudyReport: report,
+                    Noise: state is null ? null : noise,
+                    NoiseCalibrationStatus: calibrationRequested && state is not null ? new(noise.InstanceId, noise.Revision, "Uncalibrated", "None") : null,
+                    Npep: state is null ? null : new(1, "ACTIVE", "ONLINE", "fixture", LastReceivedAt: "2026-10-14T12:00:00.000Z"));
             if (request.Capability is "study.status.photos" or "study.status.seating" or "study.status")
             {
                 int cycle = Interlocked.Increment(ref schoolReads);
-                if (cycle == 2)
+                bool delayedSchool = scenario.StartsWith("delayed-school", StringComparison.Ordinal);
+                int nextCycle = delayedSchool ? 3 : 2;
+                if (cycle == nextCycle)
                 {
                     nextPoll.TrySetResult();
                     await releaseNext.Task.WaitAsync(stop.Token);
                 }
-                else if (cycle > 2)
+                else if (cycle > nextCycle)
                 {
                     recoveredPoll.TrySetResult();
                     await Task.Delay(Timeout.Infinite, stop.Token);
@@ -37,14 +45,16 @@ internal static partial class Program
                 return Reply(state: scenario switch
                 {
                     "delayed-school" => study,
+                    "delayed-school-withdrawn" => cycle == 1 ? study : absentSchool,
+                    "delayed-school-projection" => cycle == 1 ? study : study with { ProjectionPriority = true },
                     "school-report" => absentSchool with { Display = absentSchool.Display! with { Selected = true } },
                     _ => absentSchool
                 });
             }
             if (request.Capability == "manual.study.status")
             {
-                if (Interlocked.Increment(ref manualReads) == 1 && scenario == "delayed-school") await Task.Delay(2000, stop.Token);
-                return Reply(state: scenario is "delayed-school" or "school-report" ? null : manual);
+                if (Interlocked.Increment(ref manualReads) == 1 && scenario.StartsWith("delayed-school", StringComparison.Ordinal)) await Task.Delay(2000, stop.Token);
+                return Reply(state: scenario.StartsWith("delayed-school", StringComparison.Ordinal) || scenario == "school-report" ? null : manual);
             }
             if (request.Capability == "manual.study.report.status")
             {
@@ -62,12 +72,12 @@ internal static partial class Program
             // Read-only exit/recovery, legacy fallback and presentation receipts.
             Assert(request.Noise is null && request.ManualStudy is null && request.StudyHide is null, "display polling submitted a capture mutation");
             return Reply();
-        }, stop.Token));
+        }, stop.Token, supportsCalibrationStatus: true));
         var main = PrivateWorkspace(pipe);
         Task? polling = null;
         try
         {
-            if (scenario == "accepted-report")
+            if (scenario is "accepted-report" or "delayed-school-withdrawn" or "delayed-school-projection")
             {
                 var oldDisplay = new StudyWindow(pipe, () => { }, muted: true);
                 oldDisplay.Apply(study, null); oldDisplay.ShowDisplay();
@@ -82,19 +92,31 @@ internal static partial class Program
             Assert((reportWindow?.IsVisible == true) == (scenario is "accepted-report" or "school-report"), "non-successful/empty report was presented as authoritative");
             if (scenario is "rejected-report" or "empty-report")
                 Assert(manualWindow?.IsVisible == true, "invalid report suppressed a fresh manual display");
-            if (scenario is "delayed-manual" or "delayed-school")
+            if (scenario == "delayed-manual")
                 Assert(manualWindow?.IsVisible != true && schoolWindow?.IsVisible != true, "time spent awaiting later reads was omitted from display freshness");
+            if (scenario == "delayed-school") Assert(schoolWindow?.IsVisible == true, "fresh revalidation did not keep the school display visible after an unrelated slow read");
+            if (scenario is "delayed-school-withdrawn" or "delayed-school-projection") Assert(schoolWindow?.IsVisible != true, "revalidation ignored newly withdrawn policy or examination priority");
             if (scenario == "accepted-report") Assert(schoolWindow?.IsVisible != true, "manual report left the previous school display visible");
-            if (scenario != "delayed-school") Assert(reportReads == 1, "fixture did not exercise manual report polling");
+            var visibleStudy = schoolWindow?.IsVisible == true ? schoolWindow : manualWindow?.IsVisible == true ? manualWindow : null;
+            if (visibleStudy?.Content is StudySurface surface)
+            {
+                Assert(((System.Windows.Controls.TextBlock)surface.FindName("SyncText")).Text == "学校互联正常", "display loop discarded piggybacked connection status");
+                Assert(((System.Windows.Controls.TextBlock)surface.FindName("CalibrationText")).Text == "未校准", "display loop discarded compact calibration state");
+            }
+            if (!scenario.StartsWith("delayed-school", StringComparison.Ordinal)) Assert(reportReads == 1, "fixture did not exercise manual report polling");
             int reportVisibilityChanges = 0;
+            int schoolVisibilityChanges = 0;
+            if (schoolWindow is not null) schoolWindow.IsVisibleChanged += (_, _) => schoolVisibilityChanges++;
             if (reportWindow is not null) reportWindow.IsVisibleChanged += (_, _) => reportVisibilityChanges++;
             releaseNext.TrySetResult();
             PumpUntil(() => recoveredPoll.Task.IsCompleted || polling.IsCompleted, "fresh display reconciliation did not finish", 8);
             Assert(!polling.IsCompleted, "display recovery stopped polling");
             if (scenario == "delayed-school") Assert(WorkspaceField<StudyWindow>(main, "_studyWindow")?.IsVisible == true, "fresh school status did not restore display");
+            else if (scenario.StartsWith("delayed-school", StringComparison.Ordinal)) Assert(WorkspaceField<StudyWindow>(main, "_studyWindow")?.IsVisible != true, "withdrawn/priority school display reappeared");
             else if (scenario is not ("accepted-report" or "school-report")) Assert(WorkspaceField<StudyWindow>(main, "_manualStudyWindow")?.IsVisible == true, "fresh manual status did not restore display");
             else Assert(WorkspaceField<StudyReportWindow>(main, "_studyReportWindow")?.IsVisible == true, "valid report vanished during recovery");
             if (scenario == "school-report") Assert(reportVisibilityChanges == 0, "manual report probe hid/reopened the unchanged school report");
+            if (scenario == "delayed-school") Assert(schoolVisibilityChanges == 0, "unrelated slow reads caused school display hide/show flicker");
             Checks.Add(scenario + ": actual MainWindow display loop/private pipe validates report evidence, ages snapshots across downstream reads, and restores fresh display read-only; no capture or settings mutation");
         }
         finally

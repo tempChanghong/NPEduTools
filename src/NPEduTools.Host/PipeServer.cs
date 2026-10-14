@@ -45,6 +45,9 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 readDeadline.CancelAfter(TimeSpan.FromSeconds(2));
                 var request = await Protocol.ReadAsync<HostRequest>(pipe, readDeadline.Token);
+                bool calibrationRequested = NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null;
+                if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
+                    request = request with { Capability = calibrationBase };
                 var watch = Stopwatch.StartNew();
                 HostResponse response;
                 string? error = Protocol.Validate(request);
@@ -66,13 +69,22 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 {
                     using var meterDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                     meterDeadline.CancelAfter(request.TimeoutMs);
-                    response = soundMeter is null ? new(1, request.RequestId, "Rejected", "METER_UNSUPPORTED", "请更新后台以使用联机校准 (Beta)。")
-                        : (await soundMeter.HandleAsync(request, meterDeadline.Token)) with { NoiseProtection = noise?.Protection() };
+                    try
+                    {
+                        response = soundMeter is null ? new(1, request.RequestId, "Rejected", "METER_UNSUPPORTED", "请更新后台以使用联机校准 (Beta)。")
+                            : (await soundMeter.HandleAsync(request, meterDeadline.Token)) with { NoiseProtection = noise?.Protection() };
+                    }
+                    catch (OperationCanceledException) when (meterDeadline.IsCancellationRequested && !token.IsCancellationRequested)
+                    {
+                        // This request expired, but Host is still available. The service
+                        // has released its selected handle before returning this failure.
+                        response = new(1, request.RequestId, "Rejected", "METER_TIMEDOUT",
+                            "联机请求超时，连接已释放；请核对仪表后重新刷新或读取，未使用旧读数。", NoiseProtection: noise?.Protection());
+                    }
                 }
                 else if (request.Capability == "study.devices.microphone")
                 {
-                    var listed = noise?.Handle(request with { Capability = "noise.devices", Noise = null });
-                    response = listed is { Outcome: "Succeeded", NoiseDevices: not null } && listed.NoiseDevices.Any(d => d.Id == request.Noise!.DeviceId)
+                    response = noise?.IsMicrophonePresent(request.Noise!.DeviceId) == true
                         ? noise!.Handle(request with { Capability = "noise.command" })
                         : new(1, request.RequestId, "Rejected", "NoiseDeviceUnavailable", "所选麦克风已不可用，请刷新；未更换设备。", Noise: noise?.Snapshot());
                 }
@@ -228,6 +240,8 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                             status.Subject, status.IsTimerRunning, status.IsClassPlanLoaded, status.IsClassPlanEnabled,
                             status.CurrentSelectedIndex, status.ObservedEvents), Schedule: result.Schedule, Forecast: result.Forecast);
                 }
+                response = WithStudyConnection(request, response);
+                response = WithCalibrationStatus(calibrationRequested, response);
                 // Structured diagnostics contain identifiers and outcomes, never lesson contents.
                 log(JsonSerializer.Serialize(new
                 {

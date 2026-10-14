@@ -28,13 +28,16 @@ function Suite([string]$Name, [string]$Script, [string[]]$Arguments) {
         if ($null -eq $suite.exitCode -or $suite.exitCode -ne 0) { throw "Delivery suite failed: $Name (exit $($suite.exitCode))." }
         if ($Script -ne 'verify-desktop-delivery.ps1') {
             $lines = @(Get-Content -LiteralPath (Join-Path $runRoot $suite.log) |
-                Where-Object { $_ -match '^(INSTALLER_(PACKAGE_)?TEST_RESULT: |Recording checks passed: )(.+)$' })
+                Where-Object { $_ -match '^(INSTALLER_(PACKAGE_)?TEST_RESULT: |Recording checks passed: |COMPONENT_PATH_TEST_RESULT: )(.+)$' })
             if ($lines.Count -ne 1) { throw "Missing or ambiguous child report: $Name" }
-            $null = $lines[0] -match '^(INSTALLER_(PACKAGE_)?TEST_RESULT: |Recording checks passed: )(.+)$'
+            $null = $lines[0] -match '^(INSTALLER_(PACKAGE_)?TEST_RESULT: |Recording checks passed: |COMPONENT_PATH_TEST_RESULT: )(.+)$'
             $suite.childReport = $Matches[3]
             $child = Get-Content -LiteralPath $suite.childReport -Raw | ConvertFrom-Json
             if ($child.status -ne 'PASSED' -or $child.capturesStarted -ne $false -or $child.applicationInstalled -eq $true) {
                 throw "Child evidence is not a synthetic pass: $Name"
+            }
+            if ($Script -eq 'test-desktop-component-paths.ps1' -and $child.packagedConsumer -ne $true) {
+                throw 'Delivery must inspect the packaged Host, not a local build override.'
             }
         }
         $suite.status = 'PASSED'
@@ -50,6 +53,7 @@ try {
         $PackageResultPath = (Resolve-Path -LiteralPath $PackageResultPath).Path
         $report.packageResult = $PackageResultPath
         Suite 'candidate-pair' 'verify-desktop-delivery.ps1' @('-PackageResultPath', $PackageResultPath)
+        Suite 'candidate-component-paths' 'test-desktop-component-paths.ps1' @('-PackageResultPath', $PackageResultPath)
         $package = Get-Content -LiteralPath $PackageResultPath -Raw | ConvertFrom-Json
         $mediaArgs += @('-PackageRoot', $package.packageRoot)
     }

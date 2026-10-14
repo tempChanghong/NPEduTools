@@ -235,7 +235,7 @@ internal static partial class Program
                 {
                     // Hold constructor enumeration on its own pipe; never enumerate real devices.
                     PumpUntil(() => initialRead.IsCompleted, "initial isolated device query did not arrive");
-                    Assert(initialRead.GetAwaiter().GetResult().Capability == "noise.devices", "unexpected constructor query");
+                    Assert(NoiseReadCapability(initialRead.GetAwaiter().GetResult()) == "noise.devices", "unexpected constructor query");
                     var read = Read(server); Open();
                     PumpUntil(() => read.IsCompleted, "management status query did not arrive");
                     var request = read.GetAwaiter().GetResult();

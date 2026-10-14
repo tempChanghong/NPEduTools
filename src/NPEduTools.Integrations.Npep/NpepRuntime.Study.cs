@@ -30,8 +30,8 @@ public sealed partial class NpepRuntime
                             catch(Exception e) when(Handled(e) || e is InvalidDataException) { /* Keep the durable school credential on transport loss. */ }
                             await StudyCycleAsync(study, _lifetime.Token);
                         }
-                        else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } or { Busy: true }) study.BindStudy(null);
-                        else study.StudyFailed("STUDY_OFFLINE");
+                        else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } || Snapshot().Busy && !ContinuingStudyResume) study.BindStudy(null);
+                        else study.StudyFailed(StudyConnectionFailureCode());
                     }
                     catch (Exception e) when (Handled(e) || e is InvalidDataException)
                     { study.StudyFailed(e is NpepException n ? n.Code : "STUDY_OFFLINE"); }
@@ -50,13 +50,25 @@ public sealed partial class NpepRuntime
     private async Task RequireStudyContextAsync(JsonObject context, CancellationToken token)
     {
         if (Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
-            throw new NpepException("SESSION_SUPERSEDED");
+            throw new NpepException(StudyContextLossCode());
         JsonObject current;
         try { current = await StudyContextAsync(token); }
         catch (NpepException e) when (e.Code == "DEVICE_SUSPENDED" && Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
-        { throw new NpepException("SESSION_SUPERSEDED"); }
-        if (!JsonNode.DeepEquals(context, current) || Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
+        { throw new NpepException(StudyContextLossCode()); }
+        if (!JsonNode.DeepEquals(context, current))
             throw new NpepException("SESSION_SUPERSEDED");
+        if (Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
+            throw new NpepException(StudyContextLossCode());
+    }
+    private string StudyContextLossCode()
+    {
+        lock (_sync) return _state.State == "ACTIVE" && !_state.ReportingPaused && (!_state.Busy || _continuingStudyResume)
+            ? StudyConnectionFailureCode() : "SESSION_SUPERSEDED";
+    }
+    private string StudyConnectionFailureCode()
+    {
+        lock (_sync) return _state.Error is "AUTH_INVALID" or "CREDENTIAL_EXPIRED" or "INSTANCE_MISMATCH" or
+            "BINDING_CHANGED" or "SESSION_SUPERSEDED" or "DEVICE_SUSPENDED" ? _state.Error : "STUDY_OFFLINE";
     }
     internal async Task StudyCycleAsync(INpepStudySettings study, CancellationToken token)
     {
@@ -66,10 +78,24 @@ public sealed partial class NpepRuntime
         await RequireStudyContextAsync(context, token);
         if (!JsonNode.DeepEquals(context["identity"], configuration["identity"])) throw new NpepException("SESSION_SUPERSEDED");
         study.ApplyStudy(configuration);
+        try { await ExchangeStudyExecutionAsync(study, context, configuration, token); }
+        catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e))
+        {
+            // The configuration GET succeeded. A temporary downstream outage does not
+            // revoke that download, renew its age, or manufacture an execution grant.
+            // Recheck pause/binding/session changes before retaining the fresh policy.
+            await RequireStudyContextAsync(context, token);
+        }
+    }
+    private static bool TransientStudyExchangeFailure(Exception error) => error is HttpRequestException or OperationCanceledException
+        || error is NpepException { Code: "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED" };
+
+    private async Task ExchangeStudyExecutionAsync(INpepStudySettings study, JsonObject context, JsonObject configuration, CancellationToken token)
+    {
         var status = study.ObserveStudy();
         if (status is null) return;
         var body = new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(), ["sequence"] = ++_studySequence, ["status"] = status };
-        var reply = await _device.StudyAsync(body, token);
+        var reply = await _device!.StudyAsync(body, token);
         await RequireStudyContextAsync(context, token);
         if (!reply["confirmed"]!.GetValue<bool>() || reply.Text("version") != configuration.Text("version")) throw new NpepException("POLICY_CHANGED");
         if (study.SupportsExecution && configuration["effective"]!.AsObject().Text("source") != "None")

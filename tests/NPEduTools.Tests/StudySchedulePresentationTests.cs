@@ -36,4 +36,44 @@ public sealed class StudySchedulePresentationTests
     {
         Assert.Equal("2026-10-12 23:00–2026-10-13 01:00", StudySchedulePresentation.Span(new(Current.Start.AddHours(4), Current.Start.AddHours(6))));
     }
+
+    [Fact]
+    public void Offline_running_window_is_explained_without_advertising_cached_next_arrangements()
+    {
+        var offline = State with { Reason = "OFFLINE_CONTINUING", Next = null };
+        Assert.Contains("本次自习继续", StudySchedulePresentation.Next(offline));
+        Assert.Contains("沿用本次已确认安排", StudySchedulePresentation.Configuration(offline));
+        Assert.DoesNotContain("尚未", StudySchedulePresentation.Configuration(offline));
+        Assert.DoesNotContain("2026-10-13", StudySchedulePresentation.Next(offline));
+    }
+
+    [Theory]
+    [InlineData("STUDY_OFFLINE", "自动重试")]
+    [InlineData("CONFIGURATION_STALE", "已过期")]
+    [InlineData("NOT_ELIGIBLE", "互联")]
+    [InlineData("AUTH_INVALID", "授权")]
+    [InlineData("POLICY_CHANGED", "已变更")]
+    public void Missing_confirmation_explains_reason_without_reusing_old_times(string reason, string expected)
+    {
+        var unavailable = State with { PolicyState = "UNAVAILABLE", Reason = reason };
+        Assert.Contains(expected, StudySchedulePresentation.Next(unavailable));
+        Assert.Contains(expected, StudySchedulePresentation.Configuration(unavailable));
+        Assert.DoesNotContain("2026", StudySchedulePresentation.Next(unavailable));
+        Assert.DoesNotContain("2026", StudySchedulePresentation.Configuration(unavailable));
+    }
+
+    [Fact]
+    public void Received_configuration_is_visible_even_when_school_time_is_unavailable()
+    {
+        var settings = new StudySettings(new("Asia/Shanghai", "2026-10-12", null,
+            [new([1, 3, 5], "19:15", "21:30")], []), new("StatusTrend", 180), new(false, "OwnClass", [], 60),
+            new(true, null, null, 600, 3), new(false, 3, 30, 30, true, false));
+        var received = State with { Settings = settings, ClockReady = false, SchoolNow = null };
+        Assert.Contains("安排已收到", StudySchedulePresentation.Next(received));
+        string summary = StudySchedulePresentation.Configuration(received);
+        Assert.Contains("周一、三、五 19:15–21:30", summary);
+        Assert.Contains("2026-10-12", summary);
+        Assert.Contains("考试模式未设置时段", StudySchedulePresentation.Configuration(received with { Mode = "Exam" }));
+        Assert.Contains("学校尚未配置本班", StudySchedulePresentation.Next(received with { Phase = "Disabled", Reason = "NOT_CONFIGURED", Settings = null }));
+    }
 }

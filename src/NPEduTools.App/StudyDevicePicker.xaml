@@ -8,6 +8,7 @@
    <Button x:Name="SaveMicrophone" Grid.Column="1" Content="保存麦克风" Click="SaveMicrophoneClicked" Margin="12,0,0,0" Padding="12,7" AutomationProperties.AutomationId="StudySaveMicrophone"/>
   </Grid>
   <TextBlock x:Name="MicrophoneStatus" Foreground="#61786B" TextWrapping="Wrap" FontSize="12" Margin="0,7,0,14"/>
+  <TextBlock x:Name="CalibrationStatus" Text="校准状态待确认" Foreground="#61786B" TextWrapping="Wrap" FontSize="12" Margin="0,-7,0,14" AutomationProperties.AutomationId="DeviceCalibrationStatus"/>
   <TextBlock Text="预留捕获摄像头" FontWeight="SemiBold" Margin="0,0,0,7"/>
   <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <ComboBox x:Name="StudyCamera" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{StaticResource RecordingChoice}" MinHeight="38" SelectionChanged="ChoiceChanged" AutomationProperties.AutomationId="StudyCamera" AutomationProperties.Name="自习摄像头"/>

@@ -293,6 +293,7 @@ internal static partial class Program
                 // These controllers normally turn Close into Hide. A failing fixture
                 // must release its modal frame and emit the original assertion.
                 if (window is StudyWindow study) study.Shutdown();
+                else if (window is NoiseWindow signal) signal.Shutdown();
                 else if (window is AutoRecordingWindow automatic) automatic.Shutdown();
                 else if (window is RecordingWindow recording) recording.Shutdown();
                 else if (window is ExamAwareWindow examAware) examAware.Shutdown();

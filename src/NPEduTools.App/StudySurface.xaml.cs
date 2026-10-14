@@ -36,6 +36,8 @@ public partial class StudySurface : UserControl
     private readonly DispatcherTimer _holdTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
     private readonly TimeProvider _time;
     private NoiseState? _noise;
+    private NpepState? _connection;
+    private NoiseCalibrationStatus? _calibration;
     private NoiseState? _drawnNoise;
     private bool _drawnEstimated;
     private string? _shownNotice;
@@ -72,13 +74,14 @@ public partial class StudySurface : UserControl
             bool ending=_endHold; CancelHold(); if(ending)await EndStudyAsync();else await HideAsync();
         };
     }
-    public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default)
+    public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default, NpepState? connection = null,
+        NoiseCalibrationStatus? calibration = null)
     {
         if (_timeline.State is not { } previous || previous.Phase != state.Phase || previous.Version != state.Version ||
             previous.Window != state.Window || previous.Display?.InstanceId != state.Display?.InstanceId || previous.ClockReady != state.ClockReady ||
             previous.Manual?.SessionId != state.Manual?.SessionId)
         { _reminderGeneration++; CancelHold(); }
-        _paused = false; _timeline.Apply(state, transportAge); _noise = noise; _timer.Start(); Render();
+        _paused = false; _timeline.Apply(state, transportAge); _noise = noise; _connection = connection; _calibration = calibration; _timer.Start(); Render();
     }
     public void Suspend()
         { _paused = true; _reminderGeneration++; _timer.Stop(); _pager.Advance(false); CancelHold(); _timeline.Suspend(); CloseSeatingView(); DismissNotice(); SetEdge("None"); _audio.Stop(); }
@@ -87,6 +90,7 @@ public partial class StudySurface : UserControl
     {
         if (_paused || _timeline.State is not { } state) return;
         bool fresh = _timeline.Fresh;
+        RenderConnection(state, fresh);
         bool manual=state.Manual is not null;
         ClassTitle.Text=manual?"手动自习":"学校自习";
         EndButton.Visibility=manual?Visibility.Visible:Visibility.Collapsed;EndButton.IsEnabled=fresh && state.Phase=="Active" && !_busy;
@@ -107,6 +111,7 @@ public partial class StudySurface : UserControl
         if(manual && !state.Manual!.HasPlannedEnd && state.Window is {} mw && state.SchoolNow is {} mn)
         {WindowText.Text=$"{mw.Start:HH:mm} – 主动结束";RemainingLabel.Text="已进行";Remaining.Text=TimeSpan.FromSeconds(Math.Max(0,(mn-mw.Start).TotalSeconds)).ToString(@"hh\:mm\:ss");}
         SessionNote.Text = _returnError ?? (state.Display?.StageAudioError is not null ? "阶段提示音暂不可用" :
+            state.Reason == "OFFLINE_CONTINUING" ? "本次自习按原安排到点结束" :
             state.Phase == "Preparing" ? "即将开始自习" : manual?state.Manual!.HasPlannedEnd?"手动自习 · 学校定时自习优先":"实际采集最多三小时 · 学校定时自习优先":"自习安排由学校管理后台设置");
         bool capturing = fresh && state.Phase == "Active" && state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true } execution &&
             _noise is { State: "Active" } noise && (execution.Owner=="Schedule" || manual) && execution.SessionId == noise.SessionId &&
@@ -117,7 +122,14 @@ public partial class StudySurface : UserControl
             state.CaptureState switch { "STARTING" or "WAITING_FRESH_SIGNAL" or "ACTIVE" => "正在等待采样", "STOPPING" => "正在停止监测", "STOPPED" => "监测已停止", "FAULTED" => "监测暂不可用", _ => "尚未开始采集" };
         NoiseStatus.Foreground = capturing ? Collecting : Muted;
         bool estimated = state.Settings?.Noise.Estimated is not null;
-        NoiseDetail.Text = estimated ? NoiseSignalPresentation.EstimateReason(_noise?.Estimate) : "dBFS · 数字信号电平";
+        var calibrationLabel = NoiseCalibrationPresentation.Describe(_calibration, _noise, fresh);
+        CalibrationText.Text = calibrationLabel.Text;
+        CalibrationBadge.ToolTip = calibrationLabel.Detail;
+        CalibrationText.Foreground = calibrationLabel.Tone switch { "Normal" => Collecting, "Warning" => SyncWarningText, _ => Muted };
+        bool waitingForReference = fresh && _calibration is { State: "Saved", Method: "ManualReference" or "UsbReferenceBeta" } &&
+            (_noise?.Estimate is null || state.Phase == "Preparing" && _noise.Estimate.State == "Stopped");
+        NoiseDetail.Text = estimated ? waitingForReference ? "估算 dB(A) · 等待输入核对" :
+            NoiseSignalPresentation.EstimateReason(_noise?.Estimate) : "dBFS · 数字信号电平";
         string mode = state.Settings?.Presentation.NoiseDisplay ?? "StatusTrend";
         TrendCanvas.Visibility = capturing && mode == "StatusTrend" ? Visibility.Visible : Visibility.Collapsed;
         Dbfs.Visibility = mode == "StatusDbfs" ? Visibility.Visible : Visibility.Collapsed;
@@ -151,6 +163,20 @@ public partial class StudySurface : UserControl
         RenderHomework(state, fresh);
         NoticeTime.Text = Clock.Text;
         _renderedAt = fresh ? _time.GetTimestamp() : null;
+    }
+    private static readonly Brush SyncNormal = FrozenBrush(132, 173, 154);
+    private static readonly Brush SyncWarning = FrozenBrush(209, 162, 101);
+    private static readonly Brush SyncMuted = FrozenBrush(105, 120, 131);
+    private static readonly Brush SyncWarningText = FrozenBrush(199, 177, 146);
+    private static readonly Brush SyncMutedText = FrozenBrush(147, 160, 169);
+    private static Brush FrozenBrush(byte r, byte g, byte b)
+    { var brush = new SolidColorBrush(Color.FromRgb(r, g, b)); brush.Freeze(); return brush; }
+    private void RenderConnection(StudyHostState state, bool fresh)
+    {
+        var label = StudyConnectionPresentation.Describe(state, _connection, fresh);
+        SyncText.Text = label.Text; SchoolSync.ToolTip = label.Detail;
+        SyncDot.Fill = label.Tone switch { "Normal" => SyncNormal, "Warning" => SyncWarning, _ => SyncMuted };
+        SyncText.Foreground = label.Tone switch { "Normal" => Muted, "Warning" => SyncWarningText, _ => SyncMutedText };
     }
     private void RenderProgress(StudyHostState state, bool fresh)
     {

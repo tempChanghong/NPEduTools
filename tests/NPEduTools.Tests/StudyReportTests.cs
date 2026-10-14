@@ -52,7 +52,8 @@ public sealed class StudyReportTests
     public async Task Withdrawn_context_cannot_show_previous_report(string change)
     {
         var clock = new Clock(); var id = Guid.NewGuid(); var state = Active(id); string scope = "class-a";
-        await using var service = new StudyReportService(() => (scope, true, state), () => Report(id, true), clock, false);
+        await using var service = new StudyReportService(() => (scope, true, state), () => Report(id), clock, false,
+            finishedStatistics: session => session == id ? Report(id, true) : null);
         service.Snapshot(); state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End };
         service.Snapshot(); clock.Ms = 5000; Assert.True(service.Snapshot().Available);
         if (change == "clock") state = state with { ClockReady = false };
@@ -87,6 +88,21 @@ public sealed class StudyReportTests
         var final = service.Snapshot(); Assert.True(final.Data!.Complete); Assert.Equal(5, final.Data.Frames);
         Assert.Contains(final.Data.Notes, n => n.Contains("参考已失效"));
         statistics = statistics with { Frames = 999 }; Assert.Equal(5, service.Snapshot().Data!.Frames);
+    }
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Finished_lookup_cannot_adopt_another_session_or_an_unfinished_snapshot(bool sameSession)
+    {
+        var clock = new Clock(); var id = Guid.NewGuid(); var state = Active(id); StudySessionReport? statistics = Report(id);
+        var wrong = sameSession ? Report(id) : Report(Guid.NewGuid(), true);
+        await using var service = new StudyReportService(() => ("class-a", true, state), () => statistics, clock, false,
+            finishedStatistics: _ => wrong);
+        service.Snapshot(); statistics = null;
+        state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End, Execution = null };
+        service.Snapshot(); clock.Ms = 5000;
+        Assert.False(service.Snapshot().Data!.Complete); Assert.Equal(2, service.Snapshot().Data!.Frames);
+        wrong = Report(id, true) with { Frames = 5 };
+        Assert.True(service.Snapshot().Data!.Complete); Assert.Equal(5, service.Snapshot().Data!.Frames);
     }
     [Fact]
     public void Energy_mean_threshold_durations_and_units_are_separate_and_invalid_data_is_excluded()
@@ -163,6 +179,42 @@ public sealed class StudyReportTests
         Assert.Equal(.25, report.Raw.HighSeconds, 8);
         s = noise.Snapshot(); noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("start", s.InstanceId, s.Revision, "synthetic-mic")));
         await Until(() => noise.Snapshot().State == "Active"); Assert.Null(noise.StudyReportSnapshot());
+    }
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Scheduled_report_keeps_terminal_tail_when_next_capture_replaces_current_session(bool nextScheduled)
+    {
+        var clock = new Clock(); var capture = new Capture();
+        await using var noise = new NoiseService(_ => capture, () => [], clock);
+        var n = noise.Snapshot();
+        noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("select", n.InstanceId, n.Revision, "synthetic-mic")));
+        var id = Guid.NewGuid(); Assert.Equal("Accepted", noise.StartScheduled(id).Outcome);
+        await Until(() => noise.Snapshot().State == "Active");
+        noise.StudyThresholds(id, Policy); clock.Ms = 100; capture.Emit();
+        var state = Active(id);
+        await using var reports = new StudyReportService(() => ("class-a", true, state), noise.StudyReportSnapshot, clock, false,
+            finishedStatistics: noise.FinishedStudyReport);
+        reports.Snapshot();
+        clock.Ms = 150; noise.StopScheduled(id); await Until(() => !noise.CaptureBusy);
+        var terminal = noise.StudyReportSnapshot()!;
+        Assert.True(terminal.Complete); Assert.Equal(.15, terminal.Raw.SampledSeconds, 8);
+        if (nextScheduled) Assert.Equal("Accepted", noise.StartScheduled(Guid.NewGuid()).Outcome);
+        else
+        {
+            n = noise.Snapshot();
+            Assert.Equal("Accepted", noise.Handle(new(1, Guid.NewGuid(), "noise.command",
+                Noise: new("start", n.InstanceId, n.Revision, "synthetic-mic"))).Outcome);
+        }
+        await Until(() => noise.Snapshot().State == "Active");
+        clock.Ms = 250; capture.Emit(); // This belongs to the new session, never to the old report.
+        state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End, Execution = null };
+        reports.Snapshot(); clock.Ms += 5000;
+        var final = reports.Snapshot();
+        Assert.True(final.Data!.Complete);
+        Assert.Equal(terminal.Raw.SampledSeconds, final.Data.SampledSeconds, 8);
+        Assert.Equal(terminal.Raw.EnergyMean!.Value, final.Data.Raw.EnergyMean!.Value, 8);
+        Assert.Equal(terminal.Raw.Maximum, final.Data.Raw.Maximum);
+        Assert.Equal(terminal.Frames, final.Data.Frames);
     }
     [Fact]
     public void Discipline_retries_count_only_successful_Host_permission_once()

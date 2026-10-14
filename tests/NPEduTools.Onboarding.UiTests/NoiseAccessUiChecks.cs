@@ -60,7 +60,7 @@ internal static partial class Program
                     busy.SetValue(window, true);
                     PumpUntil(() => first.IsCompleted, "initial synthetic noise device request did not arrive");
                     var request = first.GetAwaiter().GetResult();
-                    Assert(request.Capability == "noise.devices", "unexpected initial query");
+                    Assert(NoiseReadCapability(request) == "noise.devices", "unexpected initial query");
                     var warmup = Protocol.WriteAsync(initial, new HostResponse(Protocol.Version, request.RequestId,
                         "Succeeded", null, "合成设备", Noise: state, NoiseDevices: [new("fixture", "合成麦克风")]), timeout.Token);
                     PumpUntil(() => warmup.IsCompleted, "initial signal write stalled");
@@ -105,7 +105,7 @@ internal static partial class Program
                     var read = Read(recovered);
                     PumpUntil(() => read.IsCompleted, "noise polling did not recover after access was restored");
                     var fresh = read.GetAwaiter().GetResult();
-                    Assert(fresh.Capability == "noise.status" && fresh.Noise is null, "recovery replayed a command");
+                    Assert(NoiseReadCapability(fresh) == "noise.status" && fresh.Noise is null, "recovery replayed a command");
                     var reply = Protocol.WriteAsync(recovered, new HostResponse(Protocol.Version, fresh.RequestId,
                         "Succeeded", null, "隔离恢复", Noise: state with { State = "Active", Revision = 8, CurrentDbfs = -42 }), timeout.Token);
                     PumpUntil(() => reply.IsCompleted, "recovery signal write stalled");

@@ -30,6 +30,7 @@ public partial class MainWindow
     }
     private async Task NoiseDisplayPollAsync()
     {
+        var calibrationRead = new NoiseCalibrationRead();
         while (!_lifetime.IsCancellationRequested)
         {
             try
@@ -37,25 +38,29 @@ public partial class MainWindow
                 var studyRequestAt = Stopwatch.GetTimestamp();
                 bool probeSeating = _seatingUnsupportedAt is null || Stopwatch.GetElapsedTime(_seatingUnsupportedAt.Value).TotalSeconds >= 60;
                 bool probePhotos = _photosUnsupportedAt is null || Stopwatch.GetElapsedTime(_photosUnsupportedAt.Value).TotalSeconds >= 60;
-                var studyResponse = await ManagementRequestAsync(new(1, Guid.NewGuid(), probePhotos ? "study.status.photos" : probeSeating ? "study.status.seating" : "study.status"));
+                string studyCapability = probePhotos ? "study.status.photos" : probeSeating ? "study.status.seating" : "study.status";
+                var studyResponse = await calibrationRead.RequestAsync(new(1, Guid.NewGuid(), studyCapability), ManagementRequestAsync);
                 if (probePhotos && studyResponse is { Outcome: "Rejected", ErrorCode: "UnknownCapability" }) {
                     _photosUnsupportedAt = Stopwatch.GetTimestamp();
-                    studyResponse = await ManagementRequestAsync(new(1, Guid.NewGuid(), probeSeating ? "study.status.seating" : "study.status"));
+                    studyCapability = probeSeating ? "study.status.seating" : "study.status";
+                    studyResponse = await ManagementRequestAsync(new(1, Guid.NewGuid(), studyCapability));
                 } else if (probePhotos && studyResponse.Outcome == "Succeeded") _photosUnsupportedAt = null;
                 if (probeSeating && studyResponse is { Outcome: "Rejected", ErrorCode: "UnknownCapability" }) {
                     _seatingUnsupportedAt = Stopwatch.GetTimestamp();
-                    studyResponse = await ManagementRequestAsync(new(1, Guid.NewGuid(), "study.status"));
+                    studyCapability = "study.status";
+                    studyResponse = await ManagementRequestAsync(new(1, Guid.NewGuid(), studyCapability));
                 } else if (probeSeating && studyResponse.Outcome == "Succeeded") _seatingUnsupportedAt = null;
                 var studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
                 if (_lifetime.IsCancellationRequested) break;
                 UpdateStudyHome(studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(3.5) ? studyResponse.Study : null);
                 bool workspaceFresh = studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(3.5);
-                UpdateWorkspaceReadiness(workspaceFresh ? studyResponse.Noise : null, workspaceFresh ? studyResponse.Study?.Settings : null);
+                UpdateWorkspaceReadiness(workspaceFresh ? studyResponse.Noise : null, workspaceFresh ? studyResponse.Study?.Settings : null,
+                    workspaceFresh ? studyResponse.NoiseCalibrationStatus : null);
                 _quickProjectionAt = studyResponse.Outcome == "Succeeded" && studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
                 if (_quickProjectionAt is not null) UpdateQuickPresentationVisibility();
                 await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
                 long manualAt=Stopwatch.GetTimestamp();
-                var manual=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.status"));
+                var manual=await calibrationRead.RequestAsync(new(1,Guid.NewGuid(),"manual.study.status"), ManagementRequestAsync);
                 var manualAge=Stopwatch.GetElapsedTime(manualAt);
                 UpdateWorkspaceManual(manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(3.5) ? manual.ManualStudy : null);
                 bool schoolPriority=studyResponse.Outcome == "Succeeded" && studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
@@ -79,7 +84,7 @@ public partial class MainWindow
                         _studyReportWindow?.HideDisplay();
                         _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
                         _manualStudyWindow ??= TrackStudyPresentationWindow(new StudyWindow(_pipe, () => OpenNoiseClicked(this, new RoutedEventArgs()), manual: true));
-                        _manualStudyWindow.Apply(ms, manual.Noise, manualAge, studyResponse.StudyPhotos);
+                        _manualStudyWindow.Apply(ms, manual.Noise, manualAge, studyResponse.StudyPhotos, manual.Npep, manual.NoiseCalibrationStatus);
                         _manualStudyWindow.ShowDisplay();
                         continue;
                     }
@@ -100,14 +105,29 @@ public partial class MainWindow
                     await UpdateStudyReportAsync(studyBlocked);
                     if (_studyReportWindow?.IsVisible == true) { _studyWindow?.HideDisplay(); continue; }
                     studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
-                    if (!studyBlocked && studyRoundTrip < TimeSpan.FromSeconds(1.5) && studyResponse.Study.Display.Available && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())
+                    if (!studyBlocked && studyRoundTrip >= TimeSpan.FromSeconds(1.5))
+                    {
+                        // Unrelated exit/manual/report reads must not repeatedly withdraw a healthy school display.
+                        // Re-read authoritative state rather than extending its freshness allowance.
+                        studyRequestAt = Stopwatch.GetTimestamp();
+                        studyResponse = await calibrationRead.RequestAsync(new(1, Guid.NewGuid(), studyCapability), ManagementRequestAsync);
+                        studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
+                        _quickProjectionAt = studyResponse.Outcome == "Succeeded" && studyResponse.Study?.ProjectionPriority == true &&
+                            studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
+                    }
+                    if (!studyBlocked && !_exitBusy && _exitWarning is not { IsVisible: true } &&
+                        !_notificationOpening && _schoolNotification is null && _notificationPreview is null &&
+                        _onboardingWindow?.IsVisible != true && !Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible) &&
+                        studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(1.5) &&
+                        studyResponse.Study is { Display: { Selected: true, Available: true }, ProjectionPriority: false } &&
+                        !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())
                     {
                         using var studyProbe = RuntimeOperationFile.TryAcquire(false);
                         if (studyProbe is null) _studyWindow?.HideDisplay();
                         else
                         {
                             _studyWindow ??= TrackStudyPresentationWindow(new StudyWindow(_pipe, () => OpenStudyMonitoringClicked(this, new RoutedEventArgs())));
-                            _studyWindow.Apply(studyResponse.Study, studyResponse.Noise, studyRoundTrip, studyResponse.StudyPhotos);
+                            _studyWindow.Apply(studyResponse.Study, studyResponse.Noise, studyRoundTrip, studyResponse.StudyPhotos, studyResponse.Npep, studyResponse.NoiseCalibrationStatus);
                             _studyWindow.ShowDisplay();
                         }
                     }

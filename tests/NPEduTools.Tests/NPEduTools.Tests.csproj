@@ -64,5 +64,8 @@
     <Compile Include="../../src/NPEduTools.App/ClassIslandBridgeInspection.cs" Link="App/ClassIslandBridgeInspection.cs" />
     <Compile Include="../../src/NPEduTools.App/ClassIslandClockPresentation.cs" Link="App/ClassIslandClockPresentation.cs" />
     <Compile Include="../../src/NPEduTools.App/StudySchedulePresentation.cs" Link="App/StudySchedulePresentation.cs" />
+    <Compile Include="../../src/NPEduTools.App/StudyConnectionPresentation.cs" Link="App/StudyConnectionPresentation.cs" />
+    <Compile Include="../../src/NPEduTools.App/NoiseCalibrationPresentation.cs" Link="App/NoiseCalibrationPresentation.cs" />
+    <Compile Include="../../src/NPEduTools.App/NoiseCalibrationRead.cs" Link="App/NoiseCalibrationRead.cs" />
   </ItemGroup>
 </Project>

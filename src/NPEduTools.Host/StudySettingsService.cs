@@ -26,6 +26,10 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     private string _source = "None", _error = "WAITING_CONFIGURATION";
     private StudySettings? _settings;
     private TimeSpan? _confirmedAt;
+    private sealed record RunningStudy(SchoolNoiseWindow Window, TimeSpan EndAt, bool Completed = false);
+    private RunningStudy? _running;
+    private bool ConfigurationFresh => _confirmedAt is { } at && Elapsed >= at && Elapsed - at < MaxConfigurationAge;
+    private bool ContinuingOffline => !ConfigurationFresh && _running is not null;
     private StudyHostState _state = Empty("WAITING_CONFIGURATION");
     public INpepStudyPhotos? Photos { get; set; }
     public bool SupportsPhotos => Photos is not null;
@@ -57,13 +61,22 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     { get { lock (_sync) return (_scope, _scope is not null && _source is "Grade" or "Class" or "Disabled"); } }
     public (string? Scope, bool Selected, StudyHostState State) DisplaySnapshot()
     { lock (_sync) { var state = Snapshot(); var selection = DisplaySelection; return (selection.Scope, selection.Selected, state); } }
+    // Auxiliary noise metadata must not run scheduling, probe other software or stop an expired owner.
+    internal (string? Scope, StudyHostState State) CachedCalibrationContext
+    {
+        get
+        {
+            lock (_sync) return (_scope, ConfigurationFresh || _running is not null ? _state :
+                _state with { PolicyState = "UNAVAILABLE" });
+        }
+    }
     public void BindStudy(string? scope)
     {
         lock (_sync)
         {
             if (_scope == scope) return;
             _capture?.BindStudyCapture(scope);
-            _scope = scope; _settings = null; _version = null; _confirmedAt = null; _source = "None";
+            _scope = scope; _settings = null; _version = null; _confirmedAt = null; _source = "None"; _running = null;
             ClearHomework(); ClearSeating(); _seatingRevisionVersion = null; _highestSeatingRevision = 0;
             _tracker = new(); _error = scope is null ? "NOT_ELIGIBLE" : "WAITING_CONFIGURATION"; _state = Empty(_error);
         }
@@ -78,7 +91,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
         {
             if (_scope is null || !JsonNode.DeepEquals(JsonNode.Parse(_scope), configuration["identity"]))
                 throw new NpepException("SESSION_SUPERSEDED");
-            if (_version != configuration.Text("version")) ClearHomework();
+            if (_version != configuration.Text("version")) { ClearHomework(); _running = null; }
             _seatingClassId = configuration["scope"]!.AsObject().Text("classId");
             _source = configuration["effective"]!.AsObject().Text("source");
             _settings = configuration["effective"]!["settings"]?.Deserialize<StudySettings>(Protocol.Json);
@@ -92,10 +105,12 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     {
         lock (_sync)
         {
-            // Transport loss withdraws the applied display claim, not an already granted offline capture lease.
-            // Explicit policy/auth/protocol rejection must still fence execution immediately.
-            if (code is not ("STUDY_OFFLINE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED")) _capture?.StudyUnavailable(code);
+            // Remember execution while the last confirmed policy is still fresh, before withdrawing sync freshness.
+            Tick();
+            if (code is not ("STUDY_OFFLINE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED"))
+            { _running = null; _capture?.StudyUnavailable(code); }
             _confirmedAt = null; _error = code; _state = Empty(code);
+            Tick();
         }
     }
     public void Tick()
@@ -103,17 +118,37 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
         lock (_sync)
         {
             var mode = _modeSource() == "Exam" ? "Exam" : "Daily";
-            if (_mode != mode) { _mode = mode; _tracker = new(); ClearHomework(); }
+            if (_mode != mode) { _mode = mode; _tracker = new(); ClearHomework(); _running = null; }
             var elapsed = Elapsed;
-            if (_scope is null || _confirmedAt is not { } received || elapsed < received || elapsed - received >= MaxConfigurationAge)
-            { _state = Empty(_error.Length > 0 ? _error : "CONFIGURATION_STALE"); return; }
+            if (_scope is null || !ConfigurationFresh && _running is null)
+            {
+                if (_scope is not null && !ConfigurationFresh) _capture?.InvalidateStudy();
+                _state = Empty(_error.Length > 0 ? _error : "CONFIGURATION_STALE"); return;
+            }
             _tracker.Accept(_clock(), elapsed, 0);
             var reading = _tracker.Read(elapsed);
             _state = new(_version, "APPLIED", "NOT_INTEGRATED", "NOT_INTEGRATED", "Blocked",
                 "SCHOOL_CLOCK_UNAVAILABLE", reading.CanStart, reading.Now, null, null, _settings);
             if (_source is "None" or "Disabled")
-            { _state = _state with { Phase = "Disabled", Reason = "DISABLED" }; return; }
+            { _running = null; _state = _state with { Phase = "Disabled", Reason = _source == "None" ? "NOT_CONFIGURED" : "DISABLED" }; return; }
             if (!reading.CanStart || reading.Now is not { Year: >= 2000 and <= 9998 } now) return;
+            if (!ConfigurationFresh)
+            {
+                var execution = _capture?.ObserveStudyExecution()?.Deserialize<StudyCaptureState>(Protocol.Json);
+                if (_running is not { } held || elapsed > held.EndAt + TimeSpan.FromSeconds(305) ||
+                    (!held.Completed && execution?.Reason is "WINDOW_SKIPPED" or "POLICY_EXPIRED" or "NOT_ELIGIBLE" or "EXAM_PAUSED") || _exam())
+                { _running = null; _capture?.InvalidateStudy(); _state = Empty(_error.Length > 0 ? _error : "CONFIGURATION_STALE"); return; }
+                // Only this already executing window survives transport loss. No cached next window is started or advertised.
+                bool ended = now >= held.Window.End || elapsed >= held.EndAt;
+                if (ended && !held.Completed)
+                {
+                    _running = held with { Completed = true };
+                    _capture?.InvalidateStudy(); // The surviving grant must not silently start a later offline window.
+                }
+                _state = _state with { Phase = ended ? "Outside" : "Active", Reason = "OFFLINE_CONTINUING",
+                    SchoolNow = ended && now < held.Window.End ? held.Window.End : now, Window = ended ? null : held.Window };
+                return;
+            }
             try
             {
                 var windows = SchoolStudySchedule.Windows(_settings!.ForMode(_mode), now);
@@ -122,6 +157,11 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
                 _state = _state with { Phase = windows.Current is not null ? "Active" : prepare ? "Preparing" : "Outside",
                     Reason = windows.Current is not null ? "WINDOW_ACTIVE" : prepare ? "PREPARING" : "OUTSIDE_WINDOW",
                     Window = windows.Current ?? (prepare ? windows.Next : null), Next = windows.Next };
+                if (_state is { Phase: "Active", Window: { } active } &&
+                    _capture?.ObserveStudyExecution()?.Deserialize<StudyCaptureState>(Protocol.Json) is
+                        { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null, Reason: "WINDOW_ACTIVE" or "CAPTURE_STARTING", ClockReady: true } started &&
+                    started.Mode == _mode && started.Window == new StudyExecutionWindow(Stamp(active.Start), Stamp(active.End)))
+                    _running = _running?.Window == active ? _running : new(active, elapsed + (active.End - now));
             }
             catch (ArgumentException) { _state = _state with { Phase = "Blocked", Reason = "INVALID_STUDY_CALENDAR" }; }
         }
@@ -149,6 +189,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
             if (_scope is null || _version != configuration.Text("version") || _confirmedAt is not { } at || Elapsed - at >= MaxConfigurationAge)
                 throw new NpepException("SESSION_SUPERSEDED");
             _capture?.ConfirmStudyExecution(configuration, response, roundTrip);
+            Tick();
         }
     }
     public StudyHostState Snapshot()
@@ -165,17 +206,21 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     private static string Stamp(DateTimeOffset value) => value.ToString("yyyy-MM-dd'T'HH:mm:ss.fff", CultureInfo.InvariantCulture);
     public JsonObject? ObserveStudy()
     {
-        var state = Snapshot();
-        if (state.PolicyState != "APPLIED" || state.Version is null) return null;
-        var observation = new JsonObject { ["version"] = state.Version, ["policyState"] = state.PolicyState,
-            // The 0.10 configuration-only receipt keeps its reserved placeholder for old parsers.
-            // Actual capture facts are sent through the independent execution exchange and local Execution field.
-            ["presentationState"] = state.PresentationState, ["captureState"] = "NOT_INTEGRATED",
-            ["phase"] = state.Phase, ["reason"] = state.Reason, ["clockReady"] = state.ClockReady,
-            ["schoolNow"] = state.SchoolNow is { Year: >= 2000 and <= 9998 } now ? Stamp(now) : null,
-            ["window"] = state.Window is { } window ? new JsonObject { ["start"] = Stamp(window.Start), ["end"] = Stamp(window.End) } : null };
-        if (_mode == "Exam") observation["mode"] = _mode;
-        return observation;
+        lock (_sync)
+        {
+            var state = Snapshot();
+            if (!ConfigurationFresh) return null;
+            if (state.PolicyState != "APPLIED" || state.Version is null) return null;
+            var observation = new JsonObject { ["version"] = state.Version, ["policyState"] = state.PolicyState,
+                // The 0.10 configuration-only receipt keeps its reserved placeholder for old parsers.
+                // Actual capture facts are sent through the independent execution exchange and local Execution field.
+                ["presentationState"] = state.PresentationState, ["captureState"] = "NOT_INTEGRATED",
+                ["phase"] = state.Phase, ["reason"] = state.Reason, ["clockReady"] = state.ClockReady,
+                ["schoolNow"] = state.SchoolNow is { Year: >= 2000 and <= 9998 } now ? Stamp(now) : null,
+                ["window"] = state.Window is { } window ? new JsonObject { ["start"] = Stamp(window.Start), ["end"] = Stamp(window.End) } : null };
+            if (_mode == "Exam") observation["mode"] = _mode;
+            return observation;
+        }
     }
     private async Task LoopAsync()
     {

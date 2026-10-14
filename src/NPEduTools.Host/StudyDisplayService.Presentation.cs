@@ -38,7 +38,7 @@ public sealed partial class StudyDisplayService
             string shown = "Unknown", reason = "WAITING_APP";
             Seen? seen = null; int remaining = PresentationLifetimeMs;
             if (!state.Display!.Selected || state.Phase is "Disabled" or "Outside")
-            { shown = "NotRequired"; reason = state.Reason; }
+            { shown = "NotRequired"; reason = state.Reason == "OFFLINE_CONTINUING" ? "OUTSIDE_WINDOW" : state.Reason; }
             else if (!state.ClockReady || state.Phase == "Blocked")
             { shown = "Blocked"; reason = state.Reason; }
             else

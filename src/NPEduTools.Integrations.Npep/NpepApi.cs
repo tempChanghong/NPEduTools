@@ -13,7 +13,7 @@ public sealed partial class NpepApi : IDisposable
     internal NpepApi(string origin, HttpMessageHandler handler)
     {
         Origin = ValidateOrigin(origin);
-        _http = new(handler) { BaseAddress = new Uri(Origin + "/api/v2/npep/"), Timeout = TimeSpan.FromSeconds(10) };
+        _http = new(new ObserveHandler(handler, item => Observation?.Invoke(item))) { BaseAddress = new Uri(Origin + "/api/v2/npep/"), Timeout = TimeSpan.FromSeconds(10) };
     }
     public static string ValidateOrigin(string origin)
     {
@@ -46,22 +46,12 @@ public sealed partial class NpepApi : IDisposable
         }
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         if ((int)response.StatusCode is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
-        if (response.Content.Headers.ContentLength > 65536) throw new NpepException("INVALID_RESPONSE");
-        using var stream = await response.Content.ReadAsStreamAsync(token);
-        using var buffer = new MemoryStream();
-        var block = new byte[4096];
-        int read;
-        while ((read = await stream.ReadAsync(block, token)) > 0)
-        {
-            if (buffer.Length + read > 65536) throw new NpepException("INVALID_RESPONSE");
-            buffer.Write(block, 0, read);
-        }
-        JsonObject envelope = NpepProtocol.Parse(buffer.ToArray());
+        var envelope = await ReadEnvelopeAsync(response, 65536, token, request);
         if (envelope.Text("requestId") != requestId || envelope.Text("protocolVersion") != "0.1")
             throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {
-            NpepProtocol.Validate("error", envelope);
+            ValidateResponse(response, () => NpepProtocol.Validate("error", envelope));
             var error = (JsonObject)envelope["error"]!;
             int? retry = error["retryAfterSeconds"]?.GetValue<int>();
             if (response.Headers.RetryAfter?.Delta is { } delta) retry = Math.Clamp((int)Math.Ceiling(delta.TotalSeconds), 1, 3600);

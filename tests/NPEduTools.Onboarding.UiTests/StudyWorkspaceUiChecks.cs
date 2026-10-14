@@ -54,6 +54,7 @@ internal static partial class Program
                 Invoke("ShowStudyWorkspace", "Manual");
                 var panel = Field<NoiseWindow>("_noiseWindow");
                 PumpUntil(() => ((Button)panel.FindName("StartButton")).IsEnabled, "embedded manual panel did not receive real Host state");
+                Assert(((TextBlock)panel.FindName("CalibrationStatus")).Text == "未校准", "real Host calibration summary did not reach the manual settings panel");
                 Assert(!panel.IsVisible && Element<FrameworkElement>("StudyWorkspace").IsVisible, "manual opened another native window");
                 Assert(((FrameworkElement)panel.FindName("StartFields")).Visibility == Visibility.Collapsed &&
                     ((FrameworkElement)panel.FindName("EndFields")).Visibility == Visibility.Collapsed, "optional dates crowd immediate workflow");

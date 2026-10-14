@@ -186,7 +186,8 @@ await using var manualStudy=new ManualStudyService(noise,studySettings.DisplaySn
 var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
     calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder, projection: projecting, inactivity: desktopInactivity.Read);
 await using var studyReport = new StudyReportService(studySettings.DisplaySnapshot, noise.StudyReportSnapshot,
-    observePolicy: (scope, version, session, policy) => noise.StudyThresholds(session, noise.ResolveCalibration(scope, version, policy)), projection: projecting);
+    observePolicy: (scope, version, session, policy) => noise.StudyThresholds(session, noise.ResolveCalibration(scope, version, policy)), projection: projecting,
+    finishedStatistics: noise.FinishedStudyReport);
 studySettings.PresentationObservation = studyDisplay.ObservePresentation;
 await using var studyPhotos = new StudyPhotoService(()=>manualStudy.Status().State is "Starting" or "Active"?manualStudy.PhotoSource():studySettings.DisplaySnapshot(), noise, studyDevices, StudyPhotoProcess.CaptureAsync,
     new StudyPhotoJournal(Path.Combine(dataDirectory, "npep", "photos"), NpepPhotoProtection.Protect));

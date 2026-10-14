@@ -24,6 +24,9 @@ public static class AdminClient
     private static async Task<AdminResult> RunCoreAsync(string helper, string action, string executable, string? fingerprint,
         Func<Task>? beforeDispatch, int? expectedProcessId, long? expectedProcessStarted, bool ownsRuntimeLease)
     {
+        if (!File.Exists(helper)) return new("Failed",
+            "管理员组件文件不存在或无法访问，尚未发送操作。请修复安装并核对组件位置：" + helper,
+            ErrorCode: "AdminHelperMissing");
         // Frontend buttons call this component directly, outside the Host's in-memory gate.
         // Runtime-close is an internal fixed operation whose caller already owns the exclusive lease.
         bool mutation = !ownsRuntimeLease && AdminOperationPolicy.RequiresReservation(action);

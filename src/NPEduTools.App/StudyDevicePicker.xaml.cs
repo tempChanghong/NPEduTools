@@ -20,6 +20,7 @@ public partial class StudyDevicePicker : UserControl
     private long _generation;
     private bool _busy, _rendering, _connected;
     private NoiseDevice[] _microphones = [];
+    private readonly NoiseCalibrationRead _calibrationRead = new();
     public StudyDevicePicker()
     {
         InitializeComponent();
@@ -30,6 +31,7 @@ public partial class StudyDevicePicker : UserControl
     public void Bind(string pipe) { if (_pipe != pipe) { CancelPending(); _pipe = pipe; _noise = null; _camera = null; _connected = false; } }
     public void CancelPending()
     {
+        CalibrationStatus.Text = "校准状态待刷新"; CalibrationStatus.ToolTip = null;
         if (_busy) { _connected = false; DeviceMessage.Text = "设备操作结果待确认，请刷新核对。"; }
         _generation++; _operation?.Cancel(); _operation?.Dispose(); _operation = null; _busy = false; UpdateButtons();
     }
@@ -47,7 +49,8 @@ public partial class StudyDevicePicker : UserControl
         string? draftMic = StudyMicrophone.SelectedValue as string, draftCamera = StudyCamera.SelectedValue as string;
         try
         {
-            var microphones = await HostClient.RequestAsync(_pipe, "noise.devices", token);
+            long calibrationAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            var microphones = await _calibrationRead.RequestAsync(_pipe, new(1, Guid.NewGuid(), "noise.devices"), token);
             if (generation != _generation) return;
             if (microphones.Outcome != "Succeeded" || microphones.Noise is not { } microphoneState ||
                 microphoneState.InstanceId == Guid.Empty || microphoneState.Revision < 0 || microphones.NoiseDevices is null ||
@@ -60,6 +63,9 @@ public partial class StudyDevicePicker : UserControl
                 cameraState.InstanceId == Guid.Empty || cameraState.Revision < 0 || cameraState.Cameras is null ||
                 cameraState.Cameras.Any(device => device is null)) throw new InvalidDataException("摄像头与设备锁定状态未确认。");
             _noise = microphones.Noise; _microphones = DistinguishMicrophones(microphones.NoiseDevices); _camera = cameras.StudyDevices;
+            var calibration = NoiseCalibrationPresentation.Describe(microphones.NoiseCalibrationStatus, microphones.Noise,
+                System.Diagnostics.Stopwatch.GetElapsedTime(calibrationAt).TotalSeconds < 3.5);
+            CalibrationStatus.Text = calibration.Text; CalibrationStatus.ToolTip = calibration.Detail;
             _connected = true; _rendering = true;
             var micList = _microphones.ToList();
             if (_noise.SelectedDeviceId is { } saved && !micList.Any(d => d.Id == saved)) micList.Add(new(saved, "已保存的麦克风 · 当前不可用"));
@@ -82,6 +88,7 @@ public partial class StudyDevicePicker : UserControl
         {
             if (generation != _generation) return;
             _connected = false; DeviceMessage.Text = "设备状态暂不可用，请检查后台连接后刷新；旧列表不能用于保存。";
+            CalibrationStatus.Text = "校准状态待确认"; CalibrationStatus.ToolTip = null;
             MicrophoneStatus.Text = "麦克风状态待重新读取"; CameraStatus.Text = "摄像头状态待重新读取";
         }
         finally { if (generation == _generation) { _rendering = false; _busy = false; UpdateButtons(); } }
@@ -106,6 +113,7 @@ public partial class StudyDevicePicker : UserControl
             StudyCamera.SelectedValue is string cam && (cam.Length == 0 || _camera.Cameras.Any(d => d.Id == cam));
         if (!_connected)
         {
+            CalibrationStatus.Text = "校准状态待确认"; CalibrationStatus.ToolTip = null;
             MicrophoneStatus.Text = "麦克风状态待重新读取";
             CameraStatus.Text = "摄像头状态待重新读取";
         }
@@ -167,6 +175,7 @@ public partial class StudyDevicePicker : UserControl
             else
             {
                 DeviceMessage.Text = camera ? "摄像头选择已保存，未开始捕获。" : "监测麦克风已保存，未开始采集。";
+                if (!camera) { CalibrationStatus.Text = "校准状态待刷新"; CalibrationStatus.ToolTip = "麦克风选择已保存，请刷新核对校准状态。"; }
                 DeviceMessage.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 125, 104));
                 SelectionSaved?.Invoke(this, EventArgs.Empty);
             }

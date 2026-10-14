@@ -16,7 +16,7 @@ public sealed partial class StudySettingsService
     private StudySeatingState SeatingState()
     {
         bool eligible = _state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active" };
-        if (!eligible || _seating?.Version != _version || _seatingAt is { } at && (Elapsed < at || Elapsed - at >= TimeSpan.FromSeconds(15))) ClearSeating();
+        if (!eligible || _seating?.Version != _version || !ContinuingOffline && _seatingAt is { } at && (Elapsed < at || Elapsed - at >= TimeSpan.FromSeconds(15))) ClearSeating();
         return _seating ?? new(!eligible ? "WAITING" : _seatingError, _version, 0, null, 0, 0, 0, 0);
     }
     public JsonObject? StudySeatingRequest() { var s = Snapshot(); return s is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active", Version: { } v } ? new() { ["version"] = v } : null; }

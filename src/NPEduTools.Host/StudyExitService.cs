@@ -74,8 +74,13 @@ public sealed class StudyExitService : INpepStudyExitEvents,IAsyncDisposable
     {lock(_sync){Tick();return requestId!=_id || _state is "Succeeded" or "NotRequired" or "Invalidated";}}
     private void Fail(string reason)
     {
+        // School time, policy or capture ownership may have changed since Tick.
+        // Never construct an accusation from an unvalidated second observation.
+        var current=Read();
+        if(current is null || Key(current.Value.Scope,current.Value.State,current.Value.Protection)!=_key)
+        {_state="Invalidated";return;}
         _state="Failed";_reason=reason;_failed=_time.GetTimestamp();
-        var s=_sample().State;
+        var s=current.Value.State;
         var meta=new JsonObject{["eventId"]=_id.ToString(),["version"]=_begin!.Version,["sessionId"]=_session!.Value.ToString(),
             ["reason"]=reason,["deviceTime"]=_time.GetUtcNow().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"),
             ["schoolNow"]=s.SchoolNow!.Value.DateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff"),

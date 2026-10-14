@@ -4,6 +4,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/NPEduTools.Core/NPEduTools.Core.csproj" />
     <Compile Include="../../src/NPEduTools.Host/NoiseService.cs" Link="NoiseService.cs" />
+    <Compile Include="../../src/NPEduTools.Host/DeviceInventory.cs" Link="DeviceInventory.cs" />
     <Compile Include="../../src/NPEduTools.Host/NoiseService.*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../../src/NPEduTools.Host/SoundMeterService.cs" Link="SoundMeterService.cs" />
     <Compile Include="../../src/NPEduTools.Host/Dly2202Reader.cs" Link="Dly2202Reader.cs" />

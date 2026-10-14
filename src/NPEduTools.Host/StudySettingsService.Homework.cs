@@ -18,7 +18,7 @@ public sealed partial class StudySettingsService
         string? date = _state.SchoolNow?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         bool eligible = _state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active" or "Preparing" };
         if (!eligible || _settings?.Homework.Enabled != true || _homeworkDate is not null && _homeworkDate != date) ClearHomework();
-        if (_homeworkAt is { } at && (Elapsed < at || Elapsed - at >= TimeSpan.FromSeconds(60))) ClearHomework("UNAVAILABLE");
+        if (!ContinuingOffline && _homeworkAt is { } at && (Elapsed < at || Elapsed - at >= TimeSpan.FromSeconds(60))) ClearHomework("UNAVAILABLE");
         return new(!eligible ? "WAITING" : _settings?.Homework.Enabled != true ? "DISABLED" : _homeworkId is not null ? "READY" : _homeworkError,
             _homeworkId, _homeworkBytes is null ? 0 : (_homeworkBytes.Length + 16383) / 16384, date, _version);
     }
@@ -42,7 +42,15 @@ public sealed partial class StudySettingsService
             _homeworkBytes = bytes.ToArray(); _homeworkId = snapshotId; _homeworkDate = payload.Text("date"); _homeworkAt = Elapsed; _homeworkError = "WAITING";
         }
     }
-    public void StudyHomeworkFailed(string code) { lock (_sync) ClearHomework(code == "STUDY_HOMEWORK_UNSUPPORTED" ? "UNSUPPORTED" : "UNAVAILABLE"); }
+    public void StudyHomeworkFailed(string code)
+    {
+        lock (_sync)
+        {
+            Tick();
+            if (ContinuingOffline && code is "HOMEWORK_OFFLINE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED") return;
+            ClearHomework(code == "STUDY_HOMEWORK_UNSUPPORTED" ? "UNSUPPORTED" : "UNAVAILABLE");
+        }
+    }
     public HostResponse ReadHomework(HostRequest request)
     {
         lock (_sync)

@@ -150,6 +150,30 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { return null; }
     }
+    internal bool IsMicrophonePresent(string? id)
+    {
+        if (!NoiseContract.ValidDeviceId(id)) return false;
+        try
+        {
+            // Wire inventories are bounded display projections, not absence evidence.
+            // Enumerate afresh at selection time without opening a capture device.
+            var catalog = devices();
+            RecoverSelection();
+            return catalog.Any(d => d?.Id == id);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException) { return false; }
+    }
+    private void RecoverSelection()
+    {
+        lock (_sync)
+        {
+            // Refresh can recover an initially unreadable saved preference. It never
+            // replaces a current selection, starts capture, or rewrites configuration.
+            if (_selected is not null || _disposed || _shuttingDown || ExitPending || CaptureBusy ||
+                LoadSelection(directory) is not { } saved) return;
+            _selected = saved; _revision++;
+        }
+    }
     private void Select(string id)
     {
         if (_selected != id) { InvalidateReference("DEVICE_CHANGED"); _lastSignature = null; _lastReferenceSignature = null; _referenceSignatureAt = null; }
@@ -217,7 +241,16 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     {
         if (request.Capability == "noise.devices")
         {
-            try { return Reply(request, "Succeeded", null, "麦克风列表已更新。", devices().Take(128).ToArray()); }
+            try
+            {
+                var catalog = devices();
+                lock (_sync)
+                {
+                    RecoverSelection();
+                    var available = DeviceInventory.Limit(catalog, _selected, d => d.Id);
+                    return Reply(request, "Succeeded", null, "麦克风列表已更新。", available);
+                }
+            }
             catch (Exception error) when (error is not OutOfMemoryException)
             { return Reply(request, "Rejected", "NoiseDevicesUnavailable", "无法枚举麦克风，请检查 Windows 音频服务。", []); }
         }
@@ -531,6 +564,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                     FinishReference(s);
                 }
                 FinishReferenceUse(s);
+                PreserveStudyReport(s);
                 finished = Snapshot();
             }
             if (s.Calibration is null && s.Reference is null) Completed?.Invoke(finished);

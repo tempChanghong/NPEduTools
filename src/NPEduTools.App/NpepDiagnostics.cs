@@ -7,7 +7,7 @@ namespace NPEduTools.App;
 public static class NpepDiagnostics
 {
     public static JsonObject Create(string appVersion, DateTimeOffset generatedAt,
-        HostResponse? connection, DateTimeOffset? connectionAt, HostResponse? cached, DateTimeOffset? cachedAt)
+        HostResponse? connection, DateTimeOffset? connectionAt, HostResponse? cached, DateTimeOffset? cachedAt, HostResponse? history = null)
     {
         var state = connection?.Outcome == "Succeeded" ? connection.Npep : null;
         var local = cached?.Outcome == "Succeeded" ? cached : null;
@@ -16,8 +16,9 @@ public static class NpepDiagnostics
             ["schemaVersion"] = 1, ["kind"] = "npep-desktop-diagnostics",
             ["generatedAt"] = generatedAt.ToUniversalTime().ToString("O"),
             ["appVersion"] = ApplicationVersion(appVersion), ["protocolVersion"] = Protocol.Version,
-            ["privacy"] = "Includes service origin and binding identifiers. No pairing codes, credentials, names, paths, lesson content, logs or audio. Review before sharing.",
+            ["privacy"] = "Includes service origin, binding identifiers and bounded redacted connection events. No pairing codes, credentials, names, paths, raw logs, request/response bodies or audio. Review before sharing.",
             ["observation"] = "Read-only local snapshots; sections collected separately. This is not a live probe or a remote execution receipt.",
+            ["connectionHistory"] = History(history),
             ["connection"] = new JsonObject
             {
                 ["available"] = state is not null, ["observedAt"] = At(state is not null ? connectionAt : null),
@@ -75,6 +76,19 @@ public static class NpepDiagnostics
     }
     private static string? Version(string? value) => value is { Length: > 0 and <= 160 } &&
         System.Text.RegularExpressions.Regex.IsMatch(value, @"^(?:InDev \d{8}|\d+\.\d+\.\d+(?:[-.][a-zA-Z0-9.]+)?)(?:\+[a-fA-F0-9]{7,64})?$") ? value : null;
-    private static string? Error(string? value) => value is null ? null : Choice(value,
-        "AUTH_INVALID BINDING_CHANGED CREDENTIAL_EXPIRED CREDENTIAL_STORE_UNAVAILABLE INSTANCE_MISMATCH INVALID_REQUEST INVALID_RESPONSE JOURNAL_UNAVAILABLE NETWORK_UNAVAILABLE PAIRING_ALREADY_EXISTS PAIRING_CODE_UNAVAILABLE PAIRING_EXPIRED PREAUTHORIZATION_CHANGED REVISION_CONFLICT SCREEN_PAIRING_DISABLED SESSION_SUPERSEDED STORE_UNAVAILABLE TEMPORARILY_UNAVAILABLE TLS_VALIDATION_FAILED UNSUPPORTED");
+    private static string? Error(string? value) => NpepDiagnosticValues.Error(value);
+    private static JsonObject History(HostResponse? response)
+    {
+        var history = response?.Outcome == "Succeeded" ? response.ConnectionHistory : null;
+        var events = new JsonArray();
+        foreach (var item in history?.Events?.Where(e => e is not null).TakeLast(NpepDiagnosticValues.MaxEvents) ?? [])
+        {
+            var safe = NpepDiagnosticValues.Safe(item);
+            events.Add(new JsonObject { ["id"] = Id(safe.Id), ["at"] = safe.At.ToString("O"), ["kind"] = safe.Kind,
+                ["endpoint"] = safe.Endpoint, ["error"] = safe.Code, ["httpStatus"] = safe.HttpStatus,
+                ["requestId"] = Id(safe.RequestId), ["elapsedMs"] = safe.ElapsedMs, ["retrying"] = safe.Retrying });
+        }
+        return new() { ["available"] = history is not null,
+            ["persistence"] = history is null ? null : Choice(history.Persistence, "Stored Pending Unavailable Empty"), ["events"] = events };
+    }
 }

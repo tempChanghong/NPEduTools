@@ -5,7 +5,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class StudyDeviceTests
+public sealed partial class StudyDeviceTests
 {
     private sealed class NeverRead : ILessonStatusReader
     { public Task<StatusResult> ReadAsync(StatusQuery query, CancellationToken token) => throw new InvalidOperationException("No sensor/clock startup"); }
@@ -143,6 +143,9 @@ public sealed class StudyDeviceTests
         for (int i = 0; i < 3; i++)
         {
             var state = service.Snapshot(); Assert.Null(state.CameraId); Assert.Equal("CameraConfigurationUnavailable", state.Error);
+            var refresh = service.Handle(new(1, Guid.NewGuid(), "study.devices.refresh"));
+            Assert.Equal("CameraConfigurationUnavailable", refresh.ErrorCode);
+            Assert.Equal(state.Revision, refresh.StudyDevices!.Revision);
             Assert.Equal("CameraConfigurationUnavailable", service.Handle(Select(state, "synthetic")).ErrorCode);
             Assert.Equal("CameraConfigurationUnavailable", service.Handle(Select(state, null)).ErrorCode);
             Assert.Equal(original, File.ReadAllText(path));

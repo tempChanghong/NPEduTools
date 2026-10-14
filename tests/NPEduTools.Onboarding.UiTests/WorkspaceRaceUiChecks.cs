@@ -36,7 +36,7 @@ internal static partial class Program
                 WorkspaceCalibrationProtocolFailures, WorkspaceSchoolProtocolFailure,
                 WorkspacePresentationAccessFailure, WorkspaceSeatingAccessFailure, WorkspaceManualEndAccessFailure })
                 try { check(); } catch (Exception e) { errors.Add(new InvalidOperationException(check.Method.Name + ": " + e.Message, e)); }
-            foreach (string scenario in new[] { "rejected-report", "empty-report", "accepted-report", "delayed-manual", "delayed-school", "school-report" })
+            foreach (string scenario in new[] { "rejected-report", "empty-report", "accepted-report", "delayed-manual", "delayed-school", "delayed-school-withdrawn", "delayed-school-projection", "school-report" })
                 try { WorkspaceDisplayPipelineCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
             if (errors.Count > 0) throw new AggregateException(errors);
         }
@@ -87,7 +87,7 @@ internal static partial class Program
             var disposal = noise.DisposeAsync().AsTask(); PumpUntil(() => disposal.IsCompleted,"noise fixture cleanup stalled"); disposal.GetAwaiter().GetResult();
         }
     }
-    private static async Task WorkspaceProxy(string pipe, Func<HostRequest, Task<HostResponse>> handle, CancellationToken token)
+    private static async Task WorkspaceProxy(string pipe, Func<HostRequest, Task<HostResponse>> handle, CancellationToken token, bool supportsCalibrationStatus = false)
     {
         async Task Loop()
         {
@@ -98,7 +98,10 @@ internal static partial class Program
                 {
                     await socket.WaitForConnectionAsync(token);
                     var request = await Protocol.ReadAsync<HostRequest>(socket, token);
-                    var response = await handle(request);
+                    // Existing fixtures emulate an older Host; new metadata is opt-in and must fall back.
+                    var response = !supportsCalibrationStatus && NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null
+                        ? new HostResponse(1, request.RequestId, "Rejected", "UnknownCapability", "old fixture Host")
+                        : await handle(request);
                     await Protocol.WriteAsync(socket, response, token);
                 }
                 catch (IOException) { } // Closed UI transport is intentional, not a replay trigger.

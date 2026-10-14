@@ -153,8 +153,8 @@ public partial class NoiseReferenceWindow : Window
         ReferenceHealth.Text = state.Error is not null || state.InvalidationReason is not null ? "参考不可用 · 请重新校准；原配置保留" :
             state.Profile is null ? "尚未保存估算参考" : state.FreshSignatureMatched ? "已保存估算参考 · 本次输入已核对" : "已保存估算参考 · 正式采样时核对输入设置";
         ReferenceHealth.ToolTip = state.Error ?? state.InvalidationReason;
-        ProfileStatus.Text = state.Profile is not { } p ? "尚无已确认的外部参考配置" :
-            $"已保存估算参考 · {(p.Method == "UsbReferenceBeta" ? "USB (Beta) · " : "")}{p.Instrument} · A/{p.TimeWeighting} · 偏移 {p.OffsetDb:+0.00;-0.00;0.00} dB\n" +
+        ProfileStatus.Text = state.Error is not null && state.Profile is null ? "校准不可用 · 原文件保留" : state.Profile is not { } p ? "未参考校准 · 尚无已确认的外部参考配置" :
+            $"{(state.Error is not null ? "校准不可用" : state.InvalidationReason is not null ? "校准已失效" : NoiseCalibrationPresentation.MethodName(p.Method))} · {p.Instrument} · A/{p.TimeWeighting} · 偏移 {p.OffsetDb:+0.00;-0.00;0.00} dB\n" +
             (NoiseReferenceCalibration.Describe(p) is {} note?note+"\n":"") +
             (state.Error is not null || state.InvalidationReason is not null ? "参考不可用：" + (state.Error ?? state.InvalidationReason) + "；请新建草稿重新校准。" : "正式监测会核对所选设备、输入设置与格式；匹配后另行显示估算 dB(A)，原始 dBFS 保留。");
         DraftStatus.Text = state.Draft is { } d ? $"当前草稿：{d.Instrument} · A/{d.TimeWeighting} · 波动 ≤ {d.StabilityDb:F1} dB · " +
@@ -263,7 +263,14 @@ public partial class NoiseReferenceWindow : Window
         AttachReference.IsEnabled = RemoveSample.IsEnabled && _state!.Draft!.MeterDevicePath is null;
         ConfirmProfile.IsEnabled = matchingDraft && _state!.Evaluation.Ready && (_state.Evaluation.Assessment?.WarningRequired!=true || AcceptReferenceWarning.IsChecked==true);
         ClearProfile.IsEnabled = idle && _state!.Profile is not null;
-        if (!_connected) ReferenceHealth.Text = "后台连接待确认 · 旧状态不能用于保存";
+        if (!_connected)
+        {
+            ReferenceHealth.Text = "后台连接待确认 · 旧状态不能用于保存";
+            ReferenceHealth.ToolTip = null;
+            ProfileStatus.Text = "校准状态待确认 · 旧信息不能证明当前已应用";
+            SamplingStatus.Text = "采样状态待确认，请刷新核对；不能据此判断后台采样已停止。";
+            MeterStatus.Text = "仪表读数待确认 · 不沿用旧 USB 读数";
+        }
         UpdateSteps();
     }
     private void UpdateSteps()

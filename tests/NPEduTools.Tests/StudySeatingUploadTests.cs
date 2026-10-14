@@ -5,7 +5,7 @@ using NPEduTools.Core;
 using NPEduTools.Host;
 using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Tests;
-public sealed class StudySeatingUploadTests
+public sealed partial class StudySeatingUploadTests
 {
     private sealed class NoSchoolRead : ILessonStatusReader
     { public Task<StatusResult> ReadAsync(StatusQuery query, CancellationToken token) => throw new InvalidOperationException("No real school or device reads"); }

@@ -32,6 +32,8 @@ internal static partial class Program
             RunStudyDeviceProtocolChecks();
             RunDeviceRefreshSnapshotChecks();
             RunDeviceRejectionStateChecks();
+            RunSelectedInventoryUiChecks();
+            RunSelectionCatalogUiChecks();
             Exercise(window, owner =>
             {
                 var picker = (StudyDevicePicker)owner.FindName("StudyDevices");
@@ -83,6 +85,10 @@ internal static partial class Program
                 Assert(((TextBlock)manage.FindName("StudyNext")).Text.Contains("2026-10-14 01:00"), "current study hid next overnight window");
                 render.Invoke(manage, [nextState with {ClockReady=false}]);
                 Assert(!((TextBlock)manage.FindName("StudyNext")).Text.Contains("2026"), "stale clock retained predicted window");
+                Assert(((TextBlock)manage.FindName("StudyNext")).Text.Contains("安排已收到"), "received configuration misreported as missing when clock unavailable");
+                render.Invoke(manage, [nextState with {PolicyState="UNAVAILABLE",Reason="STUDY_OFFLINE"}]);
+                Assert(((TextBlock)manage.FindName("StudyPhase")).Text.Contains("自动重试") &&
+                    !((TextBlock)manage.FindName("StudyConfiguration")).Text.Contains("2026"), "transport failure lacks recovery feedback or retains old schedule details");
                 var devicesPanel = (Expander)manage.FindName("DeviceSettings");
                 Assert(!devicesPanel.IsExpanded && ((TextBlock)manage.FindName("DeviceSummary")).Text.Contains("麦克风已配置"), "compact device summary missing or settings expanded by default");
                 var active = nextState with {Execution = new("Schedule", "Active", Guid.NewGuid(), "fixture", true, null, null, true)};

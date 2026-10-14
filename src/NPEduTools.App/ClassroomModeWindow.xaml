@@ -7,6 +7,7 @@
   <Border Background="White" CornerRadius="12" Padding="18" Margin="0,0,0,12"><StackPanel>
    <TextBlock x:Name="ModeTitle" Text="正在连接…" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassroomModeTitle"/>
    <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="ClassroomModeStatus"/>
+   <TextBlock x:Name="OperationFeedbackText" Visibility="Collapsed" TextWrapping="Wrap" Foreground="#9B512F" Margin="0,8,0,0" AutomationProperties.AutomationId="ClassroomOperationFeedback"/>
    <TextBlock x:Name="PauseText" Foreground="#718089" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"/>
   </StackPanel></Border>
   <CheckBox x:Name="SwitchRunning" Content="同时切换当前运行的软件" Style="{StaticResource Switch}" IsChecked="False" Checked="SwitchOptionsChanged" Unchecked="SwitchOptionsChanged" Margin="0,0,0,12" AutomationProperties.AutomationId="ClassroomSwitchRunning"/>

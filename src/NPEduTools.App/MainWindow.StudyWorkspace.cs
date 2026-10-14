@@ -48,14 +48,15 @@ public partial class MainWindow
     }
     private void UpdateWorkspaceManual(ManualStudyState? state)
     { _workspaceManual = state; RefreshWorkspaceHome(); }
-    private void UpdateWorkspaceReadiness(NoiseState? noise, StudySettings? settings)
+    private void UpdateWorkspaceReadiness(NoiseState? noise, StudySettings? settings, NoiseCalibrationStatus? calibration = null)
     {
         WorkspaceReadiness.Text = noise is null ? "麦克风状态待确认" :
             string.IsNullOrWhiteSpace(noise.SelectedDeviceId ?? noise.DeviceId) ? "尚未选择监测麦克风" : "监测麦克风已选择（可用性请在设备页刷新核对）";
         WorkspaceReadiness.Text += settings is null ? " · 摄像头策略待确认" : settings.Photos.Enabled ? " · 摄像头捕获策略已开启" : " · 摄像头捕获策略关闭";
-        WorkspaceReference.Text = noise?.Estimate is { } estimate
-            ? "原始 dBFS 与估算 dB(A) 分别展示 · " + NoiseSignalPresentation.EstimateReason(estimate)
-            : "原始电平为 dBFS；估算参考是否可用请在校准页核对。";
+        var label = NoiseCalibrationPresentation.Describe(calibration, noise);
+        WorkspaceReference.Text = label.Text + (noise?.Estimate is { } estimate
+            ? " · " + NoiseSignalPresentation.EstimateReason(estimate) : " · 原始电平 dBFS");
+        WorkspaceReference.ToolTip = label.Detail;
     }
     private void WorkspacePrimaryClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace(_homeStudyTarget);
     private void StudyNavClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace(_workspaceTab);

@@ -87,7 +87,9 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyExitState? StudyExit = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyReportState? StudyReport = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? ManualStudy = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadState? SeatingUpload = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadState? SeatingUpload = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepConnectionHistory? ConnectionHistory = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationStatus? NoiseCalibrationStatus = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -126,6 +128,8 @@ public static class Protocol
 
     public static string? Validate(HostRequest request)
     {
+        if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
+            return Validate(request with { Capability = calibrationBase });
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.Capability is "manual.study.hide" or "manual.study.reminder" or "manual.study.presentation")
             return Validate(request with { Capability=request.Capability[7..] });
@@ -184,7 +188,7 @@ public static class Protocol
         if (request.Capability == "remoteexam.command" ? request.RemoteExam is null || !RemoteExamContract.Valid(request.RemoteExam) : request.RemoteExam is not null) return "InvalidRemoteExamCommand";
         if (request.Capability == "npep.notifications" ? request.Notification is null || !NpepNotificationContract.Valid(request.Notification) : request.Notification is not null) return "InvalidNotificationCommand";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
-        if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
+        if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.diagnostics" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
             "manual.study.command" or "manual.study.status" or "manual.study.report.status" or "study.recovery.status" or "study.report.status" or "study.exit.begin" or "study.exit.status" or "study.photos.exit-intent" or "study.photos.flush" or "study.status.photos" or "study.devices.microphone" or "study.devices.status" or "study.devices.refresh" or "study.devices.select" or "study.status.seating" or "study.seating" or "study.seating.upload.status" or "study.seating.upload" or "study.seating.presentation" or "study.status" or "study.hide" or "study.reminder" or "study.homework" or "study.presentation" or "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
             "noise.meter.command" or "noise.reference.status" or "noise.reference.command" or "noise.calibration.status" or "noise.calibration.command" or "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or

@@ -80,9 +80,12 @@ public partial class NoiseCalibrationWindow : Window
         _state = state;
         DeviceStatus.Text = state.DeviceId is null ? "请先在自习设备中保存麦克风" :
             state.DeviceName is { } name ? "监测麦克风：" + name : "当前监测麦克风已选择";
-        ProfileStatus.Text = state.Profile is null ? "尚未确认本机阈值" : state.Applied ?
-            $"本机阈值适用 · 视觉 {state.Profile.MediumDbfs:F1} / 纪律 {state.Profile.HighDbfs:F1} dBFS" :
-            "已保存本机阈值；当前设备、学校配置或采集设置尚未匹配，暂不应用";
+        bool invalidProfile = state.Profile is { } profile && (profile.DeviceId != state.DeviceId ||
+            state.Context is not null && profile.Context != state.Context);
+        ProfileStatus.Text = state.Error is not null ? "快速校准不可用 · 原文件保留" : state.Profile is null ? "未校准 · 尚未确认本机阈值" : invalidProfile ?
+            "校准已失效 · 麦克风或学校配置已变化，请重新校准" : state.Applied ?
+            $"已快速校准 · 本机阈值适用 · 视觉 {state.Profile.MediumDbfs:F1} / 纪律 {state.Profile.HighDbfs:F1} dBFS" :
+            "已快速校准 · 结果已保存；当前设备、学校配置或采集设置尚未匹配，暂不应用";
         SamplingProgress.Value = state.ProgressSeconds;
         SamplingStatus.Text = state.State == "Sampling" ? $"采样中 · {state.ProgressSeconds:F1} / 15 秒；关闭窗口后，本段仍会在 15 秒到时释放麦克风。" :
             state.State == "Busy" ? "当前采集占用或运行保护生效（准备／自习／考试、暂停或状态未确认），暂不可校准。已有样本和阈值保留。" :

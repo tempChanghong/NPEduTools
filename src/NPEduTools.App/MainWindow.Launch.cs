@@ -13,7 +13,7 @@ public partial class MainWindow
     private bool _launchSucceeded;
 
     private async void StartClicked(object sender, RoutedEventArgs e) => await StartClassIslandAsync((action, path, fingerprint) =>
-        AdminClient.RunAsync(Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"), action, path, fingerprint));
+        AdminClient.RunAsync(AdminHelperPath.FromAppDirectory(AppContext.BaseDirectory), action, path, fingerprint));
 
     // Isolated checks exercise the full launch/verification flow without starting a native helper.
     internal async Task StartClassIslandAsync(Func<string, string, string?, Task<AdminResult>> run)

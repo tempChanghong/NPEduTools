@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text;
+using System.Globalization;
 using NPEduTools.Contracts;
 using NPEduTools.Integrations.Npep;
 
@@ -37,6 +39,19 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         SetLocks();_noise.EquipmentUnlock=Unlock;
     }
     private void SetLocks(){_noise.EquipmentLocked=_cameras.EquipmentLocked=_saved.Locked&&!_saved.Unlocked;}
+    private static string InventoryCaption(string? value)
+    {
+        // KV permits visible Unicode names, but rejects control/format characters.
+        // Project a compatible caption; endpoint IDs and local preferences stay opaque.
+        var caption = new StringBuilder();
+        foreach (var rune in (value ?? "").EnumerateRunes())
+        {
+            if (Rune.GetUnicodeCategory(rune) is UnicodeCategory.Control or UnicodeCategory.Format) continue;
+            if (caption.Length + rune.Utf16SequenceLength > 512) break;
+            caption.Append(rune.ToString());
+        }
+        return caption.Length == 0 || string.IsNullOrWhiteSpace(caption.ToString()) ? "未命名设备" : caption.ToString();
+    }
     private bool Save()
     {
         _savePending=true;
@@ -117,9 +132,25 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             // Keep operation/credential errors primary; a later healthy refresh clears only this read error.
             string? inventoryError=cameras.Error=="CameraConfigurationUnavailable"?"EQUIPMENT_STORE_UNAVAILABLE":
                 microphones.Outcome!="Succeeded" || cameraReply.Outcome!="Succeeded" || cameras.Error is not null?"EQUIPMENT_UNAVAILABLE":null;
-            return new(){["microphones"]=JsonSerializer.SerializeToNode(microphones.NoiseDevices??[],Protocol.Json),["cameras"]=JsonSerializer.SerializeToNode(cameras.Cameras,Protocol.Json),
+            var micCatalog=microphones.NoiseDevices?.Select(d=>d with{Name=InventoryCaption(d.Name)}).ToArray()??[];
+            var camCatalog=cameras.Cameras.Select(d=>d with{Name=InventoryCaption(d.Name)}).ToArray();
+            var receipt=new JsonObject(){["microphones"]=JsonSerializer.SerializeToNode(micCatalog,Protocol.Json),
+                ["cameras"]=JsonSerializer.SerializeToNode(camCatalog,Protocol.Json),
                 ["unlocked"]=_saved.Unlocked,["appliedRevision"]=_saved.Applied,["credentialRevision"]=_noise.SchoolCredentialRevision,
                 ["selectedMicrophoneId"]=noise.SelectedDeviceId,["selectedCameraId"]=cameras.CameraId,["error"]=_error??_credentialError??_noise.Protection().ErrorCode??inventoryError};
+            // Inventory budgets alone omit the selected IDs repeated in this receipt.
+            // Keep the whole observation under 60,000 bytes, reserving >5 KiB for
+            // the fixed-schema context, request ID and sequence added by the runtime.
+            // Ordinary receipts keep their original lists and order.
+            const int observationBudget=60000;
+            if(Encoding.UTF8.GetByteCount(receipt.ToJsonString())>observationBudget)
+            {
+                receipt["microphones"]=new JsonArray();receipt["cameras"]=new JsonArray();
+                int catalogBudget=(observationBudget-Encoding.UTF8.GetByteCount(receipt.ToJsonString())+4)/2;
+                receipt["microphones"]=JsonSerializer.SerializeToNode(DeviceInventory.Limit(micCatalog,noise.SelectedDeviceId,d=>d.Id,catalogBudget),Protocol.Json);
+                receipt["cameras"]=JsonSerializer.SerializeToNode(DeviceInventory.Limit(camCatalog,cameras.CameraId,d=>d.Id,catalogBudget),Protocol.Json);
+            }
+            return receipt;
         }
     }
 }
