@@ -16,9 +16,9 @@ public sealed partial class NpepRuntime
                     try
                     {
                         var state = Snapshot();
-                        if (state is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } or { Busy: true })
+                        if (state is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } || state.Busy && !ContinuingStudyResume)
                             photos.PhotoFailed("PHOTO_NOT_ELIGIBLE");
-                        else if (state is { State: "ACTIVE", Connection: "ONLINE" } && (unsupported is null || Stopwatch.GetElapsedTime(unsupported.Value).TotalSeconds >= 60))
+                        else if (state is { State: "ACTIVE", Connection: "ONLINE", Busy: false } && (unsupported is null || Stopwatch.GetElapsedTime(unsupported.Value).TotalSeconds >= 60))
                         {
                             var code = await StudyPhotoCycleAsync(photos, _lifetime.Token);
                             if (code == "STUDY_PHOTOS_UNSUPPORTED") unsupported = Stopwatch.GetTimestamp();

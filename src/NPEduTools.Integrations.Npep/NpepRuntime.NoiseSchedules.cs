@@ -19,8 +19,8 @@ public sealed partial class NpepRuntime
                     {
                         var state = Snapshot();
                         if (state.State is "UNPAIRED" or "SUSPENDED") schedules.Bind(null, false);
-                        else if (state.ReportingPaused || state.Busy) schedules.Bind(_scheduleScope, false);
-                        else if (state is { State: "ACTIVE", Connection: "ONLINE" }) await NoiseScheduleCycleAsync(schedules, _lifetime.Token);
+                        else if (state.ReportingPaused || state.Busy && !ContinuingStudyResume) schedules.Bind(_scheduleScope, false);
+                        else if (state is { State: "ACTIVE", Connection: "ONLINE", Busy: false }) await NoiseScheduleCycleAsync(schedules, _lifetime.Token);
                         // Offline retains the existing monotonic lease; the Host still checks school time.
                     }
                     catch (Exception e) when (Handled(e) || e is InvalidDataException)

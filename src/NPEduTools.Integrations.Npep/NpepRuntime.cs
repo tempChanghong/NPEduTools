@@ -25,6 +25,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private double _delay;
     private int _failures;
     private bool _blocked, _disposed;
+    private bool _continuingStudyResume;
+    private bool ContinuingStudyResume { get { lock (_sync) return _continuingStudyResume; } }
     private NpepCommand? _tlsRetryCommand;
 
     public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null)
@@ -84,7 +86,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             if (_state.Busy || c.Revision != _state.Revision) return Reply("Rejected", "NpepStateChanged", "状态已更新或操作仍在进行，请刷新后重试。");
             _controlPolicy?.Rotate(); // Invalidate queued control intents before pause/resume/unpair work starts.
             _planPolicy?.Rotate();
-            _study?.BindStudy(null); // Fence an in-flight policy before pause/unpair work starts.
+            _continuingStudyResume = c.Action == "resume" && _state.State == "ACTIVE" && !_state.ReportingPaused;
+            if (!_continuingStudyResume) _study?.BindStudy(null); // Explicit pause/unpair still withdraws local authority.
             _controlCancellation?.Cancel();
             _requests.Enqueue(request.RequestId); if (_requests.Count > 128) _requests.Dequeue();
             _state = _state with { Revision = _state.Revision + 1, Busy = true, OperationId = request.RequestId, Error = null, Message = "正在处理，请稍候…" };
@@ -113,7 +116,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         finally
         {
             _attemptAt = Stopwatch.GetTimestamp();
-            lock (_sync) _state = _state with { Busy = false, Revision = _state.Revision + 1 };
+            lock (_sync) { _state = _state with { Busy = false, Revision = _state.Revision + 1 }; _continuingStudyResume = false; }
             _work.Release();
         }
     }

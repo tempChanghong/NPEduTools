@@ -23,7 +23,7 @@ public sealed partial class NpepRuntime
                         if (Snapshot() is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } && study.StudySeatingRequest() is { } request &&
                             (unsupportedAt is null || System.Diagnostics.Stopwatch.GetElapsedTime(unsupportedAt.Value).TotalSeconds >= 60))
                         { await SeatingCycleAsync(study, request, _lifetime.Token); unsupportedAt = null; }
-                        else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } or { Busy: true }) _seatingDownload = null;
+                        else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } || Snapshot().Busy && !ContinuingStudyResume) _seatingDownload = null;
                     } catch (Exception e) when (Handled(e) || e is InvalidDataException or FormatException) {
                         study.SeatingFailed(e is NpepException n ? n.Code : "SEATING_OFFLINE");
                         if (e is NpepException { Code: "STUDY_SEATING_UNSUPPORTED" }) unsupportedAt = System.Diagnostics.Stopwatch.GetTimestamp();

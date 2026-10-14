@@ -30,8 +30,8 @@ public sealed partial class NpepRuntime
                             catch(Exception e) when(Handled(e) || e is InvalidDataException) { /* Keep the durable school credential on transport loss. */ }
                             await StudyCycleAsync(study, _lifetime.Token);
                         }
-                        else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } or { Busy: true }) study.BindStudy(null);
-                        else study.StudyFailed("STUDY_OFFLINE");
+                        else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } || Snapshot().Busy && !ContinuingStudyResume) study.BindStudy(null);
+                        else study.StudyFailed(StudyConnectionFailureCode());
                     }
                     catch (Exception e) when (Handled(e) || e is InvalidDataException)
                     { study.StudyFailed(e is NpepException n ? n.Code : "STUDY_OFFLINE"); }
@@ -50,13 +50,25 @@ public sealed partial class NpepRuntime
     private async Task RequireStudyContextAsync(JsonObject context, CancellationToken token)
     {
         if (Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
-            throw new NpepException("SESSION_SUPERSEDED");
+            throw new NpepException(StudyContextLossCode());
         JsonObject current;
         try { current = await StudyContextAsync(token); }
         catch (NpepException e) when (e.Code == "DEVICE_SUSPENDED" && Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
-        { throw new NpepException("SESSION_SUPERSEDED"); }
-        if (!JsonNode.DeepEquals(context, current) || Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
+        { throw new NpepException(StudyContextLossCode()); }
+        if (!JsonNode.DeepEquals(context, current))
             throw new NpepException("SESSION_SUPERSEDED");
+        if (Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
+            throw new NpepException(StudyContextLossCode());
+    }
+    private string StudyContextLossCode()
+    {
+        lock (_sync) return _state.State == "ACTIVE" && !_state.ReportingPaused && (!_state.Busy || _continuingStudyResume)
+            ? StudyConnectionFailureCode() : "SESSION_SUPERSEDED";
+    }
+    private string StudyConnectionFailureCode()
+    {
+        lock (_sync) return _state.Error is "AUTH_INVALID" or "CREDENTIAL_EXPIRED" or "INSTANCE_MISMATCH" or
+            "BINDING_CHANGED" or "SESSION_SUPERSEDED" or "DEVICE_SUSPENDED" ? _state.Error : "STUDY_OFFLINE";
     }
     internal async Task StudyCycleAsync(INpepStudySettings study, CancellationToken token)
     {
