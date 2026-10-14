@@ -17,6 +17,29 @@ public sealed class StudyModeTests
     }
     private static JsonObject Configuration() => JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures/study-device-cases.json")))![0]!["value"]!.DeepClone().AsObject();
     [Fact]
+    public async Task Unset_mode_uses_daily_schedule_and_recovers_after_transport_loss_without_mode_change()
+    {
+        var time = new Clock();
+        var connection = Guid.NewGuid();
+        long sequence = 0;
+        var clock = new StudyModeClock(() => "None", () => new(connection, connection, ++sequence, 0,
+            new DateTimeOffset(2026, 10, 12, 19, 0, 0, TimeSpan.Zero).AddMilliseconds(time.Ms), 0, "Advancing", "synthetic school time"), time);
+        await using var service = new StudySettingsService(clock.Snapshot, () => false, time, false, mode: () => clock.Mode);
+        var configuration = Configuration();
+        service.BindStudy(configuration["identity"]!.ToJsonString());
+        for (int i = 0; i < 4; i++) { time.Ms += 500; service.ApplyStudy(configuration); }
+        Assert.Equal("Daily", service.Snapshot().Mode);
+        Assert.Equal("ClassIsland", service.Snapshot().ClockSource);
+        Assert.Equal("Active", service.Snapshot().Phase);
+        service.StudyFailed("STUDY_OFFLINE");
+        Assert.Equal("UNAVAILABLE", service.Snapshot().PolicyState);
+        time.Ms += 1000;
+        service.ApplyStudy(configuration);
+        Assert.Equal("APPLIED", service.Snapshot().PolicyState);
+        Assert.Equal("Active", service.Snapshot().Phase);
+        Assert.Equal("Daily", service.Snapshot().Mode);
+    }
+    [Fact]
     public void Empty_mode_still_validates_shared_thresholds_and_calendar()
     {
         var config = Configuration();

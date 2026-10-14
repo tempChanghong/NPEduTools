@@ -247,7 +247,10 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     {
         bool tls = IsTlsFailure(e);
         string code = tls ? "TLS_VALIDATION_FAILED" : e is NpepException n ? n.Code : e is HttpRequestException or OperationCanceledException ? "NETWORK_UNAVAILABLE" : "CREDENTIAL_STORE_UNAVAILABLE";
-        bool retry = tls || e is HttpRequestException or OperationCanceledException || e is NpepException problem && (problem.Status == 429 || problem.Status >= 500);
+        // A locally expired status sample is discarded before sending. Re-sample on
+        // the next attempt; it is not a credential/binding rejection and must not latch STOPPED.
+        bool retry = tls || e is HttpRequestException or OperationCanceledException || e is NpepException problem &&
+            (problem.Status == 429 || problem.Status >= 500 || problem is { Code: "SAMPLE_TOO_OLD", Status: 0 });
         _blocked = !retry;
         int backoff = Math.Min(60, 5 * (1 << Math.Min(_failures++, 4)));
         _delay = Math.Max(backoff, (e as NpepException)?.RetryAfterSeconds ?? 0) * (1 + Random.Shared.NextDouble() * .2);

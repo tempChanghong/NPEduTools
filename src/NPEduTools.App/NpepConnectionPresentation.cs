@@ -80,6 +80,7 @@ public static class NpepConnectionPresentation
     {
         "TLS_VALIDATION_FAILED" => new("学校服务的 HTTPS 证书验证失败。", "核对学校地址、系统时间及服务器证书；按当前连接状态等待重试或恢复原操作，保留证书校验。"),
         "NETWORK_UNAVAILABLE" => new("暂时无法连接学校服务。", "核对网络与学校服务；未完成的手动操作需要刷新后核查或恢复原操作，不要重复创建申请。"),
+        "SAMPLE_TOO_OLD" => new("本次状态样本因处理或排队耗时已过期，未发送。", "后台将重新采样并自动重试；若持续发生，请保留技术详情，核对电脑负载和连接耗时。"),
         "PAIRING_EXPIRED" => new("配对码已过期。", "取消原申请后重新获取配对码；原申请不会自动延长有效期。"),
         "PAIRING_CODE_UNAVAILABLE" => new("网页配对码已使用、过期或失效。", "取消原申请，再从对应班级的大屏网页获取新码。"),
         "SCREEN_PAIRING_DISABLED" or "PREAUTHORIZATION_CHANGED" => new("学校预授权已关闭或变更。", "联系管理员核对班级预授权；处理后取消原申请并重新获取配对码。"),

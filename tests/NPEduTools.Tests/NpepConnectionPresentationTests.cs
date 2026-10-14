@@ -5,6 +5,13 @@ namespace NPEduTools.Tests;
 
 public sealed class NpepConnectionPresentationTests
 {
+    [Fact]
+    public void Expired_status_sample_has_clear_cause_and_automatic_retry_advice()
+    {
+        var state = State("ACTIVE", "OFFLINE", "SAMPLE_TOO_OLD");
+        Assert.Contains("样本", NpepConnectionPresentation.Cause(state.Error));
+        Assert.Contains("自动重试", NpepConnectionPresentation.NextAction(state));
+    }
     private static NpepState State(string stage = "ACTIVE", string connection = "OFFLINE", string? error = null) =>
         new(1, stage, connection, "后台状态说明", Error: error);
 
