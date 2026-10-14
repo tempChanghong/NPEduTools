@@ -150,6 +150,19 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { return null; }
     }
+    internal bool IsMicrophonePresent(string? id)
+    {
+        if (!NoiseContract.ValidDeviceId(id)) return false;
+        try
+        {
+            // Wire inventories are bounded display projections, not absence evidence.
+            // Enumerate afresh at selection time without opening a capture device.
+            var catalog = devices();
+            RecoverSelection();
+            return catalog.Any(d => d?.Id == id);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException) { return false; }
+    }
     private void RecoverSelection()
     {
         lock (_sync)

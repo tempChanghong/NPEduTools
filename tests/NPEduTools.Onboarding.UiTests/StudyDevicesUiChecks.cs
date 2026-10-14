@@ -33,6 +33,7 @@ internal static partial class Program
             RunDeviceRefreshSnapshotChecks();
             RunDeviceRejectionStateChecks();
             RunSelectedInventoryUiChecks();
+            RunSelectionCatalogUiChecks();
             Exercise(window, owner =>
             {
                 var picker = (StudyDevicePicker)owner.FindName("StudyDevices");

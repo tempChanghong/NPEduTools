@@ -36,14 +36,15 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
             finally{_schoolSelection=false;}
         }
     }
-    private void RefreshCatalog()
+    private StudyCameraDevice[] RefreshCatalog()
     {
         var candidates = enumerate().Where(d => NoiseContract.ValidDeviceId(d.Id) &&
             !string.IsNullOrWhiteSpace(d.Name) && d.Name.Length <= 512 && !d.Name.Any(char.IsControl))
-            .DistinctBy(d => d.Id);
+            .DistinctBy(d => d.Id).ToArray();
         _devices = DeviceInventory.Limit(candidates, _selected, d => d.Id);
         _enumerated = true;
         if (_error == "CameraDevicesUnavailable") _error = null;
+        return candidates;
     }
     private void Load(bool retry = false)
     {
@@ -101,12 +102,15 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
             if (_configurationError) return Reply("CameraConfigurationUnavailable", "摄像头配置文件无法读取，原文件已保留；请检查配置目录。");
             if (captureBusy?.Invoke() == true) return Reply("StudyDevicesBusy", "正在监测，设备选择未更改；请在结束后设置。");
             // Re-enumerate at the save boundary; a previously listed device may have been unplugged.
+            StudyCameraDevice[]? candidates = null;
             if (c.Action == "select")
             {
                 try
                 {
-                    RefreshCatalog();
-                    if (!_devices.Any(d => d.Id == c.DeviceId)) return Reply("CameraDeviceUnavailable", "所选摄像头已不可用，请刷新；没有切换其他设备。");
+                    candidates = RefreshCatalog();
+                    // Validate against the complete fresh catalog, not the bounded
+                    // display prefix which still prioritizes the old saved device.
+                    if (!candidates.Any(d => d.Id == c.DeviceId)) return Reply("CameraDeviceUnavailable", "所选摄像头已不可用，请刷新；没有切换其他设备。");
                 }
                 catch (Exception e) when (e is not OutOfMemoryException)
                 { _devices = []; _enumerated = false; _error = "CameraDevicesUnavailable"; return Reply(_error, "无法核对摄像头，请刷新后重试。"); }
@@ -120,6 +124,9 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
                 File.WriteAllText(temporary, JsonSerializer.Serialize(id));
                 File.Move(temporary, _path, true);
                 _selected = id; _revision++; _error = null;
+                // Publish a bounded snapshot containing the newly saved current
+                // camera only after the durable write succeeds.
+                if (candidates is not null) _devices = DeviceInventory.Limit(candidates, _selected, d => d.Id);
                 return Reply(message: id is null ? "已设为暂不使用摄像头。" : "摄像头选择已保存；未开始捕获。");
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)

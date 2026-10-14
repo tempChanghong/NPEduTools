@@ -81,8 +81,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 }
                 else if (request.Capability == "study.devices.microphone")
                 {
-                    var listed = noise?.Handle(request with { Capability = "noise.devices", Noise = null });
-                    response = listed is { Outcome: "Succeeded", NoiseDevices: not null } && listed.NoiseDevices.Any(d => d.Id == request.Noise!.DeviceId)
+                    response = noise?.IsMicrophonePresent(request.Noise!.DeviceId) == true
                         ? noise!.Handle(request with { Capability = "noise.command" })
                         : new(1, request.RequestId, "Rejected", "NoiseDeviceUnavailable", "所选麦克风已不可用，请刷新；未更换设备。", Noise: noise?.Snapshot());
                 }
