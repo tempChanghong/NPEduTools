@@ -9,7 +9,7 @@ namespace NPEduTools.Host;
 [SupportedOSPlatform("windows")]
 public sealed partial class ClassroomModeEffects(LaunchService launch, ExamAwareService examAware, RecordingService recording, ILessonStatusReader? reader = null) : IClassroomModeEffects, IRemoteClassroomModeEffects
 {
-    private readonly string _helper = Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe");
+    private readonly string _helper = AdminHelperPath.FromHostDirectory(AppContext.BaseDirectory);
     private async Task<LaunchSettings> ClassIslandSettingsAsync()
     {
         var response = await launch.HandleAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.config.get"), CancellationToken.None);

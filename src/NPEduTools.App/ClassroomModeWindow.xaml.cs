@@ -25,7 +25,7 @@ public partial class ClassroomModeWindow : Window
         DesktopDialogSizing.Attach(this, pipe);
         _configureClassIsland = configureClassIsland; _configureAdmin = configureAdmin; _configureExamAware = configureExamAware;
         _setupCheck = setupCheck ?? new(ReadSetupAsync, path => AdminClient.RunAsync(
-            Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"), "status", path), File.Exists);
+            AdminHelperPath.FromAppDirectory(AppContext.BaseDirectory), "status", path), File.Exists);
         IsVisibleChanged += async (_, _) => { if (IsVisible) await CheckSetupAsync(); };
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();

@@ -71,7 +71,7 @@ public sealed class WindowsRemoteExamPlatform : IRemoteExamPlatform
         token.ThrowIfCancellationRequested();
         if (!HostElevated) throw new RemoteExamException("HOST_NOT_ELEVATED");
         var response = await AdminClient.RunAsync(
-            Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"), "runtime-close", path,
+            AdminHelperPath.FromHostDirectory(AppContext.BaseDirectory), "runtime-close", path,
             beforeDispatch: beforeDispatch, expectedProcessId: instance.ProcessId, expectedProcessStarted: instance.Started);
         token.ThrowIfCancellationRequested();
         if (response.Outcome != "Succeeded" || response.Status?.ProcessState != "Stopped")

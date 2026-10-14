@@ -64,7 +64,7 @@ public partial class MainWindow
     }
 
     private Task RunAdminAsync(string action) => RunAdminAsync(action, (command, path, fingerprint) =>
-        AdminClient.RunAsync(Path.Combine(AppContext.BaseDirectory, "Admin", "NPEduTools.ClassIsland.Admin.exe"), command, path, fingerprint));
+        AdminClient.RunAsync(AdminHelperPath.FromAppDirectory(AppContext.BaseDirectory), command, path, fingerprint));
 
     // Allows isolated UI checks to supply results without launching a helper or requesting UAC.
     internal async Task RunAdminAsync(string action, Func<string, string, string?, Task<AdminResult>> run)
