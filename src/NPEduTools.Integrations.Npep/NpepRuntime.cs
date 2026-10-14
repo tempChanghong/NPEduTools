@@ -28,6 +28,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private bool _continuingStudyResume;
     private bool ContinuingStudyResume { get { lock (_sync) return _continuingStudyResume; } }
     private NpepCommand? _tlsRetryCommand;
+    private readonly NpepConnectionJournal _history;
+    private bool _connectionFailed;
 
     public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null)
         : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study, schoolManagement) { }
@@ -51,6 +53,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         }
         catch (Exception e) when (StorageError(e))
         { _state = _state with { State = "STORE_UNAVAILABLE", Connection = "DISABLED", Error = "CREDENTIAL_STORE_UNAVAILABLE", Message = "凭据无法读取或已被另一实例占用。请关闭冲突实例后重启后台；原文件已保留。" }; }
+        _history = new(_device?.DataDirectory);
+        if (_device is not null) _device.Observation = item => _history.Add(item.Kind, item.Endpoint, item.Code, item.HttpStatus, item.RequestId, item.ElapsedMs, item.Retrying);
         _loop = Task.Run(LoopAsync);
         InitializeNotifications();
         InitializeControl(control);
@@ -74,6 +78,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
 
     public HostResponse Handle(HostRequest request)
     {
+        if (request.Capability == "npep.diagnostics") return new(Protocol.Version, request.RequestId, "Succeeded", null,
+            "脱敏互联失败历史；不代表当前执行或上传回执。", ConnectionHistory: _history.Snapshot());
         if (request.Capability == "npep.notifications") return HandleNotifications(request);
         lock (_sync)
         {
@@ -207,9 +213,11 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 {
                     attempted = true;
                     await _device.OpenSessionAsync(_network.Token);
-                    long sampledAt = Stopwatch.GetTimestamp();
-                    var sample = new NpepSample(NpepStatusReader.Map(_sample(), _appVersion), sampledAt);
-                    var receipt = await _device.ReportAsync(sample, _network.Token);
+                    var receipt = await _device.ReportAsync(() =>
+                    {
+                        long sampledAt = Stopwatch.GetTimestamp();
+                        return new NpepSample(NpepStatusReader.Map(_sample(), _appVersion), sampledAt);
+                    }, _network.Token);
                     _receivedAt = Stopwatch.GetTimestamp();
                     Publish("ONLINE", "学校服务已收到最新状态。连接随后台运行，主窗口收起不影响上报。", receivedAt: receipt.Text("receivedAt"));
                     _delay = 20; _failures = 0;
@@ -244,6 +252,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 ReportingPaused = paused, LastReceivedAt = stage == "UNPAIRED" ? null : receivedAt ?? _state.LastReceivedAt, Error = error,
                 PairingSource = view["pairingSource"]?.GetValue<string>()
             };
+            if (connection == "ONLINE" && _connectionFailed) { _history.Add("Recovered", "Status"); _connectionFailed = false; }
+            if (connection is "DISABLED" or "PAUSED") _connectionFailed = false;
         }
     }
     private void Failure(Exception e, bool background = false)
@@ -252,9 +262,11 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         string code = tls ? "TLS_VALIDATION_FAILED" : e is NpepException n ? n.Code : e is HttpRequestException or OperationCanceledException ? "NETWORK_UNAVAILABLE" : "CREDENTIAL_STORE_UNAVAILABLE";
         // A locally expired status sample is discarded before sending. Re-sample on
         // the next attempt; it is not a credential/binding rejection and must not latch STOPPED.
-        bool retry = tls || e is HttpRequestException or OperationCanceledException || e is NpepException problem &&
+        bool retry = tls || e is HttpRequestException or OperationCanceledException || e is NpepException problem && !NpepDevice.TerminalConnectionError(problem) &&
             (problem.Status == 429 || problem.Status >= 500 || problem is { Code: "SAMPLE_TOO_OLD", Status: 0 });
         _blocked = !retry;
+        _connectionFailed = true;
+        _history.Add("Failure", background ? "Status" : "Command", code, (e as NpepException)?.Status is > 0 and <= 599 ? ((NpepException)e).Status : null, retrying: retry);
         int backoff = Math.Min(60, 5 * (1 << Math.Min(_failures++, 4)));
         _delay = Math.Max(backoff, (e as NpepException)?.RetryAfterSeconds ?? 0) * (1 + Random.Shared.NextDouble() * .2);
         string stopped = code switch
@@ -282,6 +294,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         lock (_sync) { _disposed = true; _lifetime.Cancel(); _network?.Cancel(); command = _command; }
         await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop, _noiseDisplayLoop, _studyLoop, _studySeatingLoop, _studyHomeworkLoop, _studyPresentationLoop, _studyPhotosLoop, _studyExitLoop);
         await _controlLoop;
+        await _history.DisposeAsync();
         _device?.Dispose(); _work.Dispose(); _lifetime.Dispose();
     }
 }

@@ -29,7 +29,7 @@ public sealed partial class NpepApi
         int code = (int)response.StatusCode;
         if(code is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if(code is 404 or 426)throw new NpepException("SCHOOL_MANAGEMENT_UNSUPPORTED",code);
-        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token);
+        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token, request);
         if(envelope.Text("protocolVersion") != "0.16" || envelope.Text("requestId") != requestId) throw new NpepException("INVALID_RESPONSE");
         if(!response.IsSuccessStatusCode)
         {
@@ -53,7 +53,7 @@ public sealed partial class NpepDevice
         await ConfirmAsync(approval.Text("approvalId"),token);
     }
     public async Task<JsonObject> ClassCatalogueAsync(string origin,CancellationToken token=default)
-    { using var api = _factory(origin); return await api.SchoolManagementAsync(null,"admission/catalog",null,token); }
+    { using var api = Api(origin); return await api.SchoolManagementAsync(null,"admission/catalog",null,token); }
     internal async Task<JsonObject> SchoolManagementAsync(JsonObject? receipt,CancellationToken token)
     {
         await _gate.WaitAsync(token);

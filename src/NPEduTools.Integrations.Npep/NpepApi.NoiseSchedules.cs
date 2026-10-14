@@ -19,7 +19,7 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException("NOISE_SCHEDULE_UNSUPPORTED", status);
-        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token);
+        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token, request);
         if (envelope.Text("protocolVersion") != "0.7" || envelope.Text("requestId") != body.Text("requestId")) throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {

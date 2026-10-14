@@ -19,7 +19,7 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException("DISPLAY_UNSUPPORTED", status);
-        var envelope = await ReadEnvelopeAsync(response, 8192, deadline.Token);
+        var envelope = await ReadEnvelopeAsync(response, 8192, deadline.Token, request);
         if (envelope.Text("protocolVersion") != "0.9" || envelope.Text("requestId") != body.Text("requestId") ||
             !NpepNoiseDisplayProtocol.Utc(envelope["serverTime"])) throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)

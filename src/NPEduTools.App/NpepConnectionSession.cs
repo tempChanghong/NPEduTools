@@ -145,9 +145,11 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             }
             var connection = await ReadAsync("npep.status");
             if (lifetime.IsCancellationRequested || token.IsCancellationRequested) return null;
+            var history = connection.Response?.Outcome == "Succeeded" ? await ReadAsync("npep.diagnostics") : (Response: (HostResponse?)null, At: (DateTimeOffset?)null);
+            if (lifetime.IsCancellationRequested || token.IsCancellationRequested) return null;
             var cache = await ReadAsync("host.cached-status");
             if (lifetime.IsCancellationRequested || token.IsCancellationRequested) return null;
-            return NpepDiagnostics.Create(appVersion, DateTimeOffset.UtcNow, connection.Response, connection.At, cache.Response, cache.At);
+            return NpepDiagnostics.Create(appVersion, DateTimeOffset.UtcNow, connection.Response, connection.At, cache.Response, cache.At, history.Response);
         }
         finally { _working = false; _gate.Release(); Changed(); }
     }

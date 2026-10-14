@@ -19,6 +19,40 @@ public sealed class NpepDiagnosticsTests
     private static readonly DateTimeOffset At = DateTimeOffset.Parse("2026-10-04T18:00:00+08:00");
     private static readonly Guid Binding = Guid.Parse("fd6298d3-a8ad-4dac-847d-b4d831410092");
     private static HostResponse Reply(HostRequest request, NpepState? state = null) => new(Protocol.Version, request.RequestId, "Succeeded", null, "not exported", Npep: state);
+    [Theory]
+    [InlineData("SAMPLE_TOO_OLD")]
+    [InlineData("RATE_LIMITED")]
+    [InlineData("PROTOCOL_UNSUPPORTED")]
+    public void Known_connection_failure_codes_survive_diagnostic_export(string code)
+    {
+        var report = NpepDiagnostics.Create("1.1.5", At, Reply(new(1, Guid.NewGuid(), "npep.status"), new(1, "ACTIVE", "OFFLINE", "", Error: code)), At, null, null);
+        Assert.Equal(code, report["connection"]!["error"]!.GetValue<string>());
+    }
+    [Fact]
+    public void History_export_is_bounded_and_sanitized_independently_of_the_Host()
+    {
+        var entries = Enumerable.Range(0, 80).Select(_ => new NpepConnectionEvent(Guid.NewGuid(), At, "SECRET", "https://secret.invalid", "SECRET", -1, Guid.Empty, long.MaxValue, true)).ToArray();
+        var history = new HostResponse(1, Guid.NewGuid(), "Succeeded", null, "SECRET", ConnectionHistory: new("SECRET", entries));
+        var report = NpepDiagnostics.Create("1.1.5", At, null, null, null, null, history);
+        Assert.Equal(48, report["connectionHistory"]!["events"]!.AsArray().Count); Assert.DoesNotContain("SECRET", report.ToJsonString());
+        Assert.Null(report["connectionHistory"]!["events"]![0]!["requestId"]);
+        Assert.Null(report["connectionHistory"]!["events"]![0]!["httpStatus"]);
+        Assert.False(NpepDiagnostics.Create("1.1.5", At, null, null, null, null, history with { Outcome = "Rejected" })["connectionHistory"]!["available"]!.GetValue<bool>());
+    }
+    [Fact]
+    public async Task Old_Host_without_diagnostic_capability_still_exports_current_status_and_cache_read_only()
+    {
+        var capabilities = new List<string>();
+        var session = new NpepConnectionSession((request, _) => {
+            capabilities.Add(request.Capability); Assert.Null(request.Npep);
+            return Task.FromResult(request.Capability == "npep.diagnostics" ? Reply(request) with { Outcome = "Rejected", ErrorCode = "UnknownCapability" } : Reply(request, new(1, "ACTIVE", "ONLINE", "")));
+        });
+        var report = await session.CollectDiagnosticsAsync("1.1.5");
+        Assert.Equal(new[] { "npep.status", "npep.diagnostics", "host.cached-status" }, capabilities);
+        Assert.True(report!["connection"]!["available"]!.GetValue<bool>()); Assert.False(report["connectionHistory"]!["available"]!.GetValue<bool>());
+        Assert.Null(Protocol.Validate(new(1, Guid.NewGuid(), "npep.diagnostics")));
+        Assert.Equal("InvalidNpepCommand", Protocol.Validate(new(1, Guid.NewGuid(), "npep.diagnostics", Npep: new("resume", 1))));
+    }
 
     [Fact]
     public void ExportUsesAllowListEvenWhenSourceContainsSecretsAndArbitraryNestedFields()
@@ -125,7 +159,7 @@ public sealed class NpepDiagnosticsTests
         deny = true;
         capabilities.Clear();
         var report = await session.CollectDiagnosticsAsync("1.1.5");
-        Assert.Equal(["npep.status", "host.cached-status"], capabilities);
+        Assert.Equal(deniedCapability == "npep.status" ? ["npep.status", "host.cached-status"] : new[] { "npep.status", "npep.diagnostics", "host.cached-status" }, capabilities);
         Assert.False(report![missingSection]!["available"]!.GetValue<bool>());
         Assert.Null(report[missingSection]!["observedAt"]);
         Assert.True(report[availableSection]!["available"]!.GetValue<bool>());
@@ -136,7 +170,7 @@ public sealed class NpepDiagnosticsTests
         var recovered = await session.CollectDiagnosticsAsync("1.1.5");
         Assert.True(recovered!["connection"]!["available"]!.GetValue<bool>());
         Assert.True(recovered["localCache"]!["available"]!.GetValue<bool>());
-        Assert.All(capabilities, capability => Assert.Contains(capability, new[] { "npep.status", "host.cached-status" }));
+        Assert.All(capabilities, capability => Assert.Contains(capability, new[] { "npep.status", "npep.diagnostics", "host.cached-status" }));
     }
 
     [Fact]

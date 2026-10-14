@@ -48,7 +48,7 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException(version == "0.14" ? "STUDY_SEATING_UNSUPPORTED" : version == "0.13" ? "STUDY_PRESENTATION_UNSUPPORTED" : version == "0.12" ? "STUDY_HOMEWORK_UNSUPPORTED" : version == "0.11" ? "STUDY_RESUME_UNSUPPORTED" : "STUDY_UNSUPPORTED", status);
-        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token);
+        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token, request);
         if (envelope.Text("protocolVersion") != version || envelope.Text("requestId") != requestId) throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {

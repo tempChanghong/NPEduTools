@@ -14,6 +14,7 @@ public sealed partial class NpepDevice : IDisposable
     private long _sequence;
     private bool _suspended;
     internal string DataDirectory { get; }
+    internal Action<NPEduTools.Contracts.NpepConnectionEvent>? Observation { get; set; }
     public NpepDevice(string directory) : this(directory, origin => new(origin)) { }
     internal NpepDevice(string directory, Func<string, NpepApi> factory)
     {
@@ -40,7 +41,8 @@ public sealed partial class NpepDevice : IDisposable
     private JsonObject Required() => _saved ?? throw new NpepException("NOT_PAIRED");
     private string PairBearer => "npepp1." + ((JsonObject)Required()["pairing"]!).Text("pairingId") + "." + Required().Text("pairingSecret");
     private string DeviceBearer => "npep1." + Required().Text("credentialId") + "." + Required().Text("deviceSecret");
-    private NpepApi Api() => _factory(Required().Text("origin"));
+    private NpepApi Api() => Api(Required().Text("origin"));
+    private NpepApi Api(string origin) { var api = _factory(origin); api.Observation = Observation; return api; }
     private JsonObject IdentityBody()
     {
         var body = NpepProtocol.Body();
@@ -53,7 +55,7 @@ public sealed partial class NpepDevice : IDisposable
 
     public async Task<JsonObject> InspectServerAsync(string origin, CancellationToken token = default)
     {
-        using var api = _factory(origin);
+        using var api = Api(origin);
         return await api.SendAsync("info", "infoResponse", token: token);
     }
 
@@ -70,7 +72,7 @@ public sealed partial class NpepDevice : IDisposable
         {
             if (_saved is not null) throw new NpepException("PAIRING_ALREADY_EXISTS");
             _suspended = false; _sessionRequest = null; _session = null; _sequence = 0;
-            using var api = _factory(origin);
+            using var api = Api(origin);
             NpepProtocol.Validate("info", confirmedInfo);
             var actual = await api.SendAsync("info", "infoResponse", token: token);
             if (!NpepProtocol.Equal(actual, confirmedInfo)) throw new NpepException("INSTANCE_MISMATCH");
@@ -232,19 +234,27 @@ public sealed partial class NpepDevice : IDisposable
     }
     public Task<JsonObject> ReportAsync(NpepSample sample, CancellationToken token = default)
         => ReportCoreAsync(sample.Status.Copy(), () => sample.AgeMs, token);
+    internal Task<JsonObject> ReportAsync(Func<NpepSample> observe, CancellationToken token = default)
+        => ReportCoreAsync(null, null, token, observe);
     internal Task<JsonObject> ReportAsync(JsonObject sampledStatus, int sampleAgeMs, CancellationToken token = default)
         => ReportCoreAsync(sampledStatus.Copy(), () => sampleAgeMs, token);
-    private async Task<JsonObject> ReportCoreAsync(JsonObject sampledStatus, Func<int> sampleAgeMs, CancellationToken token)
+    private async Task<JsonObject> ReportCoreAsync(JsonObject? sampledStatus, Func<int>? sampleAgeMs, CancellationToken token, Func<NpepSample>? observe = null)
     {
+        long queuedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         await _gate.WaitAsync(token);
         try
         {
+            long queuedMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(queuedAt).TotalMilliseconds;
+            if (queuedMs >= 2000) Observation?.Invoke(new(Guid.NewGuid(), DateTimeOffset.UtcNow, "QueueWait", "Status", null, null, null, queuedMs, null));
             if (_suspended || _session is null || Required().Text("stage") != "ACTIVE" || Required()["reportingPaused"]?.GetValue<bool>() == true) throw new NpepException("DEVICE_SUSPENDED");
             if (_sequence == NpepProtocol.MaxInteger) throw new NpepException("SEQUENCE_EXHAUSTED");
             var body = IdentityBody(); body["sessionId"] = _session["sessionId"]!.DeepClone(); body["statusEpoch"] = _session["statusEpoch"]!.DeepClone();
-            int age = sampleAgeMs();
+            // Only the live reporter samples after queueing. Already taken CLI samples retain
+            // their original age; a slow local observation must still fail the five-second limit.
+            var current = observe?.Invoke();
+            int age = current?.AgeMs ?? sampleAgeMs!();
             if (age is < 0 or > 5000) throw new NpepException("SAMPLE_TOO_OLD");
-            body["sequence"] = ++_sequence; body["sampleAgeMs"] = age; body["status"] = sampledStatus.Copy();
+            body["sequence"] = ++_sequence; body["sampleAgeMs"] = age; body["status"] = (current?.Status ?? sampledStatus!).Copy();
             using var api = Api();
             var receipt = await api.SendAsync("device/status", "statusReceiptResponse", body, "reportStatus", DeviceBearer, token);
             if (receipt.Number("acceptedSequence") != _sequence) throw new NpepException("INVALID_RESPONSE");
@@ -255,12 +265,15 @@ public sealed partial class NpepDevice : IDisposable
     }
     private void SuspendIfTerminal(NpepException error)
     {
-        if (error.Status is 401 or 403 or 426 || error.Code is "INSTANCE_MISMATCH" or "BINDING_CHANGED" or "SESSION_SUPERSEDED" or "REVISION_CONFLICT" or "SEQUENCE_CONFLICT" or "STALE_SEQUENCE" or "INVALID_RESPONSE" or "REDIRECT_REJECTED" or "SEQUENCE_EXHAUSTED" or "SESSION_EPOCH_EXHAUSTED")
+        if (TerminalConnectionError(error))
         {
             _suspended = true;
             var next = Required().Copy(); next["stage"] = "SUSPENDED"; Save(next);
         }
     }
+    internal static bool TerminalConnectionError(NpepException error) => error.Status is 401 or 403 or 426 ||
+        error.Code is "AUTH_INVALID" or "CREDENTIAL_EXPIRED" or "INSTANCE_MISMATCH" or "BINDING_CHANGED" or "SESSION_SUPERSEDED" or "REVISION_CONFLICT" or "SEQUENCE_CONFLICT" or "STALE_SEQUENCE" or "INVALID_RESPONSE" or "REDIRECT_REJECTED" or "SEQUENCE_EXHAUSTED" or "SESSION_EPOCH_EXHAUSTED" ||
+        error.Code == "DEVICE_SUSPENDED" && error.Status > 0;
     public async Task<string> UnpairAsync(CancellationToken token = default)
     {
         await _gate.WaitAsync(token);
