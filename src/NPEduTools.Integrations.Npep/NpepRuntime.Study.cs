@@ -66,10 +66,24 @@ public sealed partial class NpepRuntime
         await RequireStudyContextAsync(context, token);
         if (!JsonNode.DeepEquals(context["identity"], configuration["identity"])) throw new NpepException("SESSION_SUPERSEDED");
         study.ApplyStudy(configuration);
+        try { await ExchangeStudyExecutionAsync(study, context, configuration, token); }
+        catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e))
+        {
+            // The configuration GET succeeded. A temporary downstream outage does not
+            // revoke that download, renew its age, or manufacture an execution grant.
+            // Recheck pause/binding/session changes before retaining the fresh policy.
+            await RequireStudyContextAsync(context, token);
+        }
+    }
+    private static bool TransientStudyExchangeFailure(Exception error) => error is HttpRequestException or OperationCanceledException
+        || error is NpepException { Code: "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED" };
+
+    private async Task ExchangeStudyExecutionAsync(INpepStudySettings study, JsonObject context, JsonObject configuration, CancellationToken token)
+    {
         var status = study.ObserveStudy();
         if (status is null) return;
         var body = new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(), ["sequence"] = ++_studySequence, ["status"] = status };
-        var reply = await _device.StudyAsync(body, token);
+        var reply = await _device!.StudyAsync(body, token);
         await RequireStudyContextAsync(context, token);
         if (!reply["confirmed"]!.GetValue<bool>() || reply.Text("version") != configuration.Text("version")) throw new NpepException("POLICY_CHANGED");
         if (study.SupportsExecution && configuration["effective"]!.AsObject().Text("source") != "None")
