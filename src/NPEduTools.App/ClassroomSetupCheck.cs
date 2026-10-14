@@ -12,6 +12,9 @@ public sealed record ClassroomSetupReport(ClassroomSetupItem[] Items, DateTimeOf
 {
     public bool CanProceed => Items.All(item => !item.BlocksSwitch);
     public bool AllReady => Items.All(item => item.State == "已就绪");
+    public string Summary => Items.FirstOrDefault(item => item.BlocksSwitch) is { } blocked
+        ? $"暂不能切换：{blocked.Title} · {blocked.State}。{blocked.Detail}"
+        : AllReady ? "四项已就绪。" : "程序与任务已就绪，桥接仍需连接确认。";
 }
 
 /// <summary>Read-only prerequisites. Never starts either app or changes a startup registration.</summary>
@@ -36,7 +39,7 @@ public sealed class ClassroomSetupCheck(
         {
             var response = await read("classisland.config.get", token);
             if (response.Outcome != "Succeeded" || response.Launch is not { StorageWarning: null } data)
-                return [Unknown("ClassIsland 程序", "无法读取已保存的位置，请打开程序设置检查配置。"),
+                return [Unknown("ClassIsland 程序", ReadFailure("无法读取已保存的位置，请打开程序设置检查配置。", response)),
                     Unknown("管理员自启动任务", "需要先核实 ClassIsland 程序位置。")];
             path = data.Settings.ExecutablePath;
             program = Program("ClassIsland 程序", path);
@@ -73,7 +76,7 @@ public sealed class ClassroomSetupCheck(
         {
             var response = await read("examaware.status", token);
             if (response.Outcome != "Succeeded" || response.ExamAware is not { } state)
-                return [Unknown("ExamAware2 程序", "无法读取配置，请打开考试看板设置检查。"), Unknown("考试看板桥接", "连接服务尚未就绪，请在考试看板页面查看原因。")];
+                return [Unknown("ExamAware2 程序", ReadFailure("无法读取配置，请打开考试看板设置检查。", response)), Unknown("考试看板桥接", "连接服务尚未就绪，请在考试看板页面查看原因。")];
             var program = Program("ExamAware2 程序", state.ExecutablePath);
             ClassroomSetupItem bridge = state.BridgeState switch
             {
@@ -98,4 +101,7 @@ public sealed class ClassroomSetupCheck(
         : fileExists(path) ? new(title, "已就绪", "已保存的位置可访问：" + path)
         : new(title, "待处理", "已保存的程序不存在或不可访问，请重新选择位置：" + path, true);
     private static ClassroomSetupItem Unknown(string title, string detail) => new(title, "待核实", detail, true);
+    private static string ReadFailure(string advice, HostResponse response) => advice +
+        (string.IsNullOrWhiteSpace(response.Message) ? "" : " 后台说明：" + response.Message) +
+        (response.Launch?.StorageWarning is { } warning ? " 配置说明：" + warning : "");
 }

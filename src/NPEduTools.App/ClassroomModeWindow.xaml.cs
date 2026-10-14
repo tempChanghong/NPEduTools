@@ -105,6 +105,8 @@ public partial class ClassroomModeWindow : Window
         if (_closing || _sending || _state is null) return;
         long revision = confirmedRevision ?? _state.Revision;
         _generation++;
+        OperationFeedbackText.Text = "";
+        OperationFeedbackText.Visibility = Visibility.Collapsed;
         _sending = true; Render(_state);
         try
         {
@@ -121,20 +123,34 @@ public partial class ClassroomModeWindow : Window
                 "RestoreRequired" => "请先恢复未完成的切换，再选择模式。",
                 _ => response.Message
             };
+            if (response.Outcome is "Rejected" or "Failed") ShowOperationFeedback(StatusText.Text);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
             _sending = false;
-            if (!_closing) Disconnected("未收到后台结果。请等待重新连接并核实状态，不要重复切换。");
+            if (!_closing)
+            {
+                const string message = "未收到后台结果。请等待重新连接并核实状态，不要重复切换。";
+                Disconnected(message); ShowOperationFeedback(message);
+            }
         }
         finally { _sending = false; }
     }
     private async void DailyClicked(object sender, RoutedEventArgs e) => await SwitchAsync("Daily");
+    private void ShowOperationFeedback(string message)
+    {
+        OperationFeedbackText.Text = "最近一次请求未完成：" + message;
+        OperationFeedbackText.Visibility = Visibility.Visible;
+    }
     private async void ExamClicked(object sender, RoutedEventArgs e) => await SwitchAsync("Exam");
     private async Task SwitchAsync(string target)
     {
         if (_state is null || _state.Busy) return;
-        if (!await CheckSetupAsync()) { SetupSummary.BringIntoView(); return; }
+        if (!await CheckSetupAsync())
+        {
+            if (!_closing && IsVisible) { ShowOperationFeedback(SetupSummary.Text); SetupSummary.BringIntoView(); }
+            return;
+        }
         if (_state is null || _state.Busy || _state.Recovery is not null || !IsVisible) return;
         long confirmedRevision = _state.Revision;
         string changes = target == "Exam" ? "暂停 ClassIsland 管理员自启动，开启 ExamAware2 自启动，并暂停自动录课。" :
@@ -183,7 +199,7 @@ public partial class ClassroomModeWindow : Window
             }
             SetupItems.ItemsSource = report.Items;
             if (!report.CanProceed) SetupDetails.IsExpanded = true;
-            SetupSummary.Text = (report.AllReady ? "四项已就绪。" : report.CanProceed ? "程序与任务已就绪，桥接仍需连接确认。" : "还有配置需要处理，请按下列提示完成设置。") +
+            SetupSummary.Text = report.Summary +
                 $" 检查于 {report.CheckedAt:HH:mm:ss}。";
             return report.CanProceed;
         }

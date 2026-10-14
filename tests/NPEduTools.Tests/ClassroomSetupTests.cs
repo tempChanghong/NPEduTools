@@ -13,6 +13,7 @@ public sealed class ClassroomSetupTests
         public ExamAwareStatus Ea = Connected;
         public string TaskState = "Enabled";
         public bool ReadFails, InspectFails, Exists = true;
+        public bool Rejected;
         public string? StorageWarning;
         public List<string> Reads = [];
         public int Inspections;
@@ -20,6 +21,8 @@ public sealed class ClassroomSetupTests
         {
             token.ThrowIfCancellationRequested(); Reads.Add(capability);
             if (capability == "classisland.config.get" && ReadFails) throw new IOException();
+            if (capability == "classisland.config.get" && Rejected)
+                return Task.FromResult(new HostResponse(1, Guid.NewGuid(), "Rejected", "LaunchUnavailable", "隔离后台返回：配置记录不可访问。"));
             return Task.FromResult(new HostResponse(1, Guid.NewGuid(), "Succeeded", null, "",
                 Launch: capability == "classisland.config.get" ? new(new(1, CiPath), null, StorageWarning) : null,
                 ExamAware: capability == "examaware.status" ? Ea : null));
@@ -120,5 +123,16 @@ public sealed class ClassroomSetupTests
     {
         using var cancel = new CancellationTokenSource(); cancel.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new Fixture().Check.RunAsync(cancel.Token));
+    }
+
+    [Fact]
+    public async Task Rejected_configuration_read_preserves_the_Host_reason_and_still_blocks_switching()
+    {
+        var report = await new Fixture { Rejected = true }.Check.RunAsync(default);
+        Assert.False(report.CanProceed);
+        Assert.Contains("配置记录不可访问", report.Items[0].Detail);
+        Assert.Contains("ClassIsland 程序", report.Summary);
+        Assert.Contains("配置记录不可访问", report.Summary);
+        Assert.Equal("已就绪", report.Items[3].State);
     }
 }
