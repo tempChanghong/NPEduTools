@@ -36,7 +36,7 @@ internal static partial class Program
                 WorkspaceCalibrationProtocolFailures, WorkspaceSchoolProtocolFailure,
                 WorkspacePresentationAccessFailure, WorkspaceSeatingAccessFailure, WorkspaceManualEndAccessFailure })
                 try { check(); } catch (Exception e) { errors.Add(new InvalidOperationException(check.Method.Name + ": " + e.Message, e)); }
-            foreach (string scenario in new[] { "rejected-report", "empty-report", "accepted-report", "delayed-manual", "delayed-school", "school-report" })
+            foreach (string scenario in new[] { "rejected-report", "empty-report", "accepted-report", "delayed-manual", "delayed-school", "delayed-school-withdrawn", "delayed-school-projection", "school-report" })
                 try { WorkspaceDisplayPipelineCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
             if (errors.Count > 0) throw new AggregateException(errors);
         }
