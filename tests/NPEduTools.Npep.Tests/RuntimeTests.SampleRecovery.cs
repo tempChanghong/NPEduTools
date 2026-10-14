@@ -5,8 +5,27 @@ namespace NPEduTools.Npep.Tests;
 
 public sealed partial class RuntimeTests
 {
-    [Fact]
-    public async Task Html_gateway_failure_does_not_suspend_pairing_and_status_recovers_automatically()
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    public async Task Authorization_refusal_with_interrupted_body_still_suspends_pairing(int status)
+    {
+        using var directory = new TestDirectory();
+        var server = new FakeServer();
+        using (var device = new NpepDevice(directory.Path, server.Api)) await server.ActivateAsync(device);
+        await using var runtime = new NpepRuntime(() => new(directory.Path, origin => new NpepApi(origin,
+            new Handler(request => request.RequestUri!.AbsolutePath.EndsWith("/device/status", StringComparison.Ordinal)
+                ? Task.FromResult(new HttpResponseMessage((System.Net.HttpStatusCode)status)
+                    { Content = new StreamContent(new BrokenHttpBodyStream()) }) : server.Send(request)))), "auth-body-rejection", Sample);
+        await Until(() => runtime.Snapshot().State == "SUSPENDED");
+        Assert.Equal("STOPPED", runtime.Snapshot().Connection);
+        Assert.Equal("AUTH_INVALID", runtime.Snapshot().Error);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Http_response_failure_does_not_suspend_pairing_and_status_recovers_automatically(bool bodyInterrupted)
     {
         using var directory = new TestDirectory();
         var server = new FakeServer();
@@ -15,11 +34,11 @@ public sealed partial class RuntimeTests
         await using var runtime = new NpepRuntime(() => new(directory.Path, origin => new NpepApi(origin,
             new Handler(request => request.RequestUri!.AbsolutePath.EndsWith("/device/status", StringComparison.Ordinal)
                 && Volatile.Read(ref broken) == 1
-                    ? Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.BadGateway)
-                        { Content = new StringContent("<html>temporary gateway failure</html>") })
+                    ? Task.FromResult(new HttpResponseMessage(bodyInterrupted ? System.Net.HttpStatusCode.OK : System.Net.HttpStatusCode.BadGateway)
+                        { Content = bodyInterrupted ? new StreamContent(new BrokenHttpBodyStream()) : new StringContent("<html>temporary gateway failure</html>") })
                     : server.Send(request)))), "gateway-recovery", Sample);
         await Until(() => runtime.Snapshot().Error is not null);
-        Assert.Equal("TEMPORARILY_UNAVAILABLE", runtime.Snapshot().Error);
+        Assert.Equal(bodyInterrupted ? "NETWORK_UNAVAILABLE" : "TEMPORARILY_UNAVAILABLE", runtime.Snapshot().Error);
         Assert.Equal("ACTIVE", runtime.Snapshot().State);
         Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
         Interlocked.Exchange(ref broken, 0);

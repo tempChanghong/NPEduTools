@@ -35,8 +35,9 @@ public sealed class TransientHttpResponseTests
         };
         var error = await Assert.ThrowsAsync<NpepException>(Request);
         bool transient = status == 429 || status >= 500;
-        Assert.Equal(transient ? status == 429 ? "RATE_LIMITED" : "TEMPORARILY_UNAVAILABLE" : "INVALID_RESPONSE", error.Code);
-        Assert.Equal(transient ? status : 0, error.Status);
+        bool refused = status is 401 or 403;
+        Assert.Equal(refused ? "AUTH_INVALID" : transient ? status == 429 ? "RATE_LIMITED" : "TEMPORARILY_UNAVAILABLE" : "INVALID_RESPONSE", error.Code);
+        Assert.Equal(transient || refused ? status : 0, error.Status);
         Assert.Equal(transient ? 17 : (int?)null, error.RetryAfterSeconds);
         Assert.DoesNotContain("private", error.Message);
     }
@@ -51,10 +52,43 @@ public sealed class TransientHttpResponseTests
         Assert.Equal(503, error.Status);
     }
 
+    [Theory]
+    [InlineData(200)]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(429)]
+    [InlineData(503)]
+    public async Task InterruptedBodyRetainsKnownHttpRejection(int status)
+    {
+        using var api = new NpepApi("https://isolated.invalid", new Handler(_ =>
+            Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
+                { Content = new StreamContent(new BrokenHttpBodyStream()) })));
+        if (status == 200)
+        {
+            var error = await Assert.ThrowsAsync<HttpRequestException>(() => api.SendAsync("info", "infoResponse"));
+            Assert.IsAssignableFrom<IOException>(error.InnerException);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<NpepException>(() => api.SendAsync("info", "infoResponse"));
+            Assert.Equal(status is 401 or 403 ? "AUTH_INVALID" : status == 429 ? "RATE_LIMITED" : "TEMPORARILY_UNAVAILABLE", error.Code);
+            Assert.Equal(status, error.Status);
+        }
+    }
+
     private sealed class UnboundedContent(byte[] bytes) : HttpContent
     {
         protected override bool TryComputeLength(out long length) { length = 0; return false; }
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => stream.WriteAsync(bytes).AsTask();
         protected override Task<Stream> CreateContentReadStreamAsync() => Task.FromResult<Stream>(new MemoryStream(bytes, writable: false));
     }
+}
+
+internal sealed class BrokenHttpBodyStream : MemoryStream
+{
+    public override bool CanSeek => false;
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        ValueTask.FromException<int>(new IOException("synthetic interrupted HTTP body"));
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        Task.FromException<int>(new IOException("synthetic interrupted HTTP body"));
 }
