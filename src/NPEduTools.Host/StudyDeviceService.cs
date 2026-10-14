@@ -45,9 +45,9 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
         _enumerated = true;
         if (_error == "CameraDevicesUnavailable") _error = null;
     }
-    private void Load()
+    private void Load(bool retry = false)
     {
-        if (_loaded) return;
+        if (_loaded && (!retry || !_configurationError)) return;
         _loaded = true;
         try
         {
@@ -56,6 +56,10 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
             var selected = JsonSerializer.Deserialize<string?>(File.ReadAllText(_path));
             if (selected is not null && !NoiseContract.ValidDeviceId(selected)) throw new InvalidDataException();
             _selected = selected;
+            // Only a fully validated reread can clear the fault. Fence commands
+            // formed from the earlier unreadable snapshot, without rewriting the file.
+            if (_configurationError) _revision++;
+            _configurationError = false;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         { _selected = null; _configurationError = true; }
@@ -84,6 +88,7 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
             {
                 try
                 {
+                    Load(retry: true);
                     RefreshCatalog();
                     return Reply(_configurationError ? "CameraConfigurationUnavailable" : _error, "摄像头列表已刷新；未打开摄像头。");
                 }
