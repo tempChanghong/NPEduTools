@@ -44,6 +44,17 @@ public sealed class StudyReportService : IAsyncDisposable
         lock (_sync)
         {
             var (scope, selected, s) = _sample();
+            // A temporary configuration read failure is not revocation of the
+            // witnessed window's collected statistics. Quarantine the collection
+            // without displaying it; reuse only after the same context is fresh again.
+            if (selected && scope is not null && scope == _scope && _mode == s.Mode &&
+                _version is not null && (s.Version is null || s.Version == _version) &&
+                _window is not null && _ended is null && s.PolicyState != "APPLIED" && s.Phase == "Blocked" &&
+                s.Reason is "STUDY_OFFLINE" or "CONFIGURATION_STALE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED")
+            {
+                Observe(s, _window.Start); // Updates only already tracked session IDs while blocked.
+                return State(false, "Unavailable", 0);
+            }
             if (_scope != scope || _version != s.Version || _mode != s.Mode) { Clear(); _scope = scope; _version = s.Version; _mode = s.Mode; }
             if (!selected || scope is null || s.Version is null || s.PolicyState != "APPLIED" || !s.ClockReady || s.SchoolNow is not { } now ||
                 s.Phase is not ("Active" or "Outside" or "Ended"))
