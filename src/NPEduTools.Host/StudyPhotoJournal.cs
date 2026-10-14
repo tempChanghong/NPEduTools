@@ -11,7 +11,9 @@ public sealed class StudyPhotoJournal(string directory, Func<byte[], bool, byte[
     private DateTimeOffset? _lastUtc;
     private long? _lastMono;
     private bool _loaded;
-    public string? Error { get; private set; }
+    private string? _cooldownError, _queueError;
+    // A healthy queue read cannot certify the independent shared cooldown store.
+    public string? Error { get { lock (_sync) return _cooldownError ?? _queueError; } }
     private string[] Files() => Directory.Exists(_root) ? Directory.EnumerateFiles(_root, "*.photo").Take(257).ToArray() : [];
     private static bool Owned(string file) => Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out _);
     private void Atomic(string file, byte[] bytes)
@@ -45,7 +47,7 @@ public sealed class StudyPhotoJournal(string directory, Func<byte[], bool, byte[
                 _lastUtc = serverNow; _lastMono = _time.GetTimestamp(); return true;
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
-            { Error = "PHOTO_JOURNAL_UNAVAILABLE"; return false; }
+            { _cooldownError = "PHOTO_JOURNAL_UNAVAILABLE"; return false; }
         }
     }
     public void Save(StudyPhotoPacket packet)
@@ -81,15 +83,17 @@ public sealed class StudyPhotoJournal(string directory, Func<byte[], bool, byte[
                     if (packet.Scope != scope || packet.Camera != camera || packet.Microphone != microphone ||
                         serverNow is { } now && now - DateTimeOffset.Parse(packet.Metadata.Text("capturedAt")) > TimeSpan.FromDays(1)) { File.Delete(file); continue; }
                     if (Convert.ToHexStringLower(SHA256.HashData(packet.Bytes)) != packet.Metadata.Text("hash")) throw new InvalidDataException();
+                    _queueError = null;
                     return packet;
                 }
+                _queueError = null;
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or NpepException or FormatException)
-            { Error = "PHOTO_QUEUE_UNAVAILABLE"; }
+            { _queueError = "PHOTO_QUEUE_UNAVAILABLE"; }
             return null;
         }
     }
-    public int Pending { get { lock (_sync) { try { return Files().Count(Owned); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Error = "PHOTO_QUEUE_UNAVAILABLE"; return 0; } } } }
+    public int Pending { get { lock (_sync) { try { return Files().Count(Owned); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { _queueError = "PHOTO_QUEUE_UNAVAILABLE"; return 0; } } } }
     public void Remove(Guid id) { lock (_sync) File.Delete(Path.Combine(_root, id.ToString("N") + ".photo")); }
     public void Clear() { lock (_sync) foreach (var file in Files().Where(Owned)) File.Delete(file); }
 }
