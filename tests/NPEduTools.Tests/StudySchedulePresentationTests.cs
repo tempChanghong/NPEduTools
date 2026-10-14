@@ -37,6 +37,16 @@ public sealed class StudySchedulePresentationTests
         Assert.Equal("2026-10-12 23:00–2026-10-13 01:00", StudySchedulePresentation.Span(new(Current.Start.AddHours(4), Current.Start.AddHours(6))));
     }
 
+    [Fact]
+    public void Offline_running_window_is_explained_without_advertising_cached_next_arrangements()
+    {
+        var offline = State with { Reason = "OFFLINE_CONTINUING", Next = null };
+        Assert.Contains("本次自习继续", StudySchedulePresentation.Next(offline));
+        Assert.Contains("沿用本次已确认安排", StudySchedulePresentation.Configuration(offline));
+        Assert.DoesNotContain("尚未", StudySchedulePresentation.Configuration(offline));
+        Assert.DoesNotContain("2026-10-13", StudySchedulePresentation.Next(offline));
+    }
+
     [Theory]
     [InlineData("STUDY_OFFLINE", "自动重试")]
     [InlineData("CONFIGURATION_STALE", "已过期")]

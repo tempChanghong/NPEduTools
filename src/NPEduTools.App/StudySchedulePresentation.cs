@@ -8,6 +8,7 @@ internal static class StudySchedulePresentation
     {
         const string title = "下一次定时自习：";
         if (state is null || state.PolicyState != "APPLIED") return title + Unavailable(state);
+        if (state.Reason == "OFFLINE_CONTINUING") return title + "学校连接正在恢复，本次自习继续；后续安排待同步";
         string mode = state.Mode == "Exam" ? "考试模式" : "日常模式";
         if (state.Reason == "NOT_CONFIGURED") return title + "学校尚未配置本班安排";
         if (state.Phase == "Disabled") return title + mode + "未启用";
@@ -38,6 +39,7 @@ internal static class StudySchedulePresentation
     public static string Configuration(StudyHostState? state)
     {
         if (state is null || state.PolicyState != "APPLIED") return Unavailable(state);
+        if (state.Reason == "OFFLINE_CONTINUING") return "学校连接正在恢复，沿用本次已确认安排；展示与采集状态由本机核实。";
         if (state.Settings is null) return state.Reason == "NOT_CONFIGURED"
             ? "请在学校后台核对本机绑定班级的年级继承或班级安排。" : "学校已关闭本班自习安排。";
         var schedule = state.Settings.ForMode(state.Mode).Schedule;

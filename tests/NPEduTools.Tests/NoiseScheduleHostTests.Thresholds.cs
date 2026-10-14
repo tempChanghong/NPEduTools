@@ -56,6 +56,18 @@ public sealed partial class NoiseScheduleHostTests
                 study.ApplyStudy(edited); break;
         }
         f.Tick(100); study.Tick(); var after = display.Snapshot();
+        if (change is "offline" or "configuration-stale")
+        {
+            Assert.Equal("OFFLINE_CONTINUING", after.Reason); Assert.True(after.Display!.Available);
+            Assert.Equal(before.Display!.InstanceId, after.Display.InstanceId); Assert.Null(study.ObserveStudy());
+            Assert.NotNull(after.Threshold!.DisciplineId);
+            if (change == "offline") Assert.Equal(before.Threshold!.DisciplineId, after.Threshold.DisciplineId);
+            var current = old with { StudyReminder = old.StudyReminder! with { DisciplineId = after.Threshold.DisciplineId } };
+            Assert.Equal("Succeeded", display.Handle(current).Outcome);
+            Assert.NotEqual("Succeeded", display.Handle(current with { RequestId = Guid.NewGuid() }).Outcome);
+            Assert.Equal(session, f.Noise.Snapshot().SessionId); Assert.Equal(expectedCaptures, f.Captures.Count);
+            return;
+        }
         Assert.Null(after.Threshold); Assert.Equal("Rejected", display.Handle(old).Outcome);
         Assert.False(File.Exists(System.IO.Path.Combine(f.Path, "study-reminder-state.json")));
         bool captureContinues = manual || change is "offline" or "configuration-stale";

@@ -107,6 +107,7 @@ public partial class StudySurface : UserControl
         if(manual && !state.Manual!.HasPlannedEnd && state.Window is {} mw && state.SchoolNow is {} mn)
         {WindowText.Text=$"{mw.Start:HH:mm} – 主动结束";RemainingLabel.Text="已进行";Remaining.Text=TimeSpan.FromSeconds(Math.Max(0,(mn-mw.Start).TotalSeconds)).ToString(@"hh\:mm\:ss");}
         SessionNote.Text = _returnError ?? (state.Display?.StageAudioError is not null ? "阶段提示音暂不可用" :
+            state.Reason == "OFFLINE_CONTINUING" ? "学校连接正在恢复 · 本次自习继续" :
             state.Phase == "Preparing" ? "即将开始自习" : manual?state.Manual!.HasPlannedEnd?"手动自习 · 学校定时自习优先":"实际采集最多三小时 · 学校定时自习优先":"自习安排由学校管理后台设置");
         bool capturing = fresh && state.Phase == "Active" && state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true } execution &&
             _noise is { State: "Active" } noise && (execution.Owner=="Schedule" || manual) && execution.SessionId == noise.SessionId &&

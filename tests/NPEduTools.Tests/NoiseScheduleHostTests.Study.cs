@@ -109,15 +109,17 @@ public sealed partial class NoiseScheduleHostTests
         await Until(() => f.Noise.Snapshot().State == "Stopped"); f.Scheduler.Confirm(f.Policy()); f.Tick(); Assert.Single(f.Captures);
     }
     [Fact]
-    public async Task Transport_loss_withdraws_applied_claim_but_retains_existing_capture_lease_until_explicit_revocation()
+    public async Task Transport_loss_retains_witnessed_current_study_until_explicit_revocation()
     {
         await using var f = new Fixture(); var config = StudyConfig(f); long sequence = 0;
         var connection = Guid.NewGuid(); var bridge = Guid.NewGuid();
         await using var study = new NPEduTools.Host.StudySettingsService(() => new(connection,bridge,++sequence,0,
             f.Base.AddMilliseconds(f.Time.Ms),0,"Advancing","synthetic"), () => f.Exam, f.Time, false, f.Scheduler);
         study.BindStudy(f.Scope); study.ApplyStudy(config); study.ConfirmStudyExecution(config, Grant(config)); await f.Start();
+        f.Tick(); study.Tick(); f.Tick(); study.Tick();
         study.StudyFailed("STUDY_OFFLINE"); for (int i = 0; i < 40; i++) { f.Tick(); study.Tick(); }
-        Assert.Equal("UNAVAILABLE", study.Snapshot().PolicyState); Assert.Equal("Active", f.Noise.Snapshot().State); Assert.Single(f.Captures);
+        Assert.Equal("APPLIED", study.Snapshot().PolicyState); Assert.Equal("OFFLINE_CONTINUING", study.Snapshot().Reason);
+        Assert.Null(study.ObserveStudy()); Assert.Equal("Active", f.Noise.Snapshot().State); Assert.Single(f.Captures);
         f.Captures[0].Sample(); f.Tick(); Assert.Equal("ACTIVE", study.Snapshot().CaptureState);
         Assert.True(study.Snapshot().Execution!.SignalFresh); Assert.Equal("Schedule", study.Snapshot().Execution!.Owner);
         study.StudyFailed("POLICY_CHANGED"); await Until(() => f.Noise.Snapshot().State == "Stopped");
