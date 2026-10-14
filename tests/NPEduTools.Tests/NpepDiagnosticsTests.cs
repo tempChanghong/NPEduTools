@@ -100,6 +100,45 @@ public sealed class NpepDiagnosticsTests
         Assert.True(session.HasPairing); // Export does not mutate the user's existing UI session.
     }
 
+    [Theory]
+    [InlineData("npep.status", "connection", "localCache")]
+    [InlineData("host.cached-status", "localCache", "connection")]
+    public async Task DeniedHostAccessPreservesOtherDiagnosticSectionAndAllowsReadOnlyRecovery(
+        string deniedCapability, string missingSection, string availableSection)
+    {
+        string pipeName = "NPEduTools.Test.diagnostics-denied." + Guid.NewGuid().ToString("N");
+        using var deniedPipe = new System.IO.Pipes.NamedPipeServerStream(pipeName,
+            System.IO.Pipes.PipeDirection.Out, 1, System.IO.Pipes.PipeTransmissionMode.Byte,
+            System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+        bool deny = false;
+        var capabilities = new List<string>();
+        var session = new NpepConnectionSession((request, token) =>
+        {
+            capabilities.Add(request.Capability);
+            if (deny && request.Capability == deniedCapability)
+                return HostClient.RequestAsync(pipeName, request, token);
+            return Task.FromResult(Reply(request, new(2, "ACTIVE", "ONLINE", "private"))
+                with { ClassroomMode = new(Mode: "Daily") });
+        });
+        Assert.True(await session.RefreshAsync());
+        session.DeviceName = "保留设备草稿";
+        deny = true;
+        capabilities.Clear();
+        var report = await session.CollectDiagnosticsAsync("1.1.5");
+        Assert.Equal(["npep.status", "host.cached-status"], capabilities);
+        Assert.False(report![missingSection]!["available"]!.GetValue<bool>());
+        Assert.Null(report[missingSection]!["observedAt"]);
+        Assert.True(report[availableSection]!["available"]!.GetValue<bool>());
+        Assert.True(session.HasPairing); // Diagnostic collection does not rewrite the UI connection.
+        Assert.Equal("保留设备草稿", session.DeviceName);
+        Assert.True(session.CanRefresh);
+        deny = false;
+        var recovered = await session.CollectDiagnosticsAsync("1.1.5");
+        Assert.True(recovered!["connection"]!["available"]!.GetValue<bool>());
+        Assert.True(recovered["localCache"]!["available"]!.GetValue<bool>());
+        Assert.All(capabilities, capability => Assert.Contains(capability, new[] { "npep.status", "host.cached-status" }));
+    }
+
     [Fact]
     public async Task BusyCollectionBlocksCompetingRequestsAndClosingCancelsFurtherReads()
     {

@@ -140,7 +140,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
                     var response = await request(new(Protocol.Version, Guid.NewGuid(), capability), deadline.Token);
                     return (response, DateTimeOffset.UtcNow);
                 }
-                catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or JsonException)
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
                 { return (null, null); }
             }
             var connection = await ReadAsync("npep.status");
