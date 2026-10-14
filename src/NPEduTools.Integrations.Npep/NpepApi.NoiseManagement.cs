@@ -19,12 +19,7 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException("MANAGEMENT_UNSUPPORTED", status);
-        if (response.Content.Headers.ContentLength > 8192) throw new NpepException("INVALID_RESPONSE");
-        using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-        using var buffer = new MemoryStream(); byte[] block = new byte[2048]; int read;
-        while ((read = await stream.ReadAsync(block, deadline.Token)) > 0)
-        { if (buffer.Length + read > 8192) throw new NpepException("INVALID_RESPONSE"); buffer.Write(block, 0, read); }
-        var envelope = NpepProtocol.Parse(buffer.ToArray());
+        var envelope = await ReadEnvelopeAsync(response, 8192, deadline.Token);
         if (envelope.Text("protocolVersion") != "0.8" || envelope.Text("requestId") != body.Text("requestId")) throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {

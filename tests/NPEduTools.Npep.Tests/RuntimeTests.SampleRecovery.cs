@@ -6,6 +6,30 @@ namespace NPEduTools.Npep.Tests;
 public sealed partial class RuntimeTests
 {
     [Fact]
+    public async Task Html_gateway_failure_does_not_suspend_pairing_and_status_recovers_automatically()
+    {
+        using var directory = new TestDirectory();
+        var server = new FakeServer();
+        using (var device = new NpepDevice(directory.Path, server.Api)) await server.ActivateAsync(device);
+        int broken = 1;
+        await using var runtime = new NpepRuntime(() => new(directory.Path, origin => new NpepApi(origin,
+            new Handler(request => request.RequestUri!.AbsolutePath.EndsWith("/device/status", StringComparison.Ordinal)
+                && Volatile.Read(ref broken) == 1
+                    ? Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.BadGateway)
+                        { Content = new StringContent("<html>temporary gateway failure</html>") })
+                    : server.Send(request)))), "gateway-recovery", Sample);
+        await Until(() => runtime.Snapshot().Error is not null);
+        Assert.Equal("TEMPORARILY_UNAVAILABLE", runtime.Snapshot().Error);
+        Assert.Equal("ACTIVE", runtime.Snapshot().State);
+        Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
+        Interlocked.Exchange(ref broken, 0);
+        await UntilTlsRecovery(runtime, () => runtime.Snapshot().Connection == "ONLINE");
+        Assert.Null(runtime.Snapshot().Error);
+        Assert.Single(server.Requests, request => request.Path == "device/sessions");
+        Assert.Single(server.Requests, request => request.Path == "pairings");
+    }
+
+    [Fact]
     public async Task Slow_status_sample_is_discarded_and_reporter_recovers_without_repairing()
     {
         using var directory = new TestDirectory();

@@ -28,15 +28,7 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException("NOTIFICATIONS_UNSUPPORTED", status);
-        if (response.Content.Headers.ContentLength > 1048576) throw new NpepException("INVALID_RESPONSE");
-        using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-        using var buffer = new MemoryStream(); byte[] block = new byte[8192]; int read;
-        while ((read = await stream.ReadAsync(block, deadline.Token)) > 0)
-        {
-            if (buffer.Length + read > 1048576) throw new NpepException("INVALID_RESPONSE");
-            buffer.Write(block, 0, read);
-        }
-        var envelope = NpepProtocol.Parse(buffer.ToArray());
+        var envelope = await ReadEnvelopeAsync(response, 1048576, deadline.Token);
         if (envelope.Text("requestId") != requestId || envelope.Text("protocolVersion") != "0.2") throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {

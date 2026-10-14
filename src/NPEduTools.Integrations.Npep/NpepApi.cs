@@ -46,17 +46,7 @@ public sealed partial class NpepApi : IDisposable
         }
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         if ((int)response.StatusCode is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
-        if (response.Content.Headers.ContentLength > 65536) throw new NpepException("INVALID_RESPONSE");
-        using var stream = await response.Content.ReadAsStreamAsync(token);
-        using var buffer = new MemoryStream();
-        var block = new byte[4096];
-        int read;
-        while ((read = await stream.ReadAsync(block, token)) > 0)
-        {
-            if (buffer.Length + read > 65536) throw new NpepException("INVALID_RESPONSE");
-            buffer.Write(block, 0, read);
-        }
-        JsonObject envelope = NpepProtocol.Parse(buffer.ToArray());
+        var envelope = await ReadEnvelopeAsync(response, 65536, token);
         if (envelope.Text("requestId") != requestId || envelope.Text("protocolVersion") != "0.1")
             throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)

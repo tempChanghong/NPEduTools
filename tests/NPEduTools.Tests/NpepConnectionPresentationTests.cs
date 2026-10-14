@@ -5,6 +5,17 @@ namespace NPEduTools.Tests;
 
 public sealed class NpepConnectionPresentationTests
 {
+    [Theory]
+    [InlineData("TEMPORARILY_UNAVAILABLE", "暂时不可用")]
+    [InlineData("RATE_LIMITED", "请求频率")]
+    public void TransientHttpFailuresExplainCauseWithoutClaimingLostPairing(string code, string cause)
+    {
+        var state = State("ACTIVE", "OFFLINE", code);
+        Assert.Contains(cause, NpepConnectionPresentation.Cause(code));
+        Assert.Contains("自动重试", NpepConnectionPresentation.Title(state));
+        Assert.Contains("无需重新配对", NpepConnectionPresentation.NextAction(state));
+    }
+
     [Fact]
     public void Expired_status_sample_has_clear_cause_and_automatic_retry_advice()
     {

@@ -29,11 +29,7 @@ public sealed partial class NpepApi
         int code = (int)response.StatusCode;
         if(code is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if(code is 404 or 426)throw new NpepException("SCHOOL_MANAGEMENT_UNSUPPORTED",code);
-        using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-        using var buffer = new MemoryStream(); byte[] block = new byte[4096]; int read;
-        while((read = await stream.ReadAsync(block, deadline.Token)) > 0)
-        { if(buffer.Length + read > 65536) throw new NpepException("INVALID_RESPONSE"); buffer.Write(block,0,read); }
-        var envelope = NpepProtocol.Parse(buffer.ToArray());
+        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token);
         if(envelope.Text("protocolVersion") != "0.16" || envelope.Text("requestId") != requestId) throw new NpepException("INVALID_RESPONSE");
         if(!response.IsSuccessStatusCode)
         {
