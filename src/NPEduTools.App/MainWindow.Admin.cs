@@ -73,7 +73,7 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(_savedPath) || !string.Equals(_savedPath, ExecutablePathBox.Text.Trim(), StringComparison.OrdinalIgnoreCase))
         { RefreshAdminControls(); return; }
         string path = _savedPath;
-        if (action is "create" or "delete" && (_adminStatus is null || _adminPath != path)) return;
+        if (action is "create" or "delete" && (_adminStatus is null || !string.Equals(_adminPath, path, StringComparison.OrdinalIgnoreCase))) return;
         _adminBusy = true;
         AdminMessage.Text = action == "status" ? "正在检查…" : "等待 Windows 管理员授权并执行操作…";
         RefreshAdminControls();
@@ -82,7 +82,7 @@ public partial class MainWindow
         try
         {
             var result = await run(action, path, _adminStatus?.Fingerprint);
-            if (_savedPath != path) { ClearAdminStatus(); AdminMessage.Text = "程序路径已变更，请重新检查。"; return; }
+            if (!string.Equals(_savedPath, path, StringComparison.OrdinalIgnoreCase)) { ClearAdminStatus(); AdminMessage.Text = "程序路径已变更，请重新检查。"; return; }
             _adminPath = path;
             if (result.Status is { } status)
             {

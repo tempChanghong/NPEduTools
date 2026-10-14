@@ -136,7 +136,54 @@ internal static partial class Program
                 }
                 finally { window.Close(); }
             }
+            RunAdminPathCaseChecks();
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
+    private static void RunAdminPathCaseChecks()
+    {
+        foreach (string action in new[] { "create", "delete", "status" })
+        {
+            var window = IsolatedMainWindow("NPEduTools.Test.admin-case." + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Exercise(window, owner =>
+                {
+                    LaunchConfigurationSnapshot(window, new(new(1, AdminFixturePath), null));
+                    AdminSnapshot(window, AdminFixturePath, AdminFixtureStatus);
+                    AdminRefreshControls(window);
+                    void ReloadCaseVariant()
+                    {
+                        AdminField(window, "_configurationLoaded", false);
+                        LaunchConfigurationSnapshot(window, new(new(2, AdminFixturePath.ToLowerInvariant()), null));
+                    }
+                    if (action != "status") ReloadCaseVariant();
+                    Assert(Button(owner, action == "delete" ? "AdminDelete" : "AdminCreate").IsEnabled,
+                        "case-only reload should retain the current task controls");
+                    int calls = 0;
+                    var completion = new TaskCompletionSource<AdminResult>();
+                    var pending = AdminRun(window, action, (command, path, fingerprint) =>
+                    {
+                        calls++;
+                        Assert(command == action && string.Equals(path, AdminFixturePath, StringComparison.OrdinalIgnoreCase)
+                            && fingerprint == AdminFixtureStatus.Fingerprint, "case alias changed action or task fingerprint");
+                        return completion.Task;
+                    });
+                    Assert(calls == 1, "enabled administrator action was silently skipped after a case-only path reload");
+                    if (action == "status") ReloadCaseVariant();
+                    completion.SetResult(new("Succeeded", "隔离大小写路径操作完成", AdminFixtureStatus));
+                    PumpUntil(() => pending.IsCompleted, "case-alias administrator operation did not settle");
+                    pending.GetAwaiter().GetResult();
+                    Assert(AdminText(owner, "AdminTaskStatus") == AdminFixtureStatus.TaskMessage
+                        && Button(owner, "AdminDelete").IsEnabled
+                        && AdminText(owner, "AdminMessage").Contains("操作完成"),
+                        "case-only path change discarded a correlated administrator result");
+                    Checks.Add($"Administrator {action}: case-only saved-path reload executes once with the same task fingerprint and retains its result");
+                    window.Close();
+                });
+            }
+            finally { window.Close(); }
+        }
     }
 }
