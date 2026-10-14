@@ -27,19 +27,29 @@ public sealed class StudyRecoveryService : INpepStudyExitEvents,IAsyncDisposable
         _loop=background?Task.Run(async()=>{try{while(!_stop.IsCancellationRequested){Tick();await Task.Delay(TimeSpan.FromMilliseconds(200),_time,_stop.Token);}}catch(OperationCanceledException)when(_stop.IsCancellationRequested){} }):Task.CompletedTask;
     }
     public void BindExit(string? scope){lock(_sync){if(_scope!=scope){_scope=scope;_id=Guid.Empty;_window=null;}}}
+    // Processing and presentation must agree on the same currently eligible incident.
+    // A cached warning is not authority to survive a mode, binding or maintenance change.
+    private sealed record IncidentContext(string Scope, StudyHostState State, GuardRecoveryEvent Incident,
+        DateTimeOffset Now, Guid SessionId, DateTimeOffset SchoolNow);
+    private IncidentContext? CurrentIncident()
+    {
+        var x=_sample();var s=x.State;var now=_time.GetUtcNow();
+        if(_scope is null || x.Scope!=_scope || !x.Selected || s is not {PolicyState:"APPLIED",Phase:"Active",ClockReady:true,Version:not null,Window:not null,SchoolNow:not null,
+            Execution:{Owner:"Schedule",State:"Active",SignalFresh:true,SessionId:not null}})return null;
+        if(_files.Read<GuardRecoveryEvent>("recovery.json") is not {} incident || !incident.Valid() || incident.ContextKey!=GuardRecoveryEvent.Key(_scope,s.Version + (s.Mode == "Exam" ? ":Exam" : "")) || incident.Generation!=_files.Read<GuardRegistration>("registration.json")?.Generation ||
+            now<incident.DetectedUtc || now>=incident.WindowEndUtc || now-incident.DetectedUtc>TimeSpan.FromMinutes(10) ||
+            Math.Abs((incident.WindowEndUtc-now-(s.Window.End-s.SchoolNow.Value)).TotalSeconds)>3 ||
+            _files.Stopped(incident.Generation) || _files.SessionEnding(incident.Generation))return null;
+        var expected=_files.Read<GuardExpectedExit>("expected-exit.json");
+        if(expected?.Generation==incident.Generation && expected.SkipUntilUtc is {} until && now<until)return null;
+        return new(_scope,s,incident,now,s.Execution.SessionId.Value,s.SchoolNow.Value);
+    }
     public void Tick()
     {
         lock(_sync)
         {
-            var x=_sample();var s=x.State;var now=_time.GetUtcNow();
-            if(_scope is null || x.Scope!=_scope || !x.Selected || s is not {PolicyState:"APPLIED",Phase:"Active",ClockReady:true,Version:not null,Window:not null,SchoolNow:not null,
-                Execution:{Owner:"Schedule",State:"Active",SignalFresh:true,SessionId:not null}})return;
-            if(_files.Read<GuardRecoveryEvent>("recovery.json") is not {} incident || !incident.Valid() || incident.ContextKey!=GuardRecoveryEvent.Key(_scope,s.Version + (s.Mode == "Exam" ? ":Exam" : "")) || incident.Generation!=_files.Read<GuardRegistration>("registration.json")?.Generation ||
-                now<incident.DetectedUtc || now>=incident.WindowEndUtc || now-incident.DetectedUtc>TimeSpan.FromMinutes(10) ||
-                Math.Abs((incident.WindowEndUtc-now-(s.Window.End-s.SchoolNow.Value)).TotalSeconds)>3 ||
-                _files.Stopped(incident.Generation) || _files.SessionEnding(incident.Generation))return;
-            var expected=_files.Read<GuardExpectedExit>("expected-exit.json");
-            if(expected?.Generation==incident.Generation && expected.SkipUntilUtc is {} until && now<until)return;
+            if(CurrentIncident() is not {} current)return;
+            var s=current.State;var incident=current.Incident;var now=current.Now;
             if(_id!=incident.Id)
             {
                 _resumed=false;_warningAt=_time.GetTimestamp();
@@ -51,7 +61,7 @@ public sealed class StudyRecoveryService : INpepStudyExitEvents,IAsyncDisposable
                 _audit="NotRequired";_auditError=null;
                 if(claimed?.Id==incident.Id)
                 { _id=incident.Id;_version=s.Version;_window=s.Window;_warningEnd=claimed.WarningEnd;_remaining=Math.Clamp((_warningEnd-now).TotalSeconds,0,30);_photoAttempted=claimed.PhotoAttempted;
-                    try{_audit=_journal.Next(_scope)?.Metadata["eventId"]?.GetValue<string>()==_id.ToString()?"SavedLocal":"NotRequired";}
+                    try{_audit=_journal.Next(current.Scope)?.Metadata["eventId"]?.GetValue<string>()==_id.ToString()?"SavedLocal":"NotRequired";}
                     catch(Exception e)when(StorageError(e)){_audit="Unavailable";_auditError="RECOVERY_JOURNAL_UNAVAILABLE";}
                 }
                 else
@@ -59,10 +69,10 @@ public sealed class StudyRecoveryService : INpepStudyExitEvents,IAsyncDisposable
                     _id=incident.Id;_version=s.Version;_window=s.Window;_warningEnd=now.AddSeconds(30);_remaining=30;_photoAttempted=false;
                     try{_files.Write("recovery-claim.json",new Claim(_id,_warningEnd,false));}
                     catch(Exception e)when(e is IOException or UnauthorizedAccessException){_id=Guid.Empty;_auditError="RECOVERY_STORE_UNAVAILABLE";return;}
-                    var meta=new JsonObject{["eventId"]=_id.ToString(),["version"]=s.Version,["sessionId"]=s.Execution.SessionId.Value.ToString(),
+                    var meta=new JsonObject{["eventId"]=_id.ToString(),["version"]=s.Version,["sessionId"]=current.SessionId.ToString(),
                         ["reason"]="ProcessRecovery",["deviceTime"]=now.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"),
-                        ["schoolNow"]=s.SchoolNow.Value.DateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff"),["photoEventId"]=_id.ToString()};
-                    try{_journal.Save(new(_scope,meta));_audit="SavedLocal";}
+                        ["schoolNow"]=current.SchoolNow.DateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff"),["photoEventId"]=_id.ToString()};
+                    try{_journal.Save(new(current.Scope,meta));_audit="SavedLocal";}
                     catch(Exception e)when(e is IOException or UnauthorizedAccessException or InvalidDataException or NPEduTools.Integrations.Npep.NpepException or System.Security.Cryptography.CryptographicException){_audit="Unavailable";_auditError="RECOVERY_JOURNAL_UNAVAILABLE";}
                 }
             }
@@ -79,7 +89,7 @@ public sealed class StudyRecoveryService : INpepStudyExitEvents,IAsyncDisposable
     private sealed record Claim(Guid Id,DateTimeOffset WarningEnd,bool PhotoAttempted);
     public StudyExitState Snapshot()
     {
-        lock(_sync){Tick();var s=_sample().State;bool current=s.Version==_version && s.Window==_window && s.Phase=="Active" && s.ClockReady && s.Execution is {Owner:"Schedule",State:"Active",SignalFresh:true};
+        lock(_sync){Tick();bool current=CurrentIncident() is {} context && context.Incident.Id==_id && context.State.Version==_version && context.State.Window==_window;
             double remaining=current?Math.Clamp(WarningRemaining,0,30):0;
             return new(_id,remaining>0?"Failed":"Completed","ProcessRecovery",0,remaining,_photos.ExitOutcome(_id).State,_audit,_auditError);}
     }

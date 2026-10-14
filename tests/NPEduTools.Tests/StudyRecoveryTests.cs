@@ -4,7 +4,7 @@ using NPEduTools.Core;
 using NPEduTools.Host;
 namespace NPEduTools.Tests;
 
-public sealed class StudyRecoveryTests
+public sealed partial class StudyRecoveryTests
 {
     private sealed class Clock:TimeProvider
     {public long Ms;public override long TimestampFrequency=>1000;public override long GetTimestamp()=>Ms;public override DateTimeOffset GetUtcNow()=>DateTimeOffset.Parse("2026-10-11T12:00:00Z").AddMilliseconds(Ms);}
@@ -17,6 +17,7 @@ public sealed class StudyRecoveryTests
         public readonly GuardFiles Files;public readonly Guid Generation=Guid.NewGuid(),Session=Guid.NewGuid(),Incident=Guid.NewGuid();
         public StudyHostState State;public readonly StudyPhotoService Photos;public StudyRecoveryService Recovery;
         public int Shots,Resumes;public readonly StudyExitJournal Journal;
+        public string? Scope="scope";public bool Selected=true;
         public Fixture()
         {
             Files=new(Path.Combine(Folder,"guard"));Noise=new(_=>Capture,()=>[],Time);
@@ -32,7 +33,7 @@ public sealed class StudyRecoveryTests
             Files.Write("registration.json",new GuardRegistration(Generation,new(10,100),null));
             Files.Write("recovery.json",new GuardRecoveryEvent(Incident,Generation,new(10,100),new(20,200),Time.GetUtcNow(),Time.GetUtcNow().AddMinutes(90),GuardRecoveryEvent.Key("scope",State.Version!)));
         }
-        public StudyRecoveryService NewRecovery(){var r=new StudyRecoveryService(Files,()=>("scope",true,State),Photos,Journal,Time,false,_=>Resumes++);r.BindExit("scope");return r;}
+        public StudyRecoveryService NewRecovery(){var r=new StudyRecoveryService(Files,()=>(Scope,Selected,State),Photos,Journal,Time,false,_=>Resumes++);r.BindExit("scope");return r;}
         public async Task Active(){for(int i=0;i<100 && Noise.Snapshot().State!="Active";i++)await Task.Delay(10);Capture.Emit();}
         public void Lease(){var now=Time.GetUtcNow();Photos.ConfirmPhotoLease(new JsonObject{["leaseId"]=Guid.NewGuid().ToString(),["version"]=State.Version,["sessionId"]=Session.ToString(),["leaseSeconds"]=60,["createdAt"]=now.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"),["expiresAt"]=now.AddSeconds(60).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"),["maxBytes"]=262144,["maxEdge"]=1280},TimeSpan.Zero);}
         public void Advance(int ms){Time.Ms+=ms;State=State with{SchoolNow=State.SchoolNow!.Value.AddMilliseconds(ms)};Capture.Emit();}
