@@ -88,7 +88,8 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyReportState? StudyReport = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? ManualStudy = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadState? SeatingUpload = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepConnectionHistory? ConnectionHistory = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepConnectionHistory? ConnectionHistory = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationStatus? NoiseCalibrationStatus = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -127,6 +128,8 @@ public static class Protocol
 
     public static string? Validate(HostRequest request)
     {
+        if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
+            return Validate(request with { Capability = calibrationBase });
         if (request.Version != Version) return "ProtocolVersionMismatch";
         if (request.Capability is "manual.study.hide" or "manual.study.reminder" or "manual.study.presentation")
             return Validate(request with { Capability=request.Capability[7..] });

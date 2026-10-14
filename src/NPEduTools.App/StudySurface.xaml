@@ -91,6 +91,9 @@
     <Border x:Name="CameraIndicator" Canvas.Left="944" Canvas.Top="994" Width="32" Height="25" BorderBrush="#64717D" BorderThickness="2" CornerRadius="4" ToolTip="摄像头状态待确认">
      <Ellipse Width="11" Height="11" Stroke="#64717D" StrokeThickness="2"/>
     </Border>
+    <Border x:Name="CalibrationBadge" Canvas.Left="1000" Canvas.Top="941" Background="#0E1921" CornerRadius="5" Padding="8,3">
+     <TextBlock x:Name="CalibrationText" Text="校准状态待确认" FontSize="16" Foreground="{StaticResource Muted}" AutomationProperties.AutomationId="StudyCalibrationStatus"/>
+    </Border>
     <Grid Canvas.Left="1000" Canvas.Top="975" Width="880" Height="67">
      <Grid.ColumnDefinitions><ColumnDefinition Width="240"/><ColumnDefinition/><ColumnDefinition Width="260"/></Grid.ColumnDefinitions>
      <StackPanel VerticalAlignment="Center"><TextBlock x:Name="NoiseStatus" Text="监测状态待确认" FontSize="24"/><TextBlock x:Name="NoiseDetail" Text="dBFS · 数字信号电平" FontSize="16" Foreground="{StaticResource Muted}" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>

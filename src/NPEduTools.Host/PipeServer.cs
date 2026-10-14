@@ -45,6 +45,9 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 readDeadline.CancelAfter(TimeSpan.FromSeconds(2));
                 var request = await Protocol.ReadAsync<HostRequest>(pipe, readDeadline.Token);
+                bool calibrationRequested = NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null;
+                if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
+                    request = request with { Capability = calibrationBase };
                 var watch = Stopwatch.StartNew();
                 HostResponse response;
                 string? error = Protocol.Validate(request);
@@ -238,6 +241,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                             status.CurrentSelectedIndex, status.ObservedEvents), Schedule: result.Schedule, Forecast: result.Forecast);
                 }
                 response = WithStudyConnection(request, response);
+                response = WithCalibrationStatus(calibrationRequested, response);
                 // Structured diagnostics contain identifiers and outcomes, never lesson contents.
                 log(JsonSerializer.Serialize(new
                 {

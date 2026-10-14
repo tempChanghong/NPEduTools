@@ -12,12 +12,14 @@ public partial class StudyMonitoringWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _reading;
+    private readonly NoiseCalibrationRead _calibrationRead = new();
     private long _viewGeneration;
     internal void WorkspaceVisibilityChanged(bool visible)
     {
         if (_lifetime.IsCancellationRequested) return;
         _viewGeneration++;
         Render(null);
+        RenderCalibration(null, null);
         if (visible) _ = ReadAsync();
     }
     public StudyMonitoringWindow(string pipe, Action noise)
@@ -38,12 +40,13 @@ public partial class StudyMonitoringWindow : Window
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
         try
         {
-            var response = await HostClient.RequestAsync(_pipe, "study.status", deadline.Token);
+            var response = await _calibrationRead.RequestAsync(_pipe, new(1, Guid.NewGuid(), "study.status"), deadline.Token);
             if (_lifetime.IsCancellationRequested || generation != _viewGeneration) return;
             Render(response.Outcome == "Succeeded" ? response.Study : null);
+            RenderCalibration(response.Outcome == "Succeeded" ? response.NoiseCalibrationStatus : null, response.Noise);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        { if (!_lifetime.IsCancellationRequested && generation == _viewGeneration) Render(null); }
+        { if (!_lifetime.IsCancellationRequested && generation == _viewGeneration) { Render(null); RenderCalibration(null, null); } }
         finally { _reading = false; }
     }
     internal void Render(StudyHostState? state)
@@ -64,6 +67,13 @@ public partial class StudyMonitoringWindow : Window
             state?.Display is { Available: true } ? "满足展示条件 · 可见性待回执确认" : "等待有效安排与时间";
         StudyCapture.ToolTip = state?.Execution is { Owner: "Manual" } ? "学校定时自习没有接管该手动会话。" : "只有当前执行状态与新鲜采样均确认，才显示正在采集。";
         StudyPresentation.ToolTip = "临时收起后连续无操作十分钟返回，操作会重新计时；后台采集和照片策略继续。满足展示条件不等于窗口已经可见。";
+    }
+    internal void RenderCalibration(NoiseCalibrationStatus? status, NoiseState? noise)
+    {
+        var label = NoiseCalibrationPresentation.Describe(status, noise);
+        CalibrationStatus.Text = label.Text; CalibrationDetail.Text = label.Detail;
+        CalibrationStatus.Foreground = label.Tone == "Warning" ? System.Windows.Media.Brushes.Sienna :
+            new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(97, 120, 107));
     }
     private async void RefreshClicked(object sender, RoutedEventArgs e)
     {

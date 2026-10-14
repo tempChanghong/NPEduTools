@@ -19,8 +19,13 @@ internal static partial class Program
         var availableReport = new StudyReportState(Guid.NewGuid(), study.Version, true, "Report", 300, data);
         var server = Task.Run(() => WorkspaceProxy(pipe, async request =>
         {
+            bool calibrationRequested = NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null;
+            request = request with { Capability = NoiseCalibrationStatusContract.BaseCapability(request.Capability) ?? request.Capability };
+            var noise = new NoiseState(Guid.Parse("bce3d36c-765c-49eb-b70f-3c25efc16ff2"), 7, "Idle", "fixture", null, null, null, null, "Waiting", null, []);
             HostResponse Reply(string outcome = "Succeeded", StudyHostState? state = null, StudyReportState? report = null) =>
                 new(1, request.RequestId, outcome, outcome == "Rejected" ? "FixtureRejected" : null, "isolated display pipeline", Study: state, StudyReport: report,
+                    Noise: state is null ? null : noise,
+                    NoiseCalibrationStatus: calibrationRequested && state is not null ? new(noise.InstanceId, noise.Revision, "Uncalibrated", "None") : null,
                     Npep: state is null ? null : new(1, "ACTIVE", "ONLINE", "fixture", LastReceivedAt: "2026-10-14T12:00:00.000Z"));
             if (request.Capability is "study.status.photos" or "study.status.seating" or "study.status")
             {
@@ -67,7 +72,7 @@ internal static partial class Program
             // Read-only exit/recovery, legacy fallback and presentation receipts.
             Assert(request.Noise is null && request.ManualStudy is null && request.StudyHide is null, "display polling submitted a capture mutation");
             return Reply();
-        }, stop.Token));
+        }, stop.Token, supportsCalibrationStatus: true));
         var main = PrivateWorkspace(pipe);
         Task? polling = null;
         try
@@ -94,7 +99,10 @@ internal static partial class Program
             if (scenario == "accepted-report") Assert(schoolWindow?.IsVisible != true, "manual report left the previous school display visible");
             var visibleStudy = schoolWindow?.IsVisible == true ? schoolWindow : manualWindow?.IsVisible == true ? manualWindow : null;
             if (visibleStudy?.Content is StudySurface surface)
+            {
                 Assert(((System.Windows.Controls.TextBlock)surface.FindName("SyncText")).Text == "学校互联正常", "display loop discarded piggybacked connection status");
+                Assert(((System.Windows.Controls.TextBlock)surface.FindName("CalibrationText")).Text == "未校准", "display loop discarded compact calibration state");
+            }
             if (!scenario.StartsWith("delayed-school", StringComparison.Ordinal)) Assert(reportReads == 1, "fixture did not exercise manual report polling");
             int reportVisibilityChanges = 0;
             int schoolVisibilityChanges = 0;

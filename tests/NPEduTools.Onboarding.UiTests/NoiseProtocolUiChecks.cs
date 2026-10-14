@@ -7,6 +7,7 @@ using NPEduTools.Contracts;
 
 internal static partial class Program
 {
+    private static string NoiseReadCapability(HostRequest request) => NoiseCalibrationStatusContract.BaseCapability(request.Capability) ?? request.Capability;
     private static void RunNoiseProtocolChecks()
     {
         var previous = SynchronizationContext.Current;
@@ -54,7 +55,7 @@ internal static partial class Program
                     var read = Read();
                     PumpUntil(() => read.IsCompleted, "initial noise device query did not arrive");
                     var request = read.GetAwaiter().GetResult();
-                    Assert(request.Capability == "noise.devices", "unexpected initial noise query");
+                    Assert(NoiseReadCapability(request) == "noise.devices", "unexpected initial noise query");
                     if (operation != "initial-devices")
                     {
                         var warmup = Protocol.WriteAsync(server, new HostResponse(Protocol.Version, request.RequestId,
@@ -73,7 +74,7 @@ internal static partial class Program
                         }
                         PumpUntil(() => read.IsCompleted, "noise state or select request did not arrive");
                         request = read.GetAwaiter().GetResult();
-                        Assert(request.Capability == (operation == "select" ? "noise.command" : "noise.status") &&
+                        Assert(NoiseReadCapability(request) == (operation == "select" ? "noise.command" : "noise.status") &&
                             Protocol.Validate(request) is null, "unexpected noise request");
                         if (operation == "select")
                             Assert(request.Noise is { Action: "select" } selection && selection.InstanceId == initial.InstanceId &&
@@ -123,7 +124,7 @@ internal static partial class Program
                     var recovery = Read();
                     PumpUntil(() => recovery.IsCompleted, "noise polling did not recover");
                     var fresh = recovery.GetAwaiter().GetResult();
-                    Assert(fresh.Capability == (operation == "initial-devices" ? "noise.devices" : "noise.status") &&
+                    Assert(NoiseReadCapability(fresh) == (operation == "initial-devices" ? "noise.devices" : "noise.status") &&
                         fresh.Noise is null, "recovery replayed a command or lost the enumeration stage");
                     var now = active with { Revision = 3, CurrentDbfs = -42, Message = "隔离最新监测状态",
                         Summary = new(40, 39.6, .99, -60, -30, 0, 150), Trend = [new(39, -42, "Good")] };

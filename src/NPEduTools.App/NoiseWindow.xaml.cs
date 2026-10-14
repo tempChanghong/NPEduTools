@@ -16,6 +16,7 @@ public partial class NoiseWindow : Window
     private ManualStudyState? _manual;
     private bool _closing, _busy, _connected;
     private long _uiOperation;
+    private readonly NoiseCalibrationRead _calibrationRead = new();
     public NoiseWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent();ManualStartDate.SelectedDate=ManualEndDate.SelectedDate=DateTime.Today;
@@ -44,7 +45,7 @@ public partial class NoiseWindow : Window
         }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(4));
-        return await HostClient.RequestAsync(_pipe, request, deadline.Token);
+        return await _calibrationRead.RequestAsync(_pipe, request, deadline.Token);
     }
     private async Task PollAsync()
     {
@@ -60,6 +61,7 @@ public partial class NoiseWindow : Window
             {
                 if (!_busy && (WorkspacePanel.Visible(this) || !loadedDevices))
                 {
+                    long calibrationAt = System.Diagnostics.Stopwatch.GetTimestamp();
                     var response = await RequestAsync(loadedDevices ? "noise.status" : "noise.devices");
                     if (_lifetime.IsCancellationRequested || operation != _uiOperation) continue;
                     if (response.NoiseDevices is not null) { _state = response.Noise; SetDevices(response.NoiseDevices); loadedDevices = true; }
@@ -68,7 +70,8 @@ public partial class NoiseWindow : Window
                     if(_lifetime.IsCancellationRequested || operation!=_uiOperation)continue;
                     _manual=manual.ManualStudy;
                     ManualStatus.Text = _manual is { } m ? ManualStateText(m) : "手动会话状态待确认，不能据此判断已结束。";
-                    Render(response.Noise);
+                    RenderWithCalibration(response.Noise, System.Diagnostics.Stopwatch.GetElapsedTime(calibrationAt).TotalSeconds < 3.5
+                        ? response.NoiseCalibrationStatus : null);
                     if (response.Noise is not null)
                         DisplayStatusText.Text = response.NoiseDisplay is { } display
                             ? display.Message + (display.ErrorCode is { } code ? $"（{code}）" : "")
@@ -121,8 +124,12 @@ public partial class NoiseWindow : Window
         ManualHideMinutes.IsEnabled = NoManualReturn.IsChecked != true;
         UpdateButtons();
     }
-    private void Render(NoiseState? state)
+    private void Render(NoiseState? state) => RenderWithCalibration(state, null);
+    private void RenderWithCalibration(NoiseState? state, NoiseCalibrationStatus? calibration)
     {
+        var label = NoiseCalibrationPresentation.Describe(calibration, state);
+        CalibrationStatus.Text = label.Text; CalibrationStatus.ToolTip = label.Detail;
+        CalibrationStatus.Foreground = label.Tone == "Warning" ? Brushes.Sienna : new SolidColorBrush(Color.FromRgb(97, 120, 107));
         _connected = state is not null;
         if (state is null)
         {

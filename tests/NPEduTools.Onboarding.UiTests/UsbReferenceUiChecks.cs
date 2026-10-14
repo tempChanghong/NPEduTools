@@ -93,7 +93,7 @@ internal static partial class Program
                 Assert(backend.Opens == backend.Disposals && capture!.Disposed, "first window did not release devices");
                 backend.Value = 60; Click(owner, "StartSample");
                 PumpUntil(() => samples.Items.Count == 2 && Button(owner, "ConfirmProfile").IsEnabled, "second reference not ready", 22);
-                Click(owner, "ConfirmProfile"); PumpUntil(() => ((TextBlock)owner.FindName("ProfileStatus")).Text.Contains("USB (Beta)"), "USB profile not saved");
+                Click(owner, "ConfirmProfile"); PumpUntil(() => ((TextBlock)owner.FindName("ProfileStatus")).Text.Contains("已联机校准 (Beta)"), "USB profile not saved");
                 var saved = noise.ReferenceHandle(new(1, Guid.NewGuid(), "noise.reference.status")).NoiseReference!;
                 Assert(saved.Profile is { Method: "UsbReferenceBeta" } && saved.Profile.Samples.All(p => p.MeterEvidence is not null), "USB evidence missing");
                 Snapshot(owner, "usb-reference-confirmed.png");

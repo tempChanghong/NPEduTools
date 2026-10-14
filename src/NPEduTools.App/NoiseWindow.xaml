@@ -33,6 +33,7 @@
           <TextBlock x:Name="QualityText" Grid.Column="1" Text="等待采样" VerticalAlignment="Center" FontSize="16" />
         </Grid>
         <TextBlock x:Name="LevelHintText" TextWrapping="Wrap" Foreground="#8A5A15" FontSize="12" Margin="0,8,0,0" />
+        <TextBlock x:Name="CalibrationStatus" Text="校准状态待确认" TextWrapping="Wrap" FontSize="13" Foreground="#61786B" Margin="0,8,0,0" AutomationProperties.AutomationId="ManualCalibrationStatus"/>
         <TextBlock x:Name="EstimateText" TextWrapping="Wrap" FontSize="16" Margin="0,8,0,0" />
         <ProgressBar x:Name="LevelBar" Minimum="-100" Maximum="0" Value="-100" Height="8" Foreground="#147D68" Background="#EDF2EF" Margin="0,12,0,8">
           <ProgressBar.Template><ControlTemplate TargetType="ProgressBar">

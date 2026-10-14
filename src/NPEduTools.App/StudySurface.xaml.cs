@@ -37,6 +37,7 @@ public partial class StudySurface : UserControl
     private readonly TimeProvider _time;
     private NoiseState? _noise;
     private NpepState? _connection;
+    private NoiseCalibrationStatus? _calibration;
     private NoiseState? _drawnNoise;
     private bool _drawnEstimated;
     private string? _shownNotice;
@@ -73,13 +74,14 @@ public partial class StudySurface : UserControl
             bool ending=_endHold; CancelHold(); if(ending)await EndStudyAsync();else await HideAsync();
         };
     }
-    public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default, NpepState? connection = null)
+    public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default, NpepState? connection = null,
+        NoiseCalibrationStatus? calibration = null)
     {
         if (_timeline.State is not { } previous || previous.Phase != state.Phase || previous.Version != state.Version ||
             previous.Window != state.Window || previous.Display?.InstanceId != state.Display?.InstanceId || previous.ClockReady != state.ClockReady ||
             previous.Manual?.SessionId != state.Manual?.SessionId)
         { _reminderGeneration++; CancelHold(); }
-        _paused = false; _timeline.Apply(state, transportAge); _noise = noise; _connection = connection; _timer.Start(); Render();
+        _paused = false; _timeline.Apply(state, transportAge); _noise = noise; _connection = connection; _calibration = calibration; _timer.Start(); Render();
     }
     public void Suspend()
         { _paused = true; _reminderGeneration++; _timer.Stop(); _pager.Advance(false); CancelHold(); _timeline.Suspend(); CloseSeatingView(); DismissNotice(); SetEdge("None"); _audio.Stop(); }
@@ -120,7 +122,12 @@ public partial class StudySurface : UserControl
             state.CaptureState switch { "STARTING" or "WAITING_FRESH_SIGNAL" or "ACTIVE" => "正在等待采样", "STOPPING" => "正在停止监测", "STOPPED" => "监测已停止", "FAULTED" => "监测暂不可用", _ => "尚未开始采集" };
         NoiseStatus.Foreground = capturing ? Collecting : Muted;
         bool estimated = state.Settings?.Noise.Estimated is not null;
-        NoiseDetail.Text = estimated ? NoiseSignalPresentation.EstimateReason(_noise?.Estimate) : "dBFS · 数字信号电平";
+        var calibrationLabel = NoiseCalibrationPresentation.Describe(_calibration, _noise, fresh);
+        CalibrationText.Text = calibrationLabel.Text;
+        CalibrationBadge.ToolTip = calibrationLabel.Detail;
+        CalibrationText.Foreground = calibrationLabel.Tone switch { "Normal" => Collecting, "Warning" => SyncWarningText, _ => Muted };
+        NoiseDetail.Text = estimated ? _noise?.Estimate is null && _calibration is { State: "Saved", Method: "ManualReference" or "UsbReferenceBeta" } && fresh
+            ? "估算 dB(A) · 等待输入核对" : NoiseSignalPresentation.EstimateReason(_noise?.Estimate) : "dBFS · 数字信号电平";
         string mode = state.Settings?.Presentation.NoiseDisplay ?? "StatusTrend";
         TrendCanvas.Visibility = capturing && mode == "StatusTrend" ? Visibility.Visible : Visibility.Collapsed;
         Dbfs.Visibility = mode == "StatusDbfs" ? Visibility.Visible : Visibility.Collapsed;
