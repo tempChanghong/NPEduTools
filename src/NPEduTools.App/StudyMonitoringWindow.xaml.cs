@@ -48,8 +48,10 @@ public partial class StudyMonitoringWindow : Window
     }
     internal void Render(StudyHostState? state)
     {
-        StudyPhase.Text = state is null ? "学校安排状态待确认" : state.PolicyState != "APPLIED" ? "尚无已应用的学校自习安排" :
+        StudyPhase.Text = state is null || state.PolicyState != "APPLIED" ? StudySchedulePresentation.Unavailable(state) :
             state.Phase switch { "Preparing" => "准备自习", "Active" => "自习进行中", "Ended" => "自习结束", "Outside" => "当前不在自习时段", _ => "自习暂不可执行" };
+        StudyConfiguration.Text = StudySchedulePresentation.Configuration(state);
+        StudyPhase.ToolTip = state?.Reason;
         StudySchedule.Text = state?.ClockReady == true && state.SchoolNow is { } now ? $"{(state.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")} {now:yyyy-MM-dd HH:mm:ss}" +
             (state.Window is { } w ? $"　当前时段 {StudySchedulePresentation.Span(w)}" : "") : state?.Mode == "Exam" ? "考试模式 Windows 时间尚未确认；不会自行启动。" : "学校时间未确认；不会按 Windows 时间自行启动。";
         StudyNext.Text = StudySchedulePresentation.Next(state);

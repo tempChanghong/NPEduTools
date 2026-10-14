@@ -112,7 +112,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
             _state = new(_version, "APPLIED", "NOT_INTEGRATED", "NOT_INTEGRATED", "Blocked",
                 "SCHOOL_CLOCK_UNAVAILABLE", reading.CanStart, reading.Now, null, null, _settings);
             if (_source is "None" or "Disabled")
-            { _state = _state with { Phase = "Disabled", Reason = "DISABLED" }; return; }
+            { _state = _state with { Phase = "Disabled", Reason = _source == "None" ? "NOT_CONFIGURED" : "DISABLED" }; return; }
             if (!reading.CanStart || reading.Now is not { Year: >= 2000 and <= 9998 } now) return;
             try
             {

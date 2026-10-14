@@ -101,6 +101,24 @@ public sealed class StudySettingsTests
         await using var restart = new StudySettingsService(()=>SchoolClockFrame.Unavailable("no synthetic clock"),()=>false,f.Time,false);
         Assert.Null(restart.Snapshot().Version);Assert.Equal("UNAVAILABLE",restart.Snapshot().PolicyState);
     }
+
+    [Fact]
+    public async Task No_policy_is_distinct_from_disabled_and_expired_configuration()
+    {
+        await using var f = new Fixture();
+        f.Config["effective"] = new JsonObject { ["source"] = "None", ["settings"] = null };
+        f.Service.ApplyStudy(f.Config);
+        Assert.Equal("APPLIED", f.Service.Snapshot().PolicyState);
+        Assert.Equal("NOT_CONFIGURED", f.Service.Snapshot().Reason);
+        Assert.Null(f.Service.Snapshot().Next);
+        f.Config["effective"] = new JsonObject { ["source"] = "Disabled", ["settings"] = null };
+        f.Service.ApplyStudy(f.Config);
+        Assert.Equal("DISABLED", f.Service.Snapshot().Reason);
+        f.Tick(15000, false);
+        Assert.Equal("UNAVAILABLE", f.Service.Snapshot().PolicyState);
+        Assert.Equal("CONFIGURATION_STALE", f.Service.Snapshot().Reason);
+        Assert.Null(f.Service.Snapshot().Settings);
+    }
     [Fact]
     public void Overnight_end_is_exclusive_and_effective_date_is_start_date()
     {
