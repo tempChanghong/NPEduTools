@@ -230,7 +230,11 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         {
             try
             {
-                var available = devices().Take(128).ToArray();
+                // Match the camera inventory budget: both catalogs share a 64 KiB
+                // school receipt, and this response also carries monitoring state.
+                int bytes = 0;
+                var available = devices().Take(128).TakeWhile(d =>
+                    (bytes += System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(d, Protocol.Json).Length) < 24000).ToArray();
                 RecoverSelection();
                 return Reply(request, "Succeeded", null, "麦克风列表已更新。", available);
             }
