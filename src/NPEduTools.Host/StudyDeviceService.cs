@@ -38,10 +38,10 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
     }
     private void RefreshCatalog()
     {
-        int bytes = 0;
-        _devices = enumerate().Take(128).Where(d => NoiseContract.ValidDeviceId(d.Id) &&
+        var candidates = enumerate().Where(d => NoiseContract.ValidDeviceId(d.Id) &&
             !string.IsNullOrWhiteSpace(d.Name) && d.Name.Length <= 512 && !d.Name.Any(char.IsControl))
-            .DistinctBy(d => d.Id).TakeWhile(d => (bytes += System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(d))) < 24000).ToArray();
+            .DistinctBy(d => d.Id);
+        _devices = DeviceInventory.Limit(candidates, _selected, d => d.Id);
         _enumerated = true;
         if (_error == "CameraDevicesUnavailable") _error = null;
     }
