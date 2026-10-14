@@ -54,7 +54,12 @@ public sealed partial class ExamAwareTests
         public bool DailyReady, FailDailyStart;
         public Action? OnDailyStart;
         public int DailyStarts;
-        public Task<ClassroomStartupSnapshot> ObserveDailyStartupAsync(CancellationToken token) => Task.FromResult(Actual);
+        public Action? AfterDailyObservation;
+        public Task<ClassroomStartupSnapshot> ObserveDailyStartupAsync(CancellationToken token)
+        {
+            AfterDailyObservation?.Invoke();
+            return Task.FromResult(Actual);
+        }
         public Task<bool> ClassIslandReadyAsync(CancellationToken token) => Task.FromResult(DailyReady);
         public async Task StartClassIslandRemoteAsync(ClassroomStartupSnapshot expected, Func<Task> check, CancellationToken token)
         {

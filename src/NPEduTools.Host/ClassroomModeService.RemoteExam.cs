@@ -53,7 +53,9 @@ public sealed partial class ClassroomModeService
             var before = await remote.ObserveDailyStartupAsync(token);
             RequireSamePrograms(before, new(expected.ClassIslandPath, expected.ClassIslandRevision, before.ClassIslandEnabled,
                 expected.ExamAwarePath, expected.ExamAwareRevision, before.ExamAwareEnabled));
+            await Check();
             store.Save(prior with { Phase = "Switching", AutomaticPaused = true,
+                RecentRequests = prior.RecentRequests ?? [],
                 Recovery = prior.Recovery ?? new(prior.Mode, prior.AutomaticPaused, before), Runtime = null,
                 Actual = before, CheckedAt = DateTimeOffset.UtcNow, MatchesMode = null, Message = "远程返回日常：正在恢复登录自启动…" });
             ownedRevision = store.State.Revision; touched = true;

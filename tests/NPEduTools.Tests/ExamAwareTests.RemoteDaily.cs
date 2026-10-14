@@ -6,6 +6,74 @@ namespace NPEduTools.Tests;
 public sealed partial class ExamAwareTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoteDailyFromFreshStoreSurvivesRestartAndRetainsRequestHistory(bool hasHistory)
+    {
+        var store = new ClassroomModeStore(_directory);
+        Guid[] history = hasHistory ? [Guid.NewGuid()] : [];
+        if (hasHistory) store.Save(store.State with { RecentRequests = history });
+        var gate = new RuntimeOperationGate();
+        var effects = new RemoteModeEffects { DailyReady = true };
+        await using var classroom = new ClassroomModeService(store, effects, gate);
+        using var lease = gate.TryReserveSwitch();
+        Assert.NotNull(lease);
+        var startup = effects.Actual;
+        var configuration = new RemoteExamConfiguration(startup.ClassIslandPath, startup.ClassIslandRevision,
+            startup.ExamAwarePath, startup.ExamAwareRevision);
+        await classroom.EnterRemoteDailyAsync(configuration, classroom.Snapshot.Revision,
+            _ => Task.CompletedTask, _ => Task.CompletedTask, _ => { }, CancellationToken.None);
+        Assert.Equal("Daily", classroom.Snapshot.Mode);
+        var restarted = new ClassroomModeStore(_directory).State;
+        Assert.Equal("Idle", restarted.Phase);
+        Assert.Equal("Daily", restarted.Mode);
+        Assert.False(restarted.AutomaticPaused);
+        Assert.NotNull(restarted.RecentRequests);
+        Assert.Equal(history, restarted.RecentRequests);
+        Assert.Empty(effects.Writes);
+        Assert.Null(restarted.Recovery);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoteDailyInvalidatedDuringObservationDoesNotCreateRecoveryOrPause(bool cancel)
+    {
+        var store = new ClassroomModeStore(_directory);
+        var gate = new RuntimeOperationGate();
+        var effects = new RemoteModeEffects();
+        await using var classroom = new ClassroomModeService(store, effects, gate);
+        using var lease = gate.TryReserveSwitch();
+        Assert.NotNull(lease);
+        using var cancellation = new CancellationTokenSource();
+        bool revoked = false;
+        effects.AfterDailyObservation = () =>
+        {
+            if (cancel) cancellation.Cancel();
+            else revoked = true;
+        };
+        var before = classroom.Snapshot;
+        var startup = effects.Actual;
+        var configuration = new RemoteExamConfiguration(startup.ClassIslandPath, startup.ClassIslandRevision,
+            startup.ExamAwarePath, startup.ExamAwareRevision);
+        int closes = 0;
+        var steps = new List<string>();
+        var operation = classroom.EnterRemoteDailyAsync(configuration, before.Revision, _ =>
+        {
+            if (revoked) throw new RemoteExamException("AUTH_REVOKED");
+            return Task.CompletedTask;
+        }, _ => { closes++; return Task.CompletedTask; }, steps.Add, cancellation.Token);
+        if (cancel) await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        else Assert.Equal("AUTH_REVOKED", (await Assert.ThrowsAsync<RemoteExamException>(() => operation)).Code);
+        Assert.Equal(before, classroom.Snapshot);
+        Assert.False(File.Exists(Path.Combine(_directory, "classroom-mode.json")));
+        Assert.Empty(steps);
+        Assert.Empty(effects.Writes);
+        Assert.Equal(0, closes);
+        Assert.Equal(0, effects.DailyStarts);
+    }
+
+    [Theory]
     [InlineData("presenting")]
     [InlineData("denied")]
     [InlineData("revoked")]
