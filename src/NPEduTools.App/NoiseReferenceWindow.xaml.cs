@@ -263,7 +263,14 @@ public partial class NoiseReferenceWindow : Window
         AttachReference.IsEnabled = RemoveSample.IsEnabled && _state!.Draft!.MeterDevicePath is null;
         ConfirmProfile.IsEnabled = matchingDraft && _state!.Evaluation.Ready && (_state.Evaluation.Assessment?.WarningRequired!=true || AcceptReferenceWarning.IsChecked==true);
         ClearProfile.IsEnabled = idle && _state!.Profile is not null;
-        if (!_connected) ReferenceHealth.Text = "后台连接待确认 · 旧状态不能用于保存";
+        if (!_connected)
+        {
+            ReferenceHealth.Text = "后台连接待确认 · 旧状态不能用于保存";
+            ReferenceHealth.ToolTip = null;
+            ProfileStatus.Text = "校准状态待确认 · 旧信息不能证明当前已应用";
+            SamplingStatus.Text = "采样状态待确认，请刷新核对；不能据此判断后台采样已停止。";
+            MeterStatus.Text = "仪表读数待确认 · 不沿用旧 USB 读数";
+        }
         UpdateSteps();
     }
     private void UpdateSteps()

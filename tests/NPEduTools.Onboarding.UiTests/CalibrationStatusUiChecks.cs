@@ -38,6 +38,9 @@ internal static partial class Program
                 Snapshot(w, "study-calibration-invalid.png");
                 surface.Apply(acoustic with { Phase = "Preparing" }, noise, calibration: saved with { Method = "UsbReferenceBeta" });
                 Assert(((TextBlock)surface.FindName("NoiseDetail")).Text == "估算 dB(A) · 等待输入核对", "saved reference claimed missing reference during preparation");
+                surface.Apply(acoustic with { Phase = "Preparing" }, estimatedNoise with { State = "Stopped", Estimate = estimatedNoise.Estimate! with { State = "Stopped", CurrentDbA = null } },
+                    calibration: saved with { Method = "UsbReferenceBeta" });
+                Assert(((TextBlock)surface.FindName("NoiseDetail")).Text == "估算 dB(A) · 等待输入核对", "new preparation inherited previous session's stopped estimate label");
                 surface.Apply(state with { Phase = "Preparing" }, noise, calibration: saved);
                 Assert(label.Text == "已快速校准", "preparation lost saved calibration state");
                 surface.Apply(state with { Manual = new(Guid.NewGuid(), 1, state.Execution.SessionId, "Active", null, null, null, true, 600) }, noise,

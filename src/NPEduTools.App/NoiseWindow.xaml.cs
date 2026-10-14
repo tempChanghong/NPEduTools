@@ -66,13 +66,20 @@ public partial class NoiseWindow : Window
                     if (_lifetime.IsCancellationRequested || operation != _uiOperation) continue;
                     if (response.NoiseDevices is not null) { _state = response.Noise; SetDevices(response.NoiseDevices); loadedDevices = true; }
                     using var manualTimeout=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);manualTimeout.CancelAfter(TimeSpan.FromSeconds(4));
+                    long manualAt = System.Diagnostics.Stopwatch.GetTimestamp();
                     var manual=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.status"),manualTimeout.Token);
                     if(_lifetime.IsCancellationRequested || operation!=_uiOperation)continue;
-                    _manual=manual.ManualStudy;
+                    _manual=manual.Outcome == "Succeeded" && System.Diagnostics.Stopwatch.GetElapsedTime(manualAt).TotalSeconds < 3.5 ? manual.ManualStudy : null;
                     ManualStatus.Text = _manual is { } m ? ManualStateText(m) : "手动会话状态待确认，不能据此判断已结束。";
-                    RenderWithCalibration(response.Noise, System.Diagnostics.Stopwatch.GetElapsedTime(calibrationAt).TotalSeconds < 3.5
-                        ? response.NoiseCalibrationStatus : null);
-                    if (response.Noise is not null)
+                    bool signalFresh = System.Diagnostics.Stopwatch.GetElapsedTime(calibrationAt).TotalSeconds < 3.5;
+                    RenderWithCalibration(signalFresh ? response.Noise : null, signalFresh ? response.NoiseCalibrationStatus : null);
+                    if (!signalFresh)
+                    {
+                        StateText.Text = "状态读取较慢，当前监测状态未知。";
+                        DisplayStatusText.Text = "展示状态待确认；等待后台最新状态。";
+                        SummaryText.Text = "尚未取得新鲜状态，暂不展示旧统计；不能据此判断后台监测已停止。";
+                    }
+                    if (signalFresh && response.Noise is not null)
                         DisplayStatusText.Text = response.NoiseDisplay is { } display
                             ? display.Message + (display.ErrorCode is { } code ? $"（{code}）" : "")
                             : "当前后台不支持原生备用展示，请更新并重启后台。";

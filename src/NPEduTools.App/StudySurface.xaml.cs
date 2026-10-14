@@ -126,8 +126,10 @@ public partial class StudySurface : UserControl
         CalibrationText.Text = calibrationLabel.Text;
         CalibrationBadge.ToolTip = calibrationLabel.Detail;
         CalibrationText.Foreground = calibrationLabel.Tone switch { "Normal" => Collecting, "Warning" => SyncWarningText, _ => Muted };
-        NoiseDetail.Text = estimated ? _noise?.Estimate is null && _calibration is { State: "Saved", Method: "ManualReference" or "UsbReferenceBeta" } && fresh
-            ? "估算 dB(A) · 等待输入核对" : NoiseSignalPresentation.EstimateReason(_noise?.Estimate) : "dBFS · 数字信号电平";
+        bool waitingForReference = fresh && _calibration is { State: "Saved", Method: "ManualReference" or "UsbReferenceBeta" } &&
+            (_noise?.Estimate is null || state.Phase == "Preparing" && _noise.Estimate.State == "Stopped");
+        NoiseDetail.Text = estimated ? waitingForReference ? "估算 dB(A) · 等待输入核对" :
+            NoiseSignalPresentation.EstimateReason(_noise?.Estimate) : "dBFS · 数字信号电平";
         string mode = state.Settings?.Presentation.NoiseDisplay ?? "StatusTrend";
         TrendCanvas.Visibility = capturing && mode == "StatusTrend" ? Visibility.Visible : Visibility.Collapsed;
         Dbfs.Visibility = mode == "StatusDbfs" ? Visibility.Visible : Visibility.Collapsed;
