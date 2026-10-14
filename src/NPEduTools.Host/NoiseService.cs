@@ -531,6 +531,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                     FinishReference(s);
                 }
                 FinishReferenceUse(s);
+                PreserveStudyReport(s);
                 finished = Snapshot();
             }
             if (s.Calibration is null && s.Reference is null) Completed?.Invoke(finished);

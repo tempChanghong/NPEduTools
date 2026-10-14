@@ -9,6 +9,7 @@ public sealed class StudyReportService : IAsyncDisposable
     private readonly object _sync = new();
     private readonly Func<(string? Scope, bool Selected, StudyHostState State)> _sample;
     private readonly Func<StudySessionReport?> _statistics;
+    private readonly Func<Guid, StudySessionReport?>? _finishedStatistics;
     private readonly Action<string, string, Guid, StudyNoise>? _observePolicy;
     private readonly TimeProvider _time;
     private readonly Func<bool>? _projection;
@@ -26,9 +27,10 @@ public sealed class StudyReportService : IAsyncDisposable
     private StudyReportData? _frozen;
     public StudyReportService(Func<(string? Scope, bool Selected, StudyHostState State)> sample,
         Func<StudySessionReport?> statistics, TimeProvider? time = null, bool background = true,
-        Action<string, string, Guid, StudyNoise>? observePolicy = null, Func<bool>? projection = null)
+        Action<string, string, Guid, StudyNoise>? observePolicy = null, Func<bool>? projection = null,
+        Func<Guid, StudySessionReport?>? finishedStatistics = null)
     {
-        _projection = projection;
+        _projection = projection; _finishedStatistics = finishedStatistics;
         _sample = sample; _statistics = statistics; _time = time ?? TimeProvider.System; _observePolicy = observePolicy;
         _loop = background ? Task.Run(LoopAsync) : Task.CompletedTask;
     }
@@ -81,8 +83,13 @@ public sealed class StudyReportService : IAsyncDisposable
         if (s.Phase == "Active" && _statisticsAt is { } at && _time.GetElapsedTime(at).TotalSeconds < 1 &&
             s.Execution?.SessionId is { } current && _sessions.ContainsKey(current)) return;
         _statisticsAt = _time.GetTimestamp();
+        if (_finishedStatistics is not null)
+            foreach (var (id, cached) in _sessions.ToArray())
+                if (!cached.Report.Complete && _finishedStatistics(id) is { Complete: true } final && final.SessionId == id)
+                    _sessions[id] = (cached.Offset, final);
         if (_statistics() is not { } report) return;
-        if (_sessions.TryGetValue(report.SessionId, out var old)) _sessions[report.SessionId] = (old.Offset, report);
+        if (_sessions.TryGetValue(report.SessionId, out var old))
+        { if (!old.Report.Complete) _sessions[report.SessionId] = (old.Offset, report); }
         else if (_window is { } window && s.Phase == "Active" &&
             s.Execution is { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null } execution && execution.SessionId == report.SessionId && _sessions.Count < 16)
             _sessions[report.SessionId] = (Math.Max(0, (now - window.Start).TotalSeconds - report.ElapsedSeconds), report);
