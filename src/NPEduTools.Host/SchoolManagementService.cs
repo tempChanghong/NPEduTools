@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text;
+using System.Globalization;
 using NPEduTools.Contracts;
 using NPEduTools.Integrations.Npep;
 
@@ -37,6 +39,19 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         SetLocks();_noise.EquipmentUnlock=Unlock;
     }
     private void SetLocks(){_noise.EquipmentLocked=_cameras.EquipmentLocked=_saved.Locked&&!_saved.Unlocked;}
+    private static string InventoryCaption(string? value)
+    {
+        // KV permits visible Unicode names, but rejects control/format characters.
+        // Project a compatible caption; endpoint IDs and local preferences stay opaque.
+        var caption = new StringBuilder();
+        foreach (var rune in (value ?? "").EnumerateRunes())
+        {
+            if (Rune.GetUnicodeCategory(rune) is UnicodeCategory.Control or UnicodeCategory.Format) continue;
+            if (caption.Length + rune.Utf16SequenceLength > 512) break;
+            caption.Append(rune.ToString());
+        }
+        return caption.Length == 0 || string.IsNullOrWhiteSpace(caption.ToString()) ? "未命名设备" : caption.ToString();
+    }
     private bool Save()
     {
         _savePending=true;
@@ -117,7 +132,8 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             // Keep operation/credential errors primary; a later healthy refresh clears only this read error.
             string? inventoryError=cameras.Error=="CameraConfigurationUnavailable"?"EQUIPMENT_STORE_UNAVAILABLE":
                 microphones.Outcome!="Succeeded" || cameraReply.Outcome!="Succeeded" || cameras.Error is not null?"EQUIPMENT_UNAVAILABLE":null;
-            return new(){["microphones"]=JsonSerializer.SerializeToNode(microphones.NoiseDevices??[],Protocol.Json),["cameras"]=JsonSerializer.SerializeToNode(cameras.Cameras,Protocol.Json),
+            return new(){["microphones"]=JsonSerializer.SerializeToNode(microphones.NoiseDevices?.Select(d=>d with{Name=InventoryCaption(d.Name)}).ToArray()??[],Protocol.Json),
+                ["cameras"]=JsonSerializer.SerializeToNode(cameras.Cameras.Select(d=>d with{Name=InventoryCaption(d.Name)}).ToArray(),Protocol.Json),
                 ["unlocked"]=_saved.Unlocked,["appliedRevision"]=_saved.Applied,["credentialRevision"]=_noise.SchoolCredentialRevision,
                 ["selectedMicrophoneId"]=noise.SelectedDeviceId,["selectedCameraId"]=cameras.CameraId,["error"]=_error??_credentialError??_noise.Protection().ErrorCode??inventoryError};
         }
