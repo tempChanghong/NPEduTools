@@ -110,12 +110,17 @@ public sealed partial class ClassroomModeTests
         Assert.Null(f.Store.State.Recovery);
     }
 
-    [Fact]
-    public async Task PreflightFailureLeavesRecordingEligibilityAndStartupUntouched()
+    [Theory]
+    [InlineData("Daily")]
+    [InlineData("Exam")]
+    public async Task PreflightFailureLeavesRecordingEligibilityAndStartupUntouched(string target)
     {
         await using var f = new Fixture(); f.Effects.Fail = "observe";
-        f.Send(); await f.Finish();
+        Assert.Equal("Accepted", f.Send(target: target).Outcome); await f.Finish();
         Assert.False(f.Store.State.AutomaticPaused); Assert.Null(f.Store.State.Recovery);
+        Assert.Equal("Unconfigured", f.Store.State.Mode);
+        Assert.Null(f.Store.State.Actual); Assert.Null(f.Store.State.CheckedAt);
+        Assert.Contains("bridge offline", f.Store.State.Message);
         Assert.Equal(new[] { "connect" }, f.Effects.Calls);
     }
     [Fact]

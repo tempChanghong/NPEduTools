@@ -15,6 +15,8 @@ public partial class ClassroomModeWindow : Window
     private readonly ClassroomSetupCheck _setupCheck;
     private bool _sending, _closing, _setupBusy;
     private long _generation;
+    private sealed record PendingSwitch(Guid RequestId, string Target, long Revision);
+    private PendingSwitch? _pendingSwitch;
     public ClassroomModeWindow(string pipe, Action configureClassIsland, Action configureAdmin, Action configureExamAware)
         : this(pipe, configureClassIsland, configureAdmin, configureExamAware, null) { }
     internal ClassroomModeWindow(string pipe, Action configureClassIsland, Action configureAdmin, Action configureExamAware, ClassroomSetupCheck? setupCheck)
@@ -49,6 +51,7 @@ public partial class ClassroomModeWindow : Window
         RenderActualResults(state);
         ModeTitle.Text = ClassroomModePresentation.From(state).Title;
         StatusText.Text = state.Message;
+        TrackSwitchResult(state);
         PauseText.Text = state.AutomaticPaused ? "自动录课已由课堂模式暂停；原录制规则保留。" : "自动录课按原有启用状态、学校时间与录制计划运行。";
         ActualText.Text = state.Actual is { } actual ?
             $"核实于 {state.CheckedAt?.ToLocalTime():yyyy-MM-dd HH:mm:ss}（仅代表该时刻）\nClassIsland 管理员自启动：{Enabled(actual.ClassIslandEnabled)}\nExamAware2 登录自启动登记：{Enabled(actual.ExamAwareEnabled)}" : "实际设置尚未核实。只读核实不会启动软件。";
@@ -105,8 +108,10 @@ public partial class ClassroomModeWindow : Window
         if (_closing || _sending || _state is null) return;
         long revision = confirmedRevision ?? _state.Revision;
         _generation++;
+        _pendingSwitch = null;
         OperationFeedbackText.Text = "";
         OperationFeedbackText.Visibility = Visibility.Collapsed;
+        if (target is not null) SetOperationFeedback("正在提交切换请求，等待管理验证或后台确认。");
         _sending = true; Render(_state);
         try
         {
@@ -124,6 +129,15 @@ public partial class ClassroomModeWindow : Window
                 _ => response.Message
             };
             if (response.Outcome is "Rejected" or "Failed") ShowOperationFeedback(StatusText.Text);
+            else if (response.Outcome == "Accepted" && target is not null)
+            {
+                SetOperationFeedback("后台已受理切换请求，正在等待执行结果；尚不能确认切换完成。");
+                if (response.ClassroomMode is { } accepted)
+                {
+                    _pendingSwitch = new(response.RequestId, target, accepted.Revision);
+                    TrackSwitchResult(accepted);
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
@@ -139,8 +153,33 @@ public partial class ClassroomModeWindow : Window
     private async void DailyClicked(object sender, RoutedEventArgs e) => await SwitchAsync("Daily");
     private void ShowOperationFeedback(string message)
     {
-        OperationFeedbackText.Text = "最近一次请求未完成：" + message;
+        SetOperationFeedback("最近一次请求未完成：" + message);
+    }
+    private void SetOperationFeedback(string message)
+    {
+        OperationFeedbackText.Text = message;
         OperationFeedbackText.Visibility = Visibility.Visible;
+    }
+    private void TrackSwitchResult(ClassroomModeState state)
+    {
+        if (_pendingSwitch is not { } pending || state.Revision < pending.Revision) return;
+        if (state.RecentRequests?.Contains(pending.RequestId) != true) return;
+        if (state.RecentRequests.Last() != pending.RequestId)
+        {
+            _pendingSwitch = null;
+            SetOperationFeedback("本次切换结果待核对：后续模式操作已改变状态，请核对当前模式与后台说明。");
+            return;
+        }
+        if (state.Busy)
+        {
+            SetOperationFeedback("正在切换到" + ModeName(pending.Target) + "：" + state.Message);
+            return;
+        }
+        _pendingSwitch = null;
+        if (state.Mode == pending.Target && state.Phase == "Idle" && state.Actual is not null &&
+            state.CheckedAt is not null && state.MatchesMode == true)
+            SetOperationFeedback("本次切换已完成：" + ModeName(pending.Target) + "。" + state.Message);
+        else ShowOperationFeedback(state.Message);
     }
     private async void ExamClicked(object sender, RoutedEventArgs e) => await SwitchAsync("Exam");
     private async Task SwitchAsync(string target)
