@@ -66,8 +66,18 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 {
                     using var meterDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                     meterDeadline.CancelAfter(request.TimeoutMs);
-                    response = soundMeter is null ? new(1, request.RequestId, "Rejected", "METER_UNSUPPORTED", "请更新后台以使用联机校准 (Beta)。")
-                        : (await soundMeter.HandleAsync(request, meterDeadline.Token)) with { NoiseProtection = noise?.Protection() };
+                    try
+                    {
+                        response = soundMeter is null ? new(1, request.RequestId, "Rejected", "METER_UNSUPPORTED", "请更新后台以使用联机校准 (Beta)。")
+                            : (await soundMeter.HandleAsync(request, meterDeadline.Token)) with { NoiseProtection = noise?.Protection() };
+                    }
+                    catch (OperationCanceledException) when (meterDeadline.IsCancellationRequested && !token.IsCancellationRequested)
+                    {
+                        // This request expired, but Host is still available. The service
+                        // has released its selected handle before returning this failure.
+                        response = new(1, request.RequestId, "Rejected", "METER_TIMEDOUT",
+                            "联机请求超时，连接已释放；请核对仪表后重新刷新或读取，未使用旧读数。", NoiseProtection: noise?.Protection());
+                    }
                 }
                 else if (request.Capability == "study.devices.microphone")
                 {
