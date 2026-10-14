@@ -5,8 +5,8 @@
       "npedutools.classisland.admin": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.1.5, )",
-          "NPEduTools.Core": "[1.1.5, )"
+          "NPEduTools.Contracts": "[1.1.6, )",
+          "NPEduTools.Core": "[1.1.6, )"
         }
       },
       "npedutools.contracts": {
@@ -15,7 +15,7 @@
       "npedutools.core": {
         "type": "Project",
         "dependencies": {
-          "NPEduTools.Contracts": "[1.1.5, )"
+          "NPEduTools.Contracts": "[1.1.6, )"
         }
       }
     }

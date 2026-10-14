@@ -5,8 +5,8 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <Version>1.1.5</Version>
-    <InformationalVersion Condition="'$(MSBuildProjectName)' == 'NPEduTools.App' Or '$(MSBuildProjectName)' == 'NPEduTools.Host'">v1.1.5 · EVA-02（二号机）</InformationalVersion>
+    <Version>1.1.6</Version>
+    <InformationalVersion Condition="'$(MSBuildProjectName)' == 'NPEduTools.App' Or '$(MSBuildProjectName)' == 'NPEduTools.Host'">v1.1.6 · EVA-02（二号机）</InformationalVersion>
     <NuGetLockFilePath Condition="'$(PackageLockDirectory)' != ''">$(PackageLockDirectory)/$(MSBuildProjectName).lock.json</NuGetLockFilePath>
   </PropertyGroup>
 </Project>
