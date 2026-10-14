@@ -20,7 +20,8 @@ internal static partial class Program
         var server = Task.Run(() => WorkspaceProxy(pipe, async request =>
         {
             HostResponse Reply(string outcome = "Succeeded", StudyHostState? state = null, StudyReportState? report = null) =>
-                new(1, request.RequestId, outcome, outcome == "Rejected" ? "FixtureRejected" : null, "isolated display pipeline", Study: state, StudyReport: report);
+                new(1, request.RequestId, outcome, outcome == "Rejected" ? "FixtureRejected" : null, "isolated display pipeline", Study: state, StudyReport: report,
+                    Npep: state is null ? null : new(1, "ACTIVE", "ONLINE", "fixture", LastReceivedAt: "2026-10-14T12:00:00.000Z"));
             if (request.Capability is "study.status.photos" or "study.status.seating" or "study.status")
             {
                 int cycle = Interlocked.Increment(ref schoolReads);
@@ -91,6 +92,9 @@ internal static partial class Program
             if (scenario == "delayed-school") Assert(schoolWindow?.IsVisible == true, "fresh revalidation did not keep the school display visible after an unrelated slow read");
             if (scenario is "delayed-school-withdrawn" or "delayed-school-projection") Assert(schoolWindow?.IsVisible != true, "revalidation ignored newly withdrawn policy or examination priority");
             if (scenario == "accepted-report") Assert(schoolWindow?.IsVisible != true, "manual report left the previous school display visible");
+            var visibleStudy = schoolWindow?.IsVisible == true ? schoolWindow : manualWindow?.IsVisible == true ? manualWindow : null;
+            if (visibleStudy?.Content is StudySurface surface)
+                Assert(((System.Windows.Controls.TextBlock)surface.FindName("SyncText")).Text == "学校互联正常", "display loop discarded piggybacked connection status");
             if (!scenario.StartsWith("delayed-school", StringComparison.Ordinal)) Assert(reportReads == 1, "fixture did not exercise manual report polling");
             int reportVisibilityChanges = 0;
             int schoolVisibilityChanges = 0;

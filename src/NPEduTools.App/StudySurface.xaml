@@ -34,6 +34,12 @@
     <TextBlock Canvas.Left="40" Canvas.Top="38" Text="NPEduTools" FontSize="27" FontWeight="SemiBold"/>
     <TextBlock x:Name="ClassTitle" Canvas.Left="40" Canvas.Top="89" Text="学校自习" FontSize="42" FontWeight="Bold"/>
     <TextBlock x:Name="DateSource" Canvas.Left="40" Canvas.Top="152" FontSize="20" Foreground="{StaticResource Muted}"/>
+    <Grid x:Name="SchoolSync" Canvas.Left="1430" Canvas.Top="39" Width="450" Height="30">
+     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+      <Ellipse x:Name="SyncDot" Width="7" Height="7" Fill="#697883" VerticalAlignment="Center" Margin="0,0,10,0"/>
+      <TextBlock x:Name="SyncText" Text="学校互联待确认" FontSize="19" Foreground="#93A0A9" VerticalAlignment="Center"/>
+     </StackPanel>
+    </Grid>
     <Border Canvas.Left="1430" Canvas.Top="84" Width="450" Height="96" Style="{StaticResource Panel}">
      <TextBlock x:Name="PhaseText" Text="等待有效学校时间" FontSize="36" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
     </Border>
@@ -94,7 +100,13 @@
     <Border x:Name="SeatingOverlay" Canvas.Left="0" Canvas.Top="0" Width="1920" Height="1080" Background="#050C11" Visibility="Collapsed">
      <Grid Margin="40">
       <Grid.RowDefinitions><RowDefinition Height="92"/><RowDefinition/></Grid.RowDefinitions>
-      <Grid><TextBlock Text="自习座位表" FontSize="36" FontWeight="SemiBold" VerticalAlignment="Center"/>
+      <Grid><StackPanel VerticalAlignment="Center" HorizontalAlignment="Left">
+       <TextBlock Text="自习座位表" FontSize="36" FontWeight="SemiBold"/>
+       <StackPanel x:Name="SeatingSync" Orientation="Horizontal" Margin="0,7,0,0" ToolTip="{Binding ToolTip, ElementName=SchoolSync}">
+        <Ellipse Width="7" Height="7" Fill="{Binding Fill, ElementName=SyncDot}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+        <TextBlock Text="{Binding Text, ElementName=SyncText}" FontSize="17" Foreground="{Binding Foreground, ElementName=SyncText}"/>
+       </StackPanel>
+      </StackPanel>
        <TextBlock Text="{Binding Text, ElementName=Clock}" FontSize="44" FontFamily="{Binding FontFamily, ElementName=Clock}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
         <TextBlock x:Name="SeatingUpdate" FontSize="20" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,30,0"/>

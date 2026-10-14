@@ -237,6 +237,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                             status.Subject, status.IsTimerRunning, status.IsClassPlanLoaded, status.IsClassPlanEnabled,
                             status.CurrentSelectedIndex, status.ObservedEvents), Schedule: result.Schedule, Forecast: result.Forecast);
                 }
+                response = WithStudyConnection(request, response);
                 // Structured diagnostics contain identifiers and outcomes, never lesson contents.
                 log(JsonSerializer.Serialize(new
                 {

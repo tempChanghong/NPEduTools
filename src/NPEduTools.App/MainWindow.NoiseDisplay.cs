@@ -82,7 +82,7 @@ public partial class MainWindow
                         _studyReportWindow?.HideDisplay();
                         _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
                         _manualStudyWindow ??= TrackStudyPresentationWindow(new StudyWindow(_pipe, () => OpenNoiseClicked(this, new RoutedEventArgs()), manual: true));
-                        _manualStudyWindow.Apply(ms, manual.Noise, manualAge, studyResponse.StudyPhotos);
+                        _manualStudyWindow.Apply(ms, manual.Noise, manualAge, studyResponse.StudyPhotos, manual.Npep);
                         _manualStudyWindow.ShowDisplay();
                         continue;
                     }
@@ -125,7 +125,7 @@ public partial class MainWindow
                         else
                         {
                             _studyWindow ??= TrackStudyPresentationWindow(new StudyWindow(_pipe, () => OpenStudyMonitoringClicked(this, new RoutedEventArgs())));
-                            _studyWindow.Apply(studyResponse.Study, studyResponse.Noise, studyRoundTrip, studyResponse.StudyPhotos);
+                            _studyWindow.Apply(studyResponse.Study, studyResponse.Noise, studyRoundTrip, studyResponse.StudyPhotos, studyResponse.Npep);
                             _studyWindow.ShowDisplay();
                         }
                     }

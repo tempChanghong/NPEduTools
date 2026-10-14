@@ -29,6 +29,7 @@ internal static partial class Program
         RunStudyProgressChecks();
         RunSeatingUploadChecks();
         RunStudyEstimateVisualChecks();
+        RunStudyConnectionVisualChecks();
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try { RunSeatingVisualChecks(); RunSeatingPipeChecks(); RunSeatingMemoryChecks(); RunStudyVisualChecks(); RunStudyStageAudioRecoveryChecks(); RunStudyThresholdVisualChecks(); RunStudyDisciplinePipeChecks(); RunStudyDisciplineDelayedChecks(); RunStudyDisciplineLifecycleChecks(); RunStudyHomeworkVisualChecks(); RunStudyHomeworkPipeChecks(false); RunStudyHomeworkPipeChecks(true); RunStudyPresentationPipeChecks(); RunStudyDeniedAudioChecks(); RunStudyHideChecks(false, false); RunStudyHideChecks(true, false); RunStudyHideChecks(false, true); }
