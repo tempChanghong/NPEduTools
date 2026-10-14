@@ -61,6 +61,15 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     { get { lock (_sync) return (_scope, _scope is not null && _source is "Grade" or "Class" or "Disabled"); } }
     public (string? Scope, bool Selected, StudyHostState State) DisplaySnapshot()
     { lock (_sync) { var state = Snapshot(); var selection = DisplaySelection; return (selection.Scope, selection.Selected, state); } }
+    // Auxiliary noise metadata must not run scheduling, probe other software or stop an expired owner.
+    internal (string? Scope, StudyHostState State) CachedCalibrationContext
+    {
+        get
+        {
+            lock (_sync) return (_scope, ConfigurationFresh || _running is not null ? _state :
+                _state with { PolicyState = "UNAVAILABLE" });
+        }
+    }
     public void BindStudy(string? scope)
     {
         lock (_sync)

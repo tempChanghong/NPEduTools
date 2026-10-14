@@ -7,6 +7,31 @@ namespace NPEduTools.Tests;
 
 public sealed partial class NoiseReferenceCalibrationTests
 {
+    [Fact, SupportedOSPlatform("windows")]
+    public async Task Calibration_metadata_cannot_execute_school_callbacks_or_bring_down_noise_queries()
+    {
+        await using var f = new Fixture();
+        int callbacks = 0;
+        await using var study = new StudySettingsService(() => throw new InvalidOperationException("No school-clock probing"),
+            () => throw new InvalidOperationException("No examination probing"), background: false,
+            mode: () => { Interlocked.Increment(ref callbacks); throw new InvalidOperationException("Synthetic mode source unavailable"); });
+        string name = "NPEduTools.Test.PassiveCalibration." + Guid.NewGuid().ToString("N");
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var server = new PipeServer(name, new ForbiddenReader(), _ => { }, noise: f.Noise, study: study);
+        var running = server.RunAsync(lifetime.Token);
+        try
+        {
+            Assert.Equal("Succeeded", (await HostClient.RequestAsync(name, "noise.devices", lifetime.Token)).Outcome);
+            foreach (string capability in new[] { "noise.devices.calibration", "noise.status.calibration" })
+            {
+                var response = await HostClient.RequestAsync(name, capability, lifetime.Token);
+                Assert.Equal("Succeeded", response.Outcome); Assert.Equal("Uncalibrated", response.NoiseCalibrationStatus!.State);
+            }
+            Assert.Equal(0, callbacks); Assert.False(running.IsCompleted);
+            Assert.Equal(0, f.NormalCreates); Assert.Equal(0, f.ReferenceCreates);
+        }
+        finally { await lifetime.CancelAsync(); try { await running; } catch (OperationCanceledException) { } }
+    }
     [Fact]
     public async Task Compact_reference_status_tracks_formal_use_invalidation_and_clear_without_sampling()
     {
