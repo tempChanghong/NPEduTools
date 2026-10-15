@@ -245,10 +245,12 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
     # CreateNew never takes over an earlier interrupted installer transaction.
     $parent=Split-Path $journal.Marker
     if (-not [IO.Directory]::Exists($parent)) { [IO.Directory]::CreateDirectory($parent) | Out-Null }
-    $marker=[IO.File]::Open($journal.Marker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    # An abrupt exit must not leave a launch-blocking marker without its recovery
+    # record. Persist the checkpoint before making maintenance visible to clients.
+    WriteGuardJson $JournalPath $journal
+    try { $marker=[IO.File]::Open($journal.Marker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None) }
+    catch { [IO.File]::Delete($JournalPath);throw } # No marker or runtime state was taken over.
     try { $bytes=[Text.Encoding]::UTF8.GetBytes(($journal | Select-Object Id,Root,JournalPath | ConvertTo-Json));$marker.Write($bytes,0,$bytes.Length);$marker.Flush($true) } finally { $marker.Dispose() }
-    try { WriteGuardJson $JournalPath $journal }
-    catch { [IO.File]::Delete($journal.Marker);throw }
     try {
         foreach($instance in $journal.Instances) {
             if ($null -ne $instance.Generation) {

@@ -101,6 +101,59 @@ exit $LASTEXITCODE
         return [pscustomobject]@{ExitCode=$child.ExitCode;SchedulerCalled=[IO.File]::Exists($calls)}
     } finally { $child.Dispose() }
 }
+function InterruptInitialCheckpoint($Fixture,[int]$WriteNumber=1) {
+    # The helper owns no real tasks/processes. Exit before the selected journal
+    # write, skipping normal catch/finally recovery as an abrupt process exit would.
+    $runner=Join-Path $scratch 'interrupt-initial-checkpoint.ps1'
+    if (-not [IO.File]::Exists($runner)) {
+        [IO.File]::WriteAllText($runner,@'
+param([string]$Helper,[string]$InputPath)
+$ErrorActionPreference='Stop'
+. $Helper
+$script:testState=ReadGuardJson $InputPath
+function CurrentGuardTasks($Folder) { return @($script:testState.Tasks) }
+function OwnedGuardProcesses([string]$Root) {
+    if ($Root -cne $script:testState.Root) { throw 'Private process boundary mismatch.' }
+    return @()
+}
+function GuardData([string]$Sid,[string]$Endpoint) {
+    if ($Sid -cne $script:testState.Sid -or $Endpoint -cne $script:testState.Pipe) { throw 'Private task boundary mismatch.' }
+    return $script:testState.Data
+}
+$script:writer=${function:WriteGuardJson}
+$script:journalWrites=0
+function WriteGuardJson([string]$Path,$Value) {
+    if ($Path -ceq $script:testState.Journal) {
+        $script:journalWrites++
+        if ($script:journalWrites -eq $script:testState.WriteNumber) {
+            [IO.File]::WriteAllText($script:testState.Reached,('before journal persistence '+$script:journalWrites))
+            [Environment]::Exit(91)
+        }
+    }
+    & $script:writer $Path $Value
+}
+PrepareGuardMaintenance $script:testState.Root $script:testState.Journal $null
+throw 'Expected checkpoint was not reached.'
+'@)
+    }
+    $inputPath=Join-Path $Fixture.Transaction 'interruption-input.json'
+    $reached=Join-Path $Fixture.Transaction 'interruption-reached.txt'
+    WriteGuardJson $inputPath @{Root=$Fixture.Root;Data=$Fixture.Data;Sid=$sid;Pipe=$Fixture.Pipe;Journal=$Fixture.Journal;Tasks=@($Fixture.Folder.Rows.Values);Reached=$reached;WriteNumber=$WriteNumber}
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $start.Arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$runner+'" -Helper "'+(Join-Path $projectRoot 'installer/guard-maintenance.ps1')+'" -InputPath "'+$inputPath+'"'
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+    $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    $child=[Diagnostics.Process]::new();$child.StartInfo=$start
+    try {
+        $null=$child.Start()
+        $stdout=$child.StandardOutput.ReadToEndAsync();$stderr=$child.StandardError.ReadToEndAsync()
+        if (-not $child.WaitForExit(15000)) { $child.Kill();$child.WaitForExit();throw 'Private checkpoint fixture timed out.' }
+        [IO.File]::WriteAllText((Join-Path $Fixture.Transaction 'interruption-stdout.txt'),$stdout.Result)
+        [IO.File]::WriteAllText((Join-Path $Fixture.Transaction 'interruption-stderr.txt'),$stderr.Result)
+        Check ('private helper exits abruptly before journal write '+$WriteNumber) ($child.ExitCode -eq 91 -and [IO.File]::Exists($reached))
+    } finally { $child.Dispose() }
+}
 try {
     Check 'default instance uses current account LocalAppData KnownFolder' ($null -ne $defaultData)
     WriteGuardResult $scratch 'Prepare' 'Synthetic prepare failure'
@@ -361,6 +414,31 @@ try {
     $foreignId=[guid]::NewGuid().ToString('N');WriteGuardJson $journal.Marker @{Id=$foreignId}
     $result=MaintenanceWithoutScheduler 'Restore' $f
     Check 'scheduler-free restored cleanup still refuses a foreign marker' ($result.ExitCode -eq 1 -and -not $result.SchedulerCalled -and (ReadGuardJson $journal.Marker).Id -eq $foreignId)
+
+    $f=Fixture 'interrupted-initial-checkpoint';$f.Running=$false
+    $registration=GuardFileSnapshot (Join-Path $f.Data 'registration.json')
+    InterruptInitialCheckpoint $f
+    Check 'interrupted initial checkpoint never leaves an installation blocker without a journal' (-not [IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and -not [IO.File]::Exists($f.Journal))
+    Check 'initial checkpoint interruption preserves tasks and instance state' ($f.Folder.Rows.Count -eq 4 -and $f.Folder.Deleted.Count -eq 0 -and (GuardFileSnapshot (Join-Path $f.Data 'registration.json')) -ceq $registration -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal
+    Check 'maintenance can be retried after an interrupted initial checkpoint' ($f.Folder.Rows.Count -eq 4 -and $f.Folder.Launched.Count -eq 0 -and (ReadGuardJson $f.Journal).Phase -eq 'Restored' -and -not [IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')))
+
+    $f=Fixture 'interrupted-after-marker';$f.Running=$false
+    $registration=GuardFileSnapshot (Join-Path $f.Data 'registration.json')
+    InterruptInitialCheckpoint $f 2
+    $journal=ReadGuardJson $f.Journal
+    Check 'visible maintenance marker already has a durable matching checkpoint' ($null -ne $journal -and (ReadGuardJson $journal.Marker).Id -ceq $journal.Id -and $journal.Phase -eq 'Prepared')
+    Check 'post-marker interruption precedes task or stop mutation' ($f.Folder.Deleted.Count -eq 0 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')) -and -not $journal.Instances[0].Written)
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
+    Check 'durable initial checkpoint can restore an interrupted visible transaction' ((ReadGuardJson $f.Journal).Phase -eq 'Restored' -and -not [IO.File]::Exists($journal.Marker) -and (GuardFileSnapshot (Join-Path $f.Data 'registration.json')) -ceq $registration -and $f.Folder.Rows.Count -eq 4 -and $f.Folder.Launched.Count -eq 0)
+
+    $f=Fixture 'initial-foreign-marker'
+    $marker=Join-Path $f.Root 'app\guard-maintenance.json'
+    WriteGuardJson $marker @{Id='existing-transaction'}
+    $markerBytes=GuardFileSnapshot $marker
+    Throws 'initial marker collision is reported' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'Open'
+    Check 'initial marker collision preserves its owner without a misleading new journal' ((GuardFileSnapshot $marker) -ceq $markerBytes -and -not [IO.File]::Exists($f.Journal) -and $f.Folder.Deleted.Count -eq 0 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
     @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
 } catch {
