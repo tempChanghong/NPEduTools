@@ -171,7 +171,6 @@ function RestoreGuardMaintenance($Journal,$Folder) {
     foreach($instance in $Journal.Instances) {
         if ($instance.Written) { RestoreGuardFile (Join-Path $instance.Data 'stop.json') $instance.PreviousStop }
     }
-    [IO.File]::Delete($Journal.Marker)
     # Restart only guardians that were running before maintenance. Never launch App/Host here.
     foreach($instance in $Journal.Instances) {
         $previous=if ($instance.PreviousStop) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($instance.PreviousStop)) | ConvertFrom-Json } else { $null }
@@ -181,6 +180,9 @@ function RestoreGuardMaintenance($Journal,$Folder) {
             $null=$Folder.GetTask($guard[0].Name).Run($null)
         }
     }
+    # Keep ownership until every rollback launch has been accepted. A transient
+    # scheduler failure must leave the same transaction eligible for a safe retry.
+    [IO.File]::Delete($Journal.Marker)
     $Journal.Phase='Restored'
 }
 function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {

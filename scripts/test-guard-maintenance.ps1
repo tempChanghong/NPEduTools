@@ -34,11 +34,11 @@ function Fixture([string]$Name,[switch]$Default) {
     $pipe=if ($Default) { 'default' } else { 'NPEduTools.Test.Maintenance.'+[guid]::NewGuid().ToString('N') };$key=(GuardHash ($sid+'|'+$pipe)).Substring(0,24)
     $registration=@{Generation=[guid]::NewGuid().ToString();App=@{Id=$PID;StartedUtcTicks=1};Upstream=$null;BundleDirectory=(Join-Path $root 'app')}
     WriteGuardJson (Join-Path $data 'registration.json') $registration
-    $folder=[pscustomobject]@{Rows=@{};Deleted=@();Registered=@();FailDelete=$null}
+    $folder=[pscustomobject]@{Rows=@{};Deleted=@();Registered=@();FailDelete=$null;FailRun=$false}
     $folder | Add-Member ScriptMethod GetTasks { param($flags) return @($this.Rows.Values) }
     $folder | Add-Member ScriptMethod DeleteTask { param($name,$flags) if ($this.FailDelete -eq $name) { $this.FailDelete=$null;throw 'Synthetic deletion failure' };$this.Rows.Remove($name);$this.Deleted+=$name }
     $folder | Add-Member ScriptMethod RegisterTask { param($name,$xml,$flags,$user,$password,$logon,$sddl) $this.Rows[$name]=[pscustomobject]@{Name=$name;Xml=$xml};$this.Registered+=$name;return $this.Rows[$name] }
-    $folder | Add-Member ScriptMethod GetTask { param($name) $task=[pscustomobject]@{Name=$name};$task | Add-Member ScriptMethod Run {param($value) $script:runs++ };return $task }
+    $folder | Add-Member ScriptMethod GetTask { param($name) $task=[pscustomobject]@{Name=$name;Folder=$this};$task | Add-Member ScriptMethod Run {param($value) if($this.Folder.FailRun){$this.Folder.FailRun=$false;throw 'Synthetic guardian restart failure'};$script:runs++ };return $task }
     foreach($role in @('Guard','Login','App','Host')) {
         $name='NPEduTools.Guard.'+$key+'.'+$role
         $folder.Rows[$name]=[pscustomobject]@{Name=$name;Xml=(TaskXml $role $root $pipe $sid)}
@@ -142,6 +142,35 @@ try {
     $f=Fixture 'timeout';$f.NeverStops=$true
     Throws 'nonresponsive guard times out without force-killing any process' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'ten seconds'
     Check 'timeout restores task registrations' ($f.Folder.Rows.Count -eq 4 -and (ReadGuardJson $f.Journal).Phase -eq 'Restored')
+
+    $f=Fixture 'rollback-launch-failure'
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $journal=ReadGuardJson $f.Journal
+    $f.Folder.FailRun=$true
+    Throws 'rollback guardian launch failure is reported' {RestoreGuardMaintenance $journal $f.Folder} 'Synthetic guardian restart failure'
+    Check 'failed rollback launch retains transaction ownership for retry' ([IO.File]::Exists($journal.Marker) -and (ReadGuardJson $f.Journal).Phase -eq 'Prepared')
+    $beforeRetry=$script:runs
+    $retryJournal=ReadGuardJson $f.Journal
+    RestoreGuardMaintenance $retryJournal $f.Folder
+    WriteGuardJson $f.Journal $retryJournal
+    Check 'same rollback transaction can be retried after transient launch failure' ($script:runs -eq ($beforeRetry+1) -and -not [IO.File]::Exists($journal.Marker) -and $f.Folder.Rows.Count -eq 4 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
+    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder
+    Check 'successful rollback retry is durable and does not relaunch twice' ((ReadGuardJson $f.Journal).Phase -eq 'Restored' -and $script:runs -eq ($beforeRetry+1))
+
+    foreach($change in @('bundle','generation','task')) {
+        $f=Fixture ('rollback-retry-changed-'+$change)
+        PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+        $f.Folder.FailRun=$true
+        Throws ('initial rollback '+$change+' fixture launch failure') {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} 'Synthetic guardian restart failure'
+        switch($change) {
+            'bundle' {[IO.File]::WriteAllText((Join-Path $f.Root 'app\Host\NPEduTools.Host.exe'),'CHANGED AFTER FAILED ROLLBACK');$pattern='Application files changed'}
+            'generation' {$r=ReadGuardJson (Join-Path $f.Data 'registration.json');$r.Generation=[guid]::NewGuid().ToString();WriteGuardJson (Join-Path $f.Data 'registration.json') $r;$pattern='generation changed'}
+            'task' {$name='NPEduTools.Guard.'+$f.Key+'.Guard';$f.Folder.Rows[$name].Xml=$f.Folder.Rows[$name].Xml.Replace('NPEduTools.Guard.v2','Other.Product');$pattern='ownership mismatch'}
+        }
+        $beforeRetry=$script:runs
+        Throws ('rollback retry rejects changed '+$change) {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} $pattern
+        Check ('changed '+$change+' preserves rollback marker without launching') ([IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and $script:runs -eq $beforeRetry)
+    }
     @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
 } catch {
