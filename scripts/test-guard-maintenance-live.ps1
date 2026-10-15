@@ -6,10 +6,13 @@ $source=(Resolve-Path -LiteralPath $GuardBundle).Path
 $scratch=Join-Path $projectRoot ('.artifacts/guard-maintenance-live/'+[guid]::NewGuid().ToString('N'))
 $root=Join-Path $scratch 'installed';$bundle=Join-Path $root 'app';$guard=Join-Path $bundle 'Guard'
 $pipe='NPEduTools.Test.Guard.Maintenance.'+[guid]::NewGuid().ToString('N')
+$idlePipe='NPEduTools.Test.Guard.Idle.'+[guid]::NewGuid().ToString('N')
 . (Join-Path $projectRoot 'installer/guard-maintenance.ps1')
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$sid=$identity.User.Value;$identity.Dispose()
 $key=(GuardHash ($sid+'|'+$pipe)).Substring(0,24)
+$idleKey=(GuardHash ($sid+'|'+$idlePipe)).Substring(0,24)
 $data=GuardData $sid $pipe
+$idleData=GuardData $sid $idlePipe
 $names=@();$process=$null;$probeFolder=$null;$defaultHostName=$null
 $probeFolderName='NPEduTools.GuardMaintenanceTest.'+[guid]::NewGuid().ToString('N')
 $result=@{status='RUNNING';checks=@();applicationInstalled=$false;capturesStarted=$false;realDevices='NOT_RUN'}
@@ -34,6 +37,10 @@ try {
         $arguments='--pipe "'+$pipe+'"';if($role -eq 'App'){$arguments+=' --guard-recovery'};if($role -eq 'Login'){$arguments+=' --at-login'}
         $xml='<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><RegistrationInfo><Source>NPEduTools.Guard.v2</Source></RegistrationInfo><Triggers/><Principals><Principal id="User"><UserId>'+$sid+'</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings><Actions Context="User"><Exec><Command>'+[Security.SecurityElement]::Escape($exe)+'</Command><Arguments>'+$arguments+'</Arguments><WorkingDirectory>'+[Security.SecurityElement]::Escape((Split-Path $exe))+'</WorkingDirectory></Exec></Actions></Task>'
         $null=$folder.RegisterTask($name,$xml,6,$sid,$null,3,$null);$names+=$name
+        # Another endpoint in the same bundle/account has tasks but was never started.
+        $idleName='NPEduTools.Guard.'+$idleKey+'.'+$role
+        $idleXml=$xml.Replace($pipe,$idlePipe)
+        $null=$folder.RegisterTask($idleName,$idleXml,6,$sid,$null,3,$null);$names+=$idleName
     }
     # A disabled Host task in a private child folder tests actual Windows XML
     # normalization without touching the real default tasks or LocalAppData state.
@@ -53,12 +60,14 @@ try {
         Start-Sleep -Milliseconds 100
     }
     Check 'private guardian running in standby' (-not $process.HasExited)
+    $idleLastRun=$folder.GetTask(('NPEduTools.Guard.'+$idleKey+'.Guard')).LastRunTime
     $transaction=Join-Path $scratch 'cancel-transaction';RunMaintenance 'Prepare' $transaction
     Check 'real guardian exits gracefully and owned tasks disappear' ($process.WaitForExit(2000) -and @(GuardPlans (CurrentGuardTasks $folder) $root).Count -eq 0)
     RunMaintenance 'Restore' $transaction
     $deadline.Restart()
     while (@(OwnedGuardProcesses $root).Count -eq 0) { if($deadline.Elapsed.TotalSeconds -gt 10){throw 'Guardian rollback launch missing.'};Start-Sleep -Milliseconds 100 }
-    Check 'rollback independently relaunches guardian and four tasks' (@(GuardPlans (CurrentGuardTasks $folder) $root).Count -eq 4)
+    Check 'rollback independently relaunches guardian and restores both task groups' (@(GuardPlans (CurrentGuardTasks $folder) $root).Count -eq 8)
+    Check 'idle endpoint remains unstarted and its missing data stays absent' ($folder.GetTask(('NPEduTools.Guard.'+$idleKey+'.Guard')).LastRunTime -eq $idleLastRun -and -not [IO.Directory]::Exists($idleData))
     $transaction=Join-Path $scratch 'finish-transaction';RunMaintenance 'Prepare' $transaction;RunMaintenance 'Complete' $transaction
     Check 'successful maintenance leaves no guardian or owned tasks' (@(OwnedGuardProcesses $root).Count -eq 0 -and @(GuardPlans (CurrentGuardTasks $folder) $root).Count -eq 0)
     Check 'successful maintenance releases directory marker' (-not [IO.File]::Exists((Join-Path $bundle 'guard-maintenance.json')))

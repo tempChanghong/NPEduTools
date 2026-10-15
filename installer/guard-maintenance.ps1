@@ -108,6 +108,24 @@ function OwnedGuardProcesses([string]$Root) {
     $path=Join-Path $Root 'app\Guard\svchost.exe'
     return @(Get-CimInstance Win32_Process -Filter "Name = 'svchost.exe'" | Where-Object { $_.ExecutablePath -ieq $path })
 }
+function GuardProcessInstance($Process) {
+    $path=[string]$Process.ExecutablePath;$line=[string]$Process.CommandLine
+    if ([string]::IsNullOrWhiteSpace($path) -or [string]::IsNullOrWhiteSpace($line)) { throw 'Cannot inspect guardian invocation; use manual maintenance.' }
+    # Guard endpoints cannot contain quotes or backslashes. Recognize its supported
+    # launch forms, including quoted paths/pipe names, without guessing on extra args.
+    $programs=@([regex]::Escape('"'+$path+'"'))
+    if ($path -notmatch '\s') { $programs+=[regex]::Escape($path) }
+    $prefix='^\s*(?i:' + ($programs -join '|') + ')\s+'
+    $arguments='(?:(?<Default>--default-pipe|"--default-pipe")|(?:--pipe|"--pipe")\s+(?:"(?<Pipe>[^"\r\n\\/:]{1,200})"|(?<Pipe>[^\s"\\/:]{1,200})))(?:\s+(?<Action>--at-login|--maintenance|"--at-login"|"--maintenance"))?\s*$'
+    $match=[regex]::Match($line,$prefix+$arguments)
+    if (-not $match.Success -or $match.Groups['Pipe'].Value.StartsWith('--')) { throw 'Cannot verify guardian invocation; use manual maintenance.' }
+    $owner=Invoke-CimMethod -InputObject $Process -MethodName GetOwnerSid
+    if ($owner.ReturnValue -ne 0 -or [string]$owner.Sid -notmatch '^S-1-[0-9-]+$') { throw 'Cannot inspect guardian owner.' }
+    $endpoint=$match.Groups['Pipe'].Value
+    if ($match.Groups['Default'].Success -or $endpoint -ceq ('NPEduTools.v1.'+$owner.Sid+'.'+$Process.SessionId)) { $endpoint='default' }
+    elseif ($endpoint -ieq 'default') { throw 'Ambiguous guardian endpoint; use manual maintenance.' }
+    return [pscustomobject]@{Sid=[string]$owner.Sid;Endpoint=$endpoint;Resident=(-not $match.Groups['Action'].Success)}
+}
 function GuardFileSnapshot([string]$Path) {
     if ([IO.File]::Exists($Path)) {
         if ((Get-Item -LiteralPath $Path).Length -gt 32768) { throw 'Guardian state record too large.' }
@@ -197,6 +215,12 @@ function RestoreGuardMaintenance($Journal,$Folder,[string]$JournalPath) {
 function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
     $members=@(GuardPlans (CurrentGuardTasks $Folder) $Root)
     $processes=@(OwnedGuardProcesses $Root)
+    $instances=@($processes | ForEach-Object { GuardProcessInstance $_ })
+    foreach($instance in $instances) {
+        if ($instance.Resident -and @($members | Where-Object { $_.Sid -eq $instance.Sid -and $_.Endpoint -ceq $instance.Endpoint }).Count -eq 0) {
+            throw 'Running guardian has no matching owned task group; use manual maintenance.'
+        }
+    }
     $journal=[pscustomobject]@{Id=[guid]::NewGuid().ToString('N');Root=$Root;Marker=(Join-Path $Root 'app\guard-maintenance.json');JournalPath=$JournalPath;Phase='Prepared';Tasks=$members;Instances=@();Files=@()}
     if ([IO.Directory]::Exists((Join-Path $Root 'app'))) {
         foreach($file in @(Get-ChildItem -LiteralPath (Join-Path $Root 'app') -File -Recurse)) {
@@ -212,11 +236,7 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
             if (-not [guid]::TryParse([string]$registration.Generation,[ref]$guid) -or $guid -eq [guid]::Empty -or $registration.BundleDirectory -ine (Join-Path $Root 'app')) { throw 'Guardian registration mismatch.' }
             $generation=[string]$registration.Generation
         }
-        $running=@($processes | Where-Object {
-            $owner=Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid
-            if ($owner.ReturnValue -ne 0) { throw 'Cannot inspect guardian owner.' }
-            $owner.Sid -eq $first.Sid
-        }).Count -gt 0
+        $running=@($instances | Where-Object { $_.Resident -and $_.Sid -eq $first.Sid -and $_.Endpoint -ceq $first.Endpoint }).Count -gt 0
         if ($running -and $null -eq $generation) { throw 'Running guardian has no readable registration.' }
         $null=ReadGuardJson (Join-Path $data 'stop.json') # Fail on damaged state before deleting tasks, not during rollback.
         $journal.Instances+=[pscustomobject]@{Key=$first.Key;Data=$data;Generation=$generation;PreviousStop=(GuardFileSnapshot (Join-Path $data 'stop.json'));Written=$false;WasRunning=$running}

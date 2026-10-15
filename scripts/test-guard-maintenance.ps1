@@ -6,6 +6,7 @@ $scratch=Join-Path $projectRoot ('.artifacts/guard-maintenance-tests/'+[guid]::N
 [IO.Directory]::CreateDirectory($scratch) | Out-Null
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 $sid=$identity.User.Value;$identity.Dispose()
+$self=[Diagnostics.Process]::GetCurrentProcess();$testSession=$self.SessionId;$self.Dispose()
 $defaultData=GuardData $sid 'default'
 if ($defaultData -ne (Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'NPEduTools\config\guard')) { throw 'Default data path does not match native KnownFolder.' }
 $script:checks=@();$script:runs=0
@@ -34,27 +35,32 @@ function Fixture([string]$Name,[switch]$Default) {
     $pipe=if ($Default) { 'default' } else { 'NPEduTools.Test.Maintenance.'+[guid]::NewGuid().ToString('N') };$key=(GuardHash ($sid+'|'+$pipe)).Substring(0,24)
     $registration=@{Generation=[guid]::NewGuid().ToString();App=@{Id=$PID;StartedUtcTicks=1};Upstream=$null;BundleDirectory=(Join-Path $root 'app')}
     WriteGuardJson (Join-Path $data 'registration.json') $registration
-    $folder=[pscustomobject]@{Rows=@{};Deleted=@();Registered=@();FailDelete=$null;FailRun=$false}
+    $folder=[pscustomobject]@{Rows=@{};Deleted=@();Registered=@();Launched=@();FailDelete=$null;FailRun=$false}
     $folder | Add-Member ScriptMethod GetTasks { param($flags) return @($this.Rows.Values) }
     $folder | Add-Member ScriptMethod DeleteTask { param($name,$flags) if ($this.FailDelete -eq $name) { $this.FailDelete=$null;throw 'Synthetic deletion failure' };$this.Rows.Remove($name);$this.Deleted+=$name }
     $folder | Add-Member ScriptMethod RegisterTask { param($name,$xml,$flags,$user,$password,$logon,$sddl) $this.Rows[$name]=[pscustomobject]@{Name=$name;Xml=$xml};$this.Registered+=$name;return $this.Rows[$name] }
-    $folder | Add-Member ScriptMethod GetTask { param($name) $task=[pscustomobject]@{Name=$name;Folder=$this};$task | Add-Member ScriptMethod Run {param($value) if($this.Folder.FailRun){$this.Folder.FailRun=$false;throw 'Synthetic guardian restart failure'};$script:runs++ };return $task }
+    $folder | Add-Member ScriptMethod GetTask { param($name) $task=[pscustomobject]@{Name=$name;Folder=$this};$task | Add-Member ScriptMethod Run {param($value) if($this.Folder.FailRun){$this.Folder.FailRun=$false;throw 'Synthetic guardian restart failure'};$script:runs++;$this.Folder.Launched+=$this.Name };return $task }
     foreach($role in @('Guard','Login','App','Host')) {
         $name='NPEduTools.Guard.'+$key+'.'+$role
         $folder.Rows[$name]=[pscustomobject]@{Name=$name;Xml=(TaskXml $role $root $pipe $sid)}
     }
-    $script:active=[pscustomobject]@{Root=$root;Data=$data;Transaction=$transaction;Journal=(Join-Path $transaction 'journal.json');Folder=$folder;Generation=$registration.Generation;Running=$true;NeverStops=$false;Pipe=$pipe;Key=$key}
+    $script:active=[pscustomobject]@{Root=$root;Data=$data;DataByEndpoint=@{$pipe=$data};Transaction=$transaction;Journal=(Join-Path $transaction 'journal.json');Folder=$folder;Generation=$registration.Generation;Running=$true;NeverStops=$false;Pipe=$pipe;Key=$key;CommandLine=$null}
     return $script:active
 }
 # Substitute only environmental adapters. No production scheduler/process is touched.
 function GuardData([string]$Sid,[string]$Endpoint) {
-    if ($Sid -ne $sid -or $Endpoint -ne $script:active.Pipe) { throw 'Fixture data ownership mismatch' }
-    return $script:active.Data
+    if ($Sid -ne $sid -or -not $script:active.DataByEndpoint.ContainsKey($Endpoint)) { throw 'Fixture data ownership mismatch' }
+    return $script:active.DataByEndpoint[$Endpoint]
 }
 function OwnedGuardProcesses([string]$Root) {
     if ($Root -ne $script:active.Root) { throw 'Fixture process scope mismatch' }
     $stop=ReadGuardJson (Join-Path $script:active.Data 'stop.json')
-    if ($script:active.Running -and ($script:active.NeverStops -or $null -eq $stop -or $stop.Generation -ne $script:active.Generation)) { return @([pscustomobject]@{ProcessId=12345}) }
+    if ($script:active.Running -and ($script:active.NeverStops -or $null -eq $stop -or $stop.Generation -ne $script:active.Generation)) {
+        $path=Join-Path $Root 'app\Guard\svchost.exe'
+        $arguments=if($script:active.Pipe -eq 'default'){'--default-pipe'}else{'--pipe "'+$script:active.Pipe+'"'}
+        $line=if($null -ne $script:active.CommandLine){$script:active.CommandLine}else{'"'+$path+'" '+$arguments}
+        return @([pscustomobject]@{ProcessId=12345;ExecutablePath=$path;CommandLine=$line;SessionId=$testSession})
+    }
     return @()
 }
 function Invoke-CimMethod($InputObject,[string]$MethodName) { return [pscustomobject]@{ReturnValue=0;Sid=$sid} }
@@ -213,6 +219,62 @@ try {
     $journal.JournalPath=$otherPath
     RestoreGuardMaintenance $journal $f.Folder $f.Journal
     Check 'rollback checkpoint uses caller transaction path instead of record data' ([IO.File]::ReadAllText($otherPath) -ceq 'preserve unrelated file' -and (ReadGuardJson $f.Journal).Phase -eq 'Restored')
+
+    foreach($registered in @($true,$false)) {
+        $f=Fixture ('multiple-endpoints-'+$registered)
+        $idlePipe='NPEduTools.Test.Idle.'+[guid]::NewGuid().ToString('N')
+        $idleKey=(GuardHash ($sid+'|'+$idlePipe)).Substring(0,24)
+        $idleData=Join-Path $scratch ('idle-data-'+[guid]::NewGuid().ToString('N'))
+        $f.DataByEndpoint[$idlePipe]=$idleData
+        if($registered) {
+            [IO.Directory]::CreateDirectory($idleData) | Out-Null
+            WriteGuardJson (Join-Path $idleData 'registration.json') @{Generation=[guid]::NewGuid().ToString();BundleDirectory=(Join-Path $f.Root 'app')}
+        }
+        $idleRegistration=GuardFileSnapshot (Join-Path $idleData 'registration.json')
+        foreach($role in @('Guard','Login','App','Host')) {
+            $name='NPEduTools.Guard.'+$idleKey+'.'+$role
+            $f.Folder.Rows[$name]=[pscustomobject]@{Name=$name;Xml=(TaskXml $role $f.Root $idlePipe $sid)}
+        }
+        PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+        $journal=ReadGuardJson $f.Journal
+        Check ('multiple endpoints '+$registered+' record only the actual resident') (@($journal.Instances | Where-Object WasRunning).Count -eq 1 -and ($journal.Instances | Where-Object Key -eq $f.Key).WasRunning)
+        RestoreGuardMaintenance $journal $f.Folder $f.Journal
+        Check ('multiple endpoints '+$registered+' never launch the idle guardian') ($f.Folder.Rows.Count -eq 8 -and $f.Folder.Launched.Count -eq 1 -and $f.Folder.Launched[0] -ceq ('NPEduTools.Guard.'+$f.Key+'.Guard'))
+        Check ('idle endpoint '+$registered+' state is preserved') ((GuardFileSnapshot (Join-Path $idleData 'registration.json')) -ceq $idleRegistration -and -not [IO.File]::Exists((Join-Path $idleData 'stop.json')) -and ($registered -or -not [IO.Directory]::Exists($idleData)))
+    }
+
+    $probePath='C:\NPEduTools test & fixture\app\Guard\svchost.exe'
+    $defaultPipe='NPEduTools.v1.'+$sid+'.'+$testSession
+    $forms=@(
+        @{Arguments='--pipe NPEduTools.Test.Exact';Endpoint='NPEduTools.Test.Exact';Resident=$true},
+        @{Arguments='--pipe "NPEduTools.Test.Exact [A] with spaces"';Endpoint='NPEduTools.Test.Exact [A] with spaces';Resident=$true},
+        @{Arguments='--default-pipe';Endpoint='default';Resident=$true},
+        @{Arguments='"--default-pipe"';Endpoint='default';Resident=$true},
+        @{Arguments=('--pipe "'+$defaultPipe+'"');Endpoint='default';Resident=$true},
+        @{Arguments='--default-pipe --at-login';Endpoint='default';Resident=$false},
+        @{Arguments='--pipe NPEduTools.Test.Exact --maintenance';Endpoint='NPEduTools.Test.Exact';Resident=$false}
+    )
+    foreach($form in $forms) {
+        $probe=[pscustomobject]@{ExecutablePath=$probePath;CommandLine=('"'+$probePath+'" '+$form.Arguments);SessionId=$testSession}
+        $parsed=GuardProcessInstance $probe
+        Check ('guardian invocation '+$form.Arguments+' maps to its own instance') ($parsed.Sid -eq $sid -and $parsed.Endpoint -ceq $form.Endpoint -and $parsed.Resident -eq $form.Resident)
+    }
+    foreach($arguments in @('','--pipe','--pipe default','--pipe NPEduTools.Test.Exact --unexpected')) {
+        $probe=[pscustomobject]@{ExecutablePath=$probePath;CommandLine=('"'+$probePath+'" '+$arguments);SessionId=$testSession}
+        Throws ('ambiguous guardian invocation rejected: '+$arguments) {GuardProcessInstance $probe} 'invocation|endpoint'
+    }
+
+    $f=Fixture 'unknown-resident-endpoint'
+    $f.CommandLine='"'+(Join-Path $f.Root 'app\Guard\svchost.exe')+'" --pipe NPEduTools.Test.Unknown'
+    Throws 'unmatched resident endpoint is rejected before any mutation' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'no matching owned task group'
+    Check 'unmatched endpoint preserves tasks and state' ($f.Folder.Deleted.Count -eq 0 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')) -and -not [IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')))
+
+    $f=Fixture 'bootstrap-is-not-resident'
+    $f.CommandLine='"'+(Join-Path $f.Root 'app\Guard\svchost.exe')+'" --pipe "'+$f.Pipe+'" --at-login'
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $journal=ReadGuardJson $f.Journal
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
+    Check 'a bootstrap process alone does not cause a guardian restart on rollback' ($f.Folder.Launched.Count -eq 0)
     @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
 } catch {
