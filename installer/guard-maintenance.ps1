@@ -132,8 +132,14 @@ function CheckGuardMarker($Journal) {
     $marker=ReadGuardJson $Journal.Marker
     if ($null -eq $marker -or $marker.Id -ne $Journal.Id) { throw 'Installation maintenance ownership changed; manual recovery required.' }
 }
-function RestoreGuardMaintenance($Journal,$Folder) {
-    if ($Journal.Phase -eq 'Restored') { return }
+function RestoreGuardMaintenance($Journal,$Folder,[string]$JournalPath) {
+    if (-not $JournalPath) { throw 'Missing rollback journal path.' }
+    if ($Journal.Phase -eq 'Restored') {
+        # Completion can survive a crash before marker deletion. Finalize only
+        # this transaction's marker, without registering or launching tasks again.
+        if ([IO.File]::Exists($Journal.Marker)) { CheckGuardMarker $Journal;[IO.File]::Delete($Journal.Marker) }
+        return
+    }
     CheckGuardMarker $Journal
     foreach($task in $Journal.Tasks) {
         $expected=GuardTaskInfo $task.Name $task.Xml $Journal.Root
@@ -180,10 +186,13 @@ function RestoreGuardMaintenance($Journal,$Folder) {
             $null=$Folder.GetTask($guard[0].Name).Run($null)
         }
     }
-    # Keep ownership until every rollback launch has been accepted. A transient
-    # scheduler failure must leave the same transaction eligible for a safe retry.
-    [IO.File]::Delete($Journal.Marker)
+    # Keep ownership until launches are accepted AND completion is durable.
+    # Use the caller's transaction path, never a serialized write destination.
+    $previousPhase=$Journal.Phase
     $Journal.Phase='Restored'
+    try { WriteGuardJson $JournalPath $Journal }
+    catch { $Journal.Phase=$previousPhase;throw }
+    [IO.File]::Delete($Journal.Marker)
 }
 function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
     $members=@(GuardPlans (CurrentGuardTasks $Folder) $Root)
@@ -237,7 +246,7 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
         WriteGuardJson $JournalPath $journal
     } catch {
         $failure=$_.Exception.Message
-        try { RestoreGuardMaintenance $journal $Folder;WriteGuardJson $JournalPath $journal }
+        try { RestoreGuardMaintenance $journal $Folder $JournalPath }
         catch { throw ($failure+' Rollback failed: '+$_.Exception.Message+' Journal: '+$JournalPath) }
         throw $failure
     }
@@ -281,7 +290,7 @@ try {
         $journal=ReadGuardJson $journalPath
         if ($null -eq $journal -or $journal.Root -ine $root -or $journal.Marker -ine (Join-Path $root 'app\guard-maintenance.json')) { throw 'Maintenance transaction mismatch.' }
         if ($Action -eq 'Restore') {
-            RestoreGuardMaintenance $journal $folder;WriteGuardJson $journalPath $journal
+            RestoreGuardMaintenance $journal $folder $journalPath
         } else {
             if ($journal.Phase -ne 'Completed' -or [IO.File]::Exists($journal.Marker)) { CheckGuardMarker $journal }
             $journal.Phase='Completed';WriteGuardJson $journalPath $journal

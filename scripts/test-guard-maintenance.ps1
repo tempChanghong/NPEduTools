@@ -74,7 +74,7 @@ try {
     PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
     Check 'omitted default Host arguments do not block maintenance' ($f.Folder.Rows.Count -eq 0)
     $journal=ReadGuardJson $f.Journal
-    RestoreGuardMaintenance $journal $f.Folder
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
     Check 'default Host rollback preserves scheduler-normalized XML' ($f.Folder.Rows[$name].Xml -ceq $xml.Replace('<Arguments></Arguments>',''))
     foreach($role in @('Guard','Login','App')) {
         $name='NPEduTools.Guard.'+$f.Key+'.'+$role
@@ -89,17 +89,17 @@ try {
     Check 'all four owned tasks removed' ($f.Folder.Rows.Count -eq 0)
     Check 'generation-scoped stop persisted before completion' ((ReadGuardJson (Join-Path $f.Data 'stop.json')).Generation -eq $f.Generation)
     Check 'maintenance marker present and registration preserved' ([IO.File]::Exists($journal.Marker) -and (GuardFileSnapshot (Join-Path $f.Data 'registration.json')) -eq $original)
-    RestoreGuardMaintenance $journal $f.Folder
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
     Check 'cancel restores tasks, original stop and only guardian launch' ($f.Folder.Rows.Count -eq 4 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')) -and $script:runs -eq 1)
     Check 'cancel releases installation marker' (-not [IO.File]::Exists($journal.Marker))
-    RestoreGuardMaintenance $journal $f.Folder
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
     Check 'repeated rollback does not launch twice' ($script:runs -eq 1)
 
     $f=Fixture 'stale-stop'
     WriteGuardJson (Join-Path $f.Data 'stop.json') @{Generation=[guid]::NewGuid().ToString();Reason='WindowsSessionEnding'}
     $previous=GuardFileSnapshot (Join-Path $f.Data 'stop.json')
     PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
-    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder
+    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal
     Check 'prior stale stop restored byte-for-byte and guardian resumed' ((GuardFileSnapshot (Join-Path $f.Data 'stop.json')) -eq $previous -and $script:runs -eq 2)
 
     $f=Fixture 'partial-failure';$f.Folder.FailDelete='NPEduTools.Guard.'+$f.Key+'.Host'
@@ -127,17 +127,17 @@ try {
     [IO.File]::Delete((Join-Path $f.Root 'app\Guard\svchost.exe'))
     PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
     Check 'missing guardian executable does not block owned task cleanup' ($f.Folder.Rows.Count -eq 0)
-    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder
+    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal
     Check 'idle missing-guardian rollback never starts components' ($script:runs -eq 3)
 
     $f=Fixture 'changed-bundle';PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
     [IO.File]::WriteAllText((Join-Path $f.Root 'app\Host\NPEduTools.Host.exe'),'PARTIAL UPGRADE')
-    Throws 'partial upgrade cannot restart mixed bundle' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} 'Application files changed'
+    Throws 'partial upgrade cannot restart mixed bundle' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} 'Application files changed'
     Check 'mixed bundle retains stop and recovery journal' ([IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and $f.Folder.Rows.Count -eq 0)
 
     $f=Fixture 'changed-generation';PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
     $r=ReadGuardJson (Join-Path $f.Data 'registration.json');$r.Generation=[guid]::NewGuid().ToString();WriteGuardJson (Join-Path $f.Data 'registration.json') $r
-    Throws 'new client generation cannot be overwritten by rollback' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} 'generation changed'
+    Throws 'new client generation cannot be overwritten by rollback' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} 'generation changed'
 
     $f=Fixture 'timeout';$f.NeverStops=$true
     Throws 'nonresponsive guard times out without force-killing any process' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'ten seconds'
@@ -147,30 +147,72 @@ try {
     PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
     $journal=ReadGuardJson $f.Journal
     $f.Folder.FailRun=$true
-    Throws 'rollback guardian launch failure is reported' {RestoreGuardMaintenance $journal $f.Folder} 'Synthetic guardian restart failure'
+    Throws 'rollback guardian launch failure is reported' {RestoreGuardMaintenance $journal $f.Folder $f.Journal} 'Synthetic guardian restart failure'
     Check 'failed rollback launch retains transaction ownership for retry' ([IO.File]::Exists($journal.Marker) -and (ReadGuardJson $f.Journal).Phase -eq 'Prepared')
     $beforeRetry=$script:runs
     $retryJournal=ReadGuardJson $f.Journal
-    RestoreGuardMaintenance $retryJournal $f.Folder
-    WriteGuardJson $f.Journal $retryJournal
+    RestoreGuardMaintenance $retryJournal $f.Folder $f.Journal
     Check 'same rollback transaction can be retried after transient launch failure' ($script:runs -eq ($beforeRetry+1) -and -not [IO.File]::Exists($journal.Marker) -and $f.Folder.Rows.Count -eq 4 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
-    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder
+    RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal
     Check 'successful rollback retry is durable and does not relaunch twice' ((ReadGuardJson $f.Journal).Phase -eq 'Restored' -and $script:runs -eq ($beforeRetry+1))
 
     foreach($change in @('bundle','generation','task')) {
         $f=Fixture ('rollback-retry-changed-'+$change)
         PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
         $f.Folder.FailRun=$true
-        Throws ('initial rollback '+$change+' fixture launch failure') {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} 'Synthetic guardian restart failure'
+        Throws ('initial rollback '+$change+' fixture launch failure') {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} 'Synthetic guardian restart failure'
         switch($change) {
             'bundle' {[IO.File]::WriteAllText((Join-Path $f.Root 'app\Host\NPEduTools.Host.exe'),'CHANGED AFTER FAILED ROLLBACK');$pattern='Application files changed'}
             'generation' {$r=ReadGuardJson (Join-Path $f.Data 'registration.json');$r.Generation=[guid]::NewGuid().ToString();WriteGuardJson (Join-Path $f.Data 'registration.json') $r;$pattern='generation changed'}
             'task' {$name='NPEduTools.Guard.'+$f.Key+'.Guard';$f.Folder.Rows[$name].Xml=$f.Folder.Rows[$name].Xml.Replace('NPEduTools.Guard.v2','Other.Product');$pattern='ownership mismatch'}
         }
         $beforeRetry=$script:runs
-        Throws ('rollback retry rejects changed '+$change) {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder} $pattern
+        Throws ('rollback retry rejects changed '+$change) {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} $pattern
         Check ('changed '+$change+' preserves rollback marker without launching') ([IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and $script:runs -eq $beforeRetry)
     }
+
+    $f=Fixture 'rollback-checkpoint-write-failure'
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $journal=ReadGuardJson $f.Journal
+    # Real Windows sharing failure: readers are allowed, replacement is blocked.
+    $journalLock=[IO.File]::Open($f.Journal,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        # Older callers wrote completion only after Restore had released the marker.
+        Throws 'rollback completion write failure is reported' {RestoreGuardMaintenance $journal $f.Folder $f.Journal;WriteGuardJson $f.Journal $journal} 'Replace'
+        Check 'rollback checkpoint failure keeps marker and retryable in-memory state' ([IO.File]::Exists($journal.Marker) -and $journal.Phase -eq 'Prepared' -and (ReadGuardJson $f.Journal).Phase -eq 'Prepared')
+    } finally { $journalLock.Dispose() }
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
+    Check 'rollback persists completion before releasing ownership' ((ReadGuardJson $f.Journal).Phase -eq 'Restored' -and -not [IO.File]::Exists($journal.Marker))
+
+    foreach($owner in @('same','foreign')) {
+        $f=Fixture ('rollback-marker-cleanup-'+$owner)
+        PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+        $journal=ReadGuardJson $f.Journal
+        $markerLock=[IO.File]::Open($journal.Marker,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            Throws ('rollback marker cleanup '+$owner+' failure is reported') {RestoreGuardMaintenance $journal $f.Folder $f.Journal} 'Delete'
+            Check ('completed rollback '+$owner+' remains durable despite locked marker') ((ReadGuardJson $f.Journal).Phase -eq 'Restored' -and [IO.File]::Exists($journal.Marker))
+        } finally { $markerLock.Dispose() }
+        $beforeRetry=$script:runs;$beforeRegisters=$f.Folder.Registered.Count
+        if($owner -eq 'foreign') {
+            $foreignId=[guid]::NewGuid().ToString('N')
+            WriteGuardJson $journal.Marker @{Id=$foreignId}
+            Throws 'completed rollback cannot remove another transaction marker' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} 'ownership changed'
+            Check 'foreign marker remains untouched without restarting or registering' ((ReadGuardJson $journal.Marker).Id -eq $foreignId -and $script:runs -eq $beforeRetry -and $f.Folder.Registered.Count -eq $beforeRegisters)
+        } else {
+            RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal
+            Check 'completed rollback retries marker cleanup without duplicate actions' (-not [IO.File]::Exists($journal.Marker) -and $script:runs -eq $beforeRetry -and $f.Folder.Registered.Count -eq $beforeRegisters)
+        }
+    }
+
+    $f=Fixture 'rollback-explicit-checkpoint-path'
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $journal=ReadGuardJson $f.Journal
+    $otherPath=Join-Path $scratch 'unrelated-checkpoint.json'
+    [IO.File]::WriteAllText($otherPath,'preserve unrelated file')
+    $journal.JournalPath=$otherPath
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
+    Check 'rollback checkpoint uses caller transaction path instead of record data' ([IO.File]::ReadAllText($otherPath) -ceq 'preserve unrelated file' -and (ReadGuardJson $f.Journal).Phase -eq 'Restored')
     @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
 } catch {
