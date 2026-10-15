@@ -63,9 +63,7 @@ public sealed partial class StudyPhotoTests
     public async Task Synthetic_camera_worker_runs_in_actual_child_process_without_opening_a_camera()
     {
         if (!OperatingSystem.IsWindows()) return;
-        var root=System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory,"../../../../../"));
-        string configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
-        string exe=System.IO.Path.Combine(root,"src","NPEduTools.Camera","bin",configuration,"net10.0-windows","NPEduTools.Camera.exe");
+        string exe=System.IO.Path.Combine(AppContext.BaseDirectory,"CameraExecutable","NPEduTools.Camera.exe");
         Assert.True(File.Exists(exe));
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(6));
         var frame=await StudyPhotoProcess.RunAsync(exe,"synthetic-only",true,timeout.Token);

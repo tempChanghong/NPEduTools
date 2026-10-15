@@ -32,6 +32,13 @@
     <Copy SourceFiles="@(GuardFixtureBundle)" DestinationFiles="@(GuardFixtureBundle->'$(OutDir)GuardFixture/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(GuardExecutableBundle)" DestinationFiles="@(GuardExecutableBundle->'$(OutDir)GuardExecutable/%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>
+  <Target Name="CopyCameraTestBundle" AfterTargets="Build">
+    <MSBuild Projects="../../src/NPEduTools.Camera/NPEduTools.Camera.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);TargetFramework=net10.0-windows">
+      <Output TaskParameter="TargetOutputs" ItemName="CameraExecutableTarget" />
+    </MSBuild>
+    <ItemGroup><CameraExecutableBundle Include="$([System.IO.Path]::GetDirectoryName('%(CameraExecutableTarget.Identity)'))/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(CameraExecutableBundle)" DestinationFiles="@(CameraExecutableBundle->'$(OutDir)CameraExecutable/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
   <ItemGroup>
     <None Update="Fixtures/npep-school-diagnostic.json" CopyToOutputDirectory="PreserveNewest" />
