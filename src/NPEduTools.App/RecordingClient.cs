@@ -12,6 +12,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     private readonly Dispatcher _dispatcher;
     private readonly string _pipe;
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly SemaphoreSlim _commands = new(1, 1);
     private readonly Task _poll;
     private readonly Guid _client = Guid.NewGuid();
     private string? _pending;
@@ -119,14 +120,17 @@ internal sealed class RecordingClient : IAsyncDisposable
     public async Task SendAsync(string action, RecordingOptions? options = null)
     {
         if (_closing || !StateAvailable || _sending || _pending is not null || State.Busy && action != "stop") return;
+        // Manual taps coalesce as before; automatic operations wait behind the
+        // same gate so their receipts cannot overtake an in-flight recording command.
+        if (!_commands.Wait(0)) return;
         var expected = State.Control;
         var previous = State;
-        _generation++;
-        _sending = true; _pending = action;
-        State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
-        Changed?.Invoke(State);
         try
         {
+            _generation++;
+            _sending = true; _pending = action;
+            State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
+            Changed?.Invoke(State);
             var response = await RequestAsync("recording.command", new(action, options, action == "start" ? null : expected, _client));
             if (response.Recording is null)
                 throw new InvalidDataException("后台未返回录制状态；" + response.Message);
@@ -142,13 +146,16 @@ internal sealed class RecordingClient : IAsyncDisposable
         }
         // Polling continues to renew leases while a command is pending. Queries started
         // during that command must not overwrite its receipt when they complete later.
-        finally { _generation++; _sending = false; }
+        finally { _generation++; _sending = false; _commands.Release(); }
     }
     public async Task SetAutomaticAsync(string action, RecordingOptions? options = null)
     {
-        _generation++;
+        if (_closing) return;
+        await _commands.WaitAsync(_lifetime.Token);
         try
         {
+            if (_closing) return;
+            _generation++; _sending = true;
             var response = await RequestAsync("recording.automatic", automatic: new(action, _client, options));
             if (response.Automatic is null)
                 throw new InvalidDataException("后台未返回自动录课状态；" + response.Message);
@@ -162,7 +169,7 @@ internal sealed class RecordingClient : IAsyncDisposable
             // The Host may have applied the command. Reconcile through polling, never replay it here.
             throw new IOException(message, error);
         }
-        finally { _generation++; }
+        finally { _generation++; _sending = false; _commands.Release(); }
     }
     public async Task<bool> StopAndSaveAsync()
     {
