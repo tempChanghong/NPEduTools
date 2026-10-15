@@ -24,6 +24,10 @@ internal static partial class Program
                     catch (Exception error) { failures.Add(new InvalidOperationException("serialization/manualFirst=" + manualFirst + "/lostFirst=" + lostFirst + ": " + error.Message, error)); }
             try { RunRecordingMutationLeaseCheck(); }
             catch (Exception error) { failures.Add(new InvalidOperationException("serialization/lease: " + error.Message, error)); }
+            foreach (string action in new[] { "pause", "stop" })
+                foreach (string result in new[] { "confirmed", "replaced", "lost", "closing" })
+                    try { RunQueuedManualRecordingCheck(action, result); }
+                    catch (Exception error) { failures.Add(new InvalidOperationException("queued-manual/" + action + "/" + result + ": " + error.Message, error)); }
             if (failures.Count != 0) throw new AggregateException(failures);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }

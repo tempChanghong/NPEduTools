@@ -16,7 +16,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     private readonly Task _poll;
     private readonly Guid _client = Guid.NewGuid();
     private string? _pending;
-    private bool _closing, _sending;
+    private bool _closing, _sending, _manualSending;
     private long _generation;
     public RecordingState State { get; private set; } = new("Idle", "准备录制");
     public bool StateAvailable { get; private set; }
@@ -119,14 +119,28 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     public async Task SendAsync(string action, RecordingOptions? options = null)
     {
-        if (_closing || !StateAvailable || _sending || _pending is not null || State.Busy && action != "stop") return;
-        // Manual taps coalesce as before; automatic operations wait behind the
-        // same gate so their receipts cannot overtake an in-flight recording command.
-        if (!_commands.Wait(0)) return;
+        if (_closing || !StateAvailable || _manualSending || _pending is not null || State.Busy && action != "stop") return;
+        // Coalesce manual double taps, but do not drop the first manual action
+        // merely because an automatic operation is waiting for its receipt.
+        _manualSending = true;
         var expected = State.Control;
         var previous = State;
+        bool entered = false;
         try
         {
+            await _commands.WaitAsync(_lifetime.Token);
+            entered = true;
+            if (_closing || !StateAvailable) return;
+            // The queue may span a lesson handoff. Never retarget the user's
+            // action to that new session; lease renewal alone is not a handoff.
+            if ((expected is null ? State.Control is not null : !expected.Matches(State.Control)) ||
+                action == "start" && State.Active || State.Busy && action != "stop")
+            {
+                State = State with { Error = "录制会话或状态已变化，本次操作未执行，请确认当前会话后重试。" };
+                Changed?.Invoke(State);
+                return;
+            }
+            previous = State;
             _generation++;
             _sending = true; _pending = action;
             State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
@@ -140,13 +154,18 @@ internal sealed class RecordingClient : IAsyncDisposable
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             _pending = null;
+            if (_closing) return;
             if (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
                 MarkUnavailable(previous, "本次操作未确认；" + error.Message);
             else { State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }
         }
         // Polling continues to renew leases while a command is pending. Queries started
         // during that command must not overwrite its receipt when they complete later.
-        finally { _generation++; _sending = false; _commands.Release(); }
+        finally
+        {
+            if (entered) { _generation++; _sending = false; _commands.Release(); }
+            _manualSending = false;
+        }
     }
     public async Task SetAutomaticAsync(string action, RecordingOptions? options = null)
     {
