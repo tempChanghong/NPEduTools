@@ -105,15 +105,19 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     {
         lock (_sync)
         {
-            // Remember execution while the last confirmed policy is still fresh, before withdrawing sync freshness.
-            Tick();
-            if (code is not ("STUDY_OFFLINE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED"))
-            { _running = null; _capture?.StudyUnavailable(code); }
+            if (code is "STUDY_OFFLINE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED")
+            {
+                // Remember only existing execution. A failure-time read must not
+                // start a due window or preempt a manual owner through the scheduler.
+                Tick(false);
+            }
+            else { _running = null; _capture?.StudyUnavailable(code); }
             _confirmedAt = null; _error = code; _state = Empty(code);
-            Tick();
+            Tick(false);
         }
     }
-    public void Tick()
+    public void Tick() => Tick(true);
+    private void Tick(bool refreshCapture)
     {
         lock (_sync)
         {
@@ -134,7 +138,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
             if (!reading.CanStart || reading.Now is not { Year: >= 2000 and <= 9998 } now) return;
             if (!ConfigurationFresh)
             {
-                var execution = _capture?.ObserveStudyExecution()?.Deserialize<StudyCaptureState>(Protocol.Json);
+                var execution = (refreshCapture ? _capture?.ObserveStudyExecution() : _capture?.PeekStudyExecution())?.Deserialize<StudyCaptureState>(Protocol.Json);
                 if (_running is not { } held || elapsed > held.EndAt + TimeSpan.FromSeconds(305) ||
                     (!held.Completed && execution?.Reason is "WINDOW_SKIPPED" or "POLICY_EXPIRED" or "NOT_ELIGIBLE" or "EXAM_PAUSED") || _exam())
                 { _running = null; _capture?.InvalidateStudy(); _state = Empty(_error.Length > 0 ? _error : "CONFIGURATION_STALE"); return; }
@@ -158,7 +162,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
                     Reason = windows.Current is not null ? "WINDOW_ACTIVE" : prepare ? "PREPARING" : "OUTSIDE_WINDOW",
                     Window = windows.Current ?? (prepare ? windows.Next : null), Next = windows.Next };
                 if (_state is { Phase: "Active", Window: { } active } &&
-                    _capture?.ObserveStudyExecution()?.Deserialize<StudyCaptureState>(Protocol.Json) is
+                    (refreshCapture ? _capture?.ObserveStudyExecution() : _capture?.PeekStudyExecution())?.Deserialize<StudyCaptureState>(Protocol.Json) is
                         { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null, Reason: "WINDOW_ACTIVE" or "CAPTURE_STARTING", ClockReady: true } started &&
                     started.Mode == _mode && started.Window == new StudyExecutionWindow(Stamp(active.Start), Stamp(active.End)))
                     _running = _running?.Window == active ? _running : new(active, elapsed + (active.End - now));

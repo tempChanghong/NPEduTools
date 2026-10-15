@@ -140,5 +140,7 @@ public interface INpepStudyCapture
     void SelectStudy(JsonObject configuration, string scope);
     void InvalidateStudy();
     JsonObject? ObserveStudyExecution();
+    // Failure handling may inspect an existing owner, never drive a new scheduling decision.
+    JsonObject? PeekStudyExecution() => null;
     void ConfirmStudyExecution(JsonObject configuration, JsonObject response, TimeSpan roundTrip = default);
 }

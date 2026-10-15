@@ -119,15 +119,19 @@ public sealed partial class NoiseScheduleService
             Tick();
         }
     }
-    public JsonObject? ObserveStudyExecution()
+    public JsonObject? ObserveStudyExecution() => ReadStudyExecution(true);
+    public JsonObject? PeekStudyExecution() => ReadStudyExecution(false);
+    private JsonObject? ReadStudyExecution(bool refresh)
     {
         lock (_sync)
         {
             if (!_studySelected) return null;
-            Tick(); var schedule = Observe(); var state = _noise.Snapshot();
-            bool fresh = _owner == "Schedule" && state.State == "Active" && _reason == "WINDOW_ACTIVE" && LeaseRemaining(Elapsed) > 0
+            if (refresh) Tick();
+            var schedule = Observe(); var state = _noise.Snapshot();
+            string owner = _owner == "Schedule" && state.SessionId != _owned ? "None" : _owner;
+            bool fresh = owner == "Schedule" && state.State == "Active" && _reason == "WINDOW_ACTIVE" && schedule["clockReady"]!.GetValue<bool>() && LeaseRemaining(Elapsed) > 0
                 && (state.Quality == "DigitalSilence" || state.CurrentDbfs is not null && state.Quality is "Good" or "Clipping");
-            var observation = new JsonObject { ["owner"] = _owner, ["state"] = state.State, ["sessionId"] = _owner == "Schedule" ? state.SessionId?.ToString("D") : null,
+            var observation = new JsonObject { ["owner"] = owner, ["state"] = state.State, ["sessionId"] = owner == "Schedule" ? state.SessionId?.ToString("D") : null,
                 ["reason"] = _reason, ["clockReady"] = schedule["clockReady"]!.DeepClone(), ["schoolNow"] = schedule["schoolNow"]?.DeepClone(),
                 ["window"] = schedule["window"]?.DeepClone(), ["signalFresh"] = fresh };
             if (_mode == "Exam") observation["mode"] = _mode;
