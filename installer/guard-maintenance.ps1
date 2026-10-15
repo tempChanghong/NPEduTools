@@ -62,7 +62,10 @@ function GuardTaskInfo([string]$Name,[string]$Xml,[string]$Root) {
     if ($role -in @('App','Host') -and $upstream) { $expected+=' --classisland-pipe "'+$upstream+'"' }
     if ($role -eq 'App') { $expected+=' --guard-recovery' }
     if ($role -eq 'Login') { $expected+=' --at-login' }
-    if ($arguments -cne $expected.Trim() -or $match.Groups[1].Value -cne (GuardHash ($sid+'|'+$endpoint)).Substring(0,24)) { throw 'Guardian task arguments or identity mismatch.' }
+    # Task checks may precede journal creation: identify the task without logging raw
+    # command-line values or account identifiers in the only available result file.
+    if ($arguments -cne $expected.Trim()) { throw ('Guardian task arguments or identity mismatch. Task: '+$Name+'; reason: ARGUMENTS_MISMATCH.') }
+    if ($match.Groups[1].Value -cne (GuardHash ($sid+'|'+$endpoint)).Substring(0,24)) { throw ('Guardian task arguments or identity mismatch. Task: '+$Name+'; reason: IDENTITY_MISMATCH.') }
     return [pscustomobject]@{Name=$Name;Xml=$Xml;Sid=$sid;Endpoint=$endpoint;Role=$role;Upstream=$upstream;Key=$match.Groups[1].Value}
 }
 function GuardPlans($Tasks,[string]$Root) {

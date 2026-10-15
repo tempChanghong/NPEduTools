@@ -475,6 +475,23 @@ try {
     [IO.File]::SetAttributes($extra,[IO.FileAttributes]::Hidden)
     Throws 'new hidden file refuses rollback of a changed file set' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} 'file set changed'
     Check 'added hidden file leaves recovery ownership intact without task mutations' ([IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and $f.Folder.Registered.Count -eq 0 -and $f.Folder.Launched.Count -eq 0)
+
+    foreach($diagnostic in @('arguments','identity')) {
+        $f=Fixture ('task-diagnostic-'+$diagnostic)
+        $name='NPEduTools.Guard.'+$f.Key+'.Guard'
+        $xml=$f.Folder.Rows[$name].Xml
+        if($diagnostic -eq 'arguments') {
+            $xml=$xml.Replace('</Arguments>',' --private-argument-canary</Arguments>')
+            $reason='ARGUMENTS_MISMATCH'
+        } else {
+            $changedKey=if($f.Key[0] -eq '0'){'1'+$f.Key.Substring(1)}else{'0'+$f.Key.Substring(1)}
+            $name='NPEduTools.Guard.'+$changedKey+'.Guard';$reason='IDENTITY_MISMATCH'
+        }
+        $message=$null
+        try { GuardTaskInfo $name $xml $f.Root | Out-Null } catch { $message=$_.Exception.Message }
+        Check ('task '+$diagnostic+' diagnostic identifies the failing task and reason') ($null -ne $message -and $message.Contains($name) -and $message.Contains($reason))
+        Check ('task '+$diagnostic+' diagnostic does not expose raw arguments or account identity') (-not $message.Contains('private-argument-canary') -and -not $message.Contains($f.Pipe) -and -not $message.Contains($sid))
+    }
     @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
 } catch {
