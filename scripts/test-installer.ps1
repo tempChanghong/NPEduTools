@@ -58,6 +58,17 @@ try {
     Execute $next 'upgrade'
     Check 'upgrade files and version marker' (((Get-Content (Join-Path $install 'version.txt')).Trim() -eq '0.2026.1003.1') -and (Get-ItemProperty -LiteralPath $registry).InstallerVersion -eq '0.2026.1003.1')
     Check 'successful upgrade releases maintenance marker' (-not (Test-Path -LiteralPath (Join-Path $install 'app/guard-maintenance.json')))
+    $marker=Join-Path $install 'app/guard-maintenance.json'
+    [IO.File]::WriteAllText($marker,'{"Id":"synthetic-other-transaction"}')
+    try {
+        Execute $next 'maintenance-failure-rejected' 7
+        $failureLog=[IO.File]::ReadAllText((Join-Path $scratch 'maintenance-failure-rejected.log'))
+        Check 'maintenance error includes helper failure details in installer log' ($failureLog.Contains('Guardian maintenance failed: Prepare;') -and $failureLog.Contains('guard-maintenance.json'))
+        $diagnostic=[regex]::Match($failureLog,'; result: ([^\r\n]+\\Prepare-result\.txt)')
+        Check 'failed Prepare keeps its own diagnostic file' ($diagnostic.Success -and (Test-Path -LiteralPath $diagnostic.Groups[1].Value))
+        Check 'maintenance failure preserves payload and existing marker' ((Get-Content (Join-Path $install 'version.txt')).Trim() -eq '0.2026.1003.1' -and [IO.File]::ReadAllText($marker).Contains('synthetic-other-transaction'))
+    } finally { [IO.File]::Delete($marker) }
+    Execute $next 'retry-after-maintenance-failure'
     Execute $first 'downgrade-rejected' 7
     Check 'downgrade left new payload intact' ((Get-Content (Join-Path $install 'version.txt')).Trim() -eq '0.2026.1003.1')
     Set-ItemProperty -LiteralPath $registry -Name InstallerVersion -Value 'damaged'

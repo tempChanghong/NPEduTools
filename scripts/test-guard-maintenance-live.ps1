@@ -10,7 +10,9 @@ $pipe='NPEduTools.Test.Guard.Maintenance.'+[guid]::NewGuid().ToString('N')
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$sid=$identity.User.Value;$identity.Dispose()
 $key=(GuardHash ($sid+'|'+$pipe)).Substring(0,24)
 $data=GuardData $sid $pipe
-$names=@();$process=$null;$result=@{status='RUNNING';checks=@();applicationInstalled=$false;capturesStarted=$false;realDevices='NOT_RUN'}
+$names=@();$process=$null;$probeFolder=$null;$defaultHostName=$null
+$probeFolderName='NPEduTools.GuardMaintenanceTest.'+[guid]::NewGuid().ToString('N')
+$result=@{status='RUNNING';checks=@();applicationInstalled=$false;capturesStarted=$false;realDevices='NOT_RUN'}
 [IO.Directory]::CreateDirectory($guard) | Out-Null
 [IO.Directory]::CreateDirectory((Join-Path $bundle 'Host')) | Out-Null
 [IO.Directory]::CreateDirectory($data) | Out-Null
@@ -33,6 +35,17 @@ try {
         $xml='<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><RegistrationInfo><Source>NPEduTools.Guard.v2</Source></RegistrationInfo><Triggers/><Principals><Principal id="User"><UserId>'+$sid+'</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings><Actions Context="User"><Exec><Command>'+[Security.SecurityElement]::Escape($exe)+'</Command><Arguments>'+$arguments+'</Arguments><WorkingDirectory>'+[Security.SecurityElement]::Escape((Split-Path $exe))+'</WorkingDirectory></Exec></Actions></Task>'
         $null=$folder.RegisterTask($name,$xml,6,$sid,$null,3,$null);$names+=$name
     }
+    # A disabled Host task in a private child folder tests actual Windows XML
+    # normalization without touching the real default tasks or LocalAppData state.
+    $probeFolder=$folder.CreateFolder($probeFolderName)
+    $defaultHostName='NPEduTools.Guard.'+(GuardHash ($sid+'|default')).Substring(0,24)+'.Host'
+    $hostXml=$xml.Replace('<Arguments>'+$arguments+'</Arguments>','<Arguments/>').Replace('</Settings>','<Enabled>false</Enabled></Settings>')
+    $registered=$probeFolder.RegisterTask($defaultHostName,$hostXml,6,$sid,$null,3,$null)
+    $roundTrip=[string]$registered.Xml
+    [IO.File]::WriteAllText((Join-Path $scratch 'scheduler-default-host.xml'),$roundTrip)
+    $document=[xml]$roundTrip
+    Check 'Windows omits empty default Host arguments after persistence' ($null -eq $document.Task.Actions.Exec.Arguments)
+    Check 'maintenance accepts the actual scheduler-normalized default Host' ((GuardTaskInfo $defaultHostName $roundTrip $root).Endpoint -eq 'default')
     $process=Start-Process -FilePath (Join-Path $guard 'svchost.exe') -ArgumentList @('--pipe',$pipe) -WindowStyle Hidden -PassThru
     $deadline=[Diagnostics.Stopwatch]::StartNew()
     while ($null -eq (ReadGuardJson (Join-Path $data 'status.json'))) {
@@ -61,6 +74,10 @@ try {
     foreach($p in @(OwnedGuardProcesses $root)) {
         $owned=Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue
         if($owned -and -not $owned.WaitForExit(5000)) { throw 'Private guardian cleanup failed; no unverified process terminated.' }
+    }
+    if($probeFolder) {
+        if($defaultHostName){try{$probeFolder.DeleteTask($defaultHostName,0)}catch{}}
+        $folder.DeleteFolder($probeFolderName,0)
     }
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_LIVE_RESULT: '+(Join-Path $scratch 'result.json'))

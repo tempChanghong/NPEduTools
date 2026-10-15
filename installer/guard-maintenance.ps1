@@ -46,7 +46,10 @@ function GuardTaskInfo([string]$Name,[string]$Xml,[string]$Root) {
     $role=$match.Groups[2].Value
     $exe=switch($role) { 'App' {Join-Path $Root 'app\NPEduTools.App.exe'} 'Host' {Join-Path $Root 'app\Host\NPEduTools.Host.exe'} default {Join-Path $Root 'app\Guard\svchost.exe'} }
     if ($actions[0].SelectSingleNode('t:Command',$ns).InnerText -ine $exe -or $actions[0].SelectSingleNode('t:WorkingDirectory',$ns).InnerText -ine (Split-Path $exe)) { throw 'Guardian task path mismatch.' }
-    $arguments=$actions[0].SelectSingleNode('t:Arguments',$ns).InnerText
+    # Task Scheduler drops an empty Arguments element when persisting the default Host.
+    # Treat absence as empty, as native GuardTasks.OwnedDefinition does; required args
+    # for every other role still have to match exactly below.
+    $arguments=[string]$actions[0].SelectSingleNode('t:Arguments',$ns).InnerText
     $endpoint='default';$prefix='';$upstream=$null
     if ($arguments -match '^--pipe "([^"\r\n\\/:]{1,200})"(?: |$)') {
         $endpoint=$Matches[1];if ($endpoint.StartsWith('--') -or $endpoint -eq 'default') { throw 'Invalid or ambiguous guardian pipe.' }
@@ -241,6 +244,13 @@ function GuardFileFingerprint([string]$Path) {
     if (-not [IO.File]::Exists($Path)) { return $null }
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
 }
+function WriteGuardResult([string]$Directory,[string]$Operation,[string]$Message) {
+    # Keep Prepare's failure even if the installer's later Restore succeeds.
+    if ($Operation -in @('Prepare','Restore','Complete')) {
+        [IO.File]::WriteAllText((Join-Path $Directory ($Operation+'-result.txt')),$Message,[Text.Encoding]::UTF8)
+    }
+    [IO.File]::WriteAllText((Join-Path $Directory 'result.txt'),$Message,[Text.Encoding]::UTF8)
+}
 # Tests dot-source the same ownership and transaction code with private scheduler fixtures.
 if ($MyInvocation.InvocationName -eq '.') { return }
 try {
@@ -276,11 +286,11 @@ try {
             [IO.File]::Delete($journal.Marker)
         }
     }
-    [IO.File]::WriteAllText((Join-Path $directory 'result.txt'),'OK',[Text.Encoding]::UTF8)
+    WriteGuardResult $directory $Action 'OK'
     exit 0
 } catch {
     if ($TransactionDirectory -and [IO.Directory]::Exists($TransactionDirectory)) {
-        [IO.File]::WriteAllText((Join-Path $TransactionDirectory 'result.txt'),$_.Exception.Message,[Text.Encoding]::UTF8)
+        WriteGuardResult $TransactionDirectory $Action $_.Exception.Message
     }
     Write-Error $_ -ErrorAction Continue
     exit 1

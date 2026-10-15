@@ -20,17 +20,18 @@ function Throws([string]$Name,[scriptblock]$Work,[string]$Pattern) {
 }
 function TaskXml([string]$Role,[string]$Root,[string]$Pipe,[string]$Sid) {
     $exe=switch($Role) { 'App' {Join-Path $Root 'app\NPEduTools.App.exe'} 'Host' {Join-Path $Root 'app\Host\NPEduTools.Host.exe'} default {Join-Path $Root 'app\Guard\svchost.exe'} }
-    $args='--pipe "'+$Pipe+'"'
+    $args=if ($Pipe -eq 'default') { if ($Role -in @('Guard','Login')) { '--default-pipe' } else { '' } } else { '--pipe "'+$Pipe+'"' }
     if ($Role -eq 'App') { $args+=' --guard-recovery' }
     if ($Role -eq 'Login') { $args+=' --at-login' }
+    $args=$args.Trim()
     $command=[Security.SecurityElement]::Escape($exe);$wd=[Security.SecurityElement]::Escape((Split-Path $exe))
     return '<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><RegistrationInfo><Source>NPEduTools.Guard.v2</Source></RegistrationInfo><Principals><Principal id="User"><UserId>'+ $Sid+'</UserId><LogonType>InteractiveToken</LogonType></Principal></Principals><Actions Context="User"><Exec><Command>'+$command+'</Command><Arguments>'+$args+'</Arguments><WorkingDirectory>'+$wd+'</WorkingDirectory></Exec></Actions></Task>'
 }
-function Fixture([string]$Name) {
+function Fixture([string]$Name,[switch]$Default) {
     $root=Join-Path $scratch ($Name+'\installed');$data=Join-Path $scratch ($Name+'\data');$transaction=Join-Path $scratch ($Name+'\transaction')
     foreach($directory in @($data,$transaction,(Join-Path $root 'app\Host'),(Join-Path $root 'app\Guard'))) { [IO.Directory]::CreateDirectory($directory) | Out-Null }
     foreach($file in @('app\NPEduTools.App.exe','app\Host\NPEduTools.Host.exe','app\Guard\svchost.exe')) { [IO.File]::WriteAllText((Join-Path $root $file),'NOT EXECUTABLE fixture') }
-    $pipe='NPEduTools.Test.Maintenance.'+[guid]::NewGuid().ToString('N');$key=(GuardHash ($sid+'|'+$pipe)).Substring(0,24)
+    $pipe=if ($Default) { 'default' } else { 'NPEduTools.Test.Maintenance.'+[guid]::NewGuid().ToString('N') };$key=(GuardHash ($sid+'|'+$pipe)).Substring(0,24)
     $registration=@{Generation=[guid]::NewGuid().ToString();App=@{Id=$PID;StartedUtcTicks=1};Upstream=$null;BundleDirectory=(Join-Path $root 'app')}
     WriteGuardJson (Join-Path $data 'registration.json') $registration
     $folder=[pscustomobject]@{Rows=@{};Deleted=@();Registered=@();FailDelete=$null}
@@ -59,6 +60,28 @@ function OwnedGuardProcesses([string]$Root) {
 function Invoke-CimMethod($InputObject,[string]$MethodName) { return [pscustomobject]@{ReturnValue=0;Sid=$sid} }
 try {
     Check 'default instance uses current account LocalAppData KnownFolder' ($null -ne $defaultData)
+    WriteGuardResult $scratch 'Prepare' 'Synthetic prepare failure'
+    WriteGuardResult $scratch 'Restore' 'OK'
+    Check 'successful rollback preserves the original Prepare diagnostic' ([IO.File]::ReadAllText((Join-Path $scratch 'Prepare-result.txt')) -ceq 'Synthetic prepare failure')
+    Check 'rollback and legacy last-result files still report their own success' ([IO.File]::ReadAllText((Join-Path $scratch 'Restore-result.txt')) -ceq 'OK' -and [IO.File]::ReadAllText((Join-Path $scratch 'result.txt')) -ceq 'OK')
+    $f=Fixture 'default-host-empty-arguments' -Default
+    $name='NPEduTools.Guard.'+$f.Key+'.Host'
+    $xml=$f.Folder.Rows[$name].Xml
+    Check 'explicit empty default Host arguments accepted' ((GuardTaskInfo $name $xml $f.Root).Endpoint -eq 'default')
+    # Windows Task Scheduler omits an empty Arguments element on XML round-trip.
+    $f.Folder.Rows[$name].Xml=$xml.Replace('<Arguments></Arguments>','')
+    $f.Running=$false
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    Check 'omitted default Host arguments do not block maintenance' ($f.Folder.Rows.Count -eq 0)
+    $journal=ReadGuardJson $f.Journal
+    RestoreGuardMaintenance $journal $f.Folder
+    Check 'default Host rollback preserves scheduler-normalized XML' ($f.Folder.Rows[$name].Xml -ceq $xml.Replace('<Arguments></Arguments>',''))
+    foreach($role in @('Guard','Login','App')) {
+        $name='NPEduTools.Guard.'+$f.Key+'.'+$role
+        $xml=$f.Folder.Rows[$name].Xml -replace '<Arguments>[^<]*</Arguments>',''
+        Throws ('omitted required '+$role+' arguments still refused') { GuardTaskInfo $name $xml $f.Root } 'mismatch'
+    }
+
     $f=Fixture 'normal'
     $original=GuardFileSnapshot (Join-Path $f.Data 'registration.json')
     PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
