@@ -64,6 +64,43 @@ function OwnedGuardProcesses([string]$Root) {
     return @()
 }
 function Invoke-CimMethod($InputObject,[string]$MethodName) { return [pscustomobject]@{ReturnValue=0;Sid=$sid} }
+function MaintenanceWithoutScheduler([string]$Action,$Fixture) {
+    # Exercise the real helper entry point, including its journal/ACL/results logic.
+    # Only COM creation is faulted in a private child process; no Windows service is stopped.
+    $runner=Join-Path $scratch 'scheduler-unavailable.ps1'
+    if (-not [IO.File]::Exists($runner)) {
+        [IO.File]::WriteAllText($runner,@'
+param([string]$Helper,[string]$Action,[string]$Root,[string]$Transaction,[string]$Calls)
+function New-Object {
+    param([string]$ComObject)
+    [IO.File]::WriteAllText($Calls,$ComObject)
+    throw 'Injected Task Scheduler unavailable'
+}
+& $Helper -Action $Action -InstallRoot $Root -TransactionDirectory $Transaction
+exit $LASTEXITCODE
+'@)
+    }
+    $prefix=Join-Path $Fixture.Transaction ($Action+'-outage-'+[guid]::NewGuid().ToString('N'))
+    $calls=$prefix+'-calls.txt'
+    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$runner+'" -Helper "'+(Join-Path $projectRoot 'installer/guard-maintenance.ps1')+'" -Action '+$Action+' -Root "'+$Fixture.Root+'" -Transaction "'+$Fixture.Transaction+'" -Calls "'+$calls+'"'
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe";$start.Arguments=$arguments
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+    $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    # Retain the process handle from creation, even when local cleanup exits quickly.
+    $child=[Diagnostics.Process]::new();$child.StartInfo=$start
+    $null=$child.Start()
+    $stdout=$child.StandardOutput.ReadToEndAsync();$stderr=$child.StandardError.ReadToEndAsync()
+    try {
+        if (-not $child.WaitForExit(15000)) {
+            $child.Kill();$child.WaitForExit()
+            throw 'Private maintenance helper timed out.'
+        }
+        [IO.File]::WriteAllText(($prefix+'-stdout.txt'),$stdout.Result)
+        [IO.File]::WriteAllText(($prefix+'-stderr.txt'),$stderr.Result)
+        return [pscustomobject]@{ExitCode=$child.ExitCode;SchedulerCalled=[IO.File]::Exists($calls)}
+    } finally { $child.Dispose() }
+}
 try {
     Check 'default instance uses current account LocalAppData KnownFolder' ($null -ne $defaultData)
     WriteGuardResult $scratch 'Prepare' 'Synthetic prepare failure'
@@ -275,6 +312,55 @@ try {
     $journal=ReadGuardJson $f.Journal
     RestoreGuardMaintenance $journal $f.Folder $f.Journal
     Check 'a bootstrap process alone does not cause a guardian restart on rollback' ($f.Folder.Launched.Count -eq 0)
+
+    $f=Fixture 'scheduler-outage-complete'
+    $registration=GuardFileSnapshot (Join-Path $f.Data 'registration.json')
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $journal=ReadGuardJson $f.Journal
+    $result=MaintenanceWithoutScheduler 'Complete' $f
+    Check 'completion succeeds without accessing an unavailable scheduler' ($result.ExitCode -eq 0 -and -not $result.SchedulerCalled)
+    Check 'completion persists its phase and releases only its marker' ((ReadGuardJson $f.Journal).Phase -eq 'Completed' -and -not [IO.File]::Exists($journal.Marker))
+    Check 'completion preserves registration and generation-scoped maintenance stop' ((GuardFileSnapshot (Join-Path $f.Data 'registration.json')) -ceq $registration -and (ReadGuardJson (Join-Path $f.Data 'stop.json')).InstallerTransaction -eq $journal.Id)
+    Check 'completion reports its own successful result' ([IO.File]::ReadAllText((Join-Path $f.Transaction 'Complete-result.txt')) -ceq 'OK')
+    $result=MaintenanceWithoutScheduler 'Complete' $f
+    Check 'completed transaction retry needs no scheduler' ($result.ExitCode -eq 0 -and -not $result.SchedulerCalled -and -not [IO.File]::Exists($journal.Marker))
+
+    # A completed checkpoint can outlive a failed marker deletion. Cleanup must
+    # remain retryable without reintroducing scheduler availability as a gate.
+    WriteGuardJson $journal.Marker @{Id=$journal.Id}
+    $markerLock=[IO.File]::Open($journal.Marker,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $result=MaintenanceWithoutScheduler 'Complete' $f
+        Check 'locked completion marker reports a local failure without scheduler access' ($result.ExitCode -eq 1 -and -not $result.SchedulerCalled -and [IO.File]::Exists($journal.Marker) -and (ReadGuardJson $f.Journal).Phase -eq 'Completed')
+    } finally { $markerLock.Dispose() }
+    $result=MaintenanceWithoutScheduler 'Complete' $f
+    Check 'completion cleanup retries after the local file lock is released' ($result.ExitCode -eq 0 -and -not $result.SchedulerCalled -and -not [IO.File]::Exists($journal.Marker))
+    $foreignId=[guid]::NewGuid().ToString('N');WriteGuardJson $journal.Marker @{Id=$foreignId}
+    $result=MaintenanceWithoutScheduler 'Complete' $f
+    Check 'scheduler-free completion still refuses a foreign transaction marker' ($result.ExitCode -eq 1 -and -not $result.SchedulerCalled -and (ReadGuardJson $journal.Marker).Id -eq $foreignId)
+
+    $f=Fixture 'scheduler-outage-prepare'
+    $result=MaintenanceWithoutScheduler 'Prepare' $f
+    Check 'preparation still requires a working scheduler' ($result.ExitCode -eq 1 -and $result.SchedulerCalled)
+    Check 'failed scheduler access leaves preparation state untouched' (-not [IO.File]::Exists($f.Journal) -and -not [IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
+    Check 'scheduler preparation failure retains an actionable diagnostic' ([IO.File]::ReadAllText((Join-Path $f.Transaction 'Prepare-result.txt')).Contains('Injected Task Scheduler unavailable'))
+
+    $f=Fixture 'scheduler-outage-restore'
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $journal=ReadGuardJson $f.Journal
+    $stop=GuardFileSnapshot (Join-Path $f.Data 'stop.json')
+    $result=MaintenanceWithoutScheduler 'Restore' $f
+    Check 'pending task restoration still requires a working scheduler' ($result.ExitCode -eq 1 -and $result.SchedulerCalled)
+    Check 'unavailable scheduler retains pending rollback ownership and stop' ([IO.File]::Exists($journal.Marker) -and (ReadGuardJson $f.Journal).Phase -eq 'Prepared' -and (GuardFileSnapshot (Join-Path $f.Data 'stop.json')) -ceq $stop)
+    RestoreGuardMaintenance $journal $f.Folder $f.Journal
+    WriteGuardJson $journal.Marker @{Id=$journal.Id}
+    $beforeLaunch=$f.Folder.Launched.Count
+    $result=MaintenanceWithoutScheduler 'Restore' $f
+    Check 'already-restored transaction cleans up its marker without scheduler access' ($result.ExitCode -eq 0 -and -not $result.SchedulerCalled -and -not [IO.File]::Exists($journal.Marker) -and (ReadGuardJson $f.Journal).Phase -eq 'Restored')
+    Check 'restored cleanup does not change task launches or the prior stop' ($f.Folder.Launched.Count -eq $beforeLaunch -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
+    $foreignId=[guid]::NewGuid().ToString('N');WriteGuardJson $journal.Marker @{Id=$foreignId}
+    $result=MaintenanceWithoutScheduler 'Restore' $f
+    Check 'scheduler-free restored cleanup still refuses a foreign marker' ($result.ExitCode -eq 1 -and -not $result.SchedulerCalled -and (ReadGuardJson $journal.Marker).Id -eq $foreignId)
     @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
 } catch {

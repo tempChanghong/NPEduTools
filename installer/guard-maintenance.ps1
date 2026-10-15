@@ -302,14 +302,20 @@ try {
         [IO.Directory]::SetAccessControl($directory,$acl)
     } finally { $identity.Dispose() }
     $journalPath=Join-Path $directory 'journal.json'
-    $service=New-Object -ComObject Schedule.Service;$service.Connect();$folder=$service.GetFolder('\')
     if ($Action -eq 'Prepare') {
         if ([IO.File]::Exists($journalPath)) { throw 'Maintenance transaction already exists.' }
+        $service=New-Object -ComObject Schedule.Service;$service.Connect();$folder=$service.GetFolder('\')
         PrepareGuardMaintenance $root $journalPath $folder
     } else {
         $journal=ReadGuardJson $journalPath
         if ($null -eq $journal -or $journal.Root -ine $root -or $journal.Marker -ine (Join-Path $root 'app\guard-maintenance.json')) { throw 'Maintenance transaction mismatch.' }
         if ($Action -eq 'Restore') {
+            # A durable Restored checkpoint needs only local marker cleanup.
+            # Do not block it (or Complete below) on an unrelated COM service.
+            $folder=$null
+            if ($journal.Phase -ne 'Restored') {
+                $service=New-Object -ComObject Schedule.Service;$service.Connect();$folder=$service.GetFolder('\')
+            }
             RestoreGuardMaintenance $journal $folder $journalPath
         } else {
             if ($journal.Phase -ne 'Completed' -or [IO.File]::Exists($journal.Marker)) { CheckGuardMarker $journal }
