@@ -29,6 +29,8 @@ public sealed class ManualStudyService : IAsyncDisposable
     private bool _disposed;
     private StudyReportData? _report;
     private readonly Dictionary<Guid,(ManualStudyCommand? Command,HostResponse Response)> _requests=[];
+    private static readonly StudyNoise DefaultNoise = new(true, null, null, 600, 3);
+    private static StudyNoise ManualNoise(StudySettings? settings) => (settings?.Noise ?? DefaultNoise) with { Enabled = true };
     public StudyDisplayService Display {get;}
     public ManualStudyService(NoiseService noise,Func<(string? Scope,bool Selected,StudyHostState State)> school,
         Func<bool> blocked,string directory,TimeProvider? time=null,bool background=true,Func<bool>? projection=null, Func<int>? displayLeadSeconds=null,
@@ -106,7 +108,14 @@ public sealed class ManualStudyService : IAsyncDisposable
                 if(noise.SessionId!=_session){_phase="Interrupted";_reason="SESSION_CHANGED";_revision++;return;}
                 if(_blocked()){_reason="ScheduledTakeover";_noise.StopManualStudy(_session!.Value,_reason);_phase="Stopping";_revision++;}
                 else if(_time.GetElapsedTime(_started)>=_end!.Value-_start!.Value){_reason=_hasEnd?"PlannedEnd":"ThreeHourLimit";_noise.StopManualStudy(_session!.Value,_reason);_phase="Stopping";_revision++;}
-                else if(noise.State=="Active")_phase="Active";
+                else if(noise.State=="Active")
+                {
+                    _phase="Active";
+                    // Formal statistics must not depend on an App/display poll or an
+                    // enabled camera. Configure only this already running manual owner.
+                    var school = _school();
+                    _noise.StudyThresholds(_session, _noise.ResolveCalibration(school.Scope, school.State.Version, ManualNoise(school.State.Settings)));
+                }
             }
         }
     }
@@ -143,8 +152,8 @@ public sealed class ManualStudyService : IAsyncDisposable
     {
         lock(_sync)
         {
-            var school=_school();var settings=school.State.Settings??new StudySettings(new("Asia/Shanghai","2000-01-01",null,[],[]),new("StatusTrend",600),new(false,"BoundClass",[],60),new(true,null,null,600,3),new(false,3,30,30,true,false));
-            settings=settings with {Noise=settings.Noise with {Enabled=true},Presentation=settings.Presentation with {TemporaryHideSeconds=_hide??600}};
+            var school=_school();var settings=school.State.Settings??new StudySettings(new("Asia/Shanghai","2000-01-01",null,[],[]),new("StatusTrend",600),new(false,"BoundClass",[],60),DefaultNoise,new(false,3,30,30,true,false));
+            settings=settings with {Noise=ManualNoise(settings),Presentation=settings.Presentation with {TemporaryHideSeconds=_hide??600}};
             var noise=_noise.Snapshot();
             var now=_phase is "Starting" or "Active" or "Stopping"?_start!.Value.Add(_time.GetElapsedTime(_started)).ToLocalTime():_phase=="Ended"?_end!.Value.Add(_time.GetElapsedTime(_ended)).ToLocalTime():_time.GetUtcNow().ToLocalTime();
             var phase=_phase is "Starting" or "Active" or "Stopping"?"Active":_phase=="Ended"?_time.GetElapsedTime(_ended).TotalSeconds<5?"Ended":"Outside":_phase;

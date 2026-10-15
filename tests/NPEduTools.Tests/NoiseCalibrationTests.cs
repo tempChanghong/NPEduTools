@@ -11,6 +11,27 @@ public sealed partial class NoiseCalibrationTests
     private const string Scope = "synthetic-school/class/screen";
     private static readonly StudyNoise Policy = new(true, -15, -25, 600, 5);
     private static readonly StudyHostState Study = new(new string('a', 64), "APPLIED", "", "", "Outside", "", true, null, null, null, null);
+    [Fact]
+    public async Task Background_manual_statistics_resolve_the_same_quick_calibration_as_the_display()
+    {
+        await using var f = new Fixture(); Assert.Equal("Succeeded", f.Command("begin").Outcome);
+        await f.SampleAsync("Acceptable", -55); await f.SampleAsync("Discipline", -20);
+        Assert.Equal("Succeeded", f.Command("confirm", medium: -40, high: -30).Outcome);
+        var settings = new StudySettings(new("Asia/Shanghai", "2026-10-01", null, [], []), new("StatusTrend", 600),
+            new(false, "OwnClass", [], 60), Policy, new(false, 5, 30, 30, true, false));
+        await using var manual = new ManualStudyService(f.Noise, () => (Scope, true, Study with { Settings = settings }), () => false,
+            Path.Combine(f.DirectoryPath, "manual"), f.Time, false);
+        var status = manual.Status();
+        Assert.Equal("Succeeded", manual.Handle(new(1, Guid.NewGuid(), "manual.study.command",
+            ManualStudy: new("start", status.InstanceId, status.Revision, DeviceId: "mic"))).Outcome);
+        await Until(() => f.Noise.Snapshot().State == "Active"); manual.Tick();
+        // -20 dBFS crosses the confirmed -30 line, but not the school's -15 fallback.
+        for (int i = 0; i < 50; i++) { f.Time.Milliseconds += 100; f.Capture!.Emit(-20); manual.Tick(); }
+        var report = f.Noise.StudyReportSnapshot()!;
+        Assert.Equal(5, report.Raw.HighSeconds, 6); Assert.Equal(5, report.Raw.MediumSeconds, 6);
+        Assert.Equal("Active", f.Noise.Snapshot().State);
+    }
+
     private static NoiseCalibrationSample Sample(string label, double level) =>
         new(Guid.NewGuid(), "NormalStudy", label, 15, 1, level - 1, level, level + 1, 0, "Good");
     [Fact]
