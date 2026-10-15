@@ -189,7 +189,9 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             bool active = status.State is "Starting" or "Active" or "Stopping";
             if (_owned == status.SessionId && status.State == "Faulted" && _ownedWindow is { } failed)
             {
-                lock (_journalLock) { _journal.Blocks.Add(new(failed, "Failed", MicrophoneKey(status.SelectedDeviceId), _mode)); Trim(); Save(); }
+                // Selection may already have changed after cleanup. The failure belongs
+                // to the device that actually captured, not its replacement preference.
+                lock (_journalLock) { _journal.Blocks.Add(new(failed, "Failed", MicrophoneKey(status.DeviceId), _mode)); Trim(); Save(); }
                 _owned = null;
             }
             // A former mode's scheduled capture may still be flushing after ownership
