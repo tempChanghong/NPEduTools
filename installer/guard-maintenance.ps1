@@ -173,7 +173,7 @@ function RestoreGuardMaintenance($Journal,$Folder,[string]$JournalPath) {
     foreach($file in $Journal.Files) {
         if ((GuardFileFingerprint $file.Path) -cne $file.Hash) { throw 'Application files changed; automatic rollback cannot restart this bundle.' }
     }
-    $currentFiles=@(Get-ChildItem -LiteralPath (Join-Path $Journal.Root 'app') -File -Recurse | Where-Object FullName -ne $Journal.Marker | ForEach-Object FullName)
+    $currentFiles=@(Get-ChildItem -LiteralPath (Join-Path $Journal.Root 'app') -File -Recurse -Force | Where-Object FullName -ne $Journal.Marker | ForEach-Object FullName)
     $beforeNames=(@($Journal.Files | ForEach-Object Path | Sort-Object) -join "`n")
     if ($beforeNames -cne (@($currentFiles | Sort-Object) -join "`n")) { throw 'Application file set changed; automatic rollback refused.' }
     foreach($instance in $Journal.Instances) {
@@ -223,7 +223,7 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
     }
     $journal=[pscustomobject]@{Id=[guid]::NewGuid().ToString('N');Root=$Root;Marker=(Join-Path $Root 'app\guard-maintenance.json');JournalPath=$JournalPath;Phase='Prepared';Tasks=$members;Instances=@();Files=@()}
     if ([IO.Directory]::Exists((Join-Path $Root 'app'))) {
-        foreach($file in @(Get-ChildItem -LiteralPath (Join-Path $Root 'app') -File -Recurse)) {
+        foreach($file in @(Get-ChildItem -LiteralPath (Join-Path $Root 'app') -File -Recurse -Force)) {
             $journal.Files+= [pscustomobject]@{Path=$file.FullName;Hash=(GuardFileFingerprint $file.FullName)}
         }
     }

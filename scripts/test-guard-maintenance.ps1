@@ -439,6 +439,42 @@ try {
     $markerBytes=GuardFileSnapshot $marker
     Throws 'initial marker collision is reported' {PrepareGuardMaintenance $f.Root $f.Journal $f.Folder} 'Open'
     Check 'initial marker collision preserves its owner without a misleading new journal' ((GuardFileSnapshot $marker) -ceq $markerBytes -and -not [IO.File]::Exists($f.Journal) -and $f.Folder.Deleted.Count -eq 0 -and -not [IO.File]::Exists((Join-Path $f.Data 'stop.json')))
+
+    foreach($hiddenKind in @('file','directory')) {
+        $f=Fixture ('changed-hidden-'+$hiddenKind)
+        $component=Join-Path $f.Root 'app\Host\NPEduTools.Host.exe'
+        $hiddenPath=if($hiddenKind -eq 'directory'){Split-Path $component}else{$component}
+        [IO.File]::SetAttributes($hiddenPath,([IO.File]::GetAttributes($hiddenPath) -bor [IO.FileAttributes]::Hidden))
+        PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+        # Opening the existing file preserves Hidden, unlike a replacement that
+        # might accidentally turn the case into an ordinary visible-file check.
+        $stream=[IO.File]::Open($component,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        try {
+            $bytes=[Text.Encoding]::UTF8.GetBytes('PARTIAL UPGRADE inside hidden '+$hiddenKind)
+            $stream.SetLength(0);$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)
+        } finally { $stream.Dispose() }
+        Throws ('changed hidden '+$hiddenKind+' component refuses rollback') {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} 'Application files changed'
+        Check ('changed hidden '+$hiddenKind+' retains maintenance without restoring or launching tasks') ([IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and (ReadGuardJson (Join-Path $f.Data 'stop.json')).InstallerTransaction -eq (ReadGuardJson $f.Journal).Id -and $f.Folder.Registered.Count -eq 0 -and $f.Folder.Launched.Count -eq 0)
+
+        $f=Fixture ('unchanged-hidden-'+$hiddenKind)
+        $component=Join-Path $f.Root 'app\Host\NPEduTools.Host.exe'
+        $hiddenPath=if($hiddenKind -eq 'directory'){Split-Path $component}else{$component}
+        [IO.File]::SetAttributes($hiddenPath,([IO.File]::GetAttributes($hiddenPath) -bor [IO.FileAttributes]::Hidden))
+        $before=GuardFileFingerprint $component
+        PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+        $journal=ReadGuardJson $f.Journal
+        Check ('hidden '+$hiddenKind+' component is included in the original snapshot') (@($journal.Files | Where-Object Path -eq $component).Count -eq 1)
+        RestoreGuardMaintenance $journal $f.Folder $f.Journal
+        Check ('unchanged hidden '+$hiddenKind+' allows normal cancellation rollback') ((GuardFileFingerprint $component) -ceq $before -and (ReadGuardJson $f.Journal).Phase -eq 'Restored' -and -not [IO.File]::Exists($journal.Marker) -and $f.Folder.Rows.Count -eq 4 -and $f.Folder.Launched.Count -eq 1)
+    }
+
+    $f=Fixture 'added-hidden-file'
+    PrepareGuardMaintenance $f.Root $f.Journal $f.Folder
+    $extra=Join-Path $f.Root 'app\extra-hidden-library.dll'
+    [IO.File]::WriteAllText($extra,'NOT EXECUTABLE partial upgrade fixture')
+    [IO.File]::SetAttributes($extra,[IO.FileAttributes]::Hidden)
+    Throws 'new hidden file refuses rollback of a changed file set' {RestoreGuardMaintenance (ReadGuardJson $f.Journal) $f.Folder $f.Journal} 'file set changed'
+    Check 'added hidden file leaves recovery ownership intact without task mutations' ([IO.File]::Exists((Join-Path $f.Root 'app\guard-maintenance.json')) -and $f.Folder.Registered.Count -eq 0 -and $f.Folder.Launched.Count -eq 0)
     @{status='PASSED';checks=$script:checks;scheduler='SIMULATED';processes='SIMULATED';realDevices='NOT_RUN'} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $scratch 'result.json') -Encoding utf8
     Write-Output ('GUARD_MAINTENANCE_RESULT: '+(Join-Path $scratch 'result.json'))
 } catch {
