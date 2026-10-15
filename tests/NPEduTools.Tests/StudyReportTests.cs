@@ -48,6 +48,45 @@ public sealed class StudyReportTests
         clock.Ms += 600000; Assert.False(service.Snapshot().Available);
     }
     [Theory]
+    [InlineData(0)] [InlineData(4999)] [InlineData(5000)]
+    [InlineData(6000)] [InlineData(30000)] [InlineData(120000)] [InlineData(304999)]
+    public async Task Delayed_end_observation_keeps_witnessed_statistics_for_only_the_remaining_report_window(int delayMs)
+    {
+        var clock = new Clock(); var id = Guid.NewGuid(); var state = Active(id); var statistics = Report(id);
+        await using var service = new StudyReportService(() => ("class-a", true, state), () => statistics, clock, false);
+        var initial = service.Snapshot();
+        clock.Ms = (long)(Window.End - state.SchoolNow!.Value).TotalMilliseconds + delayMs;
+        state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End.AddMilliseconds(delayMs), Execution = null };
+        statistics = statistics with { Complete = true, Frames = 5 };
+        var report = service.Snapshot();
+        Assert.Equal(initial.InstanceId, report.InstanceId);
+        Assert.Equal(delayMs >= 5000, report.Available);
+        Assert.Equal(delayMs < 5000 ? "EndReminder" : "Report", report.State);
+        Assert.Equal(delayMs < 5000 ? 300 : (305000 - delayMs) / 1000d, report.RemainingSeconds, 6);
+        Assert.Equal(5, report.Data!.Frames); Assert.True(report.Data.Complete);
+        Assert.Equal(statistics.Raw.SampledSeconds, report.Data.SampledSeconds);
+        clock.Ms += 305000 - delayMs - 1;
+        Assert.True(service.Snapshot().Available); Assert.Equal(.001, service.Snapshot().RemainingSeconds, 6);
+        clock.Ms++;
+        Assert.False(service.Snapshot().Available); Assert.Equal("Expired", service.Snapshot().State);
+        // Re-reading fresh status, including a rolled-back wall value, cannot renew the deadline.
+        state = state with { SchoolNow = Window.End };
+        clock.Ms += 1000; Assert.False(service.Snapshot().Available);
+    }
+
+    [Theory]
+    [InlineData(305000)] [InlineData(360000)]
+    public async Task First_end_observation_after_the_report_window_never_reopens_an_expired_report(int delayMs)
+    {
+        var clock = new Clock(); var id = Guid.NewGuid(); var state = Active(id);
+        await using var service = new StudyReportService(() => ("class-a", true, state), () => Report(id, true), clock, false);
+        service.Snapshot(); clock.Ms = delayMs;
+        state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End.AddMilliseconds(delayMs), Execution = null };
+        Assert.False(service.Snapshot().Available); Assert.Null(service.Snapshot().Data);
+        state = state with { SchoolNow = Window.End }; clock.Ms += 1000;
+        Assert.False(service.Snapshot().Available);
+    }
+    [Theory]
     [InlineData("clock")] [InlineData("exam")] [InlineData("revoked")] [InlineData("scope")] [InlineData("version")]
     public async Task Withdrawn_context_cannot_show_previous_report(string change)
     {

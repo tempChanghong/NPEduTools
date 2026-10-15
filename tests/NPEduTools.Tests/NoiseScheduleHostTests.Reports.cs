@@ -1,9 +1,44 @@
 using System.Text.Json.Nodes;
+using NPEduTools.Contracts;
 using NPEduTools.Host;
 using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Tests;
 public sealed partial class NoiseScheduleHostTests
 {
+    [Theory]
+    [InlineData(6000, false)] [InlineData(6000, true)]
+    [InlineData(120000, false)] [InlineData(120000, true)]
+    public async Task Delayed_report_collector_keeps_the_final_scheduled_capture_online_or_offline(int delayMs, bool offline)
+    {
+        await using var f = new Fixture(); f.Base = new(2026, 10, 1, 19, 59, 50, TimeSpan.Zero);
+        var config = StudyConfig(f); long sequence = 0; var connection = Guid.NewGuid(); var bridge = Guid.NewGuid();
+        await using var study = new StudySettingsService(() => new(connection, bridge, ++sequence, 0,
+            f.Base.AddMilliseconds(f.Time.Ms), 0, "Advancing", "synthetic"), () => false, f.Time, false, f.Scheduler);
+        study.BindStudy(f.Scope); study.ApplyStudy(config); study.ConfirmStudyExecution(config, Grant(config));
+        await f.Start(); f.Tick(); study.Tick(); f.Tick(); study.Tick();
+        f.Captures[0].Sample();
+        await using var report = new StudyReportService(study.DisplaySnapshot, f.Noise.StudyReportSnapshot, f.Time, false,
+            finishedStatistics: f.Noise.FinishedStudyReport);
+        Assert.Equal("Monitoring", report.Snapshot().State);
+        var session = f.Noise.Snapshot().SessionId;
+        if (offline) study.StudyFailed("STUDY_OFFLINE");
+        // Keep the real scheduler and school-clock observer advancing while the
+        // report collector misses the end boundary. No clock jump or new capture.
+        while (f.Time.Ms < 10000 + delayMs)
+        {
+            f.Tick(); f.Captures[0].Sample();
+            if (offline) study.Tick(); else study.ApplyStudy(config);
+        }
+        await Until(() => !f.Noise.CaptureBusy);
+        var final = report.Snapshot(); var capture = f.Noise.StudyReportSnapshot()!;
+        Assert.True(final.Available); Assert.True(final.Data!.Complete);
+        Assert.Equal((305000 - delayMs) / 1000d, final.RemainingSeconds, 6);
+        Assert.Equal(capture.Raw.SampledSeconds, final.Data.SampledSeconds, 6);
+        Assert.Equal(capture.Frames, final.Data.Frames);
+        Assert.Equal(session, capture.SessionId); Assert.Single(f.Captures); Assert.True(f.Captures[0].Disposed);
+        Assert.Equal("Stopped", f.Noise.Snapshot().State);
+    }
+
     [Fact]
     public async Task Completed_school_report_keeps_capture_context_statistics_and_survives_restart()
     {
