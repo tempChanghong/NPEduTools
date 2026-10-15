@@ -9,6 +9,32 @@ namespace NPEduTools.Tests;
 
 public sealed partial class NoiseReferenceCalibrationTests
 {
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Estimated_threshold_qualification_survives_unrelated_session_observers(bool manual)
+    {
+        await using var f = new Fixture(); await f.PrepareAsync(); Assert.Equal("Succeeded", f.Command("confirm").Outcome);
+        if (manual)
+        {
+            Assert.Equal("Accepted", f.Noise.StartManualStudy(Guid.NewGuid(), "mic", 10800).Outcome);
+            await Until(() => f.Noise.Snapshot().State == "Active");
+        }
+        else await StartFormal(f);
+        var id = f.Noise.Snapshot().SessionId!.Value;
+        var policy = new StudyNoise(true, -40, -50, 600, 3, new(65, 50));
+        f.Noise.StudyThresholds(id, policy);
+        for (int i = 0; i < 40; i++)
+        {
+            FormalFrames(f, 1, aDigital: -24);
+            Assert.Equal(("None", false), f.Noise.StudyThresholds(null, null));
+            Assert.Equal(("None", false), f.Noise.StudyThresholds(Guid.NewGuid(), policy with { Estimated = null }));
+        }
+        Assert.Equal(("High", true), f.Noise.StudyThresholds(id, policy));
+        var report = f.Noise.StudyReportSnapshot()!;
+        Assert.Equal(0, report.Raw.ThresholdSampledSeconds);
+        Assert.Equal(report.Estimated!.SampledSeconds, report.Estimated.HighSeconds, 8);
+    }
+
     private static async Task StartFormal(Fixture f, bool scheduled = true)
     {
         var s = f.Noise.Snapshot();

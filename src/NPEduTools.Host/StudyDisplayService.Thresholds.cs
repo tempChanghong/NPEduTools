@@ -7,6 +7,11 @@ public sealed partial class StudyDisplayService
     private Guid? _disciplineOffer;
     private long _disciplineOfferedAt;
     private (string? Scope, string? Version, Guid Session, StudyNoise Policy)? _thresholdContext;
+    private void ReleaseThresholds()
+    {
+        if (_thresholdContext is { } owned) thresholds?.Invoke(owned.Session, null);
+        _thresholdContext = null; _disciplineOffer = null;
+    }
     private StudyThresholdState? ObserveThreshold(StudyHostState state)
     {
         // Polling checkpoints elapsed progress, never school/Windows wall time. Binding hashes remain independent.
@@ -15,10 +20,10 @@ public sealed partial class StudyDisplayService
             state.Phase == "Active" && state.Window is not null && state.Settings?.Noise is { Enabled: true } &&
             state.Execution is { Owner: "Schedule" or "Manual", State: "Active", SignalFresh: true, SessionId: not null };
         if (!eligible)
-        { thresholds?.Invoke(null, null); _thresholdContext = null; _disciplineOffer = null; return null; }
+        { ReleaseThresholds(); return null; }
         var effectivePolicy = calibratedThresholds?.Invoke(_scope, state.Version, state.Settings!.Noise) ?? state.Settings!.Noise;
         if (effectivePolicy.High is null)
-        { thresholds?.Invoke(null, null); _thresholdContext = null; _disciplineOffer = null; return null; }
+        { ReleaseThresholds(); return null; }
         var context = (_scope, state.Version, state.Execution!.SessionId!.Value, effectivePolicy);
         if (_thresholdContext != context) { _thresholdContext = context; _disciplineOffer = null; }
         var observed = thresholds?.Invoke(context.Item3, context.Item4) ?? ("None", false);

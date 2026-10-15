@@ -6,6 +6,84 @@ namespace NPEduTools.Tests;
 
 public sealed partial class NoiseScheduleHostTests
 {
+    [Fact]
+    public async Task Idle_manual_status_polls_do_not_reset_scheduled_discipline_qualification()
+    {
+        await using var f = new Fixture(); var config = StudyConfig(f);
+        config["effective"]!["settings"]!["noise"]!["redLineDbfs"] = -70;
+        config["effective"]!["settings"]!["noise"]!["mediumLineDbfs"] = -80;
+        long sequence = 0; var connection = Guid.NewGuid(); var bridge = Guid.NewGuid();
+        await using var study = new StudySettingsService(() => new(connection, bridge, ++sequence, 0,
+            f.Base.AddMilliseconds(f.Time.Ms), 0, "Advancing", "synthetic"), () => false, f.Time, false, f.Scheduler);
+        study.BindStudy(f.Scope); study.ApplyStudy(config); study.ConfirmStudyExecution(config, Grant(config)); await f.Start();
+        var display = new StudyDisplayService(study.DisplaySnapshot, f.Time, f.Noise.StudyThresholds);
+        await using var manual = new ManualStudyService(f.Noise, study.DisplaySnapshot, () => true,
+            System.IO.Path.Combine(f.Path, "manual"), f.Time, false);
+        var session = f.Noise.Snapshot().SessionId;
+        f.Captures[0].Sample(); display.Snapshot();
+        for (int i = 0; i < 60; i++)
+        {
+            f.Tick(100); f.Captures[0].Sample(); display.Snapshot();
+            var idle = manual.Handle(new(1, Guid.NewGuid(), "manual.study.status"));
+            Assert.Equal("Idle", idle.ManualStudy!.State); Assert.Null(idle.Study!.Threshold);
+        }
+        var state = display.Snapshot();
+        Assert.NotNull(state.Threshold!.DisciplineId);
+        Assert.True(f.Noise.StudyThresholds(session, state.Settings!.Noise).Qualified);
+        Assert.Equal("Active", f.Noise.Snapshot().State); Assert.Single(f.Captures);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Unrelated_threshold_observers_cannot_reset_the_current_study_owner(bool manual)
+    {
+        await using var f = new Fixture(); var id = Guid.NewGuid();
+        var started = manual ? f.Noise.StartManualStudy(id, "synthetic", 10800) : f.Noise.StartScheduled(id);
+        Assert.Equal("Accepted", started.Outcome); await Until(() => f.Noise.Snapshot().State == "Active");
+        var policy = new StudyNoise(true, -70, -80, 600, 3);
+        f.Noise.StudyThresholds(id, policy);
+        for (int i = 0; i < 40; i++)
+        {
+            f.Time.Ms += 100; f.Captures[0].Sample();
+            Assert.Equal(("None", false), f.Noise.StudyThresholds(null, null));
+            Assert.Equal(("None", false), f.Noise.StudyThresholds(Guid.NewGuid(), null));
+            Assert.Equal(("None", false), f.Noise.StudyThresholds(Guid.NewGuid(), policy));
+        }
+        Assert.Equal(("High", true), f.Noise.StudyThresholds(id, policy));
+        // The current owner still can withdraw its policy. Earlier high frames
+        // cannot be reused when the policy is applied again.
+        Assert.Equal(("None", false), f.Noise.StudyThresholds(id, null));
+        f.Noise.StudyThresholds(id, policy);
+        f.Time.Ms += 100; f.Captures[0].Sample();
+        Assert.Equal(("High", false), f.Noise.StudyThresholds(id, policy));
+        for (int i = 0; i < 29; i++) { f.Time.Ms += 100; f.Captures[0].Sample(); }
+        Assert.Equal(("High", true), f.Noise.StudyThresholds(id, policy));
+        Assert.Single(f.Captures); Assert.Equal(id, f.Noise.Snapshot().SessionId);
+    }
+
+    [Fact]
+    public async Task An_ineligible_display_releases_only_its_own_previously_observed_threshold_session()
+    {
+        await using var f = new Fixture(); var id = Guid.NewGuid();
+        Assert.Equal("Accepted", f.Noise.StartScheduled(id).Outcome); await Until(() => f.Noise.Snapshot().State == "Active");
+        var policy = new StudyNoise(true, -70, -80, 600, 3);
+        var window = new SchoolNoiseWindow(f.Base, f.Base.AddHours(1));
+        var settings = StudyConfig(f)["effective"]!["settings"]!.Deserialize<StudySettings>(Protocol.Json)!;
+        var state = new StudyHostState("version", "APPLIED", "", "ACTIVE", "Active", "WINDOW_ACTIVE", true,
+            f.Base.AddMinutes(1), window, null, settings with { Noise = policy },
+            new("Schedule", "Active", id, "WINDOW_ACTIVE", true, null, null, true));
+        var display = new StudyDisplayService(() => (f.Scope, true, state), f.Time, f.Noise.StudyThresholds);
+        display.Snapshot();
+        for (int i = 0; i < 40; i++) { f.Time.Ms += 100; f.Captures[0].Sample(); }
+        Assert.NotNull(display.Snapshot().Threshold!.DisciplineId);
+        state = state with { Phase = "Blocked", ClockReady = false };
+        Assert.Null(display.Snapshot().Threshold);
+        state = state with { Phase = "Active", ClockReady = true };
+        Assert.Null(display.Snapshot().Threshold!.DisciplineId);
+        for (int i = 0; i < 30; i++) { f.Time.Ms += 100; f.Captures[0].Sample(); }
+        Assert.NotNull(display.Snapshot().Threshold!.DisciplineId);
+    }
+
     [Theory]
     [InlineData("offline", false)] [InlineData("exam", false)] [InlineData("pause", false)]
     [InlineData("unpair", false)] [InlineData("revoked", false)] [InlineData("clock", false)]

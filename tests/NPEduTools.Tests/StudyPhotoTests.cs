@@ -116,7 +116,8 @@ public sealed partial class StudyPhotoTests
         service.BindPhotos("scope"); clock.Ms=30000; capture.Emit(-50); service.ConfirmPhotoLease(Lease(),TimeSpan.Zero);
         // No App or selected display is required; actual high frames alone qualify the photo.
         state=state with { Display=null }; service.Tick();
-        for(int i=0;i<29;i++) { clock.Ms+=100; capture.Emit(-20); service.Tick(); }
+        var idleDisplay = new StudyDisplayService(() => ("scope", false, state with { Phase = "Outside" }), clock, noise.StudyThresholds);
+        for(int i=0;i<29;i++) { clock.Ms+=100; capture.Emit(-20); service.Tick(); idleDisplay.Snapshot(); }
         Assert.Equal(1,shots);
         clock.Ms+=100; capture.Emit(-20); service.Tick(); await service.FlushAsync(CancellationToken.None);
         Assert.Equal(2,shots); Assert.Equal("Noise",service.PendingPhoto()!.Metadata["reason"]!.GetValue<string>());
