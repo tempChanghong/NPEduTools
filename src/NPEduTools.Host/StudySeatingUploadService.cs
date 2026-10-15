@@ -22,10 +22,12 @@ public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> 
         value.Text("className"), value["revision"]!.GetValue<int>(), value["hash"]?.GetValue<string>(), state);
     public async Task<HostResponse> HandleAsync(HostRequest request, CancellationToken token)
     {
-        await _gate.WaitAsync(token);
-        bool publicationAttempted = false;
+        bool acquired = false, publicationAttempted = false;
         try
         {
+            // Waiting for another upload is part of this request's deadline too.
+            // Reply explicitly if it expires before any publication can begin.
+            await _gate.WaitAsync(token); acquired = true;
             foreach (var id in _tickets.Where(p => _time.GetElapsedTime(p.Value.Created) >= TimeSpan.FromMinutes(10)).Select(p => p.Key).ToArray()) _tickets.Remove(id);
             var current = policy();
             if (current is not { PolicyState: "APPLIED", Version: { } version, Settings: not null }) throw new NpepException("STUDY_NOT_APPLIED");
@@ -68,6 +70,6 @@ public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> 
             // KV may have committed; retain the ticket and original upload ID for retry.
             return new(1, request.RequestId, "Rejected", e is NpepException n ? n.Code : publicationAttempted ? "UPLOAD_PENDING" : e is HttpRequestException or OperationCanceledException ? "UPLOAD_UNAVAILABLE" : "INVALID_IMAGE", "未确认上传成功，请保留草稿并核对当前版本。");
         }
-        finally { _gate.Release(); }
+        finally { if (acquired) _gate.Release(); }
     }
 }

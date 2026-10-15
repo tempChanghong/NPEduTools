@@ -1,4 +1,5 @@
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 
 namespace NPEduTools.Host;
 
@@ -21,7 +22,7 @@ public sealed class StudyReportService : IAsyncDisposable
     private SchoolNoiseWindow? _window;
     private Guid _instance = Guid.NewGuid();
     private long? _ended;
-    private double _endDelay;
+    private double _endAgeSeconds;
     private long? _statisticsAt;
     private bool _expired;
     private StudyReportData? _frozen;
@@ -44,13 +45,15 @@ public sealed class StudyReportService : IAsyncDisposable
         lock (_sync)
         {
             var (scope, selected, s) = _sample();
-            // A temporary configuration read failure is not revocation of the
+            // A temporary configuration or school-clock failure is not revocation of the
             // witnessed window's collected statistics. Quarantine the collection
             // without displaying it; reuse only after the same context is fresh again.
+            bool configurationLost = s.PolicyState != "APPLIED" &&
+                s.Reason is "STUDY_OFFLINE" or "CONFIGURATION_STALE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED";
+            bool clockLost = s.PolicyState == "APPLIED" && s.Version == _version && !s.ClockReady && s.Reason == "SCHOOL_CLOCK_UNAVAILABLE";
             if (selected && scope is not null && scope == _scope && _mode == s.Mode &&
                 _version is not null && (s.Version is null || s.Version == _version) &&
-                _window is not null && _ended is null && s.PolicyState != "APPLIED" && s.Phase == "Blocked" &&
-                s.Reason is "STUDY_OFFLINE" or "CONFIGURATION_STALE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED")
+                _window is not null && _ended is null && s.Phase == "Blocked" && (configurationLost || clockLost))
             {
                 Observe(s, _window.Start); // Updates only already tracked session IDs while blocked.
                 return State(false, "Unavailable", 0);
@@ -70,19 +73,21 @@ public sealed class StudyReportService : IAsyncDisposable
             }
             if (_expired) return State(false, "Expired", 0);
             if (_window is not { } window || now < window.End) return State(false, "Unavailable", 0);
-            // Only a window witnessed active can finish. Late reconnects never create an old report.
+            // Only an already witnessed active window can finish. A reconnect alone
+            // cannot manufacture a report for an unwitnessed past window.
             if (_ended is null)
             {
-                if (now >= window.End.AddSeconds(5)) { Clear(); return State(false, "Unavailable", 0); }
-                _ended = _time.GetTimestamp(); _endDelay = Math.Max(0, 5 - (now - window.End).TotalSeconds);
+                // A delayed collector can miss the five-second notice without forfeiting
+                // the report. Charge that delay to its original deadline, never renew it.
+                _ended = _time.GetTimestamp(); _endAgeSeconds = (now - window.End).TotalSeconds;
             }
             Observe(s, now);
-            double elapsed = _time.GetElapsedTime(_ended.Value).TotalSeconds;
-            double remaining = Math.Max(0, DefaultDurationSeconds + _endDelay - elapsed);
+            double elapsed = _endAgeSeconds + _time.GetElapsedTime(_ended.Value).TotalSeconds;
+            double remaining = Math.Max(0, DefaultDurationSeconds + StudyPresentationTiming.StageNoticeSeconds - elapsed);
             if (remaining <= 0) { _expired = true; return State(false, "Expired", 0); }
             // Freeze only after terminal tails have been flushed. Until then show honest provisional statistics.
             if (_frozen is null && _sessions.Count > 0 && _sessions.Values.All(x => x.Report.Complete)) _frozen = Build();
-            bool available = elapsed >= _endDelay;
+            bool available = elapsed >= StudyPresentationTiming.StageNoticeSeconds;
             return State(available, available ? "Report" : "EndReminder", available ? remaining : DefaultDurationSeconds);
         }
     }

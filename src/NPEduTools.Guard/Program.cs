@@ -22,6 +22,9 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // A maintenance caller must not read an early validation return as success.
+        // Normal resident/login entry points retain their existing exit behavior.
+        if (args.Contains("--maintenance", StringComparer.Ordinal)) Environment.ExitCode = 1;
         // A Windows session number can change across logon; default task actions resolve it here.
         if (args.Length is 1 or 2 && args[0] == "--default-pipe")
             args = args.Length == 1 ? ["--pipe", PipeEndpoint.DefaultName] : ["--pipe", PipeEndpoint.DefaultName, args[1]];
@@ -37,8 +40,13 @@ internal static class Program
         {
             // An explicit maintenance command, never exposed by the client. Stop is persisted first,
             // so a live App/Host cannot re-register or relaunch the guardian during maintenance.
-            files.Stop(registration.Generation, "Maintenance");
-            new GuardTasks(root, pipe, registration.Upstream).Unregister();
+            try
+            {
+                files.Stop(registration.Generation, "Maintenance");
+                new GuardTasks(root, pipe, registration.Upstream).Unregister();
+                Environment.ExitCode = 0;
+            }
+            catch (Exception e) when (GuardTasks.StartupError(e)) { Environment.ExitCode = 2; }
             return;
         }
         if (args.Length == 3 && args[2] == "--at-login")

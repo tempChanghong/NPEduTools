@@ -89,7 +89,16 @@ public sealed class GuardProcessTests(ITestOutputHelper output)
                 Assert.NotEqual(IntPtr.Zero, SendMessageTimeout(window, 0x0016, (IntPtr)1, IntPtr.Zero, 2, 3000, out _));
                 Assert.True(files.Stopped(registration.Generation));
             }
-            else files.Stop(registration.Generation, "Maintenance");
+            else
+            {
+                var start = new ProcessStartInfo(Path.Combine(bundle, "Guard", "svchost.exe")) { UseShellExecute = false, CreateNoWindow = true };
+                foreach (string argument in new[] { "--pipe", pipe, "--maintenance" }) start.ArgumentList.Add(argument);
+                using var maintenance = Process.Start(start)!;
+                try { await maintenance.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+                finally { if (!maintenance.HasExited) { maintenance.Kill(); await maintenance.WaitForExitAsync(); } }
+                Assert.Equal(0, maintenance.ExitCode);
+                Assert.Equal("Maintenance", files.StopReason(registration.Generation));
+            }
             await Until(() => guard.HasExited);
             Assert.Equal("Stopped", files.Read<GuardStatus>("status.json")!.Phase);
         }

@@ -46,7 +46,10 @@ function GuardTaskInfo([string]$Name,[string]$Xml,[string]$Root) {
     $role=$match.Groups[2].Value
     $exe=switch($role) { 'App' {Join-Path $Root 'app\NPEduTools.App.exe'} 'Host' {Join-Path $Root 'app\Host\NPEduTools.Host.exe'} default {Join-Path $Root 'app\Guard\svchost.exe'} }
     if ($actions[0].SelectSingleNode('t:Command',$ns).InnerText -ine $exe -or $actions[0].SelectSingleNode('t:WorkingDirectory',$ns).InnerText -ine (Split-Path $exe)) { throw 'Guardian task path mismatch.' }
-    $arguments=$actions[0].SelectSingleNode('t:Arguments',$ns).InnerText
+    # Task Scheduler drops an empty Arguments element when persisting the default Host.
+    # Treat absence as empty, as native GuardTasks.OwnedDefinition does; required args
+    # for every other role still have to match exactly below.
+    $arguments=[string]$actions[0].SelectSingleNode('t:Arguments',$ns).InnerText
     $endpoint='default';$prefix='';$upstream=$null
     if ($arguments -match '^--pipe "([^"\r\n\\/:]{1,200})"(?: |$)') {
         $endpoint=$Matches[1];if ($endpoint.StartsWith('--') -or $endpoint -eq 'default') { throw 'Invalid or ambiguous guardian pipe.' }
@@ -59,7 +62,10 @@ function GuardTaskInfo([string]$Name,[string]$Xml,[string]$Root) {
     if ($role -in @('App','Host') -and $upstream) { $expected+=' --classisland-pipe "'+$upstream+'"' }
     if ($role -eq 'App') { $expected+=' --guard-recovery' }
     if ($role -eq 'Login') { $expected+=' --at-login' }
-    if ($arguments -cne $expected.Trim() -or $match.Groups[1].Value -cne (GuardHash ($sid+'|'+$endpoint)).Substring(0,24)) { throw 'Guardian task arguments or identity mismatch.' }
+    # Task checks may precede journal creation: identify the task without logging raw
+    # command-line values or account identifiers in the only available result file.
+    if ($arguments -cne $expected.Trim()) { throw ('Guardian task arguments or identity mismatch. Task: '+$Name+'; reason: ARGUMENTS_MISMATCH.') }
+    if ($match.Groups[1].Value -cne (GuardHash ($sid+'|'+$endpoint)).Substring(0,24)) { throw ('Guardian task arguments or identity mismatch. Task: '+$Name+'; reason: IDENTITY_MISMATCH.') }
     return [pscustomobject]@{Name=$Name;Xml=$Xml;Sid=$sid;Endpoint=$endpoint;Role=$role;Upstream=$upstream;Key=$match.Groups[1].Value}
 }
 function GuardPlans($Tasks,[string]$Root) {
@@ -105,6 +111,24 @@ function OwnedGuardProcesses([string]$Root) {
     $path=Join-Path $Root 'app\Guard\svchost.exe'
     return @(Get-CimInstance Win32_Process -Filter "Name = 'svchost.exe'" | Where-Object { $_.ExecutablePath -ieq $path })
 }
+function GuardProcessInstance($Process) {
+    $path=[string]$Process.ExecutablePath;$line=[string]$Process.CommandLine
+    if ([string]::IsNullOrWhiteSpace($path) -or [string]::IsNullOrWhiteSpace($line)) { throw 'Cannot inspect guardian invocation; use manual maintenance.' }
+    # Guard endpoints cannot contain quotes or backslashes. Recognize its supported
+    # launch forms, including quoted paths/pipe names, without guessing on extra args.
+    $programs=@([regex]::Escape('"'+$path+'"'))
+    if ($path -notmatch '\s') { $programs+=[regex]::Escape($path) }
+    $prefix='^\s*(?i:' + ($programs -join '|') + ')\s+'
+    $arguments='(?:(?<Default>--default-pipe|"--default-pipe")|(?:--pipe|"--pipe")\s+(?:"(?<Pipe>[^"\r\n\\/:]{1,200})"|(?<Pipe>[^\s"\\/:]{1,200})))(?:\s+(?<Action>--at-login|--maintenance|"--at-login"|"--maintenance"))?\s*$'
+    $match=[regex]::Match($line,$prefix+$arguments)
+    if (-not $match.Success -or $match.Groups['Pipe'].Value.StartsWith('--')) { throw 'Cannot verify guardian invocation; use manual maintenance.' }
+    $owner=Invoke-CimMethod -InputObject $Process -MethodName GetOwnerSid
+    if ($owner.ReturnValue -ne 0 -or [string]$owner.Sid -notmatch '^S-1-[0-9-]+$') { throw 'Cannot inspect guardian owner.' }
+    $endpoint=$match.Groups['Pipe'].Value
+    if ($match.Groups['Default'].Success -or $endpoint -ceq ('NPEduTools.v1.'+$owner.Sid+'.'+$Process.SessionId)) { $endpoint='default' }
+    elseif ($endpoint -ieq 'default') { throw 'Ambiguous guardian endpoint; use manual maintenance.' }
+    return [pscustomobject]@{Sid=[string]$owner.Sid;Endpoint=$endpoint;Resident=(-not $match.Groups['Action'].Success)}
+}
 function GuardFileSnapshot([string]$Path) {
     if ([IO.File]::Exists($Path)) {
         if ((Get-Item -LiteralPath $Path).Length -gt 32768) { throw 'Guardian state record too large.' }
@@ -129,8 +153,14 @@ function CheckGuardMarker($Journal) {
     $marker=ReadGuardJson $Journal.Marker
     if ($null -eq $marker -or $marker.Id -ne $Journal.Id) { throw 'Installation maintenance ownership changed; manual recovery required.' }
 }
-function RestoreGuardMaintenance($Journal,$Folder) {
-    if ($Journal.Phase -eq 'Restored') { return }
+function RestoreGuardMaintenance($Journal,$Folder,[string]$JournalPath) {
+    if (-not $JournalPath) { throw 'Missing rollback journal path.' }
+    if ($Journal.Phase -eq 'Restored') {
+        # Completion can survive a crash before marker deletion. Finalize only
+        # this transaction's marker, without registering or launching tasks again.
+        if ([IO.File]::Exists($Journal.Marker)) { CheckGuardMarker $Journal;[IO.File]::Delete($Journal.Marker) }
+        return
+    }
     CheckGuardMarker $Journal
     foreach($task in $Journal.Tasks) {
         $expected=GuardTaskInfo $task.Name $task.Xml $Journal.Root
@@ -146,7 +176,7 @@ function RestoreGuardMaintenance($Journal,$Folder) {
     foreach($file in $Journal.Files) {
         if ((GuardFileFingerprint $file.Path) -cne $file.Hash) { throw 'Application files changed; automatic rollback cannot restart this bundle.' }
     }
-    $currentFiles=@(Get-ChildItem -LiteralPath (Join-Path $Journal.Root 'app') -File -Recurse | Where-Object FullName -ne $Journal.Marker | ForEach-Object FullName)
+    $currentFiles=@(Get-ChildItem -LiteralPath (Join-Path $Journal.Root 'app') -File -Recurse -Force | Where-Object FullName -ne $Journal.Marker | ForEach-Object FullName)
     $beforeNames=(@($Journal.Files | ForEach-Object Path | Sort-Object) -join "`n")
     if ($beforeNames -cne (@($currentFiles | Sort-Object) -join "`n")) { throw 'Application file set changed; automatic rollback refused.' }
     foreach($instance in $Journal.Instances) {
@@ -168,7 +198,6 @@ function RestoreGuardMaintenance($Journal,$Folder) {
     foreach($instance in $Journal.Instances) {
         if ($instance.Written) { RestoreGuardFile (Join-Path $instance.Data 'stop.json') $instance.PreviousStop }
     }
-    [IO.File]::Delete($Journal.Marker)
     # Restart only guardians that were running before maintenance. Never launch App/Host here.
     foreach($instance in $Journal.Instances) {
         $previous=if ($instance.PreviousStop) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($instance.PreviousStop)) | ConvertFrom-Json } else { $null }
@@ -178,14 +207,26 @@ function RestoreGuardMaintenance($Journal,$Folder) {
             $null=$Folder.GetTask($guard[0].Name).Run($null)
         }
     }
+    # Keep ownership until launches are accepted AND completion is durable.
+    # Use the caller's transaction path, never a serialized write destination.
+    $previousPhase=$Journal.Phase
     $Journal.Phase='Restored'
+    try { WriteGuardJson $JournalPath $Journal }
+    catch { $Journal.Phase=$previousPhase;throw }
+    [IO.File]::Delete($Journal.Marker)
 }
 function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
     $members=@(GuardPlans (CurrentGuardTasks $Folder) $Root)
     $processes=@(OwnedGuardProcesses $Root)
+    $instances=@($processes | ForEach-Object { GuardProcessInstance $_ })
+    foreach($instance in $instances) {
+        if ($instance.Resident -and @($members | Where-Object { $_.Sid -eq $instance.Sid -and $_.Endpoint -ceq $instance.Endpoint }).Count -eq 0) {
+            throw 'Running guardian has no matching owned task group; use manual maintenance.'
+        }
+    }
     $journal=[pscustomobject]@{Id=[guid]::NewGuid().ToString('N');Root=$Root;Marker=(Join-Path $Root 'app\guard-maintenance.json');JournalPath=$JournalPath;Phase='Prepared';Tasks=$members;Instances=@();Files=@()}
     if ([IO.Directory]::Exists((Join-Path $Root 'app'))) {
-        foreach($file in @(Get-ChildItem -LiteralPath (Join-Path $Root 'app') -File -Recurse)) {
+        foreach($file in @(Get-ChildItem -LiteralPath (Join-Path $Root 'app') -File -Recurse -Force)) {
             $journal.Files+= [pscustomobject]@{Path=$file.FullName;Hash=(GuardFileFingerprint $file.FullName)}
         }
     }
@@ -198,11 +239,7 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
             if (-not [guid]::TryParse([string]$registration.Generation,[ref]$guid) -or $guid -eq [guid]::Empty -or $registration.BundleDirectory -ine (Join-Path $Root 'app')) { throw 'Guardian registration mismatch.' }
             $generation=[string]$registration.Generation
         }
-        $running=@($processes | Where-Object {
-            $owner=Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid
-            if ($owner.ReturnValue -ne 0) { throw 'Cannot inspect guardian owner.' }
-            $owner.Sid -eq $first.Sid
-        }).Count -gt 0
+        $running=@($instances | Where-Object { $_.Resident -and $_.Sid -eq $first.Sid -and $_.Endpoint -ceq $first.Endpoint }).Count -gt 0
         if ($running -and $null -eq $generation) { throw 'Running guardian has no readable registration.' }
         $null=ReadGuardJson (Join-Path $data 'stop.json') # Fail on damaged state before deleting tasks, not during rollback.
         $journal.Instances+=[pscustomobject]@{Key=$first.Key;Data=$data;Generation=$generation;PreviousStop=(GuardFileSnapshot (Join-Path $data 'stop.json'));Written=$false;WasRunning=$running}
@@ -211,10 +248,12 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
     # CreateNew never takes over an earlier interrupted installer transaction.
     $parent=Split-Path $journal.Marker
     if (-not [IO.Directory]::Exists($parent)) { [IO.Directory]::CreateDirectory($parent) | Out-Null }
-    $marker=[IO.File]::Open($journal.Marker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    # An abrupt exit must not leave a launch-blocking marker without its recovery
+    # record. Persist the checkpoint before making maintenance visible to clients.
+    WriteGuardJson $JournalPath $journal
+    try { $marker=[IO.File]::Open($journal.Marker,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None) }
+    catch { [IO.File]::Delete($JournalPath);throw } # No marker or runtime state was taken over.
     try { $bytes=[Text.Encoding]::UTF8.GetBytes(($journal | Select-Object Id,Root,JournalPath | ConvertTo-Json));$marker.Write($bytes,0,$bytes.Length);$marker.Flush($true) } finally { $marker.Dispose() }
-    try { WriteGuardJson $JournalPath $journal }
-    catch { [IO.File]::Delete($journal.Marker);throw }
     try {
         foreach($instance in $journal.Instances) {
             if ($null -ne $instance.Generation) {
@@ -232,7 +271,7 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
         WriteGuardJson $JournalPath $journal
     } catch {
         $failure=$_.Exception.Message
-        try { RestoreGuardMaintenance $journal $Folder;WriteGuardJson $JournalPath $journal }
+        try { RestoreGuardMaintenance $journal $Folder $JournalPath }
         catch { throw ($failure+' Rollback failed: '+$_.Exception.Message+' Journal: '+$JournalPath) }
         throw $failure
     }
@@ -240,6 +279,13 @@ function PrepareGuardMaintenance([string]$Root,[string]$JournalPath,$Folder) {
 function GuardFileFingerprint([string]$Path) {
     if (-not [IO.File]::Exists($Path)) { return $null }
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+}
+function WriteGuardResult([string]$Directory,[string]$Operation,[string]$Message) {
+    # Keep Prepare's failure even if the installer's later Restore succeeds.
+    if ($Operation -in @('Prepare','Restore','Complete')) {
+        [IO.File]::WriteAllText((Join-Path $Directory ($Operation+'-result.txt')),$Message,[Text.Encoding]::UTF8)
+    }
+    [IO.File]::WriteAllText((Join-Path $Directory 'result.txt'),$Message,[Text.Encoding]::UTF8)
 }
 # Tests dot-source the same ownership and transaction code with private scheduler fixtures.
 if ($MyInvocation.InvocationName -eq '.') { return }
@@ -261,26 +307,32 @@ try {
         [IO.Directory]::SetAccessControl($directory,$acl)
     } finally { $identity.Dispose() }
     $journalPath=Join-Path $directory 'journal.json'
-    $service=New-Object -ComObject Schedule.Service;$service.Connect();$folder=$service.GetFolder('\')
     if ($Action -eq 'Prepare') {
         if ([IO.File]::Exists($journalPath)) { throw 'Maintenance transaction already exists.' }
+        $service=New-Object -ComObject Schedule.Service;$service.Connect();$folder=$service.GetFolder('\')
         PrepareGuardMaintenance $root $journalPath $folder
     } else {
         $journal=ReadGuardJson $journalPath
         if ($null -eq $journal -or $journal.Root -ine $root -or $journal.Marker -ine (Join-Path $root 'app\guard-maintenance.json')) { throw 'Maintenance transaction mismatch.' }
         if ($Action -eq 'Restore') {
-            RestoreGuardMaintenance $journal $folder;WriteGuardJson $journalPath $journal
+            # A durable Restored checkpoint needs only local marker cleanup.
+            # Do not block it (or Complete below) on an unrelated COM service.
+            $folder=$null
+            if ($journal.Phase -ne 'Restored') {
+                $service=New-Object -ComObject Schedule.Service;$service.Connect();$folder=$service.GetFolder('\')
+            }
+            RestoreGuardMaintenance $journal $folder $journalPath
         } else {
             if ($journal.Phase -ne 'Completed' -or [IO.File]::Exists($journal.Marker)) { CheckGuardMarker $journal }
             $journal.Phase='Completed';WriteGuardJson $journalPath $journal
             [IO.File]::Delete($journal.Marker)
         }
     }
-    [IO.File]::WriteAllText((Join-Path $directory 'result.txt'),'OK',[Text.Encoding]::UTF8)
+    WriteGuardResult $directory $Action 'OK'
     exit 0
 } catch {
     if ($TransactionDirectory -and [IO.Directory]::Exists($TransactionDirectory)) {
-        [IO.File]::WriteAllText((Join-Path $TransactionDirectory 'result.txt'),$_.Exception.Message,[Text.Encoding]::UTF8)
+        WriteGuardResult $TransactionDirectory $Action $_.Exception.Message
     }
     Write-Error $_ -ErrorAction Continue
     exit 1

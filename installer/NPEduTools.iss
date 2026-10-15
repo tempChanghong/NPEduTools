@@ -98,7 +98,7 @@ const
 #endif
 
 var
-  MaintenanceScript, MaintenanceDirectory: String;
+  MaintenanceScript, MaintenanceDirectory, MaintenanceFailure: String;
   MaintenanceActive, MaintenanceCompleted: Boolean;
 
 function InstallationProblem(AllowGuardian: Boolean): String;
@@ -194,14 +194,38 @@ begin
 end;
 
 function MaintenanceCommand(Action: String): Boolean;
-var Code: Integer;
+var Code, Index, Size: Integer;
+    Launched: Boolean;
+    Details: TArrayOfString;
+    DetailPath, Reason: String;
 begin
-  Result := Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
+  MaintenanceFailure := '';
+  Code := -1;
+  Launched := Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + MaintenanceScript +
     '" -Action ' + Action + ' -InstallRoot "' + ExpandConstant('{app}') +
     '" -TransactionDirectory "' + MaintenanceDirectory + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Result := Result and (Code = 0);
-  if not Result then Log('Guardian maintenance failed: ' + Action + '; result: ' + MaintenanceDirectory + '\result.txt');
+  Result := Launched and (Code = 0);
+  if not Result then begin
+    if Launched then
+      MaintenanceFailure := '维护助手执行失败，退出码：' + IntToStr(Code)
+    else
+      MaintenanceFailure := '无法启动维护助手，Windows 错误：' + IntToStr(Code) + ' ' + SysErrorMessage(Code);
+    DetailPath := MaintenanceDirectory + '\' + Action + '-result.txt';
+    if not FileExists(DetailPath) then DetailPath := MaintenanceDirectory + '\result.txt';
+    if FileSize(DetailPath, Size) and (Size >= 0) and (Size <= 65536) then
+      if LoadStringsFromFile(DetailPath, Details) then begin
+        Reason := '';
+        for Index := 0 to GetArrayLength(Details) - 1 do begin
+          if Length(Reason) >= 1000 then Break;
+          if Reason <> '' then Reason := Reason + #13#10;
+          Reason := Reason + Details[Index];
+        end;
+        Reason := Trim(Copy(Reason, 1, 1000));
+        if (Reason <> '') and (Reason <> 'OK') then MaintenanceFailure := MaintenanceFailure + #13#10 + Reason;
+      end;
+    Log('Guardian maintenance failed: ' + Action + '; ' + MaintenanceFailure + '; result: ' + DetailPath);
+  end;
 end;
 
 function PrepareGuardian: String;
@@ -215,7 +239,8 @@ begin
   end;
   if not MaintenanceCommand('Prepare') then begin
     MaintenanceActive := FileExists(MaintenanceDirectory + '\journal.json');
-    Result := '无法自动完成本安装的守护维护，本次不继续。诊断及恢复记录：' + MaintenanceDirectory;
+    Result := '无法自动完成本安装的守护维护，本次不继续。' + #13#10 + MaintenanceFailure + #13#10 +
+      '诊断及恢复记录：' + MaintenanceDirectory;
     Exit;
   end;
   MaintenanceActive := True;
@@ -248,14 +273,16 @@ procedure RestoreGuardian;
 begin
   if MaintenanceActive and (not MaintenanceCompleted) then
     if not MaintenanceCommand('Restore') then
-      SuppressibleMsgBox('守护未能自动恢复。请保留记录并按 GUARD-MAINTENANCE.md 处理：' + MaintenanceDirectory, mbError, MB_OK, IDOK);
+      SuppressibleMsgBox('守护未能自动恢复。' + #13#10 + MaintenanceFailure + #13#10 +
+        '请保留记录并按 GUARD-MAINTENANCE.md 处理：' + MaintenanceDirectory, mbError, MB_OK, IDOK);
 end;
 
 procedure CompleteGuardian;
 begin
   if MaintenanceActive then begin
     if not MaintenanceCommand('Complete') then
-      RaiseException('安装文件已处理，但守护维护状态未能解除，请核查记录：' + MaintenanceDirectory);
+      RaiseException('安装文件已处理，但守护维护状态未能解除。' + #13#10 + MaintenanceFailure + #13#10 +
+        '请核查记录：' + MaintenanceDirectory);
     MaintenanceCompleted := True;
   end;
 end;

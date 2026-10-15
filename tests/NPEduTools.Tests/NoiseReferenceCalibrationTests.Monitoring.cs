@@ -9,6 +9,62 @@ namespace NPEduTools.Tests;
 
 public sealed partial class NoiseReferenceCalibrationTests
 {
+    [Fact]
+    public async Task Background_manual_statistics_use_estimated_units_and_stop_classifying_an_invalid_reference_without_a_display()
+    {
+        await using var f = new Fixture(); await f.PrepareAsync(); Assert.Equal("Succeeded", f.Command("confirm").Outcome);
+        var policy = new StudyNoise(true, -40, -50, 600, 3, new(65, 50));
+        var settings = new StudySettings(new("Asia/Shanghai", "2026-10-01", null, [], []), new("StatusTrend", 600),
+            new(false, "OwnClass", [], 60), policy, new(false, 3, 30, 30, true, false));
+        var school = new StudyHostState("version-a", "APPLIED", "", "", "Outside", "OUTSIDE_WINDOW", true,
+            null, null, null, settings);
+        await using var manual = new ManualStudyService(f.Noise, () => ("synthetic-class", true, school), () => false,
+            Path.Combine(f.DirectoryPath, "manual"), f.Time, false);
+        var status = manual.Status();
+        Assert.Equal("Succeeded", manual.Handle(new(1, Guid.NewGuid(), "manual.study.command",
+            ManualStudy: new("start", status.InstanceId, status.Revision, DeviceId: "mic"))).Outcome);
+        await Until(() => f.Noise.Snapshot().State == "Active"); manual.Tick();
+        for (int i = 0; i < 40; i++) { FormalFrames(f, 1, aDigital: -24); manual.Tick(); }
+        var before = f.Noise.StudyReportSnapshot()!;
+        Assert.Equal(0, before.Raw.ThresholdSampledSeconds);
+        Assert.Equal(4, before.Estimated!.HighSeconds, 6);
+        Assert.Equal(4, before.Estimated.ThresholdSampledSeconds, 6);
+        f.Capture!.Signature = Signature.Replace("gain=.7", "gain=.8");
+        for (int i = 0; i < 10; i++) { FormalFrames(f, 1, aDigital: -24); manual.Tick(); }
+        var invalidated = f.Noise.StudyReportSnapshot()!;
+        Assert.Equal(before.Estimated.HighSeconds, invalidated.Estimated!.HighSeconds, 6);
+        Assert.Equal(0, invalidated.Raw.ThresholdSampledSeconds);
+        Assert.Equal(1, invalidated.Raw.SampledSeconds - before.Raw.SampledSeconds, 6);
+        Assert.Equal("INPUT_SETTINGS_CHANGED", invalidated.EstimateReason);
+        Assert.Equal("Active", f.Noise.Snapshot().State);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Estimated_threshold_qualification_survives_unrelated_session_observers(bool manual)
+    {
+        await using var f = new Fixture(); await f.PrepareAsync(); Assert.Equal("Succeeded", f.Command("confirm").Outcome);
+        if (manual)
+        {
+            Assert.Equal("Accepted", f.Noise.StartManualStudy(Guid.NewGuid(), "mic", 10800).Outcome);
+            await Until(() => f.Noise.Snapshot().State == "Active");
+        }
+        else await StartFormal(f);
+        var id = f.Noise.Snapshot().SessionId!.Value;
+        var policy = new StudyNoise(true, -40, -50, 600, 3, new(65, 50));
+        f.Noise.StudyThresholds(id, policy);
+        for (int i = 0; i < 40; i++)
+        {
+            FormalFrames(f, 1, aDigital: -24);
+            Assert.Equal(("None", false), f.Noise.StudyThresholds(null, null));
+            Assert.Equal(("None", false), f.Noise.StudyThresholds(Guid.NewGuid(), policy with { Estimated = null }));
+        }
+        Assert.Equal(("High", true), f.Noise.StudyThresholds(id, policy));
+        var report = f.Noise.StudyReportSnapshot()!;
+        Assert.Equal(0, report.Raw.ThresholdSampledSeconds);
+        Assert.Equal(report.Estimated!.SampledSeconds, report.Estimated.HighSeconds, 8);
+    }
+
     private static async Task StartFormal(Fixture f, bool scheduled = true)
     {
         var s = f.Noise.Snapshot();

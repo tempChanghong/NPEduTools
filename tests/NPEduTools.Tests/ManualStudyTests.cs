@@ -25,10 +25,12 @@ public sealed class ManualStudyTests
         public readonly Clock Time=new();public readonly List<Capture> Captures=[];
         public readonly string Folder=Path.Combine(Path.GetTempPath(),"manual-study-test-"+Guid.NewGuid());
         public bool Blocked=false;public int Lead=120;public long LastInput;public Func<int>? ReadLead;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
+        public (string? Scope, bool Selected, StudyHostState State) School = (null, false,
+            new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null));
         public Fixture()
         {
             Noise=new(_=>{var c=new Capture();Captures.Add(c);return c;},()=>[new("mic","Synthetic")],Time);
-            Manual=new(Noise,()=> (null,false,new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null)),()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>ReadLead?.Invoke()??Lead,
+            Manual=new(Noise,()=>School,()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>ReadLead?.Invoke()??Lead,
                 inactivity:()=>TimeSpan.FromMilliseconds(Time.Ms-LastInput));
         }
         public HostResponse Start(DateTimeOffset? start=null,DateTimeOffset? end=null,int? hide=600)
@@ -38,6 +40,41 @@ public sealed class ManualStudyTests
         public async Task Ended(){for(int i=0;i<100 && Manual.Status().State!="Ended";i++)await Task.Delay(10);Assert.Equal("Ended",Manual.Status().State);}
         public async ValueTask DisposeAsync(){await Noise.DisposeAsync();await Manual.DisposeAsync();if(Directory.Exists(Folder)){Assert.Equal(Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar),Path.GetDirectoryName(Path.GetFullPath(Folder)));Directory.Delete(Folder,true);}}
     }
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Background_manual_study_counts_thresholds_without_display_or_photography(bool reserved)
+    {
+        await using var f = new Fixture();
+        var policy = new StudyNoise(true, -45, -55, 600, 3);
+        var settings = new StudySettings(new("Asia/Shanghai", "2026-10-01", null, [], []), new("StatusTrend", 600),
+            new(false, "OwnClass", [], 60), policy, new(false, 3, 30, 30, true, false));
+        f.School = ("synthetic-class", true, new("version-a", "APPLIED", "", "", "Outside", "OUTSIDE_WINDOW", true,
+            null, null, null, settings));
+        var start = f.Time.GetUtcNow().AddMinutes(reserved ? 5 : 0);
+        Assert.Equal("Succeeded", f.Start(start, start.AddMinutes(1)).Outcome);
+        if (reserved) { Assert.Empty(f.Captures); f.Time.Ms += 300000; }
+        await f.Active();
+        var before = f.Noise.StudyReportSnapshot()!;
+        // Drive only Host ticks and synthetic frames; never read Display or use a photo observer.
+        for (int i = 0; i < 50; i++) { f.Time.Ms += 100; f.Captures[0].Sample(); f.Manual.Tick(); }
+        var after = f.Noise.StudyReportSnapshot()!;
+        Assert.Equal(5, after.Raw.ThresholdSampledSeconds - before.Raw.ThresholdSampledSeconds, 6);
+        Assert.Equal(5, after.Raw.HighSeconds - before.Raw.HighSeconds, 6);
+        Assert.Equal(5, after.Raw.MediumSeconds - before.Raw.MediumSeconds, 6);
+        f.School = f.School with { State = f.School.State with { Version = "version-b",
+            Settings = settings with { Noise = policy with { RedLineDbfs = -30 } } } };
+        f.Manual.Tick();
+        for (int i = 0; i < 10; i++) { f.Time.Ms += 100; f.Captures[0].Sample(); f.Manual.Tick(); }
+        var updated = f.Noise.StudyReportSnapshot()!;
+        Assert.Equal(after.Raw.HighSeconds, updated.Raw.HighSeconds, 6);
+        Assert.Equal(1, updated.Raw.MediumSeconds - after.Raw.MediumSeconds, 6);
+        Assert.Single(f.Captures); Assert.Equal("Active", f.Noise.Snapshot().State);
+        Assert.Equal("Succeeded", f.Manual.Handle(f.End(f.Manual.Status())).Outcome); await f.Ended();
+        var report = f.Manual.Report().Data!;
+        Assert.True(report.Complete); Assert.Equal("dBFS", report.Raw.Unit);
+        Assert.Equal(after.Raw.HighSeconds, report.Raw.HighSeconds, 6);
+    }
+
     [Fact]
     public async Task Consecutive_manual_reports_keep_Host_identity_but_have_distinct_session_versions()
     {

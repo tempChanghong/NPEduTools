@@ -63,9 +63,7 @@ public sealed partial class StudyPhotoTests
     public async Task Synthetic_camera_worker_runs_in_actual_child_process_without_opening_a_camera()
     {
         if (!OperatingSystem.IsWindows()) return;
-        var root=System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory,"../../../../../"));
-        string configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
-        string exe=System.IO.Path.Combine(root,"src","NPEduTools.Camera","bin",configuration,"net10.0-windows","NPEduTools.Camera.exe");
+        string exe=System.IO.Path.Combine(AppContext.BaseDirectory,"CameraExecutable","NPEduTools.Camera.exe");
         Assert.True(File.Exists(exe));
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(6));
         var frame=await StudyPhotoProcess.RunAsync(exe,"synthetic-only",true,timeout.Token);
@@ -118,7 +116,8 @@ public sealed partial class StudyPhotoTests
         service.BindPhotos("scope"); clock.Ms=30000; capture.Emit(-50); service.ConfirmPhotoLease(Lease(),TimeSpan.Zero);
         // No App or selected display is required; actual high frames alone qualify the photo.
         state=state with { Display=null }; service.Tick();
-        for(int i=0;i<29;i++) { clock.Ms+=100; capture.Emit(-20); service.Tick(); }
+        var idleDisplay = new StudyDisplayService(() => ("scope", false, state with { Phase = "Outside" }), clock, noise.StudyThresholds);
+        for(int i=0;i<29;i++) { clock.Ms+=100; capture.Emit(-20); service.Tick(); idleDisplay.Snapshot(); }
         Assert.Equal(1,shots);
         clock.Ms+=100; capture.Emit(-20); service.Tick(); await service.FlushAsync(CancellationToken.None);
         Assert.Equal(2,shots); Assert.Equal("Noise",service.PendingPhoto()!.Metadata["reason"]!.GetValue<string>());

@@ -26,8 +26,10 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     {
         lock (_sync)
         {
-            // Only the already running scheduled microphone can feed this observer.
-            if (_state != "Active" || _session is not { } s || !s.Scheduled && !s.ManualStudy || s.Id != session || s.Stop.IsCancellationRequested)
+            // Idle observers and delayed calls from a former session cannot reset the
+            // current owner's continuous threshold evidence. Withdrawal needs its ID too.
+            if (_session is not { } s || s.Id != session) return ("None", false);
+            if (_state != "Active" || !s.Scheduled && !s.ManualStudy || s.Stop.IsCancellationRequested)
             { _studyThresholds.Configure(null, null); return ("None", false); }
             s.ThresholdPolicy = policy;
             CheckEstimateInput(s);
