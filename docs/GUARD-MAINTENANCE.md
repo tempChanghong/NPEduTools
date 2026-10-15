@@ -64,7 +64,7 @@ v1.1.2 安装器自动执行本安装的守护维护，正常升级／卸载无�
    Start-Process -FilePath $guardExe -ArgumentList '--pipe','NPEduTools.ManualCheck20261011','--maintenance' -WindowStyle Hidden -Wait
    ```
 
-3. 命令通常没有弹窗；没有输出或退出码为零仍不能单独证明登记已撤销。核对本实例 `guard\stop.json` 的 `Generation` 与 `registration.json` 一致、`Reason` 为 `Maintenance`，运行中的守护停止后 `status.json` 为 `Stopped`，该目录的守护进程已退出、四个所属任务已撤销。默认记录在 `%LocalAppData%\NPEduTools\config\guard`；自定义实例在临时目录中的实例哈希路径。若守护原本未运行，状态文件可能未刷新，以匹配的维护停止记录及所属任务已撤销核查，不要求陈旧状态文件自行变化。命令不会停止 Windows 服务，不删除配对、报告或自定义排程。任务登记不匹配时保留错误供维护，不删除其他软件的任务。
+3. 命令通常没有弹窗；维护入口退出码 `1` 表示参数、实例登记或安装目录未通过核验，`2` 表示写停止记录或撤销任务失败，`0` 表示这两步已成功。缺失／损坏登记不会再被当作成功返回；旧版守护可能在这些情况下也返回 `0`。维护入口不等待原守护进程完成退出，因此仍须核对本实例 `guard\stop.json` 的 `Generation` 与 `registration.json` 一致、`Reason` 为 `Maintenance`，运行中的守护停止后 `status.json` 为 `Stopped`，该目录的守护进程已退出、四个所属任务已撤销。默认记录在 `%LocalAppData%\NPEduTools\config\guard`；自定义实例在临时目录中的实例哈希路径。若守护原本未运行，状态文件可能未刷新，以匹配的维护停止记录及所属任务已撤销核查，不要求陈旧状态文件自行变化。命令不会停止 Windows 服务，不删除配对、报告或自定义排程。任务登记不匹配时保留错误供维护，不删除其他软件的任务。
 4. 之后才能覆盖、移动或卸载目录。下次主动打开完整 App 会重新登记该目录的独立启动任务。多账户分别维护；不要用另一个管理员账户的实例记录代替原账户的记录。
 
 必须保留整个 App／Host／Guard 包。仅改名旧 EXE 不能升级；运行文件、DLL、运行时配置及独立启动路径都要来自同一次构建。
