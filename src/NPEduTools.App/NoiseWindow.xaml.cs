@@ -56,7 +56,7 @@ public partial class NoiseWindow : Window
             var guard = GuardFiles.ForPipe(_pipe).Read<GuardStatus>("status.json");
             var age = guard is null ? TimeSpan.MaxValue : DateTimeOffset.UtcNow - guard.UpdatedAt;
             GuardStatusText.Text = guard is not null && age >= TimeSpan.Zero && age < TimeSpan.FromSeconds(5)
-                ? $"{guard.Message} 恢复次数：{guard.Restarts}/3。" : "守护未连接或状态已陈旧；不会据此判断监测已停止。";
+                ? $"{guard.Message} 累计恢复请求：{guard.Restarts} 次。" : "守护未连接或状态已陈旧；不会据此判断监测已停止。";
             try
             {
                 if (!_busy && (WorkspacePanel.Visible(this) || !loadedDevices))
