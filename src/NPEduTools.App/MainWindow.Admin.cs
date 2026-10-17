@@ -94,7 +94,7 @@ public partial class MainWindow
             }
             AdminMessage.Text = result.Message;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             ClearAdminStatus();
             AdminMessage.Text = "未能完成检查或操作，请刷新状态后重试。";
