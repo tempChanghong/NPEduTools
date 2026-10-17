@@ -58,10 +58,18 @@ public sealed class ManualStudyService : IAsyncDisposable
                 return Reply(r,"Rejected","MANUAL_STATE_CHANGED","手动会话已变化；没有停止其他会话。");
             if(c.Action=="start")
             {
-                var now=_time.GetUtcNow();var start=c.StartUtc??now;var end=c.EndUtc??start.AddHours(3);
-                if(!NoiseContract.ValidDeviceId(c.DeviceId) || start<now.AddSeconds(-5) || start>now.AddDays(366) || end<=start || end-start>TimeSpan.FromHours(3) ||
-                    c.HideSeconds is <1 or >10800 || start.Offset!=TimeSpan.Zero || end.Offset!=TimeSpan.Zero)
-                    return Reply(r,"Rejected","MANUAL_TIME_INVALID","结束须晚于开始，实际采集最多三小时；请检查日期、时间和返回设置。");
+                var now=_time.GetUtcNow();var start=c.StartUtc??now;
+                const string timeError="结束须晚于开始，实际采集最多三小时；请检查日期、时间和返回设置。";
+                // Validate the start before deriving a three-hour end. Date arithmetic
+                // on an invalid far-future input must not escape the command handler.
+                var delay=start-now;
+                if(start.Offset!=TimeSpan.Zero || delay<TimeSpan.FromSeconds(-5) || delay>TimeSpan.FromDays(366) ||
+                    c.EndUtc is null && DateTimeOffset.MaxValue-start<TimeSpan.FromHours(3))
+                    return Reply(r,"Rejected","MANUAL_TIME_INVALID",timeError);
+                var end=c.EndUtc??start.AddHours(3);
+                if(!NoiseContract.ValidDeviceId(c.DeviceId) || end<=start || end-start>TimeSpan.FromHours(3) ||
+                    c.HideSeconds is <1 or >10800 || end.Offset!=TimeSpan.Zero)
+                    return Reply(r,"Rejected","MANUAL_TIME_INVALID",timeError);
                 if(_phase is "Waiting" or "Preparing" or "Active" or "Starting" or "Stopping" || _noise.CaptureBusy || _blocked())
                     return Reply(r,"Rejected","MANUAL_BUSY","当前设备忙碌或学校定时自习优先；没有创建手动会话。");
                 int lead;

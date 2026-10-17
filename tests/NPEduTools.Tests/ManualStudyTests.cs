@@ -143,6 +143,37 @@ public sealed class ManualStudyTests
     [InlineData(0)][InlineData(-1)][InlineData(181)]
     public async Task End_must_follow_start_and_arrangement_cannot_exceed_three_hours(int minutes)
     {await using var f=new Fixture();Assert.Equal("MANUAL_TIME_INVALID",f.Start(end:f.Time.GetUtcNow().AddMinutes(minutes)).ErrorCode);Assert.Empty(f.Captures);}
+    [Theory]
+    [InlineData(21, 0, false)] [InlineData(22, 0, false)] [InlineData(23, 59, false)]
+    [InlineData(21, 0, true)] [InlineData(22, 0, true)] [InlineData(23, 59, true)]
+    public async Task Far_future_start_is_rejected_before_computing_a_default_end_and_does_not_poison_retry(int hour, int minute, bool plannedEnd)
+    {
+        await using var f = new Fixture();
+        var state = f.Manual.Status();
+        var start = new DateTimeOffset(9999, 12, 31, hour, minute, 0, TimeSpan.Zero);
+        var request = new HostRequest(1, Guid.NewGuid(), "manual.study.command", ManualStudy:
+            new("start", state.InstanceId, state.Revision, DeviceId: "mic", StartUtc: start,
+                EndUtc: plannedEnd ? start.AddSeconds(30) : null));
+        Assert.Null(Protocol.Validate(request));
+        var reply = f.Manual.Handle(request);
+        Assert.Equal("Rejected", reply.Outcome); Assert.Equal("MANUAL_TIME_INVALID", reply.ErrorCode);
+        Assert.Equal(state, f.Manual.Status()); Assert.Empty(f.Captures);
+        Assert.Equal("Succeeded", f.Start(start: f.Time.GetUtcNow().AddMinutes(5)).Outcome);
+        Assert.Equal("Waiting", f.Manual.Status().State); Assert.Empty(f.Captures);
+    }
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Clock_near_maximum_date_rejects_unrepresentable_default_end_but_accepts_a_valid_explicit_reservation(bool plannedEnd)
+    {
+        await using var f = new Fixture();
+        f.Time.Base = new DateTimeOffset(9999, 12, 31, 21, 0, 0, TimeSpan.Zero);
+        var start = f.Time.GetUtcNow().AddMinutes(5);
+        var reply = f.Start(start, plannedEnd ? start.AddMinutes(1) : null);
+        Assert.Equal(plannedEnd ? "Succeeded" : "Rejected", reply.Outcome);
+        Assert.Equal(plannedEnd ? null : "MANUAL_TIME_INVALID", reply.ErrorCode);
+        Assert.Equal(plannedEnd ? "Waiting" : "Idle", f.Manual.Status().State);
+        Assert.Empty(f.Captures);
+    }
     [Fact]
     public async Task Blank_end_stops_at_three_hour_limit_using_monotonic_time()
     {
