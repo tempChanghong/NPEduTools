@@ -110,12 +110,31 @@ public static class RecordingPlanner
         var candidates = plans.Where(p => p.Selected && !p.Conflict && p.Fixed == active.Fixed &&
             (p.Fixed ? p.Key == active.Key : sameProfile && p.Lesson.Start < active.Lesson.End && active.Lesson.Start < p.Lesson.End)).ToArray();
         // A still-known slot explicitly excluded or in conflict is withdrawn,
-        // not a retiming of an overlapping neighbor. Only use the existing
-        // unique-overlap fallback when the original slot identity disappeared.
+        // not a retiming of an overlapping neighbor.
         if (plans.Any(p => p.Key == active.Key)) return candidates.FirstOrDefault(p => p.Key == active.Key);
+        // Editing only the formal end changes the key. A unique unchanged
+        // start still identifies that occurrence, including an explicit withdrawal.
+        if (!active.Fixed && sameProfile)
+        {
+            var sameStart = plans.Where(p => !p.Fixed && p.Lesson.Start == active.Lesson.Start).ToArray();
+            if (sameStart.Length > 0) return sameStart.Length == 1 && sameStart[0].Selected && !sameStart[0].Conflict ? sameStart[0] : null;
+        }
         return candidates.Length == 1 ? candidates[0] : null;
     }
 
-    public static bool IsDifferentKnownLesson(PlannedRecording[]? plans, PlannedRecording current, DateTimeOffset start, DateTimeOffset end) =>
-        plans?.Any(p => !p.Fixed && p.Key != current.Key && p.Lesson.Start == start && p.Lesson.End == end) == true;
+    public static bool IsDifferentKnownLesson(PlannedRecording[]? plans, PlannedRecording current, DateTimeOffset start, DateTimeOffset end)
+    {
+        if (plans is null) return false;
+        PlannedRecording? sameStart = null;
+        int count = 0;
+        foreach (var plan in plans)
+        {
+            if (plan.Fixed || plan.Lesson.Start != start) continue;
+            if (plan.Key != current.Key && plan.Lesson.End == end) return true;
+            sameStart = plan; count++;
+        }
+        // Historical marks retain the old end. Link a unique unchanged start
+        // to its current row so that mark cannot suppress an overlapping neighbor.
+        return count == 1 && sameStart!.Key != current.Key;
+    }
 }

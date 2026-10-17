@@ -118,6 +118,40 @@ public sealed class RecordingHandoffLifecycleTests
     }
 
     [Theory]
+    [InlineData(-10)] [InlineData(10)]
+    public async Task EndEditedOverlappingCourseKeepsItsIdentityAndHandsOffToTheNextCourse(int minutes)
+    {
+        await using var f = await Fixture.Open();
+        var start = Now.AddMinutes(-15);
+        var source = new DaySchedule(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "重叠课程", Date, "fixture", Now,
+            true, true, "隔离课表", [new(1, Guid.NewGuid(), "上一节", start, start.AddMinutes(40), true),
+                new(2, Guid.NewGuid(), "下一节", start.AddMinutes(20), start.AddMinutes(60), true)]);
+        var book = RecordingPlanBook.Create(); new RecordingPlanBookStore(f.BookPath).Save(book);
+        var original = CalendarRecordingPlanner.Build(book, Date, source);
+        await f.StartWorker(original[0], "recorder-slow-saving", source.ProfileId);
+        var changed = source with { Lessons = [source.Lessons[0] with { End = source.Lessons[0].End.AddMinutes(minutes) }, source.Lessons[1]] };
+        var current = CalendarRecordingPlanner.Build(book, Date, changed);
+        f.Enable(); f.Fresh(Now, changed); await f.Tick();
+        Assert.True(f.Field<PlannedRecording>("_activePlan").Selected);
+        Assert.Equal(original[0].Key, f.Field<PlannedRecording>("_activePlan").Key);
+        Assert.Equal(original[0].End, f.Field<PlannedRecording>("_activePlan").End);
+        Assert.Equal("Recording", f.Worker!.State.Phase);
+        Assert.Equal("下一节", f.Service.Automatic.Next?.Subject);
+        f.Fresh(Now.AddMinutes(5), changed); await f.Tick();
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+            while (f.Worker.State.Phase != "Saving") await Task.Delay(20, timeout.Token);
+        Assert.Single(f.Ledger.Document.Entries);
+        File.WriteAllText(Path.Combine(f.DirectoryPath, "release-saving"), "done");
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+            while (f.Worker!.State.Phase != "Saved") await Task.Delay(20, timeout.Token);
+        f.Fresh(Now.AddMinutes(5).AddSeconds(1), changed); await f.Tick();
+        Assert.Equal(2, f.Ledger.Document.Entries.Length);
+        Assert.Equal("Recorded", f.Ledger.Document.Entries[0].Phase);
+        Assert.Equal(current[1].Key, f.Worker!.State.Control!.OccurrenceId);
+        Assert.DoesNotContain(f.Ledger.Document.Entries, e => e.Phase == "Skipped");
+    }
+
+    [Theory]
     [InlineData("skip-upcoming")] [InlineData("skip-next")]
     public async Task SkipNextIgnoresACourseWhoseFormalWindowAlreadyEnded(string action)
     {
@@ -167,18 +201,24 @@ public sealed class RecordingHandoffLifecycleTests
         }
         public void Enable()
         { Set("_enabled", true); Set("_appLease", RecorderDeadline.After(TimeSpan.FromMinutes(1))); }
-        public async Task FinishedWorker(PlannedRecording plan, bool failed = false, bool saving = false)
+        public async Task FinishedWorker(PlannedRecording plan, bool failed = false, bool saving = false, Guid profile = default)
         {
-            var entry = Ledger.Add(Guid.Empty, Date, plan, "Recording", "隔离自动会话");
-            var worker = new RecorderProcess(Executable, saving ? "recorder-slow-saving" : "recorder-finalizing");
-            Set("_worker", worker); Set("_activePlan", plan);
+            var control = await StartWorker(plan, saving ? "recorder-slow-saving" : "recorder-finalizing", profile);
+            var worker = Worker!;
+            await worker.CommandAsync("stop", control);
+            await Wait(() => worker.State.Phase == (saving ? "Saving" : "Saved"));
+            if (failed) worker.Fail("隔离失败回执");
+        }
+        public async Task<RecorderControl> StartWorker(PlannedRecording plan, string mode, Guid profile = default)
+        {
+            var entry = Ledger.Add(profile, Date, plan, "Recording", "隔离自动会话");
+            var worker = new RecorderProcess(Executable, mode);
+            Set("_worker", worker); Set("_activePlan", plan); Set("_activeProfile", profile);
             var control = new RecorderControl("Automatic", entry.SessionId, entry.Key,
                 RecorderDeadline.After(TimeSpan.FromMinutes(1)), RecorderDeadline.After(TimeSpan.FromSeconds(8)));
             await worker.StartAsync(new("synthetic", DirectoryPath), control);
             await Wait(() => worker.State.Phase == "Recording");
-            await worker.CommandAsync("stop", control);
-            await Wait(() => worker.State.Phase == (saving ? "Saving" : "Saved"));
-            if (failed) worker.Fail("隔离失败回执");
+            return control;
         }
         public async Task ReleaseWorker()
         { File.WriteAllText(ReleasePath, "done"); await Wait(() => Worker?.Alive != true); }
