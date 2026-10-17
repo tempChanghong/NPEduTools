@@ -98,6 +98,10 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
     public async Task CommandAsync(string action, RecorderControl expected)
     {
         if (_control?.Matches(expected) != true) throw new InvalidOperationException("录制会话已变化，旧操作已拒绝。");
+        // The worker awaits finalization inside its command loop and cannot
+        // drain stdin until saving completes. Repeated deadline/stop checks
+        // must not fill that pipe and fail the scheduler during a normal save.
+        if (State.Phase == "Saving" && action is "stop" or "shorten") return;
         if (action == "shorten" && _control.Owner == "Automatic")
             _control = _control with { HardDeadline = Math.Min(_control.HardDeadline, expected.HardDeadline) };
         await WriteAsync(new(action, Control: _control with { LeaseDeadline = RecorderDeadline.After(TimeSpan.FromSeconds(8)) }));

@@ -6,7 +6,7 @@ using System.Text.Json;
 if (args.Length == 2 && args[0] == "--fixture-window" && args[1] is
     "recorder-null" or "recorder-oversized" or "recorder-malformed" or "recorder-empty" or
     "recorder-unknown" or "recorder-missing-message" or "recorder-owned-idle" or "recorder-saved" or
-    "recorder-ready" or "recorder-failed" or "recorder-finalizing" or "recorder-active-eof" or
+    "recorder-ready" or "recorder-failed" or "recorder-finalizing" or "recorder-active-eof" or "recorder-slow-saving" or
     "recorder-invalid-phase" or "recorder-invalid-seconds" or "recorder-invalid-counter")
 {
     string? outputDirectory = null;
@@ -26,7 +26,7 @@ if (args.Length == 2 && args[0] == "--fixture-window" && args[1] is
     });
     while (await Console.In.ReadLineAsync() is { } line)
     {
-        if (args[1] is not ("recorder-ready" or "recorder-finalizing" or "recorder-active-eof" or
+        if (args[1] is not ("recorder-ready" or "recorder-finalizing" or "recorder-active-eof" or "recorder-slow-saving" or
             "recorder-invalid-phase" or "recorder-invalid-seconds" or "recorder-invalid-counter")) continue;
         var command = JsonSerializer.Deserialize<RecorderCommand>(line, RecordingContract.Json)!;
         if (command.Options is { } options) outputDirectory = options.OutputDirectory;
@@ -34,6 +34,14 @@ if (args.Length == 2 && args[0] == "--fixture-window" && args[1] is
             await File.AppendAllTextAsync(Path.Combine(outputDirectory, "leases-after-eof.txt"), "lease\n");
         if (command.Action is "start" or "stop")
         {
+            if (args[1] == "recorder-slow-saving" && command.Action == "stop" && outputDirectory is not null)
+            {
+                await File.AppendAllTextAsync(Path.Combine(outputDirectory, "stop-commands.txt"), "stop\n");
+                Console.WriteLine(JsonSerializer.Serialize(new RecordingState("Saving", "synthetic saving", Control: command.Control), RecordingContract.Json));
+                var saving = System.Diagnostics.Stopwatch.StartNew();
+                while (!File.Exists(Path.Combine(outputDirectory, "release-saving")) && saving.Elapsed < TimeSpan.FromSeconds(30))
+                    await Task.Delay(20);
+            }
             var state = new RecordingState(command.Action == "start" ? "Recording" : "Saved", command.Action, Control: command.Control);
             if (command.Action == "start") state = args[1] switch
             {

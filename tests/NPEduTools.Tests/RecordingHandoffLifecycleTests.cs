@@ -94,6 +94,29 @@ public sealed class RecordingHandoffLifecycleTests
         Assert.Equal(plans[1].Key, f.Worker!.State.Control!.OccurrenceId);
     }
 
+    [Fact]
+    public async Task LongSavingKeepsAutomaticHandoffWaitingWithoutFloodingTheWorkerPipe()
+    {
+        await using var f = await Fixture.Open();
+        var plans = f.Plans(new(12, 45));
+        await f.FinishedWorker(plans[0], saving: true);
+        f.Enable();
+        for (int i = 0; i < 100; i++)
+        {
+            f.Fresh(Now.AddMilliseconds(i * 250)); await f.Tick();
+            Assert.True(f.Field<bool>("_enabled"));
+            Assert.Equal("Finalizing", Assert.Single(f.Ledger.Document.Entries).Phase);
+        }
+        File.WriteAllText(Path.Combine(f.DirectoryPath, "release-saving"), "done");
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+            while (f.Worker!.State.Phase != "Saved") await Task.Delay(20, timeout.Token);
+        f.Fresh(Now.AddSeconds(30)); await f.Tick();
+        Assert.Equal("Recorded", f.Ledger.Document.Entries[0].Phase);
+        Assert.Equal(plans[1].Key, f.Worker!.State.Control!.OccurrenceId);
+        Assert.Single(File.ReadAllLines(Path.Combine(f.DirectoryPath, "stop-commands.txt")));
+        Assert.DoesNotContain(f.Ledger.Document.Entries, e => e.Phase == "Skipped");
+    }
+
     [Theory]
     [InlineData("skip-upcoming")] [InlineData("skip-next")]
     public async Task SkipNextIgnoresACourseWhoseFormalWindowAlreadyEnded(string action)
@@ -144,17 +167,17 @@ public sealed class RecordingHandoffLifecycleTests
         }
         public void Enable()
         { Set("_enabled", true); Set("_appLease", RecorderDeadline.After(TimeSpan.FromMinutes(1))); }
-        public async Task FinishedWorker(PlannedRecording plan, bool failed = false)
+        public async Task FinishedWorker(PlannedRecording plan, bool failed = false, bool saving = false)
         {
             var entry = Ledger.Add(Guid.Empty, Date, plan, "Recording", "隔离自动会话");
-            var worker = new RecorderProcess(Executable, "recorder-finalizing");
+            var worker = new RecorderProcess(Executable, saving ? "recorder-slow-saving" : "recorder-finalizing");
             Set("_worker", worker); Set("_activePlan", plan);
             var control = new RecorderControl("Automatic", entry.SessionId, entry.Key,
                 RecorderDeadline.After(TimeSpan.FromMinutes(1)), RecorderDeadline.After(TimeSpan.FromSeconds(8)));
             await worker.StartAsync(new("synthetic", DirectoryPath), control);
             await Wait(() => worker.State.Phase == "Recording");
             await worker.CommandAsync("stop", control);
-            await Wait(() => worker.State.Phase == "Saved");
+            await Wait(() => worker.State.Phase == (saving ? "Saving" : "Saved"));
             if (failed) worker.Fail("隔离失败回执");
         }
         public async Task ReleaseWorker()
@@ -176,6 +199,7 @@ public sealed class RecordingHandoffLifecycleTests
         public async ValueTask DisposeAsync()
         {
             File.WriteAllText(ReleasePath, "done");
+            File.WriteAllText(Path.Combine(DirectoryPath, "release-saving"), "done");
             // Drain the synthetic process reader before disposing the service;
             // a late start receipt must not race a fabricated cleanup failure.
             if (Worker is { } worker) await worker.DisposeAsync();

@@ -95,6 +95,46 @@ public sealed class RecorderProcessTests
         while (recorder.State.Phase != phase) await Task.Delay(20, timeout.Token);
     }
 
+    [Theory]
+    [InlineData("Automatic", "stop")]
+    [InlineData("Automatic", "shorten")]
+    [InlineData("Manual", "stop")]
+    public async Task FinalizingWorkerDoesNotReceiveRepeatedCaptureCommands(string owner, string action)
+    {
+        string directory = Directory.CreateTempSubdirectory("NPEduTools-saving-commands-").FullName;
+        string release = Path.Combine(directory, "release-saving");
+        string executable = Path.Combine(AppContext.BaseDirectory, "GuardFixture", "NPEduTools.GuardFixture.exe");
+        var recorder = new RecorderProcess(executable, "recorder-slow-saving");
+        var control = new RecorderControl(owner, Guid.NewGuid(), owner == "Automatic" ? "synthetic-course" : "",
+            owner == "Automatic" ? RecorderDeadline.After(TimeSpan.FromMinutes(5)) : 0,
+            RecorderDeadline.After(TimeSpan.FromSeconds(8)));
+        try
+        {
+            await recorder.StartAsync(new("synthetic", directory), control);
+            await WaitForPhaseAsync(recorder, "Recording");
+            await recorder.CommandAsync("stop", control);
+            await WaitForPhaseAsync(recorder, "Saving");
+            await Assert.ThrowsAsync<InvalidOperationException>(() => recorder.CommandAsync(action, control with { SessionId = Guid.NewGuid() }));
+            // The synthetic worker deliberately does not consume stdin during
+            // saving, just as the real recorder awaits finalization in its command loop.
+            // Unnecessary retries must not fill that pipe or time out the scheduler.
+            for (int i = 0; i < 100; i++)
+                await recorder.CommandAsync(action, action == "shorten" ? control with { HardDeadline = control.HardDeadline - i } : control);
+            Assert.Equal("Saving", recorder.State.Phase);
+            Assert.True(control.Matches(recorder.State.Control));
+            File.WriteAllText(release, "done");
+            await WaitForPhaseAsync(recorder, "Saved");
+            await recorder.DisposeAsync();
+            Assert.Single(File.ReadAllLines(Path.Combine(directory, "stop-commands.txt")));
+        }
+        finally
+        {
+            File.WriteAllText(release, "done");
+            await recorder.DisposeAsync();
+            Directory.Delete(directory, true);
+        }
+    }
+
     [Fact]
     public async Task LiveWorkerWithClosedStatusPipeCannotRetainActiveStateOrReceiveContinuedLeases()
     {
