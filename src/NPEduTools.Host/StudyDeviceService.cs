@@ -52,12 +52,18 @@ public sealed class StudyDeviceService(Func<IReadOnlyList<StudyCameraDevice>> en
         _loaded = true;
         try
         {
-            if (!File.Exists(_path)) return;
-            if (new FileInfo(_path).Length > 16384) throw new InvalidDataException();
-            var selected = JsonSerializer.Deserialize<string?>(File.ReadAllText(_path));
+            string? selected;
+            try
+            {
+                using var file = File.OpenRead(_path);
+                if (file.Length > 16384) throw new InvalidDataException();
+                using var reader = new StreamReader(file);
+                selected = JsonSerializer.Deserialize<string?>(reader.ReadToEnd());
+            }
+            catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException) { selected = null; }
             if (selected is not null && !NoiseContract.ValidDeviceId(selected)) throw new InvalidDataException();
             _selected = selected;
-            // Only a fully validated reread can clear the fault. Fence commands
+            // A validated reread or missing preference (unselected) can clear the fault. Fence commands
             // formed from the earlier unreadable snapshot, without rewriting the file.
             if (_configurationError) _revision++;
             _configurationError = false;
