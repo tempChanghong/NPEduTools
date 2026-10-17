@@ -336,6 +336,25 @@ public sealed partial class NoiseCalibrationTests
         Assert.Equal("CALIBRATION_SCHEDULE_BUSY", f.Command("begin", study: Study with { Phase = "Preparing" }).ErrorCode);
         f.Command("remove", sample: before.Samples[0].Id); Assert.Empty(f.State.Samples);
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StaleBeginCannotReplaceNewDraftSamples(bool differentInstance)
+    {
+        await using var f = new Fixture();
+        Assert.Equal("Succeeded", f.Command("begin").Outcome);
+        var confirmed = f.State;
+        Assert.Equal("Succeeded", f.Command("begin").Outcome);
+        await f.SampleAsync("Acceptable", -50);
+        var current = f.State;
+        var command = new NoiseCalibrationCommand("begin", differentInstance ? Guid.NewGuid() : confirmed.InstanceId,
+            differentInstance ? current.Revision : confirmed.Revision, Secret);
+        var response = f.Noise.CalibrationHandle(new(1, Guid.NewGuid(), "noise.calibration.command", NoiseCalibration: command), Scope, Study);
+        Assert.Equal("CALIBRATION_CHANGED", response.ErrorCode);
+        Assert.Equal(current.Revision, f.State.Revision);
+        Assert.Equal(current.DraftId, f.State.DraftId);
+        Assert.Equal(current.Samples, f.State.Samples);
+    }
     [Fact]
     public async Task Corrupt_storage_remains_untouched_and_cannot_apply_thresholds()
     {

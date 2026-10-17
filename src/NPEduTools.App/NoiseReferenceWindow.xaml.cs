@@ -299,7 +299,7 @@ public partial class NoiseReferenceWindow : Window
     private void SamplingClicked(object sender, RoutedEventArgs e) => Navigate(2);
     private void ResultClicked(object sender, RoutedEventArgs e) => Navigate(3);
     private async Task SendAsync(string action, string? role = null, Guid? sample = null,
-        double? reference = null, double? minimum = null, double? maximum = null)
+        double? reference = null, double? minimum = null, double? maximum = null, NoiseReferenceState? confirmedState = null)
     {
         if (_busy || _closing || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
         double? stability = null, tolerance = null;
@@ -310,8 +310,9 @@ public partial class NoiseReferenceWindow : Window
             { OperationMessage.Text = SelectedWorkflow=="Field"?"现场模式允许波动为 0.1–20 dB，自动通过差值为 0.1–3 dB；不是精度承诺。":"请明确填写 0.1–5 dB 的允许波动与复核差值；它们不是精度承诺。"; return; }
             stability = s; tolerance = t;
         }
-        var command = new NoiseReferenceCommand(action, _state.InstanceId, _state.Revision, ManagementSecret.Password,
-            action is "begin" or "clear" ? null : _state.Draft?.Id,
+        var expected = confirmedState ?? _state;
+        var command = new NoiseReferenceCommand(action, expected.InstanceId, expected.Revision, ManagementSecret.Password,
+            action is "begin" or "clear" ? null : expected.Draft?.Id,
             action == "begin" ? Instrument.Text.Trim() : null, action == "begin" ? TimeMode.SelectedValue as string : null,
             stability, tolerance, role, sample, reference, minimum, maximum, action == "reference" && SameWindow.IsChecked == true,
             action == "begin" ? _meterPath : null, action=="begin"?SelectedWorkflow:null,
@@ -385,12 +386,17 @@ public partial class NoiseReferenceWindow : Window
         finally { _busy = false; }
         await ReadCoreAsync(true); UpdateButtons();
     }
-    private async void BeginClicked(object sender, RoutedEventArgs e)
+    private async Task BeginDraftAsync(Func<bool> confirm)
     {
-        if (_state?.Draft?.Samples.Count > 0 && MessageBox.Show(WorkspacePanel.DialogOwner(this), "新草稿会替换已有参考统计，已确认参考保留。继续吗？",
-            "新建外部参考草稿", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
-        await SendAsync("begin");
+        if (_busy || _closing || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
+        // Status polls continue inside a modal dialog; consent belongs to this snapshot.
+        var confirmedState = _state;
+        if (confirmedState.Draft?.Samples.Count > 0 && !confirm()) return;
+        await SendAsync("begin", confirmedState: confirmedState);
     }
+    private async void BeginClicked(object sender, RoutedEventArgs e) =>
+        await BeginDraftAsync(() => MessageBox.Show(WorkspacePanel.DialogOwner(this), "新草稿会替换已有参考统计，已确认参考保留。继续吗？",
+            "新建外部参考草稿", MessageBoxButton.OKCancel) == MessageBoxResult.OK);
     private async void StartClicked(object sender, RoutedEventArgs e) => await SendAsync("start", role: SelectedWorkflow=="Field"?"Primary":RoleChoice.SelectedValue as string);
     private async void CancelClicked(object sender, RoutedEventArgs e) => await SendAsync("cancel");
     private async void RemoveClicked(object sender, RoutedEventArgs e) => await SendAsync("remove", sample: (SampleList.SelectedItem as SampleRow)?.Id);

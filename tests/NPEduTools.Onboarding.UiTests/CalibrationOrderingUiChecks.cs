@@ -14,6 +14,11 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            foreach (string scenario in new[] { "revision", "instance", "cancelled", "unchanged" })
+            {
+                CheckCalibrationBeginConfirmation(reference, false, scenario);
+                if (reference) CheckCalibrationBeginConfirmation(true, true, scenario);
+            }
             foreach (bool oldFailure in new[] { false, true }) CheckCalibrationOrdering(reference, oldFailure);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }

@@ -124,11 +124,13 @@ public partial class NoiseCalibrationWindow : Window
             SamplingStatus.Text = "采样状态待确认，请刷新核对；未宣称后台采样已停止。";
         }
     }
-    private async Task SendAsync(string action, string? scene = null, string? label = null, Guid? sample = null, double? medium = null, double? high = null)
+    private async Task SendAsync(string action, string? scene = null, string? label = null, Guid? sample = null, double? medium = null, double? high = null,
+        NoiseCalibrationState? confirmedState = null)
     {
         if (_busy || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
-        var c = new NoiseCalibrationCommand(action, _state.InstanceId, _state.Revision, ManagementSecret.Password,
-            action == "begin" ? null : _state.DraftId, scene, label, sample, medium, high);
+        var expected = confirmedState ?? _state;
+        var c = new NoiseCalibrationCommand(action, expected.InstanceId, expected.Revision, ManagementSecret.Password,
+            action == "begin" ? null : expected.DraftId, scene, label, sample, medium, high);
         if (!NoiseCalibrationContract.Valid(c)) { OperationMessage.Text = "请输入管理口令，并核对两个阈值和场景选择；已连接 NPEP 时使用学校口令。"; return; }
         long stamp = _order.Advance(); _busy = true; UpdateButtons();
         try
@@ -172,12 +174,17 @@ public partial class NoiseCalibrationWindow : Window
         finally { _busy = false; }
         await ReadCoreAsync(true); UpdateButtons();
     }
-    private async void BeginClicked(object sender, RoutedEventArgs e)
+    private async Task BeginDraftAsync(Func<bool> confirm)
     {
-        if (_state?.Samples.Count > 0 && MessageBox.Show(this, "新草稿会替换已有采样草稿，已确认阈值保留。继续吗？",
-            "新建校准草稿", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
-        await SendAsync("begin");
+        if (_busy || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
+        // Status polls continue inside a modal dialog; consent belongs to this snapshot.
+        var confirmedState = _state;
+        if (confirmedState.Samples.Count > 0 && !confirm()) return;
+        await SendAsync("begin", confirmedState: confirmedState);
     }
+    private async void BeginClicked(object sender, RoutedEventArgs e) =>
+        await BeginDraftAsync(() => MessageBox.Show(this, "新草稿会替换已有采样草稿，已确认阈值保留。继续吗？",
+            "新建校准草稿", MessageBoxButton.OKCancel) == MessageBoxResult.OK);
     private async void StartClicked(object sender, RoutedEventArgs e) => await SendAsync("start", SceneChoice.SelectedValue as string, LabelChoice.SelectedValue as string);
     private async void CancelClicked(object sender, RoutedEventArgs e) => await SendAsync("cancel");
     private async void RemoveClicked(object sender, RoutedEventArgs e) => await SendAsync("remove", sample: (SampleList.SelectedItem as SampleRow)?.Id);
