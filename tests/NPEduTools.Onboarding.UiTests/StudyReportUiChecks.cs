@@ -108,6 +108,21 @@ internal static partial class Program
             Assert(ReferenceEquals(correctedChart, chart.Children[^1]), "equivalent deserialized report rebuilt its chart");
             window.Apply(state, TimeSpan.Zero);
             Checks.Add("Actual report correction: mean/peak, trend, thresholds and session metadata refresh despite identical frame/sample counts; equivalent new collections do not redraw");
+            var fractional = data with { SampledSeconds = 239.8, Coverage = 239.8 / data.ExpectedSeconds,
+                Raw = raw with { SampledSeconds = 239.8, ThresholdSampledSeconds = 239.8, MediumThresholdSampledSeconds = 239.8,
+                    MediumSeconds = 179.8, HighSeconds = 119.8, Trend = [] },
+                Estimated = estimated with { SampledSeconds = 239.8, ThresholdSampledSeconds = 239.8, MediumThresholdSampledSeconds = 239.8,
+                    MediumSeconds = 179.8, HighSeconds = 119.8, Trend = [] } };
+            window.Apply(state with { Data = fractional }, TimeSpan.Zero);
+            Assert(((TextBlock)window.FindName("Sampled")).Text == "4 分 0 秒", "sampled time rounded its seconds to 60 without carrying the minute");
+            foreach (string field in new[] { "RawThresholds", "EstimatedThresholds" })
+            {
+                string text = ((TextBlock)window.FindName(field)).Text;
+                Assert(text.Contains("高线以上  2 分 0 秒") && text.Contains("中线以上  3 分 0 秒") && text.Contains("阈值有效采样  4 分 0 秒"),
+                    "threshold durations rounded seconds independently of their minute component");
+            }
+            window.Apply(state, TimeSpan.Zero);
+            Checks.Add("Report duration carry: fractional sampled time and both raw/estimated threshold durations render whole-minute boundaries without a 60-second component; report data is unchanged");
             // UI monotonic deadline also closes if the pipe disconnects just before expiry.
             typeof(StudyReportWindow).GetField("_received", flags)!.SetValue(window, Stopwatch.GetTimestamp() - 301L * Stopwatch.Frequency);
             typeof(StudyReportWindow).GetMethod("Countdown", flags)!.Invoke(window, null);

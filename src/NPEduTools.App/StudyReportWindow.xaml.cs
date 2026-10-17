@@ -63,7 +63,12 @@ public partial class StudyReportWindow : Window
         a.HighSeconds == b.HighSeconds && a.Trend.SequenceEqual(b.Trend);
     private static string Number(double? value) => value is { } v && double.IsFinite(v) ? v.ToString("0.0", CultureInfo.InvariantCulture) : "—";
     private static string Values(StudyReportChannel c) => $"{Number(c.EnergyMean)} / {Number(c.Maximum)}";
-    private static string Duration(double seconds) => seconds >= 60 ? $"{(int)(seconds / 60)} 分 {seconds % 60:0} 秒" : $"{seconds:0.0} 秒";
+    private static string Duration(double seconds)
+    {
+        if (seconds < 60) return $"{seconds:0.0} 秒";
+        long wholeSeconds = (long)Math.Round(seconds);
+        return $"{wholeSeconds / 60} 分 {wholeSeconds % 60} 秒";
+    }
     private static string Thresholds(StudyReportChannel c) => c.ThresholdSampledSeconds > 0
         ? $"高线以上  {Duration(c.HighSeconds)}\n{(c.MediumThresholdSampledSeconds > 0 ? $"中线以上  {Duration(c.MediumSeconds)}" : "中线没有有效判定数据")}\n阈值有效采样  {Duration(c.ThresholdSampledSeconds)}"
         : "本单位没有有效阈值判定数据";
