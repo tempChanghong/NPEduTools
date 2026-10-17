@@ -135,6 +135,14 @@ public partial class NoiseReferenceWindow : Window
     { "Good" => "采样有效", "Interrupted" => "已中断，须重采", "Clipping" => "削波，须重采", "Incomplete" => "采样不足，须重采", _ => "信号异常，须重采" };
     internal void Render(NoiseReferenceState state)
     {
+        // Reject incomplete nested data before caching it: selection events and
+        // UpdateButtons also read _state after a failed render.
+        var incomingEvaluation = state.Evaluation;
+        if (incomingEvaluation is null || state.Draft is { } incomingDraft &&
+            (incomingDraft.Samples is null || incomingDraft.Samples.Any(sample => sample is null)) ||
+            incomingEvaluation.Ready && (incomingEvaluation.OffsetDb is not { } candidateOffset || !double.IsFinite(candidateOffset) ||
+                incomingEvaluation.CheckErrorDb is not { } candidateError || !double.IsFinite(candidateError)))
+            throw new InvalidDataException("参考校准状态格式不兼容，请刷新或更新后台。");
         bool finishedSample = _state?.State == "Sampling" && state.State != "Sampling";
         bool changed = _state?.Revision != state.Revision || _state.InstanceId != state.InstanceId;
         bool newDraft = _state?.Draft?.Id != state.Draft?.Id;
