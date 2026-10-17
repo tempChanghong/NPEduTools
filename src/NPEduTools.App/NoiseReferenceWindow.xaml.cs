@@ -383,7 +383,9 @@ public partial class NoiseReferenceWindow : Window
         if (_busy || _closing || _verifying || _lifetime.IsCancellationRequested) return;
         _busy = true; _order.Advance(); UpdateButtons();
         try { await NoiseManagementDialog.ConfigureAsync(WorkspacePanel.DialogOwner(this), _pipe); }
-        finally { _busy = false; }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        { _autoFieldDraft = null; _connected = false; OperationMessage.Text = "无法读取后台管理设置，请检查后台连接后重试；未修改口令。"; return; }
+        finally { _busy = false; UpdateButtons(); }
         await ReadCoreAsync(true); UpdateButtons();
     }
     private async Task BeginDraftAsync(Func<bool> confirm)

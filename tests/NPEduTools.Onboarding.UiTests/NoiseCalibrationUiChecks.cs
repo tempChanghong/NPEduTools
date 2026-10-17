@@ -30,6 +30,7 @@ internal static partial class Program
     }
     private static void RunNoiseCalibrationChecks()
     {
+        RunCalibrationTransportTimeoutChecks();
         RunQuickCalibrationSnapshotChecks();
         RunCalibrationOrderingChecks(false);
         const string secret = "fixture-calibration-admin";
