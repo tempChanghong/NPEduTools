@@ -63,7 +63,10 @@ public partial class RecordingWindow : Window
     private async Task ProbeAsync()
     {
         if (_probing || _client.State.Active) return;
-        _probing = true; RecordStart.IsEnabled = false;
+        _probing = true;
+        // Freeze the selection draft before awaiting enumeration so its result
+        // cannot overwrite edits made while the device snapshot is in flight.
+        RecordingSettings.IsEnabled = RecordStart.IsEnabled = SaveSettings.IsEnabled = false;
         try
         {
             string? display = DisplayChoice.SelectedValue as string ?? _saved?.Display;
