@@ -204,7 +204,7 @@ public static class Protocol
         {
             if (request.ExecutablePath is not null || request.ExpectedRevision is null or < 0) return "InvalidConfiguration";
         }
-        else if (request.Capability == "examaware.quit")
+        else if (request.Capability is "examaware.quit" or "examaware.pairing.reset")
         {
             if (request.ExecutablePath is not null || request.ExpectedRevision is < 0) return "InvalidConfiguration";
         }
