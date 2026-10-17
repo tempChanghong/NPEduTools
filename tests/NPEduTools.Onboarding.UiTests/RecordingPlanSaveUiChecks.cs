@@ -11,6 +11,7 @@ internal static partial class Program
 {
     private static void RunRecordingPlanSaveChecks()
     {
+        RunRecordingRuleKindChecks();
         RunRecordingMarginsChecks();
         RunRecordingCalendarChecks();
         RunRecordingDatedDeleteChecks();

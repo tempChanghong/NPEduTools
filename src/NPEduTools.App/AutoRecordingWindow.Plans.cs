@@ -137,8 +137,11 @@ public partial class AutoRecordingWindow
             Guid? profile = old.ProfileId ?? ViewSource?.ProfileId;
             if (!fixedTime && old.ProfileId is not null && ViewSource is not null && old.ProfileId != ViewSource.ProfileId)
                 throw new InvalidDataException("当前显示的是另一个档案，请切回原档案再修改这条课程规则，或新建规则。");
-            var filter = new RecordingRules((int)LeadMinutes.SelectedItem, (int)TailMinutes.SelectedItem,
-                Weekdays.Children.Cast<CheckBox>().Where(c => c.IsChecked == true).Sum(c => 1 << int.Parse((string)c.Tag)),
+            int weekdays = Weekdays.Children.Cast<CheckBox>().Where(c => c.IsChecked == true).Sum(c => 1 << int.Parse((string)c.Tag));
+            // Fixed windows use weekdays only. Disabled course drafts must neither
+            // block this save nor overwrite the last saved course filters.
+            var filter = fixedTime ? old.Filter with { Weekdays = weekdays } :
+                new RecordingRules((int)LeadMinutes.SelectedItem, (int)TailMinutes.SelectedItem, weekdays,
                 AllSubjects.IsChecked == true, Subjects.SelectedItems.Cast<SubjectOption>().Select(s => s.Id).ToArray(),
                 Numbers.Text.Split([',', '，', ' ', ';', '；'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(int.Parse).Distinct().ToArray());
             if (!fixedTime && !filter.AllSubjects && profile is null && RuleEnabled.IsChecked == true)
@@ -147,7 +150,7 @@ public partial class AutoRecordingWindow
                 ProfileId = fixedTime ? null : profile, From = RuleFrom.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
                 Until = RuleUntil.SelectedDate is { } until ? DateOnly.FromDateTime(until) : null,
                 FixedStart = fixedTime ? ParseTime(RuleStart.Text) : null, FixedEnd = fixedTime ? ParseTime(RuleEnd.Text) : null,
-                UseDefaultExclusions = UseExclusions.IsChecked == true };
+                UseDefaultExclusions = fixedTime ? old.UseDefaultExclusions : UseExclusions.IsChecked == true };
             return b with { Recurring = b.Recurring.Select(r => r.Id == rule.Id ? rule : r).ToArray() };
         }, "规则已应用并保存。固定时段不使用科目排除；课程规则按档案匹配。");
         if (applied) RefreshRuleList(old.Id);
