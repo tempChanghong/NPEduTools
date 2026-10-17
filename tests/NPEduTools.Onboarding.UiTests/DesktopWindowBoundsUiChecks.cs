@@ -14,6 +14,7 @@ internal static partial class Program
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int w, int h, uint flags);
     private static void RunDesktopWindowBoundsChecks()
     {
+        RunNotificationBoundsChecks();
         var assembly = typeof(MainWindow).Assembly;
         var boundsType = assembly.GetType("NPEduTools.App.DesktopBounds")!;
         var placement = assembly.GetType("NPEduTools.App.DesktopWindowBounds")!;

@@ -71,8 +71,8 @@ public partial class SchoolNotificationWindow : Window
         double availableHeight = area.Height / dpi.DpiScaleY;
         Width = Math.Min(1120, availableWidth - Math.Min(32, availableWidth * .04));
         Height = Math.Min(720, availableHeight - Math.Min(32, availableHeight * .04));
-        Left = area.Left / dpi.DpiScaleX + (availableWidth - Width) / 2;
-        Top = area.Top / dpi.DpiScaleY + (availableHeight - Height) / 2;
+        DesktopWindowBounds.PlaceCentered(this, new(area.Left, area.Top, area.Width, area.Height),
+            Width * dpi.DpiScaleX, Height * dpi.DpiScaleY);
         AdaptLayout();
     }
 
