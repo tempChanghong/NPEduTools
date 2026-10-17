@@ -17,7 +17,7 @@ public partial class MainWindow
         if (persist)
         {
             try { _densityPreference = DesktopDensity.Read(_pipe); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException)
             { DensityMessage.Text = "界面大小配置不可用，本次自动适配，原文件保留。"; }
         }
         DensityChoiceBox.ItemsSource = new[] { new DensityChoice(0, "自动适配（默认）"), new DensityChoice(.8, "紧凑 · 80%"),
