@@ -58,6 +58,9 @@ internal static partial class Program
                 Assert(!panel.IsVisible && Element<FrameworkElement>("StudyWorkspace").IsVisible, "manual opened another native window");
                 Assert(((FrameworkElement)panel.FindName("StartFields")).Visibility == Visibility.Collapsed &&
                     ((FrameworkElement)panel.FindName("EndFields")).Visibility == Visibility.Collapsed, "optional dates crowd immediate workflow");
+                RunManualDateBoundaryChecks(panel, manual);
+                Assert(formalCapture == 0, "rejected date started capture");
+                Check(panel, "UseStart").IsChecked = Check(panel, "UseEnd").IsChecked = false;
                 Snapshot(owner, "workspace-manual-immediate.png");
                 ((CheckBox)panel.FindName("UseStart")).IsChecked = true;
                 Assert(((FrameworkElement)panel.FindName("StartFields")).IsVisible && ((Button)panel.FindName("StartButton")).Content.ToString() == "保存预约", "future start did not unfold or change primary action");

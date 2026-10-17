@@ -242,7 +242,7 @@ public partial class NoiseWindow : Window
             if(UseStart.IsChecked==true)start=Parse(ManualStartDate,ManualStartTime.Text);
             if(UseEnd.IsChecked==true)end=Parse(ManualEndDate,ManualEndTime.Text);
             if(NoManualReturn.IsChecked!=true){if(!int.TryParse(ManualHideMinutes.Text,out var minutes) || minutes is <1 or >180)throw new FormatException();hide=minutes*60;}
-        } catch(FormatException){MessageText.Text="请选择日期，时间使用 HH:mm；返回时长为 1–180 分钟。";return;}
+        } catch(Exception error)when(error is FormatException or ArgumentException){MessageText.Text="请选择有效日期，时间使用 HH:mm；返回时长为 1–180 分钟。";return;}
         await ManualCommandAsync(new("start",m.InstanceId,m.Revision,DeviceId:device.Id,StartUtc:start,EndUtc:end,HideSeconds:hide));
     }
     private async void StopClicked(object sender, RoutedEventArgs e)
