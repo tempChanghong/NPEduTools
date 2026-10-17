@@ -74,7 +74,15 @@ public partial class OnboardingWindow
             var response = await RequestAsync("secrandom.status");
             if (_lifetime.IsCancellationRequested || _state.Step != "secrandom") return false;
             var state = response.SecRandom;
-            bool configured = response.Outcome == "Succeeded" && !string.IsNullOrWhiteSpace(state?.ExecutablePath) && File.Exists(state.ExecutablePath);
+            if (response.Outcome != "Succeeded" || state is null || state.Error is not null)
+            {
+                SecRandomText.Text = state?.Error is { } error
+                    ? $"点名配置暂不可用：{error}\n请到点名配置核对，处理后重试；也可稍后配置。"
+                    : "暂时无法读取点名配置，请检查后台或稍后配置。";
+                ErrorText.Text = "点名配置未确认，可以重试或选择“跳过此项”。";
+                return false;
+            }
+            bool configured = !string.IsNullOrWhiteSpace(state.ExecutablePath) && File.Exists(state.ExecutablePath);
             SecRandomText.Text = configured
                 ? $"程序位置已保存，文件可访问。\n接口：{state!.Connection}。本步不会启动软件、读取名单或执行抽取。\n请在点名页核对 SecRandom V3 接口及名单；侧栏“抽”按钮会执行真实闪抽。"
                 : "尚未保存可访问的 SecRandom 程序位置。请打开点名配置，从 URL 登记查找或浏览选择程序，再保存；也可跳过。";
