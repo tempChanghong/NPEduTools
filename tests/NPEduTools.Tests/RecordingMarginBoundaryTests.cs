@@ -121,4 +121,42 @@ public sealed class RecordingMarginBoundaryTests
         }
         finally { Directory.Delete(directory, true); }
     }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void AStillKnownButWithdrawnOrConflictingSlotCannotBeReplacedByAnOverlappingNeighbor(bool conflict)
+    {
+        var source = Day(-5); var plans = CalendarRecordingPlanner.Build(Book(), Date, source);
+        var active = plans[0];
+        plans[0] = conflict ? plans[0] with { Conflict = true } : plans[0] with { Selected = false };
+        Assert.Null(RecordingPlanner.FindReplacement(plans, active));
+        // When the original identity disappears, preserve the existing
+        // unique-overlap matching behavior.
+        Assert.Equal(plans[1], RecordingPlanner.FindReplacement([plans[1]], active));
+        Assert.Null(RecordingPlanner.FindReplacement([plans[1]], active, sameProfile: false));
+    }
+
+    [Fact]
+    public void ThreeOverlappingTasksKeepChronologicalHandoffsRegardlessOfInputOrder()
+    {
+        DatedRecording[] tasks = [new(Guid.NewGuid(), "第一段", Date, new(8, 0), new(9, 0)),
+            new(Guid.NewGuid(), "第二段", Date, new(8, 20), new(8, 50)), new(Guid.NewGuid(), "第三段", Date, new(8, 40), new(9, 10))];
+        int[][] orders = [[0,1,2], [0,2,1], [1,0,2], [1,2,0], [2,0,1], [2,1,0]];
+        foreach (var order in orders)
+        {
+            var book = RecordingPlanBook.Create() with { Recurring = [], Dated = order.Select(i => tasks[i]).ToArray() };
+            var plans = CalendarRecordingPlanner.Build(book, Date, null);
+            Assert.All(plans, p => { Assert.True(p.Selected); Assert.False(p.Conflict); });
+            Assert.Equal(Start.AddMinutes(20), plans[0].End);
+            Assert.Equal(Start.AddMinutes(40), plans[1].End);
+            Assert.Equal(Start.AddMinutes(70), plans[2].End);
+            var preview = new RecordingPreview(); preview.SetEnabled(true, Start);
+            foreach (var plan in plans)
+            {
+                preview.Tick(null, plans, new(plan.Start, 0, true, true, "隔离时钟"), plan.Start - Start);
+                Assert.Equal(plan.Key, preview.State.Active!.Plan.Key);
+            }
+            Assert.Equal(3, preview.State.Events.Count(e => e.Action == "应开始"));
+        }
+    }
 }

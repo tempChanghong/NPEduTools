@@ -109,7 +109,11 @@ public static class RecordingPlanner
     {
         var candidates = plans.Where(p => p.Selected && !p.Conflict && p.Fixed == active.Fixed &&
             (p.Fixed ? p.Key == active.Key : sameProfile && p.Lesson.Start < active.Lesson.End && active.Lesson.Start < p.Lesson.End)).ToArray();
-        return candidates.FirstOrDefault(p => p.Key == active.Key) ?? (candidates.Length == 1 ? candidates[0] : null);
+        // A still-known slot explicitly excluded or in conflict is withdrawn,
+        // not a retiming of an overlapping neighbor. Only use the existing
+        // unique-overlap fallback when the original slot identity disappeared.
+        if (plans.Any(p => p.Key == active.Key)) return candidates.FirstOrDefault(p => p.Key == active.Key);
+        return candidates.Length == 1 ? candidates[0] : null;
     }
 
     public static bool IsDifferentKnownLesson(PlannedRecording[]? plans, PlannedRecording current, DateTimeOffset start, DateTimeOffset end) =>

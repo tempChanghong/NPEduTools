@@ -124,7 +124,7 @@ public sealed class RecordingService : IAsyncDisposable
                     var expected = command.Control!;
                     if (_worker is null || !State.Active || State.Control?.Matches(expected) != true) throw new InvalidOperationException("会话已变化，旧操作不会影响新的录制。");
                     if (command.Action == "stop" && expected.Owner == "Automatic")
-                        _ledger.Update(expected.SessionId, "Finalizing", "用户提前结束本节；不再重复开始。", State);
+                        MarkAutomaticFinalizing(expected, "用户提前结束本节；不再重复开始。");
                     await _worker.CommandAsync(command.Action, expected);
                 }
             }
@@ -204,10 +204,25 @@ public sealed class RecordingService : IAsyncDisposable
     private async Task RetireAsync()
     {
         if (_worker is null) return;
-        _last = _worker.State;
         await _worker.DisposeAsync();
         if (_worker.Alive) throw new InvalidOperationException("上一录制仍在收尾，请稍后重试。");
+        _last = _worker.State;
+        // A manual start may retire a just-finished automatic worker before
+        // the next scheduler tick. Commit its final receipt before replacing
+        // the worker, otherwise the execution stays Recording until restart.
+        ObserveAutomaticState(_last);
         _worker = null;
+    }
+    private void ObserveAutomaticState(RecordingState state)
+    {
+        if (_activePlan is not { } active || state.Control is not { Owner: "Automatic" } control || control.OccurrenceId != active.Key) return;
+        string phase = state.Phase switch { "Starting" => "Starting", "Recording" => "Recording", "Paused" or "Pausing" => "Paused",
+            "Saving" => "Finalizing", "Saved" => "Recorded", _ => "Failed" };
+        var prior = _ledger.Document.Entries.Single(e => e.SessionId == control.SessionId);
+        string? reason = phase == "Recorded" && prior.Phase != "Recorded" ? prior.Reason + "；会话已结束，MP4 已保存并校验" : state.Phase == "Failed" ? state.Error :
+            prior.Phase == "Starting" && phase == "Recording" ? prior.Reason + "；录制器已确认开始" : null;
+        _ledger.Update(control.SessionId, phase, reason, state);
+        if (!state.Active) _activePlan = null;
     }
     private async Task RunAsync()
     {
@@ -246,17 +261,7 @@ public sealed class RecordingService : IAsyncDisposable
         _clock.Accept(_snapshot(), Elapsed, 0);
         var reading = _clock.Read(Elapsed); var now = reading.Now;
         var state = State;
-        if (_activePlan is not null && state.Control is { Owner: "Automatic" } control)
-        {
-            string phase = state.Phase switch { "Starting" => "Starting", "Recording" => "Recording", "Paused" or "Pausing" => "Paused",
-                "Saving" => "Finalizing", "Saved" => "Recorded", _ => "Failed" };
-            var prior = _ledger.Document.Entries.Single(e => e.SessionId == control.SessionId);
-            string? reason = phase == "Recorded" ? prior.Reason + "；会话已结束，MP4 已保存并校验" : state.Phase == "Failed" ? state.Error :
-                prior.Phase == "Starting" && phase == "Recording" ? prior.Reason + "；录制器已确认开始" : null;
-            _ledger.Update(control.SessionId, phase, reason, state);
-            if (!state.Active)
-            { _activePlan = null; await RetireAsync(); }
-        }
+        ObserveAutomaticState(state);
         if (_worker is not null && !State.Active) await RetireAsync();
         if (_worker is not null && State is { Active: true, Control: { Owner: "Manual" } manual } && Stopwatch.GetTimestamp() >= _manualLease)
             await _worker.CommandAsync("stop", manual);
@@ -338,9 +343,16 @@ public sealed class RecordingService : IAsyncDisposable
         if (_worker is not null && State is { Active: true, Control: { Owner: "Automatic" } c })
         {
             // Persist the reason first. Even if this fails, always attempt to stop this exact session.
-            try { _ledger.Update(c.SessionId, "Finalizing", reason, State); }
+            try { MarkAutomaticFinalizing(c, reason); }
             finally { await _worker.CommandAsync("stop", c); }
         }
+    }
+    private void MarkAutomaticFinalizing(RecorderControl control, string reason)
+    {
+        var prior = _ledger.Document.Entries.Single(e => e.SessionId == control.SessionId);
+        string combined = prior.Reason.Contains(reason, StringComparison.Ordinal) ? prior.Reason :
+            string.IsNullOrEmpty(prior.Reason) ? reason : prior.Reason + "；" + reason;
+        _ledger.Update(control.SessionId, "Finalizing", combined, State);
     }
     // A withdrawn task is already stopping: its old ordering/profile no longer
     // defines which new plan may wait. Continuing tasks retain those guards.
