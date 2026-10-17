@@ -252,7 +252,7 @@ public sealed class RecordingService : IAsyncDisposable
                 "Saving" => "Finalizing", "Saved" => "Recorded", _ => "Failed" };
             var prior = _ledger.Document.Entries.Single(e => e.SessionId == control.SessionId);
             string? reason = phase == "Recorded" ? prior.Reason + "；会话已结束，MP4 已保存并校验" : state.Phase == "Failed" ? state.Error :
-                prior.Phase == "Starting" && phase == "Recording" ? "录制器已确认开始" : null;
+                prior.Phase == "Starting" && phase == "Recording" ? prior.Reason + "；录制器已确认开始" : null;
             _ledger.Update(control.SessionId, phase, reason, state);
             if (!state.Active)
             { _activePlan = null; await RetireAsync(); }
@@ -285,7 +285,14 @@ public sealed class RecordingService : IAsyncDisposable
         if (_activePlan is { } ongoing)
         {
             var replacement = RecordingPlanner.FindReplacement(plans, ongoing, source?.ProfileId == _activeProfile);
-            if (replacement is null) await StopAutomaticAsync("课表、规则、暂停或档案发生变化，本节不再执行");
+            if (replacement is null)
+            {
+                // The old task is no longer admitted. Retain its identity while
+                // it finalizes, but do not let its former future end cause a
+                // due replacement to be permanently marked as occupied/skipped.
+                _activePlan = ongoing with { Selected = false, End = now.Value < ongoing.End ? now.Value : ongoing.End };
+                await StopAutomaticAsync("课表、规则、暂停或档案发生变化，本节不再执行");
+            }
             else if (replacement.End < ongoing.End) _activePlan = ongoing with { End = replacement.End };
         }
         foreach (var plan in plans.Where(p => p.Selected && now >= p.Start && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p, plans)))
@@ -335,11 +342,13 @@ public sealed class RecordingService : IAsyncDisposable
             finally { await _worker.CommandAsync("stop", c); }
         }
     }
+    // A withdrawn task is already stopping: its old ordering/profile no longer
+    // defines which new plan may wait. Continuing tasks retain those guards.
     internal static bool CanWaitForAutomaticHandoff(RecordingState state, PlannedRecording? previous,
         PlannedRecording next, DateTimeOffset now, Guid previousProfile, Guid nextProfile) =>
         state.Control is { Owner: "Automatic" } && previous is not null &&
-        state.Control.OccurrenceId == previous.Key && (previous.Fixed || next.Fixed || previousProfile == nextProfile) && previous.Key != next.Key && previous.End <= now &&
-        previous.Lesson.Start < next.Lesson.Start && now < next.Lesson.End;
+        state.Control.OccurrenceId == previous.Key && previous.Key != next.Key && previous.End <= now && now < next.Lesson.End &&
+        (!previous.Selected || (previous.Fixed || next.Fixed || previousProfile == nextProfile) && previous.Lesson.Start < next.Lesson.Start);
     public async Task PauseForClassroomModeAsync()
     {
         await _gate.WaitAsync();
