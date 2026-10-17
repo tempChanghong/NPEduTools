@@ -35,10 +35,19 @@ public sealed class RecordingPreview
     }
     public bool IsMarked(Guid profile, LessonSlot lesson) => State.Marks.Any(m => m.ProfileId == profile &&
         m.Key is null && m.Start < lesson.End && lesson.Start < m.End);
-    public bool IsMarked(Guid profile, PlannedRecording plan) => plan.Fixed ? State.Marks.Any(m => m.Key == plan.Key) : IsMarked(profile, plan.Lesson);
-    public void SkipPlan(Guid profile, PlannedRecording plan, DateTimeOffset? now)
+    public bool IsMarked(Guid profile, PlannedRecording plan, PlannedRecording[]? plans = null) => plan.Fixed ? State.Marks.Any(m => m.Key == plan.Key) :
+        State.Marks.Any(m => m.ProfileId == profile && m.Key is null && m.Start < plan.Lesson.End && plan.Lesson.Start < m.End &&
+            !RecordingPlanner.IsDifferentKnownLesson(plans, plan, m.Start, m.End));
+    public void SkipPlan(Guid profile, PlannedRecording plan, DateTimeOffset? now, PlannedRecording[]? plans = null)
     {
-        if (!plan.Fixed) { Skip(profile, plan.Lesson, now); return; }
+        if (!plan.Fixed)
+        {
+            if (State.Active is { } active && active.ProfileId == profile && (active.Plan.Key == plan.Key ||
+                plans is not null && RecordingPlanner.FindReplacement(plans, active.Plan)?.Key == plan.Key)) Finish(now, "用户结束本节预演");
+            else if (!IsMarked(profile, plan, plans))
+            { Mark(new(profile, plan.Lesson.Start, plan.Lesson.End, "本节已跳过")); Add(new(now, "跳过", plan.Lesson.Subject, "本节不再模拟开始")); }
+            return;
+        }
         if (State.Active?.Plan.Key == plan.Key) Finish(now, "用户结束本时段预演");
         else if (!IsMarked(Guid.Empty, plan))
         { Mark(new(Guid.Empty, plan.Lesson.Start, plan.Lesson.End, "本时段已跳过", plan.Key)); Add(new(now, "跳过", plan.Lesson.Subject, "本时段不再模拟开始")); }
@@ -78,8 +87,7 @@ public sealed class RecordingPreview
             else if (!active.Plan.Fixed && fresh && (!source!.Enabled || source.ProfileId != active.ProfileId)) Finish(eventTime, "生效课表已禁用或档案已切换");
             else if (clock.CanStart && (active.Plan.Fixed || fresh))
             {
-                var replacement = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Fixed == active.Plan.Fixed &&
-                    (p.Fixed ? p.Key == active.Plan.Key : p.Lesson.Start < active.Plan.Lesson.End && active.Plan.Lesson.Start < p.Lesson.End));
+                var replacement = RecordingPlanner.FindReplacement(plans, active.Plan);
                 if (replacement is null) Finish(eventTime, "课表或规则变化，本节已不在计划中");
                 else if (replacement.End < active.Plan.End)
                 {
@@ -104,7 +112,8 @@ public sealed class RecordingPreview
         if (fresh && !source!.Enabled && !hasFixed) { Status = "课表未启用，暂不预演"; return; }
         if (fresh && !source!.ClockVerified && !hasFixed) { Status = source.ClockMessage; return; }
         var due = plans.FirstOrDefault(p => p.Selected && !p.Conflict && (p.Fixed || fresh && source!.Enabled && source.ClockVerified) && now >= p.Start &&
-            Remaining(p.Lesson.End, now!.Value, clock.AgeMs) > TimeSpan.Zero && !IsMarked(source?.ProfileId ?? Guid.Empty, p));
+            Remaining(p.Lesson.End, now!.Value, clock.AgeMs) > TimeSpan.Zero && Remaining(p.End, now.Value, clock.AgeMs) > TimeSpan.Zero &&
+            !IsMarked(source?.ProfileId ?? Guid.Empty, p, plans));
         if (due is not null)
         {
             // Mark on admission, before emitting the start: restarting must not duplicate this occurrence.
@@ -117,7 +126,7 @@ public sealed class RecordingPreview
         }
         else
         {
-            var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !IsMarked(source?.ProfileId ?? Guid.Empty, p));
+            var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !IsMarked(source?.ProfileId ?? Guid.Empty, p, plans));
             Status = next is null ? "本日没有待开始的预演任务" : $"下次预演：{next.Lesson.Subject} · {next.Start:HH:mm:ss}";
         }
     }

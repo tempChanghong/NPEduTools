@@ -96,12 +96,14 @@ public sealed class CalendarRecordingPlannerTests
         var restored = new RecordingPreview(preview.State); restored.SetEnabled(true, Start);
         restored.Tick(null, [plan], new(Start, 0, true, true, "学校时间"), TimeSpan.Zero); Assert.Null(restored.State.Active);
     }
-    [Fact] public void FixedCourseOrFixedFixedOverlapIsConflictInsteadOfParallelAdmission()
+    [Fact] public void FixedCourseAndFixedFixedOverlapGiveTheLaterTaskPriority()
     {
         var book = RecordingPlanBook.Create() with { Dated = [new(Guid.NewGuid(), "单次", Date, new(10, 15), new(10, 30))] };
-        Assert.All(CalendarRecordingPlanner.Build(book, Date, Day()), p => Assert.True(p.Conflict));
+        var rows = CalendarRecordingPlanner.Build(book, Date, Day());
+        Assert.All(rows, p => Assert.False(p.Conflict)); Assert.Equal(rows[1].Start, rows[0].End);
         book = book with { Dated = [.. book.Dated, new(Guid.NewGuid(), "另一次", Date, new(10, 20), new(10, 40))] };
-        Assert.All(CalendarRecordingPlanner.Build(book, Date, null), p => Assert.True(p.Conflict));
+        rows = CalendarRecordingPlanner.Build(book, Date, null);
+        Assert.All(rows, p => Assert.False(p.Conflict)); Assert.Equal(rows[1].Start, rows[0].End);
     }
     [Fact] public void AdjacentCoursesShortenTailWithoutTruncatingFormalTime()
     {

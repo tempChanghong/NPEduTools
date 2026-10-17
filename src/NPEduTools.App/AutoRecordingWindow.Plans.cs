@@ -45,14 +45,20 @@ public partial class AutoRecordingWindow
         PauseThrough.SelectedDate = _book.PauseThrough?.ToDateTime(TimeOnly.MinValue);
         _ready = true; RefreshRuleList();
     }
-    private void RefreshRuleList(Guid? selected = null)
+    private void RefreshRuleList(Guid? selected = null, bool preserveEditor = false)
     {
-        RuleList.ItemsSource = _book.Recurring;
-        RuleList.SelectedItem = _book.Recurring.FirstOrDefault(r => r.Id == selected) ?? _book.Recurring.FirstOrDefault();
+        bool wasSetting = _setting;
+        _setting |= preserveEditor;
+        try
+        {
+            RuleList.ItemsSource = _book.Recurring;
+            RuleList.SelectedItem = _book.Recurring.FirstOrDefault(r => r.Id == selected) ?? _book.Recurring.FirstOrDefault();
+        }
+        finally { _setting = wasSetting; }
     }
     private void RuleSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (!_ready || SelectedRule is not { } rule) return;
+        if (!_ready || _setting || SelectedRule is not { } rule) return;
         _setting = true;
         RuleName.Text = rule.Name; RuleEnabled.IsChecked = rule.Enabled; RuleKind.SelectedIndex = rule.IsFixed ? 1 : 0;
         RuleFrom.SelectedDate = rule.From?.ToDateTime(TimeOnly.MinValue); RuleUntil.SelectedDate = rule.Until?.ToDateTime(TimeOnly.MinValue);
@@ -70,7 +76,27 @@ public partial class AutoRecordingWindow
         bool fixedTime = RuleKind.SelectedIndex == 1;
         FixedRuleFields.Visibility = fixedTime ? Visibility.Visible : Visibility.Collapsed;
         LeadMinutes.IsEnabled = TailMinutes.IsEnabled = AllSubjects.IsEnabled = Numbers.IsEnabled = UseExclusions.IsEnabled = !fixedTime;
+        SaveMargins.IsEnabled = _writable && !fixedTime && SelectedRule is { IsFixed: false };
         Subjects.IsEnabled = !fixedTime && AllSubjects.IsChecked != true;
+    }
+    private void RecordingMarginsClicked(object sender, RoutedEventArgs e)
+    {
+        AutoSections.SelectedIndex = 1;
+        RecordingMargins.BringIntoView();
+        if (LeadMinutes.IsEnabled) LeadMinutes.Focus();
+        else RuleList.Focus();
+    }
+    private void SaveMarginsClicked(object sender, RoutedEventArgs e)
+    {
+        if (!_writable) return;
+        if (SelectedRule is not { IsFixed: false } selected || RuleKind.SelectedIndex != 0)
+        { ErrorText.Text = "请选择跟随课表的每周安排；固定时段按填写的起止时间录制。"; return; }
+        if (LeadMinutes.SelectedItem is not int before || TailMinutes.SelectedItem is not int after)
+        { ErrorText.Text = "请选择课前和课后分钟数。"; return; }
+        bool saved = ChangeBook(b => b with { Recurring = b.Recurring.Select(r => r.Id == selected.Id
+            ? r with { Filter = r.Filter with { BeforeMinutes = before, AfterMinutes = after } } : r).ToArray() },
+            $"本机“{selected.Name}”余量已保存：提前 {before} 分钟，课后至多 {after} 分钟。其他草稿未保存。");
+        if (saved) RefreshRuleList(selected.Id, preserveEditor: true);
     }
     private static TimeOnly ParseTime(string text) => TimeOnly.TryParseExact(text.Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
         ? time : throw new InvalidDataException("时间请填写 HH:mm，例如 09:58。");

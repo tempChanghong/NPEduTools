@@ -27,11 +27,12 @@ public sealed class RecordingExecutionLedger(string path)
             ? e with { Phase = "Interrupted", Reason = "后台上次未确认完成；原会话由租约结束。保留片段，不自动重试。" } : e).ToArray();
         if (!recovered.SequenceEqual(doc.Entries)) Commit(doc with { Entries = recovered });
     }
-    public bool Contains(Guid profile, PlannedRecording p) => Document.Entries.Any(e => p.Fixed ? e.Key == p.Key :
-        !e.Fixed && e.ProfileId == profile && e.Start < p.Lesson.End && p.Lesson.Start < e.End);
-    public RecordingExecution Add(Guid profile, DateOnly date, PlannedRecording p, string phase, string reason)
+    public bool Contains(Guid profile, PlannedRecording p, PlannedRecording[]? plans = null) => Document.Entries.Any(e => p.Fixed ? e.Key == p.Key :
+        !e.Fixed && e.ProfileId == profile && (e.Key == p.Key || e.Start < p.Lesson.End && p.Lesson.Start < e.End &&
+            !RecordingPlanner.IsDifferentKnownLesson(plans, p, e.Start, e.End)));
+    public RecordingExecution Add(Guid profile, DateOnly date, PlannedRecording p, string phase, string reason, PlannedRecording[]? plans = null)
     {
-        if (Contains(profile, p)) throw new InvalidDataException("本次课程已处理。");
+        if (Contains(profile, p, plans)) throw new InvalidDataException("本次课程已处理。");
         if (Document.Entries.Length >= 4096) throw new InvalidDataException("执行账本已达到保留上限；请先归档，不能丢弃旧标记后重复录制。");
         var entry = new RecordingExecution(p.Key, p.Fixed ? Guid.Empty : profile, date, p.Fixed, p.Lesson.Start, p.Lesson.End,
             p.Lesson.Subject, Guid.NewGuid(), phase, reason);
