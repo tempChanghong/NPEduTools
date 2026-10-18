@@ -23,7 +23,7 @@ internal static partial class Program
             var errors = new List<Exception>();
             foreach (string scenario in new[] { "replacement-rejection", "replacement-disconnect", "same-session", "same-session-ended", "shutdown" })
                 try { ManualEndReceiptCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
-            foreach (var check in new Action[] { ManualEndPendingCheck, ManualHoldReplacementCheck })
+            foreach (var check in new Action[] { ManualEndPendingCheck, ManualHoldReplacementCheck, RunStudyHoldIntentCheck })
                 try { check(); } catch (Exception e) { errors.Add(new InvalidOperationException(check.Method.Name + ": " + e.Message, e)); }
             if (errors.Count > 0) throw new AggregateException(errors);
         }

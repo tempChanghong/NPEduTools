@@ -7,6 +7,7 @@ internal static partial class Program
 {
     private static void RunManualStudyChecks()
     {
+        RunStudyHoldIntentCheck();
         var clock=new StudyUiClock();int ends=0;
         var surface=new StudySurface(()=>Task.CompletedTask,()=>{},true,clock,end:()=>{ends++;return Task.CompletedTask;});
         var owner=new Window{Content=surface,Width=1440,Height=810,WindowStyle=WindowStyle.None};
@@ -41,5 +42,43 @@ internal static partial class Program
             var date=(DatePicker)settings.FindName("ManualStartDate");date.ApplyTemplate();Assert(date.Template.FindName("InputSurface",date) is Border,"manual date lost common input style");
             Snapshot(w,"manual-settings.png");Checks.Add("Manual settings: optional date/time, ten-minute default and shared native styles; no Host/devices");settings.Shutdown();
         });}finally{settings.Shutdown();}
+    }
+
+    private static void RunStudyHoldIntentCheck()
+    {
+        var clock = new StudyUiClock(); int hides = 0, ends = 0;
+        var surface = new StudySurface(() => { hides++; return Task.CompletedTask; }, () => { }, true, clock,
+            end: () => { ends++; return Task.CompletedTask; });
+        var owner = new Window { Content = surface, Width = 1440, Height = 810 };
+        FixtureTouch? first = null, second = null;
+        try
+        {
+            Exercise(owner, _ =>
+            {
+                var state = ManualOperationState(); surface.Apply(state, null);
+                var hide = (Button)surface.FindName("HoldButton"); var end = (Button)surface.FindName("EndButton");
+                first = new(201, owner, new Point(30, 30)); second = new(202, owner, new Point(35, 35));
+                void Touch(Button button, FixtureTouch touch, RoutedEvent routed) =>
+                    button.RaiseEvent(new System.Windows.Input.TouchEventArgs(touch, Environment.TickCount) { RoutedEvent = routed });
+                Touch(hide, first, UIElement.PreviewTouchDownEvent);
+                clock.Ms += 1900; surface.Apply(state, null);
+                Touch(end, second, UIElement.PreviewTouchDownEvent);
+                Assert(!(bool)typeof(StudySurface).GetField("_endHold", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(surface)!,
+                    "second button borrowed the temporary-use hold as an end gesture");
+                clock.Ms += 100; surface.Apply(state, null);
+                PumpUntil(() => hides + ends > 0, "original temporary-use hold did not finish");
+                Assert(hides == 1 && ends == 0, "temporary use unexpectedly ended manual study");
+                Touch(end, second, UIElement.PreviewTouchUpEvent); Touch(hide, first, UIElement.PreviewTouchUpEvent);
+                Touch(end, second, UIElement.PreviewTouchDownEvent);
+                clock.Ms += 1900; surface.Apply(state, null);
+                Assert(ends == 0, "fresh end gesture did not require its own full hold");
+                clock.Ms += 100; surface.Apply(state, null);
+                PumpUntil(() => ends == 1, "fresh explicit end hold stopped working");
+                Touch(end, second, UIElement.PreviewTouchUpEvent);
+                Checks.Add("Two routed touch contacts on separate study controls cannot convert temporary use into an early end; a fresh two-second end remains usable, no sensors");
+                owner.Close();
+            });
+        }
+        finally { surface.CancelHold(); first?.Stop(); second?.Stop(); surface.Stop(); owner.Close(); }
     }
 }
