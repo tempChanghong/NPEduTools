@@ -21,8 +21,64 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunExamAwareProtocolChecks(); RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareOrderingCheck(true); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
+        try { RunExamAwareConfirmationChecks(); RunExamAwareProtocolChecks(); RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareOrderingCheck(true); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+    private static void RunExamAwareConfirmationChecks()
+    {
+        string pipe = "NPEduTools.Test.examaware-consent." + Guid.NewGuid().ToString("N");
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var commands = new System.Collections.Concurrent.ConcurrentQueue<HostRequest>();
+        var latest = ReadyExamAware() with { Revision = 8, ExecutablePath = "new-fixture.exe" };
+        var server = Task.Run(() => WorkspaceProxy(pipe, request =>
+        {
+            if (request.Capability == "examaware.status")
+                return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "隔离状态", ExamAware: latest));
+            commands.Enqueue(request);
+            Assert(Protocol.Validate(request) is null, "confirmed ExamAware action violates the pipe contract");
+            bool conflict = request.ExpectedRevision != latest.Revision;
+            return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, conflict ? "Rejected" : "Succeeded",
+                conflict ? "RevisionConflict" : null, conflict ? "配置已变化，请重新确认。" : "隔离操作完成。", ExamAware: latest));
+        }, stop.Token));
+        var window = new ExamAwareWindow(pipe);
+        Task Confirm(string capability, Func<bool> confirm) => (Task)typeof(ExamAwareWindow)
+            .GetMethod("ConfirmRevisionActionAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [capability, confirm])!;
+        try
+        {
+            Exercise(window, owner =>
+            {
+                foreach (string capability in new[] { "examaware.quit", "examaware.pairing.reset" })
+                {
+                    ShowExamAware(window, ReadyExamAware());
+                    var cancelled = Confirm(capability, () => { ShowExamAware(window, latest); return false; });
+                    Assert(cancelled.IsCompletedSuccessfully && commands.IsEmpty, "cancelled confirmation sent a command");
+                    ShowExamAware(window, ReadyExamAware());
+                    // Simulate a newer status dispatched by WPF while the confirmation dialog is open.
+                    var command = Confirm(capability, () => { ShowExamAware(window, latest); return true; });
+                    PumpUntil(() => command.IsCompleted, "changed-configuration confirmation did not finish");
+                    command.GetAwaiter().GetResult();
+                    Assert(commands.TryDequeue(out var request) && request.Capability == capability && request.ExpectedRevision == 7,
+                        "confirmation adopted the newer configuration instead of its original revision");
+                    Assert(commands.IsEmpty && ((TextBlock)owner.FindName("Message")).Text.Contains("重新确认") && Button(owner, "QuitButton").IsEnabled,
+                        "revision conflict was hidden, replayed, or left controls busy");
+                }
+                var unchanged = Confirm("examaware.quit", () => true);
+                PumpUntil(() => unchanged.IsCompleted, "unchanged-configuration confirmation did not finish");
+                unchanged.GetAwaiter().GetResult();
+                Assert(commands.TryDequeue(out var fresh) && fresh.ExpectedRevision == 8 && commands.IsEmpty &&
+                    ((TextBlock)owner.FindName("Message")).Text == "隔离操作完成。", "fresh confirmation did not use the current revision");
+                ShowExamAware(window, null);
+                var unavailable = Confirm("examaware.pairing.reset", () => throw new InvalidOperationException("unknown state opened a confirmation"));
+                Assert(unavailable.IsCompletedSuccessfully && commands.IsEmpty, "unknown Host state allowed a confirmation");
+                Checks.Add("Private pipe: quit/reset confirmations retain the revision from before a simulated modal status update; cancellation sends nothing; conflicts show re-confirmation without replay; a fresh confirmation still works");
+                window.Shutdown();
+            });
+        }
+        finally
+        {
+            window.Shutdown(); stop.Cancel();
+            try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
+        }
     }
     private static void RunExamAwareLostReplyCheck()
     {

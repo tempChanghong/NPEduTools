@@ -35,7 +35,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
-            foreach (string scenario in new[] { "exception", "unknown", "new-path", "late-path", "cancelled" })
+            foreach (string scenario in new[] { "exception", "invalid-frame", "invalid-json", "unknown", "new-path", "late-path", "cancelled" })
             {
                 var window = IsolatedMainWindow("NPEduTools.Test.admin-ui." + Guid.NewGuid().ToString("N"));
                 try
@@ -75,6 +75,8 @@ internal static partial class Program
                             if (pending is not null)
                             {
                                 if (scenario == "exception") completion.SetException(new IOException("isolated unavailable helper"));
+                                else if (scenario == "invalid-frame") completion.SetException(new InvalidDataException("isolated invalid frame length"));
+                                else if (scenario == "invalid-json") completion.SetException(new System.Text.Json.JsonException("isolated invalid helper reply"));
                                 else completion.SetResult(scenario switch
                                 {
                                     "unknown" => new("Unknown", "隔离丢失回执"),
@@ -91,6 +93,9 @@ internal static partial class Program
                                     "cancelled authorization discarded an unchanged known snapshot");
                             }
                             else AssertAdminUnknown(window);
+                            if (scenario is "exception" or "invalid-frame" or "invalid-json")
+                                Assert(AdminText(owner, "AdminMessage").Contains("未能完成") && Button(owner, "AdminRefresh").IsEnabled &&
+                                    Button(owner, "ExitButton").IsEnabled, "failed administrator operation retained its pending message or blocked subsequent actions");
                             if (scenario == "exception")
                             {
                                 // Render the real settings panel without navigation handlers, which would launch the real helper.

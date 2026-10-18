@@ -85,7 +85,7 @@ public partial class QuickAccessWindow : Window
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
         try { _densityPreference = DesktopDensity.Read(endpoint); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
         SelectShortcutPage(false); RefreshCompact();
         _idleTimer.Tick += (_, _) => RefreshHandleOpacity();

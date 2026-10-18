@@ -45,14 +45,20 @@ public partial class AutoRecordingWindow
         PauseThrough.SelectedDate = _book.PauseThrough?.ToDateTime(TimeOnly.MinValue);
         _ready = true; RefreshRuleList();
     }
-    private void RefreshRuleList(Guid? selected = null)
+    private void RefreshRuleList(Guid? selected = null, bool preserveEditor = false)
     {
-        RuleList.ItemsSource = _book.Recurring;
-        RuleList.SelectedItem = _book.Recurring.FirstOrDefault(r => r.Id == selected) ?? _book.Recurring.FirstOrDefault();
+        bool wasSetting = _setting;
+        _setting |= preserveEditor;
+        try
+        {
+            RuleList.ItemsSource = _book.Recurring;
+            RuleList.SelectedItem = _book.Recurring.FirstOrDefault(r => r.Id == selected) ?? _book.Recurring.FirstOrDefault();
+        }
+        finally { _setting = wasSetting; }
     }
     private void RuleSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (!_ready || SelectedRule is not { } rule) return;
+        if (!_ready || _setting || SelectedRule is not { } rule) return;
         _setting = true;
         RuleName.Text = rule.Name; RuleEnabled.IsChecked = rule.Enabled; RuleKind.SelectedIndex = rule.IsFixed ? 1 : 0;
         RuleFrom.SelectedDate = rule.From?.ToDateTime(TimeOnly.MinValue); RuleUntil.SelectedDate = rule.Until?.ToDateTime(TimeOnly.MinValue);
@@ -70,7 +76,27 @@ public partial class AutoRecordingWindow
         bool fixedTime = RuleKind.SelectedIndex == 1;
         FixedRuleFields.Visibility = fixedTime ? Visibility.Visible : Visibility.Collapsed;
         LeadMinutes.IsEnabled = TailMinutes.IsEnabled = AllSubjects.IsEnabled = Numbers.IsEnabled = UseExclusions.IsEnabled = !fixedTime;
+        SaveMargins.IsEnabled = _writable && !fixedTime && SelectedRule is { IsFixed: false };
         Subjects.IsEnabled = !fixedTime && AllSubjects.IsChecked != true;
+    }
+    private void RecordingMarginsClicked(object sender, RoutedEventArgs e)
+    {
+        AutoSections.SelectedIndex = 1;
+        RecordingMargins.BringIntoView();
+        if (LeadMinutes.IsEnabled) LeadMinutes.Focus();
+        else RuleList.Focus();
+    }
+    private void SaveMarginsClicked(object sender, RoutedEventArgs e)
+    {
+        if (!_writable) return;
+        if (SelectedRule is not { IsFixed: false } selected || RuleKind.SelectedIndex != 0)
+        { ErrorText.Text = "请选择跟随课表的每周安排；固定时段按填写的起止时间录制。"; return; }
+        if (LeadMinutes.SelectedItem is not int before || TailMinutes.SelectedItem is not int after)
+        { ErrorText.Text = "请选择课前和课后分钟数。"; return; }
+        bool saved = ChangeBook(b => b with { Recurring = b.Recurring.Select(r => r.Id == selected.Id
+            ? r with { Filter = r.Filter with { BeforeMinutes = before, AfterMinutes = after } } : r).ToArray() },
+            $"本机“{selected.Name}”余量已保存：提前 {before} 分钟，课后至多 {after} 分钟。其他草稿未保存。");
+        if (saved) RefreshRuleList(selected.Id, preserveEditor: true);
     }
     private static TimeOnly ParseTime(string text) => TimeOnly.TryParseExact(text.Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
         ? time : throw new InvalidDataException("时间请填写 HH:mm，例如 09:58。");
@@ -111,8 +137,11 @@ public partial class AutoRecordingWindow
             Guid? profile = old.ProfileId ?? ViewSource?.ProfileId;
             if (!fixedTime && old.ProfileId is not null && ViewSource is not null && old.ProfileId != ViewSource.ProfileId)
                 throw new InvalidDataException("当前显示的是另一个档案，请切回原档案再修改这条课程规则，或新建规则。");
-            var filter = new RecordingRules((int)LeadMinutes.SelectedItem, (int)TailMinutes.SelectedItem,
-                Weekdays.Children.Cast<CheckBox>().Where(c => c.IsChecked == true).Sum(c => 1 << int.Parse((string)c.Tag)),
+            int weekdays = Weekdays.Children.Cast<CheckBox>().Where(c => c.IsChecked == true).Sum(c => 1 << int.Parse((string)c.Tag));
+            // Fixed windows use weekdays only. Disabled course drafts must neither
+            // block this save nor overwrite the last saved course filters.
+            var filter = fixedTime ? old.Filter with { Weekdays = weekdays } :
+                new RecordingRules((int)LeadMinutes.SelectedItem, (int)TailMinutes.SelectedItem, weekdays,
                 AllSubjects.IsChecked == true, Subjects.SelectedItems.Cast<SubjectOption>().Select(s => s.Id).ToArray(),
                 Numbers.Text.Split([',', '，', ' ', ';', '；'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(int.Parse).Distinct().ToArray());
             if (!fixedTime && !filter.AllSubjects && profile is null && RuleEnabled.IsChecked == true)
@@ -121,7 +150,7 @@ public partial class AutoRecordingWindow
                 ProfileId = fixedTime ? null : profile, From = RuleFrom.SelectedDate is { } from ? DateOnly.FromDateTime(from) : null,
                 Until = RuleUntil.SelectedDate is { } until ? DateOnly.FromDateTime(until) : null,
                 FixedStart = fixedTime ? ParseTime(RuleStart.Text) : null, FixedEnd = fixedTime ? ParseTime(RuleEnd.Text) : null,
-                UseDefaultExclusions = UseExclusions.IsChecked == true };
+                UseDefaultExclusions = fixedTime ? old.UseDefaultExclusions : UseExclusions.IsChecked == true };
             return b with { Recurring = b.Recurring.Select(r => r.Id == rule.Id ? rule : r).ToArray() };
         }, "规则已应用并保存。固定时段不使用科目排除；课程规则按档案匹配。");
         if (applied) RefreshRuleList(old.Id);

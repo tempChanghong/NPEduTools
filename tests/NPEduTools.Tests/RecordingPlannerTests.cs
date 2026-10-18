@@ -22,8 +22,16 @@ public sealed class RecordingPlannerTests
         Assert.True(plan.Selected); Assert.False(plan.Conflict);
     }
     [Theory]
-    [InlineData(-1, 5)] [InlineData(2, 6)] [InlineData(6, 0)]
+    [InlineData(-1, 5)] [InlineData(2, 11)] [InlineData(11, 0)] [InlineData(0, -1)]
     public void RejectsUnboundedMargins(int before, int after) => Assert.NotNull(RecordingPlanner.Validate(new(before, after)));
+    [Theory]
+    [InlineData(0, 0)] [InlineData(10, 10)] [InlineData(6, 8)]
+    public void LocalMarginsUpToTenMinutesUseTheExistingCourseWindow(int before, int after)
+    {
+        var plan = Assert.Single(RecordingPlanner.Build(Day(), new(before, after)));
+        Assert.Equal(Start.AddMinutes(-before), plan.Start);
+        Assert.Equal(Start.AddMinutes(40 + after), plan.End);
+    }
     [Fact]
     public void WeekdaySubjectAndOrdinalFiltersMustAllMatch()
     {
@@ -43,10 +51,13 @@ public sealed class RecordingPlannerTests
         Assert.DoesNotContain(plans, p => p.Conflict);
     }
     [Fact]
-    public void OverlappingFormalLessonsAreFlaggedButLeadMarginYields()
+    public void OverlappingFormalLessonsYieldToTheNextLessonAndLeadMarginStillYields()
     {
         var day = Day(new(1, Math, "一", Start, Start.AddMinutes(40), true), new(2, Math, "二", Start.AddMinutes(39), Start.AddMinutes(79), true));
-        Assert.All(RecordingPlanner.Build(day, new()), p => Assert.True(p.Conflict));
+        var overlap = RecordingPlanner.Build(day, new());
+        Assert.All(overlap, p => Assert.False(p.Conflict));
+        Assert.Equal(overlap[1].Start, overlap[0].End);
+        Assert.Equal(day.Lessons[1].Start, overlap[1].Start);
         day = day with { Lessons = [day.Lessons[0], day.Lessons[1] with { Start = Start.AddMinutes(41) }] };
         var plans = RecordingPlanner.Build(day, new());
         Assert.False(plans[1].Conflict);

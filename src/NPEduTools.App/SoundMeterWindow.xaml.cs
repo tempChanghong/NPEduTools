@@ -15,13 +15,15 @@ public partial class SoundMeterWindow : Window
     private bool _busy;
     private readonly CalibrationUiOrder _order = new();
     private NoiseProtectionState? _access;
-    private void ShowAccess(NoiseProtectionState? state)
+    private bool ShowAccess(NoiseProtectionState? state, bool invalidateOnChange = false)
     {
-        if (CredentialsPanel.Visibility == Visibility.Collapsed && (state?.ManagementSource != _access?.ManagementSource ||
-            state?.CredentialRevision != _access?.CredentialRevision || state?.InstanceId != _access?.InstanceId))
-            ResetCredentials();
+        bool reset = (invalidateOnChange || CredentialsPanel.Visibility == Visibility.Collapsed) &&
+            (state?.ManagementSource != _access?.ManagementSource || state?.CredentialRevision != _access?.CredentialRevision ||
+                state?.InstanceId != _access?.InstanceId);
+        if (reset) ResetCredentials();
         _access = state; ManagementLabel.Text = CalibrationAccess.Label(state); ManagementHint.Text = CalibrationAccess.Hint(state);
         ConfigureManagement.IsEnabled = !_busy && state?.ManagementSource != "School";
+        return reset;
     }
     private void ResetCredentials()
     {
@@ -32,10 +34,10 @@ public partial class SoundMeterWindow : Window
     }
     private void ResetVerificationClicked(object sender, RoutedEventArgs e)
     { if (!_busy) ResetCredentials(); }
-    private async Task ReadAccessAsync(CancellationToken token, long stamp)
+    private async Task<bool> ReadAccessAsync(CancellationToken token, long stamp)
     {
         var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token);
-        if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) ShowAccess(reply.NoiseProtection);
+        return _order.Current(stamp) && !_lifetime.IsCancellationRequested && ShowAccess(reply.NoiseProtection);
     }
     private long? _received;
     public SoundMeterWindow(string pipe)
@@ -62,11 +64,13 @@ public partial class SoundMeterWindow : Window
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(5000);
         try
         {
-            await ReadAccessAsync(deadline.Token, stamp);
-            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
+            bool reset = await ReadAccessAsync(deadline.Token, stamp);
+            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested || reset) return;
             var response = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.meter.command", 4000, SoundMeter: command), deadline.Token);
             if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
-            if (response.NoiseProtection is not null) ShowAccess(response.NoiseProtection);
+            // A list/read reply belongs to the access context checked before sending it.
+            // Even an initial list must be verified again if that context changed in flight.
+            if (response.NoiseProtection is not null && ShowAccess(response.NoiseProtection, invalidateOnChange: true)) return;
             Message.Text = CalibrationAccess.Message(response.ErrorCode, response.Message, _access);
             if (response.SoundMeter?.Diagnostic is { } diagnostic)
                 Mode.Text = $"阶段 {diagnostic.Stage ?? "未知"} · HID 输入/输出 {diagnostic.InputReportLength?.ToString() ?? "?"}/{diagnostic.OutputReportLength?.ToString() ?? "?"} 字节 · 系统错误 {diagnostic.NativeErrorCode?.ToString() ?? "无"}";

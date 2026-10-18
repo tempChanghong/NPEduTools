@@ -155,6 +155,8 @@ public sealed partial class ExamAwareService : IAsyncDisposable
                 if (!_quitTask.IsCompleted) return Reply("Rejected", "QuitBusy", "正在确认退出结果，请稍候再操作。");
                 if (request.Capability == "examaware.pairing.reset")
                 {
+                    if (request.ExpectedRevision is { } pairingRevision && pairingRevision != _saved.Revision)
+                        return Reply("Rejected", "RevisionConflict", "程序位置或配对已变化，请重新确认要撤销的配对。");
                     Save(_saved with { Key = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
                         Revision = checked(_saved.Revision + 1), Receipts = Receipts(request) });
                     lock (_sync) { _session?.Client.Dispose(); _session = null; _peer = null; _sample = null; _preparedPlan = null; }

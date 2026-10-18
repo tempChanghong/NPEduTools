@@ -5,13 +5,17 @@ namespace NPEduTools.Core;
 public sealed record RecordingRules(int BeforeMinutes = 2, int AfterMinutes = 5, int Weekdays = 127,
     bool AllSubjects = true, Guid[]? SubjectIds = null, int[]? LessonNumbers = null);
 public sealed record PlannedRecording(string Key, LessonSlot Lesson, DateTimeOffset Start, DateTimeOffset End,
-    bool Selected, bool Conflict, string Reason, bool Fixed = false, string Sources = "");
+    bool Selected, bool Conflict, string Reason, bool Fixed = false, string Sources = "", string OverlapNotice = "");
 
 public static class RecordingPlanner
 {
+    public const int MaximumMarginMinutes = 10;
+    public static string? ValidateMargins(int before, int after) =>
+        before is < 0 or > MaximumMarginMinutes || after is < 0 or > MaximumMarginMinutes
+            ? $"课前和课后余量必须为 0～{MaximumMarginMinutes} 分钟。" : null;
     public static string? Validate(RecordingRules rules)
     {
-        if (rules.BeforeMinutes is < 0 or > 5 || rules.AfterMinutes is < 0 or > 5) return "前后余量必须为 0～5 分钟。";
+        if (ValidateMargins(rules.BeforeMinutes, rules.AfterMinutes) is { } error) return error;
         if (rules.Weekdays is < 0 or > 127) return "星期选项无效。";
         if (rules.SubjectIds is { Length: > 64 } || rules.LessonNumbers is { Length: > 64 } ||
             rules.LessonNumbers?.Any(n => n is < 1 or > 64) == true) return "科目或节次选项无效。";
@@ -35,24 +39,22 @@ public static class RecordingPlanner
             return new PlannedRecording(key, lesson, lesson.Start.AddMinutes(-rules.BeforeMinutes),
                 lesson.End.AddMinutes(rules.AfterMinutes), reason == "已纳入计划", false, reason);
         }).ToArray();
-        return FitCourseWindows(rows);
+        return ResolveOverlaps(FitCourseWindows(rows));
     }
 
     // The preview and executable calendar use the same boundary policy. Margins
-    // yield to formal lessons; genuinely overlapping lessons remain conflicts.
+    // yield to formal lessons. Remaining overlaps are handled chronologically.
     internal static PlannedRecording[] FitCourseWindows(PlannedRecording[] rows)
     {
         for (int i = 0; i < rows.Length; i++)
         {
             if (rows[i].Fixed || !rows[i].Selected || rows[i].Conflict) continue;
             var row = rows[i];
-            if (rows.Any(other => !other.Fixed && other != row && other.Lesson.Enabled &&
-                row.Lesson.Start < other.Lesson.End && other.Lesson.Start < row.Lesson.End))
-            { rows[i] = row with { Conflict = true, Reason = "正式课时重叠，暂不预演" }; continue; }
-            var previous = rows.Where(r => !r.Fixed && r != row && r.Lesson.Enabled && r.Lesson.End <= row.Lesson.Start)
+            var previous = rows.Where(r => !r.Fixed && r != row && r.Lesson.Enabled && r.Lesson.Start < row.Lesson.Start)
                 .OrderBy(r => r.Lesson.End).LastOrDefault();
-            if (previous is not null && row.Start < previous.Lesson.End)
-                rows[i] = row with { Start = previous.Lesson.End, Reason = row.Reason + "；课前余量已缩短" };
+            var boundary = previous is null ? row.Start : previous.Lesson.End < row.Lesson.Start ? previous.Lesson.End : row.Lesson.Start;
+            if (row.Start < boundary)
+                rows[i] = row with { Start = boundary, Reason = row.Reason + "；课前余量已缩短", OverlapNotice = "与上一节相邻，已缩短课前余量" };
         }
         // Apply tails only after all lead windows have been fitted.
         for (int i = 0; i < rows.Length; i++)
@@ -65,9 +67,74 @@ public static class RecordingPlanner
             {
                 var boundary = next.Selected && !next.Conflict ? next.Start : next.Lesson.Start;
                 if (boundary < row.Lesson.End) boundary = row.Lesson.End;
-                if (boundary < row.End) rows[i] = row with { End = boundary, Reason = row.Reason + "；课后余量已缩短，为下一节让出时间" };
+                if (boundary < row.End) rows[i] = row with { End = boundary, Reason = row.Reason + "；课后余量已缩短，为下一节让出时间",
+                    OverlapNotice = $"与下一节录制范围重叠，已缩短至 {boundary:HH:mm}；下一节优先" };
             }
         }
         return rows;
+    }
+
+    internal static PlannedRecording[] ResolveOverlaps(PlannedRecording[] rows)
+    {
+        var ordered = rows.OrderBy(p => p.Lesson.Start).ThenBy(p => p.Key, StringComparer.Ordinal).ToArray();
+        for (int i = 0; i < ordered.Length; i++)
+            for (int j = i + 1; j < ordered.Length && ordered[j].Lesson.Start == ordered[i].Lesson.Start; j++)
+                if (ordered[i].Selected && ordered[j].Selected && ordered[i].Start < ordered[j].End && ordered[j].Start < ordered[i].End)
+                {
+                    const string reason = "同一开始时间存在重叠录制，无法区分下一节，请调整";
+                    ordered[i] = ordered[i] with { Conflict = true, Reason = reason, OverlapNotice = reason };
+                    ordered[j] = ordered[j] with { Conflict = true, Reason = reason, OverlapNotice = reason };
+                }
+        // Resolve later tasks first: a task displaced by a still later one must
+        // not take recording time away from an earlier surviving task.
+        for (int i = ordered.Length - 1; i >= 0; i--)
+        {
+            if (!ordered[i].Selected || ordered[i].Conflict) continue;
+            for (int j = i + 1; j < ordered.Length; j++)
+            {
+                var earlier = ordered[i]; var later = ordered[j];
+                if (!later.Selected || later.Conflict || earlier.Start >= later.End || later.Start >= earlier.End) continue;
+                string notice = $"录制范围重叠，下一节“{later.Lesson.Subject}”优先";
+                ordered[i] = later.Start <= earlier.Start
+                    ? earlier with { Selected = false, Reason = earlier.Reason + "；" + notice + "，本段不录", OverlapNotice = notice + "，本段不录" }
+                    : earlier with { End = later.Start, Reason = earlier.Reason + $"；{notice}，本段截短至 {later.Start:HH:mm}", OverlapNotice = notice + $"，本段截短至 {later.Start:HH:mm}" };
+                ordered[j] = later with { OverlapNotice = "与上一段录制重叠，本段优先", Reason = later.Reason + "；与上一段录制重叠，本段优先" };
+                if (!ordered[i].Selected) break;
+            }
+        }
+        return ordered.OrderBy(p => p.Start).ToArray();
+    }
+
+    public static PlannedRecording? FindReplacement(PlannedRecording[] plans, PlannedRecording active, bool sameProfile = true)
+    {
+        var candidates = plans.Where(p => p.Selected && !p.Conflict && p.Fixed == active.Fixed &&
+            (p.Fixed ? p.Key == active.Key : sameProfile && p.Lesson.Start < active.Lesson.End && active.Lesson.Start < p.Lesson.End)).ToArray();
+        // A still-known slot explicitly excluded or in conflict is withdrawn,
+        // not a retiming of an overlapping neighbor.
+        if (plans.Any(p => p.Key == active.Key)) return candidates.FirstOrDefault(p => p.Key == active.Key);
+        // Editing only the formal end changes the key. A unique unchanged
+        // start still identifies that occurrence, including an explicit withdrawal.
+        if (!active.Fixed && sameProfile)
+        {
+            var sameStart = plans.Where(p => !p.Fixed && p.Lesson.Start == active.Lesson.Start).ToArray();
+            if (sameStart.Length > 0) return sameStart.Length == 1 && sameStart[0].Selected && !sameStart[0].Conflict ? sameStart[0] : null;
+        }
+        return candidates.Length == 1 ? candidates[0] : null;
+    }
+
+    public static bool IsDifferentKnownLesson(PlannedRecording[]? plans, PlannedRecording current, DateTimeOffset start, DateTimeOffset end)
+    {
+        if (plans is null) return false;
+        PlannedRecording? sameStart = null;
+        int count = 0;
+        foreach (var plan in plans)
+        {
+            if (plan.Fixed || plan.Lesson.Start != start) continue;
+            if (plan.Key != current.Key && plan.Lesson.End == end) return true;
+            sameStart = plan; count++;
+        }
+        // Historical marks retain the old end. Link a unique unchanged start
+        // to its current row so that mark cannot suppress an overlapping neighbor.
+        return count == 1 && sameStart!.Key != current.Key;
     }
 }

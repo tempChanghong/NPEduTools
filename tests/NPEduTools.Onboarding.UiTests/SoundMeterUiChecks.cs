@@ -99,5 +99,6 @@ internal static partial class Program
             noise.DisposeAsync().AsTask().GetAwaiter().GetResult();
             SynchronizationContext.SetSynchronizationContext(previous);
         }
+        RunSoundMeterAccessChecks();
     }
 }

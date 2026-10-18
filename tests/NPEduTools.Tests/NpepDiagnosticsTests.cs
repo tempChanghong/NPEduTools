@@ -173,6 +173,78 @@ public sealed class NpepDiagnosticsTests
         Assert.All(capabilities, capability => Assert.Contains(capability, new[] { "npep.status", "npep.diagnostics", "host.cached-status" }));
     }
 
+    public static IEnumerable<object[]> InvalidDiagnosticReplies()
+    {
+        foreach (var (capability, section) in new[] {
+            ("npep.status", "connection"), ("npep.diagnostics", "connectionHistory"), ("host.cached-status", "localCache") })
+            foreach (var fault in new[] { "length", "empty", "correlation", "version" })
+                yield return new object[] { capability, section, fault };
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidDiagnosticReplies))]
+    public async Task InvalidHostReplyOnlyMakesItsDiagnosticSectionUnavailableAndCanRecover(
+        string capability, string missingSection, string fault)
+    {
+        string pipeName = "NPEduTools.Test.diagnostics-invalid." + Guid.NewGuid().ToString("N");
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        await using var pipe = new System.IO.Pipes.NamedPipeServerStream(pipeName,
+            System.IO.Pipes.PipeDirection.InOut, 1, System.IO.Pipes.PipeTransmissionMode.Byte,
+            System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+        var serving = Task.Run(async () =>
+        {
+            await pipe.WaitForConnectionAsync(deadline.Token);
+            var incoming = await Protocol.ReadAsync<HostRequest>(pipe, deadline.Token);
+            Assert.Equal(capability, incoming.Capability);
+            switch (fault)
+            {
+                case "length": await pipe.WriteAsync(new byte[4], deadline.Token); break;
+                case "empty": await Protocol.WriteAsync<object?>(pipe, null, deadline.Token); break;
+                case "correlation": await Protocol.WriteAsync(pipe, Reply(incoming) with { RequestId = Guid.NewGuid() }, deadline.Token); break;
+                case "version": await Protocol.WriteAsync(pipe, Reply(incoming) with { Version = Protocol.Version + 1 }, deadline.Token); break;
+            }
+        });
+        bool invalid = false;
+        var capabilities = new List<string>();
+        var session = new NpepConnectionSession((request, token) =>
+        {
+            capabilities.Add(request.Capability);
+            Assert.Null(request.Npep);
+            if (invalid && request.Capability == capability) return HostClient.RequestAsync(pipeName, request, token);
+            return Task.FromResult(Reply(request, new(2, "ACTIVE", "ONLINE", "private"))
+                with { ClassroomMode = new(Mode: "Daily"), ConnectionHistory = new("Empty", []) });
+        });
+        try
+        {
+            Assert.True(await session.RefreshAsync());
+            session.DeviceName = "保留设备草稿";
+            capabilities.Clear();
+            invalid = true;
+            var report = await session.CollectDiagnosticsAsync("1.1.5", deadline.Token);
+            Assert.Equal(capability == "npep.status" ? ["npep.status", "host.cached-status"]
+                : new[] { "npep.status", "npep.diagnostics", "host.cached-status" }, capabilities);
+            Assert.False(report![missingSection]!["available"]!.GetValue<bool>());
+            Assert.Null(report[missingSection]!["observedAt"]);
+            foreach (var section in new[] { "connection", "localCache" }.Where(x => x != missingSection))
+                Assert.True(report[section]!["available"]!.GetValue<bool>());
+            Assert.Equal(capability != "npep.status" && capability != "npep.diagnostics",
+                report["connectionHistory"]!["available"]!.GetValue<bool>());
+            Assert.DoesNotContain("private", report.ToJsonString());
+            Assert.True(session.HasPairing);
+            Assert.Equal("保留设备草稿", session.DeviceName);
+            Assert.True(session.CanRefresh);
+            invalid = false;
+            var recovered = await session.CollectDiagnosticsAsync("1.1.5", deadline.Token);
+            foreach (var section in new[] { "connection", "connectionHistory", "localCache" })
+                Assert.True(recovered![section]!["available"]!.GetValue<bool>());
+        }
+        finally
+        {
+            await deadline.CancelAsync();
+            await serving;
+        }
+    }
+
     [Fact]
     public async Task BusyCollectionBlocksCompetingRequestsAndClosingCancelsFurtherReads()
     {

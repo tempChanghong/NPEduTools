@@ -73,8 +73,12 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     private HostResponse ManagementReply(HostRequest r, string? error = null, Guid? ticket = null) =>
         new(Protocol.Version, r.RequestId, error is null ? "Succeeded" : "Rejected", error, error switch
         {
-            "MANAGEMENT_NOT_CONFIGURED" => "请先在无定时监测时设置本机管理口令；本次可由大屏网页验证学校 PIN 后结束监测。",
-            "MANAGEMENT_SECRET_INVALID" => "管理口令不正确。",
+            "MANAGEMENT_NOT_CONFIGURED" => management?.Source == "School"
+                ? "学校管理口令尚未同步，请保持学校互联并联系学校管理员核对本班口令；原本机口令已停用。"
+                : "本机尚未配置管理口令，请在无定时监测时到“自习 → 联机校准 (Beta)”点击“设置管理口令”；未停止当前监测。",
+            "MANAGEMENT_SECRET_INVALID" => management?.Source == "School"
+                ? "学校管理口令不正确，请使用学校后台为本班设置的口令；原本机口令已停用。"
+                : "本机管理口令不正确。",
             "MANAGEMENT_RATE_LIMITED" => "尝试过于频繁，请一分钟后重试。",
             "MANAGEMENT_STORE_UNAVAILABLE" => "管理口令文件不可用，原文件已保留；请联系管理员。",
             "MANAGEMENT_REQUIRED" => "学校定时监测受到保护；停止或退出需管理验证，关闭窗口不会停止采集。",

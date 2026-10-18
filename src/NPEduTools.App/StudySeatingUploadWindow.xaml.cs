@@ -73,7 +73,7 @@ public partial class StudySeatingUploadWindow : Window
             RemoveTransfer(); _draft=draft; Preview.Source=draft.Preview; EmptyDraft.Visibility=Visibility.Collapsed;
             DraftInfo.Text=$"{draft.Width} × {draft.Height} · PNG · {draft.Png.Length/1024.0:F0} KiB";
             ResultText.Text="请核对图片；确认后才会上传并替换服务器版本。";
-        } catch(Exception e) when(TransportFailure(e) || e is NotSupportedException or ArgumentException)
+        } catch(Exception e) when(TransportFailure(e) || e is NotSupportedException or ArgumentException or FileFormatException)
         { ResultText.Text=e is InvalidDataException ? e.Message : "无法读取图片，请选择完整的 PNG 或 JPEG 文件。"; }
         finally { _busy=false; Buttons(); }
     }

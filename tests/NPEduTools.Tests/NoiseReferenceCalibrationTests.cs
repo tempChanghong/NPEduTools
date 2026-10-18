@@ -414,6 +414,23 @@ public sealed partial class NoiseReferenceCalibrationTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StaleBeginCannotReplaceNewReferenceSamples(bool differentInstance)
+    {
+        await using var f = new Fixture();
+        Assert.Equal("Succeeded", f.Command("begin").Outcome);
+        var confirmed = f.Make("begin");
+        Assert.Equal("Succeeded", f.Command("begin").Outcome);
+        await f.SampleAsync("Primary", -40);
+        var current = f.State;
+        var command = differentInstance ? confirmed with { InstanceId = Guid.NewGuid(), Revision = current.Revision } : confirmed;
+        Assert.Equal("REFERENCE_CHANGED", f.Send(command).ErrorCode);
+        Assert.Equal(current.Revision, f.State.Revision);
+        Assert.Equal(current.Draft, f.State.Draft);
+    }
+
+    [Theory]
     [InlineData("{broken")]
     [InlineData("{\"version\":99}")]
     [InlineData("oversize")]

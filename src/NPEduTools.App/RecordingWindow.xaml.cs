@@ -25,6 +25,7 @@ public partial class RecordingWindow : Window
     private bool _shutdown, _readable = true, _probing, _viewReady, _editing, _probeWhenIdle;
     internal Action? WorkspaceReturn { get; init; }
     private string? _stateError;
+    private string? _deviceSelectionError;
     private RecordingEnvironment? _environment;
     private RecordingOptions? _saved;
     internal RecordingWindow(RecordingClient client, string endpoint)
@@ -62,20 +63,31 @@ public partial class RecordingWindow : Window
     private async Task ProbeAsync()
     {
         if (_probing || _client.State.Active) return;
-        _probing = true; RecordStart.IsEnabled = false;
+        _probing = true;
+        // Freeze the selection draft before awaiting enumeration so its result
+        // cannot overwrite edits made while the device snapshot is in flight.
+        RecordingSettings.IsEnabled = RecordStart.IsEnabled = SaveSettings.IsEnabled = false;
         try
         {
             string? display = DisplayChoice.SelectedValue as string ?? _saved?.Display;
             string speaker = SpeakerChoice.SelectedValue as string ?? _saved?.SpeakerId ?? "default";
             string microphone = MicrophoneChoice.SelectedValue as string ?? _saved?.MicrophoneId ?? "default";
             _environment = await _probe();
-            DisplayChoice.ItemsSource = _environment.Displays;
-            DisplayChoice.SelectedValue = _environment.Displays.FirstOrDefault(d => d.Id == display)?.Id ?? _environment.Displays.FirstOrDefault(d => d.Primary)?.Id;
-            SpeakerChoice.ItemsSource = new[] { new RecordingDevice("default", "系统默认输出设备") }.Concat(_environment.Speakers).ToArray();
-            MicrophoneChoice.ItemsSource = new[] { new RecordingDevice("default", "系统默认麦克风") }.Concat(_environment.Microphones).ToArray();
+            var displays = _environment.Displays.ToList();
+            if (display is not null && !displays.Any(d => d.Id == display))
+                displays.Add(new(display, "上次选择的屏幕 · 当前不可用", 0, 0, 0, 0, false));
+            DisplayChoice.ItemsSource = displays;
+            DisplayChoice.SelectedValue = display ?? _environment.Displays.FirstOrDefault(d => d.Primary)?.Id;
+            RecordingDevice[] AudioChoices(RecordingDevice[] devices, string selected, string defaultLabel, string unavailableLabel)
+            {
+                var choices = new List<RecordingDevice> { new("default", defaultLabel) };
+                choices.AddRange(devices);
+                if (!choices.Any(d => d.Id == selected)) choices.Add(new(selected, unavailableLabel));
+                return choices.ToArray();
+            }
+            SpeakerChoice.ItemsSource = AudioChoices(_environment.Speakers, speaker, "系统默认输出设备", "上次选择的系统声音设备 · 当前不可用");
+            MicrophoneChoice.ItemsSource = AudioChoices(_environment.Microphones, microphone, "系统默认麦克风", "上次选择的麦克风 · 当前不可用");
             SpeakerChoice.SelectedValue = speaker; MicrophoneChoice.SelectedValue = microphone;
-            if (SpeakerChoice.SelectedIndex < 0) SpeakerChoice.SelectedIndex = 0;
-            if (MicrophoneChoice.SelectedIndex < 0) MicrophoneChoice.SelectedIndex = 0;
             if (_environment.Error is not null) RecordingError.Text = _environment.Error;
             else if (_readable) RecordingError.Text = "";
             UpdateSummary(); UpdateSound(); UpdateReadySummary();
@@ -87,12 +99,14 @@ public partial class RecordingWindow : Window
     private int MaximumHeight => int.Parse((string)((ComboBoxItem)QualityChoice.SelectedItem).Tag);
     private void UpdateSummary()
     {
-        if (DisplayChoice.SelectedItem is not RecordingDisplay display) return;
+        if (_environment is null) return;
+        if (DisplayChoice.SelectedItem is not RecordingDisplay display || !_environment.Displays.Any(d => d.Id == display.Id))
+        { CaptureSummary.Text = "所选屏幕当前不可用，请重新检测或明确选择其他屏幕。"; return; }
         var (width, height) = RecordingContract.OutputSize(display.Width, display.Height, MaximumHeight);
         CaptureSummary.Text = $"采集 {display.Width} × {display.Height} → 保存 {width} × {height} · {Fps} fps · MP4";
     }
     private void ChoicesChanged(object sender, SelectionChangedEventArgs e) { if (_viewReady) { UpdateSummary(); UpdateReadySummary(); } }
-    private void SoundChanged(object sender, RoutedEventArgs e) { if (_viewReady) UpdateSound(); }
+    private void SoundChanged(object sender, RoutedEventArgs e) { if (_viewReady) { UpdateSound(); UpdateReadySummary(); } }
     private void UpdateSound() { SpeakerChoice.IsEnabled = SystemSound.IsChecked == true; MicrophoneChoice.IsEnabled = MicrophoneSound.IsChecked == true; }
     private async void RefreshClicked(object sender, RoutedEventArgs e) => await ProbeAsync();
     private void BrowseClicked(object sender, RoutedEventArgs e)
@@ -109,12 +123,24 @@ public partial class RecordingWindow : Window
     private RecordingOptions? OptionsFromForm()
     {
         if (!_client.StateAvailable || _client.State.Active || _probing || _environment?.Ready != true) return null;
+        if (DeviceSelectionError() is { } unavailable) { _deviceSelectionError = RecordingError.Text = unavailable; return null; }
         var options = new RecordingOptions(DisplayChoice.SelectedValue as string ?? "", OutputDirectory.Text.Trim(), Fps, MaximumHeight,
             SystemSound.IsChecked == true, MicrophoneSound.IsChecked == true, SpeakerChoice.SelectedValue as string ?? "default", MicrophoneChoice.SelectedValue as string ?? "default");
         if (RecordingContract.Validate(options) is { } error) { RecordingError.Text = error; return null; }
-        if ((options.Microphone && _environment.Microphones.Length == 0) || (options.SystemAudio && _environment.Speakers.Length == 0))
-        { RecordingError.Text = "所选音源没有可用设备。请连接设备并重新检测，或取消该音源。"; return null; }
         return options;
+    }
+    private string? DeviceSelectionError()
+    {
+        if (_environment?.Ready != true) return null;
+        if (DisplayChoice.SelectedValue is not string display || !_environment.Displays.Any(d => d.Id == display))
+            return "所选屏幕当前不可用，请重新检测或明确选择其他屏幕。";
+        if (SystemSound.IsChecked == true && (SpeakerChoice.SelectedValue is not string speaker ||
+            !_environment.Speakers.Any(d => speaker == "default" || d.Id == speaker)))
+            return "所选系统声音设备当前不可用，请重新检测、明确重选设备或取消该音源。";
+        if (MicrophoneSound.IsChecked == true && (MicrophoneChoice.SelectedValue is not string microphone ||
+            !_environment.Microphones.Any(d => microphone == "default" || d.Id == microphone)))
+            return "所选麦克风当前不可用，请重新检测、明确重选设备或取消该音源。";
+        return null;
     }
     private bool SavePreferences(RecordingOptions options)
     {
@@ -137,7 +163,13 @@ public partial class RecordingWindow : Window
     private void EditSettingsClicked(object sender, RoutedEventArgs e) { _editing = !_editing; Apply(_client.State); }
     private void UpdateReadySummary()
     {
-        ReadySummary.Text = CaptureSummary.Text + " · " + (MicrophoneSound.IsChecked == true && SystemSound.IsChecked == true ? "麦克风＋系统声音" : MicrophoneSound.IsChecked == true ? "麦克风" : SystemSound.IsChecked == true ? "系统声音" : "无音频");
+        var deviceError = DeviceSelectionError();
+        if (_deviceSelectionError is not null)
+        {
+            if (RecordingError.Text == _deviceSelectionError) RecordingError.Text = deviceError ?? "";
+            _deviceSelectionError = deviceError;
+        }
+        ReadySummary.Text = deviceError ?? CaptureSummary.Text + " · " + (MicrophoneSound.IsChecked == true && SystemSound.IsChecked == true ? "麦克风＋系统声音" : MicrophoneSound.IsChecked == true ? "麦克风" : SystemSound.IsChecked == true ? "系统声音" : "无音频");
         ReadyDirectory.Text = "保存到 " + OutputDirectory.Text;
     }
     private async void PauseClicked(object sender, RoutedEventArgs e) => await _client.SendAsync(_client.State.Phase == "Paused" ? "resume" : "pause");

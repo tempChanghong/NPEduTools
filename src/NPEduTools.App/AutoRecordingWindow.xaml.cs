@@ -54,7 +54,7 @@ public partial class AutoRecordingWindow : Window
         { _preview = new(); _writable = false; ErrorText.Text = "配置或试运行记录无法读取，原文件已保留；仍可查看今日课表。"; }
         if (_store.Migrated) ErrorText.Text = "已备份原系统时间的模拟记录并迁移规则；请按学校日期重新确认计划。";
         var rules = _preview.State.Rules;
-        LeadMinutes.ItemsSource = TailMinutes.ItemsSource = Enumerable.Range(0, 6).ToArray();
+        LeadMinutes.ItemsSource = TailMinutes.ItemsSource = Enumerable.Range(0, RecordingPlanner.MaximumMarginMinutes + 1).ToArray();
         LeadMinutes.SelectedItem = rules.BeforeMinutes; TailMinutes.SelectedItem = rules.AfterMinutes;
         foreach (CheckBox day in Weekdays.Children) day.IsChecked = (rules.Weekdays & (1 << int.Parse((string)day.Tag))) != 0;
         Numbers.Text = string.Join(",", rules.LessonNumbers ?? []);
@@ -155,6 +155,7 @@ public partial class AutoRecordingWindow : Window
     }
     private void Render(bool rows = true)
     {
+        SaveMargins.IsEnabled = _writable && SelectedRule is { IsFixed: false } && RuleKind.SelectedIndex == 0;
         PreviewStatus.Text = TrialStatus(_preview.Status);
         var clock = _clock.Read(Elapsed);
         ClockStatus.Text = clock.Now is { } now ?
@@ -169,10 +170,16 @@ public partial class AutoRecordingWindow : Window
         if (!rows) return;
         DateStatus.Text = _viewDate is { } selectedDate ? $"{selectedDate:yyyy-MM-dd} · {(_viewDate == _today ? "当天生效安排（按 ClassIsland 学校时间执行）" : _forecast is null ? "预计课表未加载；可编辑固定时段" : "预计课表，到当天重新核对")}" : "等待学校日期；也可选明确日期编辑草稿";
         string? selected = (Plans.SelectedItem as PlanRow)?.Key;
-        var items = ViewPlans.Select(p => new PlanRow(p.Key, p.Lesson.Number, p.Lesson.Subject,
+        var viewPlans = ViewPlans;
+        int unresolved = viewPlans.Count(p => p.Conflict), adjusted = viewPlans.Count(p => !p.Conflict && !string.IsNullOrEmpty(p.OverlapNotice));
+        PlanOverlapBanner.Visibility = unresolved + adjusted > 0 ? Visibility.Visible : Visibility.Collapsed;
+        PlanOverlapStatus.Text = $"重叠处理：{adjusted} 项已调整，下一节录课优先；上一段会缩短或让出。" +
+            (unresolved > 0 ? $"另有 {unresolved} 项待调整冲突，不自动录制，请查看下表“安排说明”。" : "请查看下表的实际录制时间和安排说明。");
+        var items = viewPlans.Select(p => new PlanRow(p.Key, p.Lesson.Number, p.Lesson.Subject,
             $"{p.Lesson.Start:HH:mm}–{p.Lesson.End:HH:mm}", p.Selected ? $"{p.Start:HH:mm}–{p.End:HH:mm}" : "不安排录制",
-            (string.IsNullOrEmpty(p.Sources) ? "" : p.Sources + " · ") + p.Reason,
-            _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _preview.IsMarked(ViewSource?.ProfileId ?? Guid.Empty, p) ? "已试运行 / 已模拟跳过" : "未模拟")).ToArray();
+            (p.Conflict ? "待调整冲突 · " : !string.IsNullOrEmpty(p.OverlapNotice) ? "重叠已处理 · " : "") +
+                (string.IsNullOrEmpty(p.Sources) ? "" : p.Sources + " · ") + p.Reason,
+            _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _preview.IsMarked(ViewSource?.ProfileId ?? Guid.Empty, p, viewPlans) ? "已试运行 / 已模拟跳过" : "未模拟")).ToArray();
         Plans.ItemsSource = items;
         if (selected is not null) Plans.SelectedItem = items.FirstOrDefault(i => i.Key == selected);
         Events.ItemsSource = _preview.State.Events.Reverse().Select(e => $"{(e.At is { } at ? at.ToString("MM-dd HH:mm:ss") + " 学校时间" : "学校时间未知")}  {e.Action} · {e.Subject}｜{e.Message.Replace("预演", "试运行", StringComparison.Ordinal)}").ToArray();
@@ -198,7 +205,7 @@ public partial class AutoRecordingWindow : Window
     {
         if (!_writable || _viewDate != _today || Plans.SelectedItem is not PlanRow row) return;
         var plan = _plans.First(p => p.Key == row.Key);
-        _preview.SkipPlan(_source?.ProfileId ?? Guid.Empty, plan, EventTime);
+        _preview.SkipPlan(_source?.ProfileId ?? Guid.Empty, plan, EventTime, _plans);
         _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed); Save(); Render();
     }
     private void SkipDayClicked(object sender, RoutedEventArgs e)

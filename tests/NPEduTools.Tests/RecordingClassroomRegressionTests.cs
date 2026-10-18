@@ -47,11 +47,15 @@ public sealed class RecordingClassroomRegressionTests
     }
 
     [Fact]
-    public void FormalOverlapStillRequiresCorrection()
+    public void FormalOverlapShortensTheEarlierRecordingForTheNextLesson()
     {
         var day = Day("语文");
         day = day with { Lessons = [day.Lessons[0] with { End = Morning.AddMinutes(31) }, day.Lessons[1]] };
-        Assert.All(CalendarRecordingPlanner.Build(RecordingPlanBook.Create(), Date, day), p => Assert.True(p.Conflict));
+        var plans = CalendarRecordingPlanner.Build(RecordingPlanBook.Create(), Date, day);
+        Assert.All(plans, p => Assert.False(p.Conflict));
+        Assert.Equal(plans[1].Lesson.Start, plans[1].Start);
+        Assert.Equal(plans[1].Start, plans[0].End);
+        Assert.Contains("优先", plans[0].OverlapNotice);
     }
 
     [Fact]

@@ -32,7 +32,8 @@ public sealed class RecordingService : IAsyncDisposable
     private long _enabledAt;
     private Guid _manualClient;
     private long _manualLease;
-    private sealed record UpcomingSnapshot(PlannedRecording? Plan, Guid Profile, string State);
+    private sealed record UpcomingSnapshot(PlannedRecording? Plan, Guid Profile, string State)
+    { public PlannedRecording[] Plans { get; init; } = []; }
     private UpcomingSnapshot _upcoming = new(null, Guid.Empty, "Pending");
     private string _message = "自动录制未启用", _error = "";
     private RecordingState _last = new("Idle", "准备录制");
@@ -78,7 +79,7 @@ public sealed class RecordingService : IAsyncDisposable
         if (_ledger.Document.SkipDate == DateOnly.FromDateTime(now.Date)) return (null, "SkippedToday");
         var snapshot = _upcoming;
         if (snapshot.Plan is not { } next) return (null, snapshot.State);
-        if (next.Start <= now || _ledger.Contains(snapshot.Profile, next)) return (null, "Pending");
+        if (next.Start <= now || _ledger.Contains(snapshot.Profile, next, snapshot.Plans)) return (null, "Pending");
         return (new(next.Lesson.Subject, next.Start, next.End), "Ready");
     }
     private RecordingPlanBook ReadBook()
@@ -113,7 +114,7 @@ public sealed class RecordingService : IAsyncDisposable
                         return new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy",
                             "正在切换运行环境，请等待操作结束后再开始录制。", Recording: State, Automatic: Automatic);
                     if (State.Active) throw new InvalidOperationException("已有录制会话，请先结束当前会话。");
-                    await RetireAsync();
+                    if (!await RetireAsync()) throw new InvalidOperationException("上一录制仍在收尾，请稍后重试。");
                     var control = new RecorderControl("Manual", request.RequestId, "", 0, RecorderDeadline.After(TimeSpan.FromSeconds(8)));
                     _manualClient = command.ClientId!.Value; _manualLease = RecorderDeadline.After(TimeSpan.FromSeconds(12));
                     await StartAsync(command.Options!, control);
@@ -123,7 +124,7 @@ public sealed class RecordingService : IAsyncDisposable
                     var expected = command.Control!;
                     if (_worker is null || !State.Active || State.Control?.Matches(expected) != true) throw new InvalidOperationException("会话已变化，旧操作不会影响新的录制。");
                     if (command.Action == "stop" && expected.Owner == "Automatic")
-                        _ledger.Update(expected.SessionId, "Finalizing", "用户提前结束本节；不再重复开始。", State);
+                        MarkAutomaticFinalizing(expected, "用户提前结束本节；不再重复开始。");
                     await _worker.CommandAsync(command.Action, expected);
                 }
             }
@@ -166,9 +167,11 @@ public sealed class RecordingService : IAsyncDisposable
                             var clock = _clock.Read(Elapsed);
                             if (!clock.CanStart || clock.Now is not { } current) throw new InvalidOperationException("等待学校时间。");
                             var day = DateOnly.FromDateTime(current.Date); var source = _clock.Schedule;
-                            var next = CalendarRecordingPlanner.Build(ReadBook(), day, source?.Date == day ? source : null)
-                                .FirstOrDefault(p => p.Selected && !p.Conflict && p.End > current && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p));
-                            if (next is not null) _ledger.Add(source?.ProfileId ?? Guid.Empty, day, next, "Skipped", "用户跳过本日下一项任务");
+                            var candidates = CalendarRecordingPlanner.Build(ReadBook(), day, source?.Date == day ? source : null);
+                            var effectiveNow = current.AddMilliseconds(clock.AgeMs);
+                            var next = candidates.FirstOrDefault(p => p.Selected && !p.Conflict && p.End > effectiveNow &&
+                                p.Lesson.End > effectiveNow && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p, candidates));
+                            if (next is not null) _ledger.Add(source?.ProfileId ?? Guid.Empty, day, next, "Skipped", "用户跳过本日下一项任务", candidates);
                         }
                         break;
                 }
@@ -200,13 +203,29 @@ public sealed class RecordingService : IAsyncDisposable
         try { await _worker.StartAsync(options, control); }
         catch (Exception error) when (error is not OutOfMemoryException) { _worker.Fail(error.Message); throw; }
     }
-    private async Task RetireAsync()
+    private async Task<bool> RetireAsync()
     {
-        if (_worker is null) return;
-        _last = _worker.State;
+        if (_worker is null) return true;
         await _worker.DisposeAsync();
-        if (_worker.Alive) throw new InvalidOperationException("上一录制仍在收尾，请稍后重试。");
+        if (_worker.Alive) return false;
+        _last = _worker.State;
+        // A manual start may retire a just-finished automatic worker before
+        // the next scheduler tick. Commit its final receipt before replacing
+        // the worker, otherwise the execution stays Recording until restart.
+        ObserveAutomaticState(_last);
         _worker = null;
+        return true;
+    }
+    private void ObserveAutomaticState(RecordingState state)
+    {
+        if (_activePlan is not { } active || state.Control is not { Owner: "Automatic" } control || control.OccurrenceId != active.Key) return;
+        string phase = state.Phase switch { "Starting" => "Starting", "Recording" => "Recording", "Paused" or "Pausing" => "Paused",
+            "Saving" => "Finalizing", "Saved" => "Recorded", _ => "Failed" };
+        var prior = _ledger.Document.Entries.Single(e => e.SessionId == control.SessionId);
+        string? reason = phase == "Recorded" && prior.Phase != "Recorded" ? prior.Reason + "；会话已结束，MP4 已保存并校验" : state.Phase == "Failed" ? state.Error :
+            prior.Phase == "Starting" && phase == "Recording" ? prior.Reason + "；录制器已确认开始" : null;
+        _ledger.Update(control.SessionId, phase, reason, state);
+        if (!state.Active) _activePlan = null;
     }
     private async Task RunAsync()
     {
@@ -245,22 +264,22 @@ public sealed class RecordingService : IAsyncDisposable
         _clock.Accept(_snapshot(), Elapsed, 0);
         var reading = _clock.Read(Elapsed); var now = reading.Now;
         var state = State;
-        if (_activePlan is not null && state.Control is { Owner: "Automatic" } control)
-        {
-            string phase = state.Phase switch { "Starting" => "Starting", "Recording" => "Recording", "Paused" or "Pausing" => "Paused",
-                "Saving" => "Finalizing", "Saved" => "Recorded", _ => "Failed" };
-            var prior = _ledger.Document.Entries.Single(e => e.SessionId == control.SessionId);
-            string? reason = phase == "Recorded" ? prior.Reason + "；会话已结束，MP4 已保存并校验" : state.Phase == "Failed" ? state.Error :
-                prior.Phase == "Starting" && phase == "Recording" ? "录制器已确认开始" : null;
-            _ledger.Update(control.SessionId, phase, reason, state);
-            if (!state.Active)
-            { _activePlan = null; await RetireAsync(); }
-        }
-        if (_worker is not null && !State.Active) await RetireAsync();
+        ObserveAutomaticState(state);
+        bool cleanupPending = _worker is not null && !State.Active && !await RetireAsync();
+        // Cleanup may wait for the old process to exit. Charge that wait to
+        // school-clock freshness and remaining course time, not a new duration.
+        reading = _clock.Read(Elapsed); now = reading.Now;
         if (_worker is not null && State is { Active: true, Control: { Owner: "Manual" } manual } && Stopwatch.GetTimestamp() >= _manualLease)
             await _worker.CommandAsync("stop", manual);
         if (_enabled && (Stopwatch.GetTimestamp() >= _appLease || reading.DateNeedsReview))
         { _enabled = false; _message = reading.DateNeedsReview ? reading.Message : "管理窗口失联，自动录制已停用"; await StopAutomaticAsync(_message); }
+        if (cleanupPending)
+        {
+            // A final receipt can precede process cleanup. Wait without
+            // disabling the scheduler or claiming/skipping the next lesson.
+            if (_enabled) _message = "上一录制组件仍在清理，后续任务等待交接";
+            return;
+        }
         // Tighten an active deadline even while school clock continuity is being revalidated.
         if (_activePlan is { } active && _worker is not null && State.Control is { } currentControl && reading.Fresh && now is { } schoolNow)
         {
@@ -283,16 +302,24 @@ public sealed class RecordingService : IAsyncDisposable
         if (_ledger.Document.SkipDate == date) { _message = "学校今天不再自动录制"; await StopAutomaticAsync(_message); return; }
         if (_activePlan is { } ongoing)
         {
-            var replacement = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Fixed == ongoing.Fixed &&
-                (p.Fixed ? p.Key == ongoing.Key : source?.ProfileId == _activeProfile && p.Lesson.Start < ongoing.Lesson.End && ongoing.Lesson.Start < p.Lesson.End));
-            if (replacement is null) await StopAutomaticAsync("课表、规则、暂停或档案发生变化，本节不再执行");
+            var replacement = RecordingPlanner.FindReplacement(plans, ongoing, source?.ProfileId == _activeProfile);
+            if (replacement is null)
+            {
+                // The old task is no longer admitted. Retain its identity while
+                // it finalizes, but do not let its former future end cause a
+                // due replacement to be permanently marked as occupied/skipped.
+                _activePlan = ongoing with { Selected = false, End = now.Value < ongoing.End ? now.Value : ongoing.End };
+                await StopAutomaticAsync("课表、规则、暂停或档案发生变化，本节不再执行");
+            }
             else if (replacement.End < ongoing.End) _activePlan = ongoing with { End = replacement.End };
         }
-        foreach (var plan in plans.Where(p => p.Selected && now >= p.Start && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p)))
+        foreach (var plan in plans.Where(p => p.Selected && now >= p.Start && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p, plans)))
         {
+            reading = _clock.Read(Elapsed);
+            if (!reading.CanStart) break;
             if (!plan.Fixed && (source is null || !source.Enabled || !source.ClockVerified)) continue;
-            if (now.Value.AddMilliseconds(reading.AgeMs) >= plan.Lesson.End)
-            { _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, plan.Conflict ? "Conflict" : "Missed", plan.Conflict ? plan.Reason : "正式时段已结束，不补录课后余量"); continue; }
+            if (now.Value.AddMilliseconds(reading.AgeMs) >= plan.Lesson.End || now.Value.AddMilliseconds(reading.AgeMs) >= plan.End)
+            { _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, plan.Conflict ? "Conflict" : "Missed", plan.Conflict ? plan.Reason : "有效录制时段已结束，不补录", plans); continue; }
             if (plan.Conflict) continue;
             if (State.Active || _worker is { Alive: true })
             {
@@ -300,20 +327,24 @@ public sealed class RecordingService : IAsyncDisposable
                 // Do not permanently skip the adjoining lesson during this handoff.
                 if (CanWaitForAutomaticHandoff(State, _activePlan, plan, now.Value,
                     _activeProfile, source?.ProfileId ?? Guid.Empty)) continue;
-                _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, "Skipped", "录制器被手动或上一会话占用，本次不再补开"); continue;
+                _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, "Skipped", "录制器被手动或上一会话占用，本次不再补开", plans); continue;
             }
-            await RetireAsync();
-            var entry = _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, "Starting", "启动意图已保存，等待录制器确认");
-            _activePlan = plan; _activeProfile = source?.ProfileId ?? Guid.Empty;
+            if (!await RetireAsync()) break;
+            reading = _clock.Read(Elapsed);
+            if (!reading.CanStart) break;
             var limit = TimeSpan.FromMilliseconds(Math.Max(0, (plan.End - now.Value).TotalMilliseconds - reading.AgeMs));
-            var owner = new RecorderControl("Automatic", entry.SessionId, entry.Key, RecorderDeadline.After(limit), RecorderDeadline.After(TimeSpan.FromSeconds(8)));
+            var hardDeadline = RecorderDeadline.After(limit);
+            var entry = _ledger.Add(source?.ProfileId ?? Guid.Empty, date, plan, "Starting", string.IsNullOrEmpty(plan.OverlapNotice)
+                ? "启动意图已保存，等待录制器确认" : "启动意图已保存，等待录制器确认；" + plan.OverlapNotice, plans);
+            _activePlan = plan; _activeProfile = source?.ProfileId ?? Guid.Empty;
+            var owner = new RecorderControl("Automatic", entry.SessionId, entry.Key, hardDeadline, RecorderDeadline.After(TimeSpan.FromSeconds(8)));
             try { await StartAsync(_options!, owner); }
             catch (Exception error) when (error is not OutOfMemoryException)
             { _ledger.Update(entry.SessionId, "Failed", error.Message, State); _activePlan = null; }
             break;
         }
-        var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p));
-        _upcoming = new(next, source?.ProfileId ?? Guid.Empty, next is null ? "None" : "Ready");
+        var next = plans.FirstOrDefault(p => p.Selected && !p.Conflict && p.Start > now && !_ledger.Contains(source?.ProfileId ?? Guid.Empty, p, plans));
+        _upcoming = new(next, source?.ProfileId ?? Guid.Empty, next is null ? "None" : "Ready") { Plans = plans };
         _message = State is { Active: true, Control.Owner: "Automatic" } ? AutomaticRecordingMessage(State) :
             next is null ? "自动录制已启用，本日暂无待开始任务" : $"下次自动录制：{next.Lesson.Subject} · 学校时间 {next.Start:HH:mm:ss}，可跳过下一项";
     }
@@ -330,15 +361,24 @@ public sealed class RecordingService : IAsyncDisposable
         if (_worker is not null && State is { Active: true, Control: { Owner: "Automatic" } c })
         {
             // Persist the reason first. Even if this fails, always attempt to stop this exact session.
-            try { _ledger.Update(c.SessionId, "Finalizing", reason, State); }
+            try { MarkAutomaticFinalizing(c, reason); }
             finally { await _worker.CommandAsync("stop", c); }
         }
     }
+    private void MarkAutomaticFinalizing(RecorderControl control, string reason)
+    {
+        var prior = _ledger.Document.Entries.Single(e => e.SessionId == control.SessionId);
+        string combined = prior.Reason.Contains(reason, StringComparison.Ordinal) ? prior.Reason :
+            string.IsNullOrEmpty(prior.Reason) ? reason : prior.Reason + "；" + reason;
+        _ledger.Update(control.SessionId, "Finalizing", combined, State);
+    }
+    // A withdrawn task is already stopping: its old ordering/profile no longer
+    // defines which new plan may wait. Continuing tasks retain those guards.
     internal static bool CanWaitForAutomaticHandoff(RecordingState state, PlannedRecording? previous,
         PlannedRecording next, DateTimeOffset now, Guid previousProfile, Guid nextProfile) =>
-        state.Control is { Owner: "Automatic" } && previous is { Fixed: false } && !next.Fixed &&
-        state.Control.OccurrenceId == previous.Key && previousProfile == nextProfile && previous.Key != next.Key && previous.End <= now &&
-        previous.Lesson.End <= next.Lesson.Start && now < next.Lesson.End;
+        state.Control is { Owner: "Automatic" } && previous is not null &&
+        state.Control.OccurrenceId == previous.Key && previous.Key != next.Key && previous.End <= now && now < next.Lesson.End &&
+        (!previous.Selected || (previous.Fixed || next.Fixed || previousProfile == nextProfile) && previous.Lesson.Start < next.Lesson.Start);
     public async Task PauseForClassroomModeAsync()
     {
         await _gate.WaitAsync();

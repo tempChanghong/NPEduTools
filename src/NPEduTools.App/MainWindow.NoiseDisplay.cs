@@ -15,6 +15,14 @@ public partial class MainWindow
     private long? _reportUnsupportedAt;
     private StudyReportWindow? _studyReportWindow;
     private long? _quickProjectionAt;
+    private bool NotificationPresentationActive => _notificationOpening || _schoolNotification is not null || _notificationPreview is not null;
+    private void HideStudyPresentations()
+    {
+        _scheduledNoiseWindow?.Hide();
+        _studyWindow?.HideDisplay();
+        _manualStudyWindow?.HideDisplay();
+        _studyReportWindow?.HideDisplay();
+    }
     private void UpdateQuickPresentationVisibility()
     {
         bool projector = _quickProjectionAt is { } at && Stopwatch.GetElapsedTime(at) < TimeSpan.FromSeconds(1.5);
@@ -65,10 +73,12 @@ public partial class MainWindow
                 UpdateWorkspaceManual(manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(3.5) ? manual.ManualStudy : null);
                 bool schoolPriority=studyResponse.Outcome == "Succeeded" && studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
                 if(schoolPriority)_manualStudyWindow?.HideDisplay();
-                else if(studyResponse.Study?.ProjectionPriority != true && !_exitBusy && _exitWarning is not {IsVisible:true} && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
+                else if(studyResponse.Study?.ProjectionPriority != true && !_exitBusy && _exitWarning is not {IsVisible:true} && !NotificationPresentationActive && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
                 {
                     using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
                     long reportAt=Stopwatch.GetTimestamp();var report=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.report.status"));
+                    // A notice may have opened while the report request was pending.
+                    if (NotificationPresentationActive) { HideStudyPresentations(); continue; }
                     if (report.Outcome == "Succeeded" && report.StudyReport is { Available: true, Data: not null } mr)
                     {
                         _manualStudyWindow?.HideDisplay(); _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
@@ -92,7 +102,7 @@ public partial class MainWindow
                 }
                 else _manualStudyWindow?.HideDisplay();
                 if (studyResponse.Study is not { Display.Selected: true, PolicyState: "APPLIED", Seating.State: "READY" }) _studyWindow?.InvalidateSeating();
-                bool blocked = _exitBusy || _notificationOpening || _schoolNotification is not null || _notificationPreview is not null ||
+                bool blocked = _exitBusy || NotificationPresentationActive ||
                     IsActive || _noiseWindow?.IsVisible == true || _onboardingWindow?.IsVisible == true ||
                     Application.Current.Windows.OfType<Window>().Any(w => w is not ScheduledNoiseWindow && w is not StudyWindow && w is not StudyReportWindow && w.IsVisible && w.IsActive);
                 if (studyResponse.Outcome == "Succeeded" && studyResponse.Study?.Display?.Selected == true)
@@ -100,7 +110,7 @@ public partial class MainWindow
                     _scheduledNoiseWindow?.Hide();
                     // Ordinary App/settings windows use the same bounded hide lease. Only real
                     // priority operations may defer display after its expiry; an open noise page cannot renew it.
-                    bool studyBlocked = studyResponse.Study.ProjectionPriority || _exitBusy || _exitWarning is {IsVisible:true} || _notificationOpening || _schoolNotification is not null || _notificationPreview is not null ||
+                    bool studyBlocked = studyResponse.Study.ProjectionPriority || _exitBusy || _exitWarning is {IsVisible:true} || NotificationPresentationActive ||
                         _onboardingWindow?.IsVisible == true || Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible);
                     await UpdateStudyReportAsync(studyBlocked);
                     if (_studyReportWindow?.IsVisible == true) { _studyWindow?.HideDisplay(); continue; }
@@ -116,7 +126,7 @@ public partial class MainWindow
                             studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
                     }
                     if (!studyBlocked && !_exitBusy && _exitWarning is not { IsVisible: true } &&
-                        !_notificationOpening && _schoolNotification is null && _notificationPreview is null &&
+                        !NotificationPresentationActive &&
                         _onboardingWindow?.IsVisible != true && !Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible) &&
                         studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(1.5) &&
                         studyResponse.Study is { Display: { Selected: true, Available: true }, ProjectionPriority: false } &&
@@ -181,7 +191,7 @@ public partial class MainWindow
         var reply = await ManagementRequestAsync(new HostRequest(1, Guid.NewGuid(), "study.report.status"));
         if (reply.ErrorCode is "UnknownCapability" or "STUDY_REPORT_UNSUPPORTED") { _reportUnsupportedAt = Stopwatch.GetTimestamp(); _studyReportWindow?.HideDisplay(); return; }
         _reportUnsupportedAt = null;
-        if (_lifetime.IsCancellationRequested || blocked || RuntimeOperationFile.PriorityRequested || !NotificationDesktopAvailable() ||
+        if (_lifetime.IsCancellationRequested || blocked || NotificationPresentationActive || RuntimeOperationFile.PriorityRequested || !NotificationDesktopAvailable() ||
             reply.Outcome != "Succeeded" || reply.StudyReport is not { Available: true, Data: not null } report)
         { _studyReportWindow?.HideDisplay(); return; }
         using var probe = RuntimeOperationFile.TryAcquire(false);

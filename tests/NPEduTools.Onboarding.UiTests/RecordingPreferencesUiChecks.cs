@@ -10,6 +10,8 @@ internal static partial class Program
 {
     private static void RunRecordingPreferencesChecks()
     {
+        RunRecordingProbeEditingChecks();
+        RunRecordingDeviceSelectionChecks();
         foreach (string scenario in new[] { "version", "null-options", "invalid-options", "oversized", "invalid-json", "valid", "absent" })
             RunRecordingPreferencesCheck(scenario);
     }

@@ -38,6 +38,12 @@ internal static partial class Program
                 try { check(); } catch (Exception e) { errors.Add(new InvalidOperationException(check.Method.Name + ": " + e.Message, e)); }
             foreach (string scenario in new[] { "rejected-report", "empty-report", "accepted-report", "delayed-manual", "delayed-school", "delayed-school-withdrawn", "delayed-school-projection", "school-report" })
                 try { WorkspaceDisplayPipelineCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
+            foreach (string presentation in new[] { "manual", "manual-report", "school-report" })
+            foreach (string blocker in new[] { "_notificationOpening", "_schoolNotification", "_notificationPreview" })
+            foreach (bool duringRead in new[] { false, true })
+                try { WorkspaceStudyNotificationPriority(presentation, blocker, duringRead); }
+                catch (Exception e) { errors.Add(new InvalidOperationException($"{presentation}/{blocker}/{duringRead}: {e.Message}", e)); }
+            try { WorkspaceNotificationPreviewHidesStudy(); } catch (Exception e) { errors.Add(new InvalidOperationException("preview: " + e.Message, e)); }
             if (errors.Count > 0) throw new AggregateException(errors);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }

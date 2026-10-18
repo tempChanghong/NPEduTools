@@ -397,6 +397,48 @@ public sealed partial class ExamAwareTests : IDisposable
         }
     }
     [Fact]
+    public void PairingResetAllowsOptionalNonnegativeConfigurationRevision()
+    {
+        var request = Request("examaware.pairing.reset");
+        Assert.Null(Protocol.Validate(request));
+        Assert.Null(Protocol.Validate(request with { ExpectedRevision = 0 }));
+        Assert.Null(Protocol.Validate(request with { ExpectedRevision = 7 }));
+        Assert.Equal("InvalidConfiguration", Protocol.Validate(request with { ExpectedRevision = -1 }));
+        Assert.Equal("InvalidConfiguration", Protocol.Validate(request with { ExpectedRevision = 0, ExecutablePath = "fixture.exe" }));
+    }
+    [Fact]
+    public async Task PairingResetRejectsStaleConfirmationWithoutChangingPairingOrDisconnectingPeer()
+    {
+        await using var service = new ExamAwareService(_directory, new Target());
+        await Configure(service);
+        var pairing = await Pairing(service);
+        var (client, hello) = await Connect(pairing);
+        using (client)
+        {
+            await Send(client, hello, pairing);
+            await Wait(() => service.Snapshot().BridgeState == "Connected");
+            var reset = Request("examaware.pairing.reset") with { ExpectedRevision = 1 };
+            Assert.Equal("Succeeded", (await Configure(service, 1)).Outcome);
+            var rejected = await service.HandleAsync(reset);
+            Assert.Equal("Rejected", rejected.Outcome);
+            Assert.Equal("RevisionConflict", rejected.ErrorCode);
+            Assert.Equal(2, service.Snapshot().Revision);
+            Assert.Equal("Connected", service.Snapshot().BridgeState);
+            Assert.Equal(pairing, await Pairing(service));
+
+            // Reconfirming the new revision may reuse the previously rejected request ID.
+            reset = reset with { ExpectedRevision = 2 };
+            Assert.Equal("Succeeded", (await service.HandleAsync(reset)).Outcome);
+            Assert.Equal("AlreadyAccepted", (await service.HandleAsync(reset)).ErrorCode);
+            Assert.Equal("RevisionConflict", (await service.HandleAsync(reset with { RequestId = Guid.NewGuid() })).ErrorCode);
+            Assert.Equal(3, service.Snapshot().Revision);
+            Assert.Equal("Disconnected", service.Snapshot().BridgeState);
+            var next = await Pairing(service);
+            Assert.NotEqual(pairing.Key, next.Key);
+            Assert.Equal(next, await Pairing(service));
+        }
+    }
+    [Fact]
     public async Task PairingRevocationClosesPeerAndRejectsOldCredential()
     {
         await using var service = new ExamAwareService(_directory, new Target());

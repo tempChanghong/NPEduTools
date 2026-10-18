@@ -25,9 +25,9 @@
           </Grid>
           <TextBlock x:Name="CaptureSummary" Text="正在检测录制设备…" TextWrapping="Wrap" Foreground="#718089" FontSize="12" Margin="0,10,0,14" />
           <CheckBox x:Name="SystemSound" Content="录制系统声音" IsChecked="True" Checked="SoundChanged" Unchecked="SoundChanged" AutomationProperties.AutomationId="RecordingSystemAudio" />
-          <ComboBox x:Name="SpeakerChoice" DisplayMemberPath="Label" SelectedValuePath="Id" AutomationProperties.AutomationId="RecordingSpeaker" />
+          <ComboBox x:Name="SpeakerChoice" DisplayMemberPath="Label" SelectedValuePath="Id" SelectionChanged="ChoicesChanged" AutomationProperties.AutomationId="RecordingSpeaker" />
           <CheckBox x:Name="MicrophoneSound" Content="录制麦克风" IsChecked="True" Checked="SoundChanged" Unchecked="SoundChanged" Margin="0,8,0,0" AutomationProperties.AutomationId="RecordingMicrophone" />
-          <ComboBox x:Name="MicrophoneChoice" DisplayMemberPath="Label" SelectedValuePath="Id" AutomationProperties.AutomationId="RecordingMicrophoneDevice" />
+          <ComboBox x:Name="MicrophoneChoice" DisplayMemberPath="Label" SelectedValuePath="Id" SelectionChanged="ChoicesChanged" AutomationProperties.AutomationId="RecordingMicrophoneDevice" />
           <TextBlock Text="同时录音时，请注意扬声器声音可能再次进入麦克风。" FontSize="11" Foreground="#718089" TextWrapping="Wrap" Margin="0,8,0,16" />
           <TextBlock Text="保存位置" FontSize="13" Margin="0,0,0,8" />
           <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBox x:Name="OutputDirectory" AutomationProperties.AutomationId="RecordingDirectory" /><Button Grid.Column="1" Content="选择…" Margin="8,0,0,0" Click="BrowseClicked" AutomationProperties.AutomationId="RecordingBrowse" /></Grid>

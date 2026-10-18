@@ -35,15 +35,18 @@ internal sealed class NoiseManagementDialog : Window
         Width = 460; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false;
         Background = System.Windows.Media.Brushes.White; FontFamily = new("Microsoft YaHei UI"); FontSize = 14;
+        string secretName = state.ManagementSource == "School" ? "学校管理口令" : "本机管理口令";
+        string sourceHint = state.ManagementSource == "School"
+            ? "使用学校管理员在 NPClassworks 后台为本班设置的口令，原本机口令已停用。" : "";
         var body = new StackPanel { Margin = new(26) };
         body.Children.Add(new TextBlock { Text = Title, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0,0,0,14) });
         _message.Text = target is null
             ? "用于本机停止学校定时监测和维护退出，与学校 PIN 分开。请使用 8–128 字符口令；Host 只保存加盐摘要。"
-            : "学校定时监测正在运行。请输入本机管理口令。本次验证只授权当前会话的这一项操作，关闭窗口不会停止采集。";
+            : $"学校定时监测正在运行。请输入{secretName}。{sourceHint}本次验证只授权当前会话的这一项操作，关闭窗口不会停止采集。";
         body.Children.Add(_message);
-        if(exit is not null){_message.Text="请在 30 秒内输入本机管理口令。首次密码错误或超时将显示退出验证未通过提醒，后台监测继续。";body.Children.Add(_deadline);UpdateDeadline(exit.VerificationRemainingSeconds);}
+        if(exit is not null){_message.Text=$"请在倒计时结束前输入{secretName}。{sourceHint}首次密码错误或超时将显示退出验证未通过提醒，后台监测继续。";body.Children.Add(_deadline);UpdateDeadline(exit.VerificationRemainingSeconds);}
         if (target is not null || state.Configured)
-        { body.Children.Add(new TextBlock { Text = target is null ? "原管理口令" : "管理口令" }); body.Children.Add(_old); }
+        { body.Children.Add(new TextBlock { Text = target is null ? "原管理口令" : secretName }); body.Children.Add(_old); }
         if (target is null)
         {
             body.Children.Add(new TextBlock { Text = "新口令" }); body.Children.Add(_new);
@@ -119,6 +122,9 @@ internal sealed class NoiseManagementDialog : Window
         }
         finally { owner.Closed -= OwnerClosed; }
     }
+    private static string MissingManagementMessage(NoiseProtectionState state) => state.ManagementSource == "School"
+        ? "学校管理口令尚未同步或不可用。请联系学校管理员，在 NPClassworks 后台核对本班口令，并检查学校互联。\n原本机口令已停用；当前监测继续受到保护。"
+        : "本机尚未设置管理口令。首次设置需在无定时监测时进行；请等待本次监测按排程结束，再到“自习 → 联机校准 (Beta)”点击“设置管理口令”。\n当前监测继续受到保护。";
     internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null)
     {
         if (!Protocol.NoiseInterruption(target)) return target;
@@ -129,7 +135,7 @@ internal sealed class NoiseManagementDialog : Window
         if (!state.Protected) return target;
         if (!state.Configured)
         {
-            MessageBox.Show(owner, "本机尚未设置管理口令。请从班级大屏网页验证学校 PIN 后结束本次监测；再在噪音监测页设置本机管理口令。", "定时监测受到保护");
+            MessageBox.Show(owner, MissingManagementMessage(state), "定时监测受到保护");
             return null;
         }
         var dialog = new NoiseManagementDialog(owner, pipe, state, target,exit,exitRead);
@@ -146,7 +152,7 @@ internal sealed class NoiseManagementDialog : Window
         if (state.ManagementSource == "School")
         { MessageBox.Show(owner, CalibrationAccess.Hint(state) + "\n学校口令由学校管理员在 NPClassworks 后台设置，本机不能覆盖。", "学校管理口令"); return; }
         if (state.Protected && !state.Configured)
-        { MessageBox.Show(owner, "首次设置需在没有定时监测时进行。请先从大屏网页验证学校 PIN 后结束本次监测。", "本机管理口令"); return; }
+        { MessageBox.Show(owner, MissingManagementMessage(state), "本机管理口令"); return; }
         new NoiseManagementDialog(owner, pipe, state, null).ShowDialog();
     }
 }

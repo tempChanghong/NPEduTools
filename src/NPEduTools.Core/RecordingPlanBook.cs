@@ -43,7 +43,7 @@ public static class CalendarRecordingPlanner
         if (book.Dated.Any(r => r is null || r.Id == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 80 || r.End <= r.Start) ||
             book.Dated.Select(r => r.Id).Distinct().Count() != book.Dated.Length) return "指定日期时段无效。";
         if (book.Overrides.Any(o => o is null || o.Id == Guid.Empty || o.ProfileId == Guid.Empty || o.Number is < 1 or > 64 ||
-            o.Mode is not ("Include" or "Exclude") || o.BeforeMinutes is < 0 or > 5 || o.AfterMinutes is < 0 or > 5 ||
+            o.Mode is not ("Include" or "Exclude") || RecordingPlanner.ValidateMargins(o.BeforeMinutes, o.AfterMinutes) is not null ||
             o.OriginalEnd <= o.OriginalStart || o.OriginalStart.Offset != TimeSpan.Zero || o.OriginalEnd.Offset != TimeSpan.Zero ||
             DateOnly.FromDateTime(o.OriginalStart.Date) != o.Date || DateOnly.FromDateTime(o.OriginalEnd.Date) != o.Date ||
             o.Subject is null or { Length: > 256 }) ||
@@ -119,7 +119,7 @@ public static class CalendarRecordingPlanner
                 if (!source.Enabled || !lesson.Enabled) { selected = false; reason = !source.Enabled ? "课表未启用" : "课程停用或科目未定义"; }
                 if (paused) { selected = false; reason = "暂停至 " + book.PauseThrough; }
                 rows.Add(p with { Start = lesson.Start.AddMinutes(-before), End = lesson.End.AddMinutes(after), Selected = selected,
-                    Conflict = conflict, Reason = reason, Sources = sources });
+                    Conflict = conflict, Reason = reason, Sources = sources, OverlapNotice = "" });
             }
             foreach (var missing in overrides.Where(o => source.Lessons.All(l => l.Number != o.Number)))
                 rows.Add(new($"review/{missing.Id}", new(missing.Number, Guid.Empty, missing.Subject, missing.OriginalStart, missing.OriginalEnd, false),
@@ -129,18 +129,7 @@ public static class CalendarRecordingPlanner
             rows.Add(Fixed(rule.Id, rule.Name, date, rule.FixedStart!.Value, rule.FixedEnd!.Value, !paused && !only, "周期固定时段"));
         foreach (var item in book.Dated.Where(d => d.Date == date && d.Enabled))
             rows.Add(Fixed(item.Id, item.Name, date, item.Start, item.End, !paused, "指定日期固定时段"));
-        var sorted = RecordingPlanner.FitCourseWindows(rows.OrderBy(p => p.Start).ToArray()).OrderBy(p => p.Start).ToArray();
-        for (int i = 0; i < sorted.Length; i++)
-            for (int j = i + 1; j < sorted.Length; j++)
-            {
-                var a = sorted[i]; var b = sorted[j];
-                if (a.Selected && b.Selected && (a.Fixed || b.Fixed) && a.Start < b.End && b.Start < a.End)
-                {
-                    sorted[i] = a with { Conflict = true, Reason = "固定时段与其他任务重叠，请调整" };
-                    sorted[j] = b with { Conflict = true, Reason = "固定时段与其他任务重叠，请调整" };
-                }
-            }
-        return sorted;
+        return RecordingPlanner.ResolveOverlaps(RecordingPlanner.FitCourseWindows(rows.OrderBy(p => p.Start).ToArray()));
     }
     private static PlannedRecording Fixed(Guid id, string name, DateOnly date, TimeOnly start, TimeOnly end, bool enabled, string source)
     {

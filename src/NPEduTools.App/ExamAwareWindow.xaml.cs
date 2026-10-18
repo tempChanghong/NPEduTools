@@ -133,20 +133,21 @@ public partial class ExamAwareWindow : Window
             "设置登录自启动", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
             await RunAsync("examaware.autostart.set", autoStartEnabled: enabled, expectedRevision: confirmedRevision);
     }
-    private async void QuitClicked(object sender, RoutedEventArgs e)
+    private async Task ConfirmRevisionActionAsync(string capability, Func<bool> confirm)
     {
-        if (_busy) return;
-        if (MessageBox.Show(this, "请确认已保存并关闭考试编辑器、结束放映。\nExamAware 1.5.2 在编辑器仍打开时可能无法正常退出。现在继续退出吗？",
-            "正常退出 ExamAware", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
-            await RunAsync("examaware.quit");
+        if (_closing || _busy || _state is null) return;
+        // A modal dialog keeps dispatching status polls; bind consent before it opens.
+        long confirmedRevision = _revision;
+        if (confirm()) await RunAsync(capability, expectedRevision: confirmedRevision);
     }
-    private async void ResetPairingClicked(object sender, RoutedEventArgs e)
-    {
-        if (_busy) return;
-        if (MessageBox.Show(this, "撤销后，现有配对文件会失效，需要重新导出并在 ExamAware 中导入。",
-            "撤销当前配对", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
-            await RunAsync("examaware.pairing.reset");
-    }
+    private async void QuitClicked(object sender, RoutedEventArgs e) =>
+        await ConfirmRevisionActionAsync("examaware.quit", () => MessageBox.Show(this,
+            "请确认已保存并关闭考试编辑器、结束放映。\nExamAware 1.5.2 在编辑器仍打开时可能无法正常退出。现在继续退出吗？",
+            "正常退出 ExamAware", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK);
+    private async void ResetPairingClicked(object sender, RoutedEventArgs e) =>
+        await ConfirmRevisionActionAsync("examaware.pairing.reset", () => MessageBox.Show(this,
+            "撤销后，现有配对文件会失效，需要重新导出并在 ExamAware 中导入。",
+            "撤销当前配对", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK);
     private async void ExportClicked(object sender, RoutedEventArgs e)
     {
         if (_closing || _busy || _state is null) return;

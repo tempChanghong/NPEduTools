@@ -72,7 +72,7 @@ public static class AdminClient
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
         { return new("Cancelled", "已取消 Windows 管理员授权，未执行更改或重启。"); }
-        catch (Exception ex) when (ex is Win32Exception or IOException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is Win32Exception or IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
         { return new(dispatched ? "Unknown" : "Failed", dispatched
             ? "未能确认操作结果，请刷新状态核实；不会自动重复执行。"
             : "管理员组件未能连接，尚未发送操作。请重试或检查系统权限。", ErrorCode: $"{ex.GetType().Name}:{ex.HResult:X8}"); }

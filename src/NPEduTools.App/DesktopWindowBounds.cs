@@ -20,6 +20,22 @@ internal static class DesktopWindowBounds
             Math.Clamp(bounds.Top, area.Top, area.Top + area.Height - height), width, height);
     }
 
+    internal static DesktopBounds Centered(DesktopBounds area, double width, double height)
+    {
+        var fitted = Constrain(new(area.Left, area.Top, width, height), area);
+        return fitted with { Left = area.Left + (area.Width - fitted.Width) / 2,
+            Top = area.Top + (area.Height - fitted.Height) / 2 };
+    }
+
+    internal static void PlaceCentered(Window window, DesktopBounds area, double width, double height)
+    {
+        nint handle = new WindowInteropHelper(window).Handle;
+        if (handle == 0) return;
+        var bounds = Centered(area, width, height);
+        SetWindowPos(handle, 0, (int)Math.Round(bounds.Left), (int)Math.Round(bounds.Top),
+            (int)Math.Round(bounds.Width), (int)Math.Round(bounds.Height), 0x0214);
+    }
+
     internal static void KeepVisible(Window window)
     {
         if (window.WindowState != WindowState.Normal) return;

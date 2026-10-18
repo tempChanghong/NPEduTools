@@ -27,6 +27,7 @@ internal static partial class Program
         var window = PreparationWindow(pipe, new(Features: OnboardingFeatures.Noise, Step: "noise"), saved.Add);
         try
         {
+            RunStudyCameraConfigurationRemovalChecks();
             RunStudyDeviceSaveEvidenceChecks();
             RunStudyDeviceUnlockFeedbackChecks();
             RunStudyDeviceProtocolChecks();

@@ -24,6 +24,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            RunOnboardingSecRandomChecks();
             RunOnboardingTaskFlowChecks();
             var failures = new List<Exception>();
             foreach (int stage in Enumerable.Range(0, 3))

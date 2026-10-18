@@ -296,7 +296,12 @@ public partial class StudySurface : UserControl
     }
     public void BeginHold()
     { if (_busy || !_timeline.Fresh || _timeline.State?.Phase != "Active" || _holdAt is not null) return; _holdAt = _time.GetTimestamp(); HoldText.Text = "继续按住…"; _holdTimer.Start(); }
-    private void BeginEndHold(){if(_end is null || !EndButton.IsEnabled)return;BeginHold();_endHold=_holdAt is not null;}
+    private void BeginEndHold()
+    {
+        // A second contact/key cannot repurpose the time already held on temporary use.
+        if (_end is null || !EndButton.IsEnabled || _holdAt is not null) return;
+        BeginHold(); _endHold = _holdAt is not null;
+    }
     private void EndMouseDown(object sender,MouseButtonEventArgs e){if(e.StylusDevice is not null)return;BeginEndHold();EndButton.CaptureMouse();e.Handled=true;}
     private void EndMouseUp(object sender,MouseButtonEventArgs e){CancelHold();EndButton.ReleaseMouseCapture();e.Handled=true;}
     private void EndTouchDown(object sender,TouchEventArgs e){BeginEndHold();EndButton.CaptureTouch(e.TouchDevice);e.Handled=true;}

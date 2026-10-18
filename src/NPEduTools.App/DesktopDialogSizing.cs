@@ -31,7 +31,7 @@ internal static class DesktopDialogSizing
                 double width = area.Width / dpi.DpiScaleX, height = area.Height / dpi.DpiScaleY, preference = 0;
                 string? currentEndpoint = endpoint ?? (window.Owner as MainWindow)?.PipeName;
                 try { if (currentEndpoint is not null) preference = DesktopDensity.Read(currentEndpoint); }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
                 if (!double.IsFinite(designWidth)) designWidth = Math.Max(320, window.ActualWidth);
                 if (automaticHeight && window.Content is FrameworkElement natural)
                 {
