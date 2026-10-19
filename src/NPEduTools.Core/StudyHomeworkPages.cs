@@ -4,21 +4,25 @@ using NPEduTools.Contracts;
 namespace NPEduTools.Core;
 
 public sealed record StudyHomeworkPart(StudyHomeworkItem Item, string Text, int Part, int Parts);
-public sealed record StudyHomeworkPage(bool Wide, IReadOnlyList<StudyHomeworkPart> Items);
+public sealed record StudyHomeworkPage(bool Wide, IReadOnlyList<StudyHomeworkPart> Items, bool Tall = false);
 
 public static class StudyHomeworkPages
 {
     public const double CompactWidth = 535, CompactHeight = 72, WideWidth = 835, WideHeight = 218;
     public static StudyHomeworkPage[] Build(IReadOnlyList<StudyHomeworkItem> work, Func<string, double, double> height)
     {
-        var fragments = new List<(StudyHomeworkPart Part, bool Wide)>();
+        var fragments = new List<(StudyHomeworkPart Part, int Layout)>();
         foreach (var item in work.DistinctBy(w => w.Id))
         {
             string content = string.IsNullOrWhiteSpace(item.Title) ? item.Content : string.IsNullOrWhiteSpace(item.Content) ? item.Title : item.Title + "\n" + item.Content;
             if (string.IsNullOrWhiteSpace(content)) continue;
             // Very long content goes straight to wide pages; never shape its entire body just to test a small card.
-            if (content.Length <= 1024 && height(content, CompactWidth) <= CompactHeight)
-            { fragments.Add((new(item, content, 1, 1), false)); continue; }
+            if (content.Length <= 1024)
+            {
+                double measured = height(content, CompactWidth);
+                if (measured <= WideHeight)
+                { fragments.Add((new(item, content, 1, 1), measured <= CompactHeight ? 0 : 1)); continue; }
+            }
             var parts = new List<string>();
             int[] positions = StringInfo.ParseCombiningCharacters(content); int start = 0;
             while (start < positions.Length)
@@ -40,20 +44,24 @@ public static class StudyHomeworkPages
                 }
                 if (best == start) throw new InvalidOperationException("A text element exceeds the homework area.");
                 // Prefer nearby paragraph/sentence boundaries, retaining every source character.
-                for (int cut = best - 1; cut >= start + Math.Max(1, (best - start) / 2); cut--)
-                    if (content[positions[cut] - 1] is '\n' or '。' or '；' or '！' or '？') { best = cut; break; }
+                if (best < positions.Length)
+                    for (int cut = best - 1; cut >= start + Math.Max(1, (best - start) / 2); cut--)
+                        if (content[positions[cut] - 1] is '\n' or '。' or '；' or '！' or '？') { best = cut; break; }
                 int limit = best == positions.Length ? content.Length : positions[best];
                 parts.Add(content[offset..limit]); start = best;
             }
-            for (int i = 0; i < parts.Count; i++) fragments.Add((new(item, parts[i], i + 1, parts.Count), true));
+            for (int i = 0; i < parts.Count; i++) fragments.Add((new(item, parts[i], i + 1, parts.Count), 2));
         }
-        var pages = new List<StudyHomeworkPage>(); var current = new List<StudyHomeworkPart>(); bool wide = false;
-        void Flush() { if (current.Count > 0) { pages.Add(new(wide, current.ToArray())); current.Clear(); } }
+        var pages = new List<StudyHomeworkPage>(); var current = new List<StudyHomeworkPart>(); int layout = 0;
+        static int Capacity(int kind) => kind == 2 ? 2 : kind == 1 ? 3 : 6;
+        void Flush() { if (current.Count > 0) { pages.Add(new(layout == 2, current.ToArray(), layout == 1)); current.Clear(); } layout = 0; }
         foreach (var fragment in fragments)
         {
-            if (fragment.Wide && !wide) { Flush(); wide = true; }
+            int needed = Math.Max(layout, fragment.Layout);
+            if (current.Count + 1 > Capacity(needed)) Flush();
+            layout = Math.Max(layout, fragment.Layout);
             current.Add(fragment.Part);
-            if (current.Count == (wide ? 2 : 6)) { Flush(); wide = false; }
+            if (current.Count == Capacity(layout)) Flush();
         }
         Flush(); return pages.Count > 0 ? pages.ToArray() : [new(false, [])];
     }

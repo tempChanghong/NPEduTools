@@ -11,6 +11,8 @@ public sealed partial class StudyWindow : Window
     private readonly string _pipe;
     private readonly bool _manual;
     private readonly StudySurface _surface;
+    private readonly StudyDisplayContinuation _continuation;
+    public bool CanKeepAfterReadFailure => !_shutdown && IsVisible && _continuation.CanKeep;
     private StudyHostState? _state;
     private StudySeatingUploadWindow? _seatingUpload;
     private bool _shutdown;
@@ -45,15 +47,18 @@ public sealed partial class StudyWindow : Window
     public StudyWindow(string pipe, Action manage, bool muted = false, TimeProvider? time = null,bool manual=false)
     {
         _pipe = pipe; _manual=manual; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
+        _continuation = new(time);
         Left = Top = 0; Width = SystemParameters.PrimaryScreenWidth; Height = SystemParameters.PrimaryScreenHeight;
         ShowInTaskbar = false; Topmost = true; Title = manual?"NPEduTools · 手动自习":"NPEduTools · 学校自习";
         _surface = new(HideAsync, () => { HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
+        _surface.RefreshCompleted += () => { if (!_manual && IsVisible && !_continuation.CanKeep) HideDisplay(); };
         if (!manual) _surface.SeatingUploadRequested += OpenSeatingUpload;
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; _surface.ReturnError("请长按“临时使用电脑”收起展示。"); } };
     }
     public void Apply(StudyHostState state, NoiseState? noise, TimeSpan transportAge = default, StudyPhotoState? photos = null, NpepState? connection = null,
         NoiseCalibrationStatus? calibration = null)
     {
+        _continuation.Observe(state, transportAge);
         if (_state?.Display?.InstanceId != state.Display?.InstanceId || _state?.Window != state.Window || _state?.Version != state.Version)
         { DismissSeatingUpload(); _hideRequest = null; _surface.ReturnError(null); }
         if (!state.ClockReady || state.PolicyState != "APPLIED" || state.Phase is not ("Preparing" or "Active")) DismissSeatingUpload();

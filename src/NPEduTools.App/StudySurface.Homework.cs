@@ -51,7 +51,7 @@ public partial class StudySurface
         string scope = $"{state.Display?.InstanceId}/{state.Version}/{state.SchoolNow:yyyy-MM-dd}";
         bool available = fresh && state.Homework is { State: "READY" };
         string status = !fresh ? "STALE" : state.Homework?.State ?? "WAITING";
-        if (_homeworkScope != scope || !available && _homeworkStatus != status)
+        if (_homeworkScope != scope || fresh && !available && _homeworkStatus != status)
         {
             _homeworkScope = scope; _loadedHomework = _latestHomework = null; _pendingHomework = null;
             _pages = [new(false, [])]; _pager.Reset(1); _drawnPage = -1;
@@ -60,7 +60,8 @@ public partial class StudySurface
         _pager.Configure(state.Settings?.Homework.RotationSeconds ?? 60);
         if (_pager.Advance(available && _loadedHomework is not null && _shownNotice is null && SeatingOverlay.Visibility != Visibility.Visible, _pendingHomework is not null))
         { if (_pendingHomework is { } pending) CommitHomework(pending); _drawnPage = -1; }
-        WorkUpdateLabel.Text = _pendingHomework is not null ? "作业已更新 · 本页读完后切换" : "";
+        WorkUpdateLabel.Text = !fresh && _loadedHomework is not null ? "状态待同步 · 显示最近作业" :
+            _pendingHomework is not null ? "作业已更新 · 本页读完后切换" : "";
         Previous.Visibility = Next.Visibility = _pages.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
         PageLabel.Text = _pages.Length > 1 ? $"{_pager.Page + 1} / {_pages.Length}" : "";
         RotationLabel.Text = _pages.Length > 1 ? $"每 {_pager.IntervalSeconds} 秒轮换" : "";
@@ -86,8 +87,8 @@ public partial class StudySurface
                 TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(0, 3, 0, 7) });
             stack.Children.Add(new TextBlock { Text = part.Text, FontSize = 26, FontWeight = FontWeights.Normal, Foreground = Brushes.White,
                 TextWrapping = TextWrapping.Wrap, Width = page.Wide ? StudyHomeworkPages.WideWidth : StudyHomeworkPages.CompactWidth });
-            Grid.SetColumn(stack, page.Wide ? i : i % 3); Grid.SetRow(stack, page.Wide ? 0 : i / 3);
-            if (page.Wide) Grid.SetRowSpan(stack, 2);
+            Grid.SetColumn(stack, page.Wide ? i : i % 3); Grid.SetRow(stack, page.Wide || page.Tall ? 0 : i / 3);
+            if (page.Wide || page.Tall) Grid.SetRowSpan(stack, 2);
             HomeworkGrid.Children.Add(stack);
         }
     }

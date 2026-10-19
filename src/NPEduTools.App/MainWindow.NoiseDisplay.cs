@@ -16,6 +16,24 @@ public partial class MainWindow
     private StudyReportWindow? _studyReportWindow;
     private long? _quickProjectionAt;
     private bool NotificationPresentationActive => _notificationOpening || _schoolNotification is not null || _notificationPreview is not null;
+    private bool SchoolStudyPresentationBlocked => _exitBusy || _exitWarning is { IsVisible: true } || NotificationPresentationActive ||
+        _onboardingWindow?.IsVisible == true || Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible) ||
+        RuntimeOperationFile.PriorityRequested || !NotificationDesktopAvailable();
+    private void RetainConfirmedSchoolDisplay()
+    {
+        if (SchoolStudyPresentationBlocked || _studyWindow?.CanKeepAfterReadFailure != true) _studyWindow?.HideDisplay();
+    }
+    private void ReconcileExistingSchoolDisplay(HostResponse response, TimeSpan age)
+    {
+        if (SchoolStudyPresentationBlocked) { _studyWindow?.HideDisplay(); return; }
+        if (response.Outcome != "Succeeded" || age < TimeSpan.Zero || age >= TimeSpan.FromSeconds(1.5)) return;
+        if (response.Study is not { Display: { Selected: true, Available: true }, PolicyState: "APPLIED", ClockReady: true, ProjectionPriority: false })
+        { _studyWindow?.HideDisplay(); return; }
+        // Apply authoritative withdrawal/priority before any auxiliary await can fail.
+        // Positive observations refresh an existing window only; normal presentation still requires a fresh read.
+        if (_studyWindow?.IsVisible == true)
+            _studyWindow.Apply(response.Study, response.Noise, age, response.StudyPhotos, response.Npep, response.NoiseCalibrationStatus);
+    }
     private void HideStudyPresentations()
     {
         _scheduledNoiseWindow?.Hide();
@@ -66,6 +84,7 @@ public partial class MainWindow
                     workspaceFresh ? studyResponse.NoiseCalibrationStatus : null);
                 _quickProjectionAt = studyResponse.Outcome == "Succeeded" && studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
                 if (_quickProjectionAt is not null) UpdateQuickPresentationVisibility();
+                ReconcileExistingSchoolDisplay(studyResponse, studyRoundTrip);
                 await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
                 long manualAt=Stopwatch.GetTimestamp();
                 var manual=await calibrationRead.RequestAsync(new(1,Guid.NewGuid(),"manual.study.status"), ManagementRequestAsync);
@@ -124,6 +143,7 @@ public partial class MainWindow
                         studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
                         _quickProjectionAt = studyResponse.Outcome == "Succeeded" && studyResponse.Study?.ProjectionPriority == true &&
                             studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
+                        ReconcileExistingSchoolDisplay(studyResponse, studyRoundTrip);
                     }
                     if (!studyBlocked && !_exitBusy && _exitWarning is not { IsVisible: true } &&
                         !NotificationPresentationActive &&
@@ -141,6 +161,7 @@ public partial class MainWindow
                             _studyWindow.ShowDisplay();
                         }
                     }
+                    else if (studyResponse.Outcome == "Succeeded" && studyRoundTrip >= TimeSpan.FromSeconds(1.5)) RetainConfirmedSchoolDisplay();
                     else _studyWindow?.HideDisplay();
                     continue;
                 }
@@ -170,7 +191,12 @@ public partial class MainWindow
                     }
                 }
             }
-            catch (Exception e) when (IsManagementError(e)) { UpdateStudyHome(null); UpdateWorkspaceManual(null); UpdateWorkspaceReadiness(null, null); _scheduledNoiseWindow?.Hide(); _studyWindow?.HideDisplay(); _studyReportWindow?.HideDisplay(); _manualStudyWindow?.HideDisplay(); }
+            catch (Exception e) when (IsManagementError(e))
+            {
+                UpdateStudyHome(null); UpdateWorkspaceManual(null); UpdateWorkspaceReadiness(null, null);
+                _scheduledNoiseWindow?.Hide(); RetainConfirmedSchoolDisplay();
+                _studyReportWindow?.HideDisplay(); _manualStudyWindow?.HideDisplay();
+            }
             finally
             {
                 UpdateQuickPresentationVisibility();

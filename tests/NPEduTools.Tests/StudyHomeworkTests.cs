@@ -11,6 +11,44 @@ public sealed class StudyHomeworkTests
 {
     private sealed class Clock : TimeProvider { public long Ms; public override long TimestampFrequency => 1000; public override long GetTimestamp() => Ms; }
     private static StudyHomeworkItem Work(string id, string text) => new(id, 1, "物理", "", text, [new("one", "行政一班")]);
+    private static double MultilineHeight(string text, double width) => text.Split('\n').Sum(line => Math.Max(1, Math.Ceiling(line.Length / (width / 26)))) * 30;
+    [Fact]
+    public void A_complete_wide_card_is_not_split_again_at_a_paragraph_boundary()
+    {
+        string text = string.Join('\n', Enumerable.Repeat(new string('题', 30), 5));
+        var parts = StudyHomeworkPages.Build([Work("one", text)], MultilineHeight).SelectMany(page => page.Items).ToArray();
+        Assert.Single(parts); Assert.Equal(text, parts[0].Text); Assert.Equal(1, parts[0].Parts);
+    }
+    [Fact]
+    public void Six_medium_subjects_use_two_three_column_pages_without_fragmenting_subjects()
+    {
+        var items = Enumerable.Range(1, 6).Select(i => Work("subject" + i, "完成练习册。\n订正错题。\n预习下一课。")).ToArray();
+        var pages = StudyHomeworkPages.Build(items, MultilineHeight);
+        Assert.Equal(2, pages.Length); Assert.All(pages, page => Assert.Equal(3, page.Items.Count));
+        Assert.All(pages.SelectMany(page => page.Items), part => Assert.Equal(1, part.Parts));
+        Assert.Equal(items.Select(i => i.Id), pages.SelectMany(p => p.Items).Select(p => p.Item.Id));
+    }
+    [Fact]
+    public void Mixed_lengths_share_larger_cards_without_losing_order_or_overflowing()
+    {
+        var items = new[] { Work("short", "题目1"), Work("medium", "完成练习。\n订正错题。\n预习。"),
+            Work("wide", string.Join('\n', Enumerable.Repeat(new string('题', 30), 5))), Work("last", "题目2") };
+        foreach (var sequence in new[] { items, items.Reverse().ToArray(), items.Skip(1).Concat(items.Take(1)).ToArray() })
+        {
+            var pages = StudyHomeworkPages.Build(sequence, MultilineHeight);
+            Assert.Equal(sequence.Select(i => i.Id), pages.SelectMany(p => p.Items).Select(p => p.Item.Id));
+            Assert.All(pages, page =>
+            {
+                Assert.InRange(page.Items.Count, 1, page.Wide ? 2 : page.Tall ? 3 : 6);
+                Assert.All(page.Items, part =>
+                {
+                    Assert.Equal(1, part.Parts);
+                    Assert.True(MultilineHeight(part.Text, page.Wide ? StudyHomeworkPages.WideWidth : StudyHomeworkPages.CompactWidth) <=
+                        (page.Wide || page.Tall ? StudyHomeworkPages.WideHeight : StudyHomeworkPages.CompactHeight));
+                });
+            });
+        }
+    }
     [Fact]
     public void Long_homework_bounds_each_measurement_to_a_page_instead_of_repeatedly_shaping_the_whole_body()
     {
