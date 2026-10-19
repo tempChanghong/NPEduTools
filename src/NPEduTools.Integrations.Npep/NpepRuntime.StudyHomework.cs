@@ -41,8 +41,10 @@ public sealed partial class NpepRuntime
         using var buffer = new MemoryStream(); string? snapshot = null; int count = 1;
         for (int index = 0; index < count; index++)
         {
-            var reply = await _device!.StudyHomeworkAsync(new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
-                ["version"] = request["version"]!.DeepClone(), ["date"] = request["date"]!.DeepClone(), ["snapshotId"] = snapshot, ["index"] = index }, deadline.Token);
+            var body = new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
+                ["version"] = request["version"]!.DeepClone(), ["date"] = request["date"]!.DeepClone(), ["snapshotId"] = snapshot, ["index"] = index };
+            if (request["purpose"] is { } purpose) body["purpose"] = purpose.DeepClone();
+            var reply = await _device!.StudyHomeworkAsync(body, deadline.Token);
             await RequireStudyContextAsync(context, deadline.Token);
             if (reply["index"]!.GetValue<int>() != index || snapshot is not null && (reply.Text("snapshotId") != snapshot || reply["count"]!.GetValue<int>() != count))
                 throw new NpepException("INVALID_RESPONSE");

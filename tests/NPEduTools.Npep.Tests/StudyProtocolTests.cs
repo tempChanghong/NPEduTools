@@ -17,6 +17,16 @@ public sealed class StudyProtocolTests
         Assert.NotEmpty(name);
     }
     [Theory]
+    [InlineData("Manual", true)] [InlineData("Scheduled", false)] [InlineData("Other", false)]
+    public void Manual_homework_purpose_is_an_optional_explicit_read_only_extension(string purpose, bool valid)
+    {
+        var request = Cases.First(c => c!["definition"]!.GetValue<string>() == "homeworkRequest" && c["expected"]!.GetValue<bool>())!["value"]!.DeepClone().AsObject();
+        NpepStudyProtocol.Validate("homeworkRequest", request); // Legacy requests still pass unchanged.
+        request["purpose"] = purpose;
+        var error = Record.Exception(() => NpepStudyProtocol.Validate("homeworkRequest", request));
+        if (valid) Assert.Null(error); else Assert.IsType<NpepException>(error);
+    }
+    [Theory]
     [InlineData("valid", null)] [InlineData("correlation", "INVALID_RESPONSE")]
     [InlineData("oversize", "INVALID_RESPONSE")] [InlineData("redirect", "REDIRECT_REJECTED")]
     [InlineData("old server", "STUDY_UNSUPPORTED")] [InlineData("wrong version", "INVALID_RESPONSE")]

@@ -48,7 +48,9 @@ public partial class StudySurface
     }
     private void RenderHomework(StudyHostState state, bool fresh)
     {
-        string scope = $"{state.Display?.InstanceId}/{state.Version}/{state.SchoolNow:yyyy-MM-dd}";
+        // A school source-policy change revokes old homework even while a
+        // manual session retains its own independent version and reading timer.
+        string scope = $"{state.Display?.InstanceId}/{state.Version}/{state.Homework?.Version}/{state.SchoolNow:yyyy-MM-dd}";
         bool available = fresh && state.Homework is { State: "READY" };
         string status = !fresh ? "STALE" : state.Homework?.State ?? "WAITING";
         if (_homeworkScope != scope || fresh && !available && _homeworkStatus != status)

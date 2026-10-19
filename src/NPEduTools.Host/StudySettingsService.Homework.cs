@@ -11,12 +11,22 @@ public sealed partial class StudySettingsService
     private string? _homeworkId, _homeworkDate;
     private TimeSpan? _homeworkAt;
     private string _homeworkError = "WAITING";
+    // This callback reads only the manual owner's phase and Windows clock. It must
+    // stay lock-free: manual display sampling already calls this service under its lock.
+    public Func<DateTimeOffset?>? ManualHomeworkNow { get; set; }
+    private (bool Eligible, string? Date, bool Manual) HomeworkContext()
+    {
+        if (ManualHomeworkNow?.Invoke() is { Year: >= 2000 and <= 9998 } manualNow)
+            return (_scope is not null && ConfigurationFresh && _state.PolicyState == "APPLIED",
+                manualNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), true);
+        return (_state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active" or "Preparing" },
+            _state.SchoolNow?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), false);
+    }
     private void ClearHomework(string reason = "WAITING")
     { _homeworkBytes = null; _homeworkId = _homeworkDate = null; _homeworkAt = null; _homeworkError = reason; }
     private StudyHomeworkState HomeworkState()
     {
-        string? date = _state.SchoolNow?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        bool eligible = _state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active" or "Preparing" };
+        var (eligible, date, _) = HomeworkContext();
         if (!eligible || _settings?.Homework.Enabled != true || _homeworkDate is not null && _homeworkDate != date) ClearHomework();
         if (!ContinuingOffline && _homeworkAt is { } at && (Elapsed < at || Elapsed - at >= TimeSpan.FromSeconds(60))) ClearHomework("UNAVAILABLE");
         return new(!eligible ? "WAITING" : _settings?.Homework.Enabled != true ? "DISABLED" : _homeworkId is not null ? "READY" : _homeworkError,
@@ -24,9 +34,15 @@ public sealed partial class StudySettingsService
     }
     public JsonObject? StudyHomeworkRequest()
     {
-        var state = Snapshot();
-        return state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active", Settings.Homework.Enabled: true, SchoolNow: { } date, Version: { } version }
-            ? new() { ["version"] = version, ["date"] = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) } : null;
+        Snapshot();
+        lock (_sync)
+        {
+            var context = HomeworkContext();
+            if (!context.Eligible || context.Date is null || _settings?.Homework.Enabled != true || _version is null) return null;
+            var request = new JsonObject { ["version"] = _version, ["date"] = context.Date };
+            if (context.Manual) request["purpose"] = "Manual";
+            return request;
+        }
     }
     public void ApplyStudyHomework(JsonObject payload, byte[] bytes, string snapshotId)
     {
@@ -36,8 +52,9 @@ public sealed partial class StudySettingsService
         lock (_sync)
         {
             Tick();
-            if (_state is not { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active", Settings.Homework.Enabled: true } ||
-                _version != payload.Text("version") || _state.SchoolNow?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) != payload.Text("date"))
+            var context = HomeworkContext();
+            if (!context.Eligible || _settings?.Homework.Enabled != true ||
+                _version != payload.Text("version") || context.Date != payload.Text("date"))
                 throw new NpepException("POLICY_CHANGED");
             _homeworkBytes = bytes.ToArray(); _homeworkId = snapshotId; _homeworkDate = payload.Text("date"); _homeworkAt = Elapsed; _homeworkError = "WAITING";
         }
