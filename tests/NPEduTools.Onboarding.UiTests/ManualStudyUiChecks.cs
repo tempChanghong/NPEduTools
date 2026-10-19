@@ -7,6 +7,7 @@ internal static partial class Program
 {
     private static void RunManualStudyChecks()
     {
+        RunManualHomeworkUiChecks();
         RunStudyHoldIntentCheck();
         var clock=new StudyUiClock();int ends=0;
         var surface=new StudySurface(()=>Task.CompletedTask,()=>{},true,clock,end:()=>{ends++;return Task.CompletedTask;});

@@ -16,7 +16,7 @@ public sealed partial class RuntimeTests
         public void ApplyStudyHomework(JsonObject payload, byte[] bytes, string snapshotId) { NpepStudyProtocol.Validate("homeworkSnapshot",payload); Applied++; }
     }
     [Theory]
-    [InlineData("valid")] [InlineData("hash")] [InlineData("index")] [InlineData("mixed")] [InlineData("date")] [InlineData("pause")] [InlineData("unsupported")]
+    [InlineData("valid")] [InlineData("manual")] [InlineData("hash")] [InlineData("index")] [InlineData("mixed")] [InlineData("date")] [InlineData("pause")] [InlineData("unsupported")]
     public async Task Homework_cycle_uses_independent_version_and_rejects_mixed_or_late_chunks(string mode)
     {
         using var dir = new TestDirectory(); var server = new FakeServer(); var study = new HomeworkFixture(); NpepRuntime? active = null;
@@ -30,6 +30,7 @@ public sealed partial class RuntimeTests
             if (!request.RequestUri!.AbsolutePath.EndsWith("/study-settings/homework", StringComparison.Ordinal)) return await server.Send(request);
             Assert.Equal("0.12", request.Headers.GetValues("X-NPEP-Version").Single());
             var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject(); NpepStudyProtocol.Validate("homeworkRequest", body);
+            Assert.Equal(mode == "manual" ? "Manual" : null, body["purpose"]?.GetValue<string>());
             int index = body["index"]!.GetValue<int>(); Assert.Equal("2026-10-12", body.Text("date"));
             if (mode == "pause") Assert.Equal("Accepted", active!.Handle(new(1, Guid.NewGuid(), "npep.command",
                 Npep: new("pause", active.Snapshot().Revision))).Outcome);
@@ -44,7 +45,8 @@ public sealed partial class RuntimeTests
         await Command(runtime,"inspect"); await Command(runtime,"pair",server); await Command(runtime,"poll"); await Command(runtime,"confirm",server);
         await Until(() => runtime.Snapshot().Connection == "ONLINE");
         var input = new JsonObject { ["version"] = new string('a',64), ["date"] = "2026-10-12" };
-        if (mode == "valid") { await runtime.StudyHomeworkCycleAsync(study,input,CancellationToken.None); Assert.Equal(1,study.Applied); }
+        if (mode == "manual") input["purpose"] = "Manual";
+        if (mode is "valid" or "manual") { await runtime.StudyHomeworkCycleAsync(study,input,CancellationToken.None); Assert.Equal(1,study.Applied); }
         else { await Assert.ThrowsAsync<NpepException>(() => runtime.StudyHomeworkCycleAsync(study,input,CancellationToken.None)); Assert.Equal(0,study.Applied); }
     }
 }

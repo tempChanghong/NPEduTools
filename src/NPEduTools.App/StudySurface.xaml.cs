@@ -26,6 +26,7 @@ public partial class StudySurface : UserControl
         CameraIndicator.BorderBrush = photos?.State is "Capturing" or "Ready" ? Brushes.LightSlateGray : Brushes.DimGray;
     }
     private readonly StudyPresentationTimeline _timeline;
+    public event Action? RefreshCompleted;
     private readonly StudyReminderAudio _audio;
     private readonly Func<Task> _hide;
     private readonly Func<Task>? _end;
@@ -65,7 +66,7 @@ public partial class StudySurface : UserControl
         InitializeHomework();
         Clock.FontFamily = Remaining.FontFamily = NoticeTime.FontFamily = new FontFamily(new Uri("pack://application:,,,/NPEduTools.App;component/"), "./Assets/Study/Fonts/#TCloudNumber");
         Previous.Visibility = Next.Visibility = Visibility.Collapsed; PageLabel.Text = "";
-        _timer.Tick += (_, _) => Render();
+        _timer.Tick += (_, _) => { Render(); RefreshCompleted?.Invoke(); };
         _holdTimer.Tick += async (_, _) =>
         {
             if (_holdAt is not { } at) return;

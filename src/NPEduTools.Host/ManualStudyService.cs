@@ -43,6 +43,11 @@ public sealed class ManualStudyService : IAsyncDisposable
         _loop=background?Task.Run(async()=>{try{while(!_stop.IsCancellationRequested){Tick();await Task.Delay(TimeSpan.FromMilliseconds(200),_time,_stop.Token);}}catch(OperationCanceledException)when(_stop.IsCancellationRequested){} }):Task.CompletedTask;
     }
     public ManualStudyState Status() {lock(_sync)return new(_instance,_revision,_session,_phase,_reportError??_reason,_start,_end,_hasEnd,_hide,_displayLeadSeconds);}
+    // Date-only homework selection follows Windows time, independently of the
+    // ClassIsland clock. No manual lock may be taken from StudySettingsService.
+    public DateTimeOffset? HomeworkNow() => !Volatile.Read(ref _disposed) &&
+        Volatile.Read(ref _phase) is "Preparing" or "Starting" or "Active" or "Stopping"
+        ? _time.GetUtcNow().ToLocalTime() : null;
     private HostResponse Reply(HostRequest r,string outcome="Succeeded",string? error=null,string message="手动自习状态。")=>
         new(1,r.RequestId,outcome,error,message,Noise:_noise.Snapshot(),ManualStudy:Status());
     public HostResponse Handle(HostRequest r)

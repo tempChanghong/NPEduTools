@@ -183,6 +183,7 @@ await using var manualStudy=new ManualStudyService(noise,studySettings.DisplaySn
     Path.Combine(dataDirectory,"manual-study"), projection: projecting,
     displayLeadSeconds: () => new ManualStudyPreferencesStore(ManualStudyPreferencesStore.PathFor(pipeName)).Read().DisplayLeadSeconds,
     inactivity: desktopInactivity.Read);
+studySettings.ManualHomeworkNow = manualStudy.HomeworkNow;
 var studyDisplay = new StudyDisplayService(studySettings.DisplaySnapshot, thresholds: noise.StudyThresholds, directory: Path.Combine(dataDirectory, "npep"),
     calibratedThresholds: noise.ResolveCalibration, disciplineClaimed: noise.RecordStudyReminder, projection: projecting, inactivity: desktopInactivity.Read);
 await using var studyReport = new StudyReportService(studySettings.DisplaySnapshot, noise.StudyReportSnapshot,
