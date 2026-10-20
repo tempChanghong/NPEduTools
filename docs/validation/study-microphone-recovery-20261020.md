@@ -85,3 +85,13 @@
 - 两个收尾赋值点现在保留既有的会话级异常；若发现持久参考失效或存储错误，仍优先报告更具体的错误。不把临时 A 加权不可用或设备断开写成永久参考失效，不删除已有有效估算统计，不改变原始 dBFS 数据或续采规则。
 - 用例检查终态 `NoiseEstimate`、`FinishedStudyReport` 与通过协议验证的待上传统计，并重新启动同一合成输入验证参考仍可复用且新会话不继承旧错误。初次修复后相关专项 7 项通过（`.artifacts/reference-terminal-reason-after.log`）；后续补同一输入恢复检查并执行完整相关回归。所有测试均不连接实物麦克风、2202 或学校服务。
 - 最终相关原生回归 411 项通过、0 失败、0 跳过（`.artifacts/reference-terminal-reason-regression.log`）；另跑统计上传箱回归 30 项通过（`.artifacts/reference-terminal-reason-transport.log`）。WPF 通用报告检查 4 项通过（`.artifacts/reference-terminal-reason-ui/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/reference-terminal-reason-release-build.log`）。这些是隔离程序和合成输入证据，不能代替实物断连、声学与学校现场验收。未推送、部署或发版。
+
+## 2026-10-21：停止终态与完成回调的排程交接
+
+起点 `5342c8790bd5a498f1fc5dc1018e013c12258917`，工作区干净。
+
+- 采集先发布 `Stopped`，再执行报告等完成回调；该任务返回前仍不能开始另一次采集。原排程适配只将 `Stopping` 作为忙碌输入，重新确认排程时会生成并写入新会话 ID，再被采集层以 `NoiseBusy` 拒绝。隔离反例直接比较磁盘日志：旧回调仍在运行、实际会话未变化，`ownedId` 却已被未启动的编号替换。修复前四项均失败，证据 `.artifacts/study-stopped-handoff-before.log`。不能据此认定学校现场已发生报告丢失或重复采集。
+- 现在将已发布终态、完成任务尚未返回的状态也传为 `CaptureBusy`。沿用原决策器的等待分支，不生成新编号、不写新的排程归属；完成后仍按当时有效授权、时段、跳过记录及学校时间决定是否开始。定时优先级规则未改变，没有添加新的采样或校准质量限制。
+- 最终用例覆盖旧排程和学校自习的重新确认、手动自习向学校自习交接，以及等待期间到达结束边界：等待时磁盘记录保持不变；回调返回后至多启动一个新会话，已结束的时段不迟到启动。夹具按既有学校时钟规则提供推进样本，未绕过时钟复核；完成回调闸门在结束前注销，避免测试清理访问已释放对象。
+- 相关原生回归 390 通过、0 失败、0 跳过，记录于 `.artifacts/study-stopped-handoff-regression.log`；先前专项 7 项通过，记录于 `.artifacts/study-stopped-handoff-after.log`。全部为隔离临时配置和合成采集，不访问真实学校服务、麦克风或摄像头。
+- WPF 自习工作区 12 项通过，覆盖返回展示、切页、退出优先级和隔离联机校准流程（`.artifacts/study-stopped-handoff-ui/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/study-stopped-handoff-release-build.log`）。未推送、部署或发版；这些夹具不能替代现场大屏、真实 USB 拔插或触控验收。

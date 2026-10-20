@@ -210,8 +210,11 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             lock (_journalLock) blocks = [.. _journal.Blocks.Where(b => b.Mode == _mode)];
             bool lease = LeaseRemaining(elapsed) > 0;
             bool statisticsReady = _statisticsReady?.Invoke() != false;
+            // Stopped is published before report/completion callbacks finish. Their
+            // task still owns capture: do not journal a new, inevitably rejected start.
+            bool finishing = !active && _noise.CaptureBusy;
             var input = new NoiseScheduleInput(_policy, reading, _eligible && (!_studyProbeRequired || _studyProbeComplete || _studySelected) && _storeError is null && statisticsReady, lease,
-                !string.IsNullOrWhiteSpace(status.SelectedDeviceId), _exam() || _mode == "Exam" && !_studySelected, _owner, status.State == "Stopping",
+                !string.IsNullOrWhiteSpace(status.SelectedDeviceId), _exam() || _mode == "Exam" && !_studySelected, _owner, status.State == "Stopping" || finishing,
                 MicrophoneKey(status.SelectedDeviceId), blocks);
             var priorityInput=input with {Owner="None",CaptureBusy=false};
             NoiseScheduleDecision priorityDecision;
