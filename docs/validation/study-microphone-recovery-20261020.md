@@ -95,3 +95,13 @@
 - 最终用例覆盖旧排程和学校自习的重新确认、手动自习向学校自习交接，以及等待期间到达结束边界：等待时磁盘记录保持不变；回调返回后至多启动一个新会话，已结束的时段不迟到启动。夹具按既有学校时钟规则提供推进样本，未绕过时钟复核；完成回调闸门在结束前注销，避免测试清理访问已释放对象。
 - 相关原生回归 390 通过、0 失败、0 跳过，记录于 `.artifacts/study-stopped-handoff-regression.log`；先前专项 7 项通过，记录于 `.artifacts/study-stopped-handoff-after.log`。全部为隔离临时配置和合成采集，不访问真实学校服务、麦克风或摄像头。
 - WPF 自习工作区 12 项通过，覆盖返回展示、切页、退出优先级和隔离联机校准流程（`.artifacts/study-stopped-handoff-ui/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/study-stopped-handoff-release-build.log`）。未推送、部署或发版；这些夹具不能替代现场大屏、真实 USB 拔插或触控验收。
+
+## 2026-10-21：返回展示后的收起请求与迟到回执
+
+起点 `842c80474e09415f3433ecc868ab14c548cffbb5`，工作区干净。
+
+- 实际 WPF/隔离管道反例确认两条关联路径，学校和手动自习均受影响。收起已被 Host 执行但确认丢失，主轮询隐藏窗口，再从设置页请求返回；同一展示上下文保留旧请求 ID，下一次收起被 Host 去重，用户要再次长按才能成功。另一条路径中，旧的成功回执在返回之后才到达，还会重新隐藏刚恢复的窗口。
+- 首次两个丢回执反例记录于 `.artifacts/study-return-hide-before/result.json`；补上迟到成功回执后，四个反例均失败（`.artifacts/study-return-hide-races-before/result.json`）。夹具调用实际 `StudyDisplayService` 和 `StudyWindow`，模拟主轮询直接隐藏窗口而不应用负快照，再执行 Host 的显式返回；不是只手动设置私有请求字段。
+- 对已获得展示许可、重新显示的窗口，清除之前不确定的收起请求 ID；同一个可见交互中的不确定重试仍保留 ID，不续造收起租期。处理成功或异常回执前还核对它是否仍为当前请求，旧回执不能收起返回后的页面或覆盖其反馈。未修改 Host 的收起期限、输入闲置计时、采集、照片或排程规则。
+- 修复后 WPF 工作区 16 项通过（`.artifacts/study-return-hide-after/result.json`），包含四个新增场景及原有返回、退出验证优先级、切页和隔离联机校准流程。相关原生回归 146 通过、0 失败、0 跳过（`.artifacts/study-return-hide-native.log`）。所有场景均使用独立管道和程序状态，不访问学校服务或真实麦克风/摄像头。
+- 完整自习展示 WPF 检查 46 项通过，含原有丢回执同上下文重试、窗口替换、闲置返回、长按与阶段展示（`.artifacts/study-return-hide-display/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/study-return-hide-release-build.log`）。本轮未推送、部署或发版，物理触控和学校现场仍待验收。

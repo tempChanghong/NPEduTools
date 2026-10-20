@@ -15,6 +15,12 @@ internal static partial class Program
         try
         {
             StudyReturnCheck(false); StudyReturnCheck(true);
+            var hideErrors = new List<Exception>();
+            foreach (bool manual in new[] { false, true })
+                foreach (bool delayed in new[] { false, true })
+                    try { StudyHideAfterReturnCheck(manual, delayed); }
+                    catch (Exception e) { hideErrors.Add(new InvalidOperationException($"manual={manual}, delayed={delayed}: {e.Message}", e)); }
+            if (hideErrors.Count > 0) throw new AggregateException(hideErrors);
             foreach (string presentation in new[] { "manual", "manual-report", "school-report" })
                 WorkspaceStudyNotificationPriority(presentation, "_exitBusy", duringRead: true);
         }
