@@ -18,6 +18,9 @@ public sealed class StudyReportService : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
     private readonly Dictionary<Guid, (double Offset, StudySessionReport Report)> _sessions = [];
+    private StudySessionReport? _archived;
+    private readonly HashSet<string> _archivedReferences = new(StringComparer.Ordinal);
+    private bool _referenceListTruncated, _sessionOverflow;
     private string? _scope, _version;
     private SchoolNoiseWindow? _window;
     private Guid _instance = Guid.NewGuid();
@@ -38,7 +41,8 @@ public sealed class StudyReportService : IAsyncDisposable
     private void Clear()
     {
         _window = null; _ended = null; _frozen = null; _expired = false; _statisticsAt = null;
-        _sessions.Clear(); _instance = Guid.NewGuid();
+        _sessions.Clear(); _archived = null; _archivedReferences.Clear(); _referenceListTruncated = _sessionOverflow = false;
+        _instance = Guid.NewGuid();
     }
     public StudyReportState Snapshot()
     {
@@ -107,14 +111,37 @@ public sealed class StudyReportService : IAsyncDisposable
         if (_sessions.TryGetValue(report.SessionId, out var old))
         { if (!old.Report.Complete) _sessions[report.SessionId] = (old.Offset, report); }
         else if (_window is { } window && s.Phase == "Active" &&
-            s.Execution is { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null } execution && execution.SessionId == report.SessionId && _sessions.Count < 16)
+            s.Execution is { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null } execution && execution.SessionId == report.SessionId)
+        {
+            if (_sessions.Count >= 16 && !ArchiveCompleted()) { _sessionOverflow = true; return; }
             _sessions[report.SessionId] = (Math.Max(0, (now - window.Start).TotalSeconds - report.ElapsedSeconds), report);
+        }
+    }
+    private bool ArchiveCompleted()
+    {
+        // Keep the existing bound on individually tracked tails. Completed sessions
+        // can be folded into one fixed-resolution channel without losing statistics.
+        var completed = _sessions.Where(x => x.Value.Report.Complete).Take(1).ToArray();
+        if (completed.Length == 0) return false;
+        var (id, value) = completed[0];
+        if (value.Report.ReferenceNote is { } note && !_archivedReferences.Contains(note))
+        { if (_archivedReferences.Count < 16) _archivedReferences.Add(note); else _referenceListTruncated = true; }
+        var sources = new List<(double Offset, StudySessionReport Report)> { value };
+        if (_archived is { } archived) sources.Add((0, archived));
+        double expected = (_window!.End - _window.Start).TotalSeconds;
+        _archived = new(Guid.Empty, true, 0, sources.Sum(x => x.Report.ClippedSeconds), sources.Sum(x => x.Report.Frames),
+            sources.Sum(x => x.Report.DisciplineReminders), Merge("dBFS", sources.Select(x => (x.Offset, x.Report.Raw)), expected),
+            sources.Any(x => x.Report.Estimated is not null) ? Merge("estimated-dB(A)",
+                sources.Where(x => x.Report.Estimated is not null).Select(x => (x.Offset, x.Report.Estimated!)), expected) : null,
+            sources.Select(x => x.Report.EstimateReason).FirstOrDefault(x => x is not null));
+        _sessions.Remove(id); return true;
     }
     private StudyReportData Build()
     {
         var window = _window!;
         double expected = (window.End - window.Start).TotalSeconds;
-        var sessions = _sessions.Values.ToArray();
+        var sessions = _sessions.Values.ToList();
+        if (_archived is { } archived) sessions.Add((0, archived));
         var raw = Merge("dBFS", sessions.Select(x => (x.Offset, x.Report.Raw)), expected);
         var estimated = sessions.Any(x => x.Report.Estimated is not null)
             ? Merge("estimated-dB(A)", sessions.Where(x => x.Report.Estimated is not null).Select(x => (x.Offset, x.Report.Estimated!)), expected) : null;
@@ -123,12 +150,14 @@ public sealed class StudyReportService : IAsyncDisposable
         if (raw.SampledSeconds > 0 && raw.EnergyMean is null or <= -100) notes.Add("输入为数字静音或接近静音，请检查静音、输入增益与麦克风；不据此判断教室安静。");
         if (raw.SampledSeconds < expected * .95) notes.Add("采集覆盖不足；空白时段未记作安静。");
         if (sessions.Any(x => x.Report.EstimateReason is not null)) notes.Add("参考已失效或不可用；估算数据仅包含有效参考期间。");
-        notes.AddRange(sessions.Select(x=>x.Report.ReferenceNote).OfType<string>().Distinct());
+        notes.AddRange(_archivedReferences.Concat(sessions.Select(x=>x.Report.ReferenceNote).OfType<string>()).Distinct());
+        if (_referenceListTruncated) notes.Add("本次校准参考说明较多，仅列出部分；此列表不影响已确认采样的统计。");
+        if (_sessionOverflow) notes.Add("部分采集会话尾段未能确认，报告可能不完整；未补造缺失数据。");
         notes.Add("超限时长按采样时生效的阈值统计；中线以上包含高线以上。未判定时段不记作未超限。");
         return new(window, expected, raw.SampledSeconds, Math.Clamp(raw.SampledSeconds / expected, 0, 1),
             raw.SampledSeconds > 0 ? 100 * sessions.Sum(x => x.Report.ClippedSeconds) / raw.SampledSeconds : 0,
             sessions.Sum(x => x.Report.Frames), sessions.Sum(x => x.Report.DisciplineReminders), raw, estimated,
-            sessions.All(x => x.Report.Complete), notes, _mode, _mode == "Exam" ? "Windows" : "ClassIsland");
+            !_sessionOverflow && sessions.All(x => x.Report.Complete), notes, _mode, _mode == "Exam" ? "Windows" : "ClassIsland");
     }
     private static StudyReportChannel Merge(string unit, IEnumerable<(double Offset, StudyReportChannel Data)> source, double expected)
     {
