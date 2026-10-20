@@ -58,3 +58,12 @@
 - 两条路径现复用既有 `SchoolStudyPresentationBlocked` 条件，在 await 返回后重新检查退出验证、警告窗口、管理对话框、通知、首次配置和桌面可用性。只暂缓界面，不提交停止或启动采集的命令；退出优先操作结束后，下一轮新鲜状态恢复展示。
 - WPF 自习工作区 12 项检查通过，含三个新交接场景：手动展示、手动报告和学校报告。前后证据分别为 `.artifacts/study-exit-priority-before/`（失败）与 `.artifacts/study-exit-priority-after/`（通过）。全部使用隔离管道与程序状态，不执行真实管理验证、摄像头或学校请求。
 - WPF 切页与展示并发 45 项检查通过，记录于 `.artifacts/study-priority-races-final/result.json`；Release App 编译 0 警告、0 错误，记录于 `.artifacts/study-report-priority-release-build.log`。未推送、部署或发版，真实一体机验收仍待进行。
+
+## 2026-10-21：结束后补入已见证的暂缓会话
+
+起点 `9d2ca864c2310028965d193096182bdfc60d5404`，工作区干净。
+
+- 达到 16 个单独跟踪尾段的边界时，最后一个已见证会话会暂缓收录。若旧尾段到自习结束才确认，原实现只允许在 Active 阶段收录该会话，且会提前固定其余会话的报告，导致后来可确认的数据仍漏计。五个隔离反例均失败：包括当前累计报告、终态缓存、迟到终态，以及错误 ID/未完成缓存先返回的情况。
+- 暂缓记录现在保留一个会话 ID 和最初见证时的趋势偏移。结束后只允许这个已见证 ID 补入；终态查询必须同时满足 ID 一致与 Complete。暂缓会话未处理前不固定报告，已过期的报告仍不重新展示；其他会话、切班、模式/版本变更和撤销选择不会借此恢复旧报告。真实缺段仍保留不完整提示，没有增加逐会话缓存上限。
+- 修复前证据 `.artifacts/study-deferred-terminal-before.log`（5 失败）；修复后专项 `.artifacts/study-deferred-terminal-after.log`，随后补上下文撤回用例并运行相关原生回归，最终 400 通过、0 失败、0 跳过，记录于 `.artifacts/study-deferred-terminal-regression.log`。覆盖累计统计、提醒次数、原始趋势偏移、迟到尾段与上下文隔离。
+- 实际 WPF 报告检查 4 项通过，结果 `.artifacts/study-deferred-terminal-ui/result.json`；Release App 编译 0 警告、0 错误，记录于 `.artifacts/study-deferred-terminal-release-build.log`。这轮为合成统计、隔离管道与 WPF 夹具验证；未使用真实麦克风、摄像头或学校服务，不能据此判定学校现场故障的具体原因。未推送、部署或发版。

@@ -21,7 +21,7 @@ public sealed class StudyReportService : IAsyncDisposable
     private StudySessionReport? _archived;
     private readonly HashSet<string> _archivedReferences = new(StringComparer.Ordinal);
     private bool _referenceListTruncated, _sessionOverflow;
-    private Guid? _deferredSession;
+    private (Guid Id, double Offset)? _deferredSession;
     private string? _scope, _version;
     private SchoolNoiseWindow? _window;
     private Guid _instance = Guid.NewGuid();
@@ -92,7 +92,7 @@ public sealed class StudyReportService : IAsyncDisposable
             double remaining = Math.Max(0, DefaultDurationSeconds + StudyPresentationTiming.StageNoticeSeconds - elapsed);
             if (remaining <= 0) { _expired = true; return State(false, "Expired", 0); }
             // Freeze only after terminal tails have been flushed. Until then show honest provisional statistics.
-            if (_frozen is null && _sessions.Count > 0 && _sessions.Values.All(x => x.Report.Complete)) _frozen = Build();
+            if (_frozen is null && _deferredSession is null && _sessions.Count > 0 && _sessions.Values.All(x => x.Report.Complete)) _frozen = Build();
             bool available = elapsed >= StudyPresentationTiming.StageNoticeSeconds;
             return State(available, available ? "Report" : "EndReminder", available ? remaining : DefaultDurationSeconds);
         }
@@ -106,22 +106,38 @@ public sealed class StudyReportService : IAsyncDisposable
             s.Execution?.SessionId is { } current && _sessions.ContainsKey(current)) return;
         _statisticsAt = _time.GetTimestamp();
         if (_finishedStatistics is not null)
+        {
             foreach (var (id, cached) in _sessions.ToArray())
                 if (!cached.Report.Complete && _finishedStatistics(id) is { Complete: true } final && final.SessionId == id)
                     _sessions[id] = (cached.Offset, final);
+            // The deferred ID was witnessed in this window before capacity ran out.
+            // Its terminal receipt can arrive after capture ends or a manual session starts.
+            if (_deferredSession is { } pending && _finishedStatistics(pending.Id) is { Complete: true } tail && tail.SessionId == pending.Id)
+                AdoptDeferred(tail);
+        }
         if (_statistics() is not { } report) return;
         if (_sessions.TryGetValue(report.SessionId, out var old))
         { if (!old.Report.Complete) _sessions[report.SessionId] = (old.Offset, report); }
+        else if (_deferredSession is { } pending && pending.Id == report.SessionId)
+            AdoptDeferred(report);
         else if (_window is { } window && s.Phase == "Active" &&
             s.Execution is { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null } execution && execution.SessionId == report.SessionId)
         {
             // One still-current session can be adopted later from its cumulative
             // snapshot. A superseded, untracked session is an actual unresolved gap.
-            if (_deferredSession is { } deferred && deferred != report.SessionId) _sessionOverflow = true;
-            if (_sessions.Count >= 16 && !ArchiveCompleted()) { _deferredSession = report.SessionId; return; }
-            _sessions[report.SessionId] = (Math.Max(0, (now - window.Start).TotalSeconds - report.ElapsedSeconds), report);
+            if (_deferredSession is { } deferred && deferred.Id != report.SessionId) _sessionOverflow = true;
+            double offset = Math.Max(0, (now - window.Start).TotalSeconds - report.ElapsedSeconds);
+            if (_sessions.Count >= 16 && !ArchiveCompleted()) { _deferredSession = (report.SessionId, offset); return; }
+            _sessions[report.SessionId] = (offset, report);
             _deferredSession = null;
         }
+    }
+    private void AdoptDeferred(StudySessionReport report)
+    {
+        if (_deferredSession is not { } pending || pending.Id != report.SessionId ||
+            (_sessions.Count >= 16 && !ArchiveCompleted())) return;
+        _sessions[report.SessionId] = (pending.Offset, report);
+        _deferredSession = null;
     }
     private bool ArchiveCompleted()
     {

@@ -72,25 +72,72 @@ public sealed partial class StudyReportTests
         if (withdraw != "none") { Assert.False(service.Snapshot().Available); Assert.Null(service.Snapshot().Data); }
     }
 
-    [Fact]
-    public async Task Unresolved_overflow_cannot_be_reported_as_complete_when_only_tracked_tails_arrive_later()
+    [Theory]
+    [InlineData("current", false)] [InlineData("lookup", false)]
+    [InlineData("lookup", true)] [InlineData("wrong-id", true)] [InlineData("unfinished", true)]
+    public async Task Deferred_witnessed_session_can_finish_after_the_window_without_adopting_foreign_statistics(string source, bool delayed)
     {
         var clock = new Clock(); var id = Guid.NewGuid(); var state = Active(id); var statistics = Report(id);
         var finished = new Dictionary<Guid, StudySessionReport>();
         var reports = new List<StudySessionReport>();
+        StudySessionReport? deferredTail = null;
         await using var service = new StudyReportService(() => ("class-a", true, state), () => statistics, clock, false,
-            finishedStatistics: session => finished.GetValueOrDefault(session));
+            finishedStatistics: session => session == id ? deferredTail : finished.GetValueOrDefault(session));
         for (int i = 0; i < 17; i++)
         {
             id = Guid.NewGuid(); clock.Ms = i * 100_000;
             state = Active(id) with { SchoolNow = Window.Start.AddSeconds((i + 1) * 100) };
             reports.Add(statistics = Report(id)); service.Snapshot();
         }
-        foreach (var report in reports) finished[report.SessionId] = report with { Complete = true };
-        statistics = finished[id];
+        foreach (var report in reports.Take(16)) finished[report.SessionId] = report with { Complete = true };
+        var final = reports[^1] with { Complete = true, Frames = 5 };
+        statistics = source == "current" ? final : Report(Guid.NewGuid(), true) with { Frames = 999 };
+        deferredTail = source == "lookup" && !delayed ? final :
+            source == "wrong-id" ? Report(Guid.NewGuid(), true) :
+            source == "unfinished" ? reports[^1] : null;
         state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End, Execution = null };
         service.Snapshot(); clock.Ms += 5000;
         var data = service.Snapshot().Data!;
-        Assert.False(data.Complete); Assert.Contains(data.Notes, note => note.Contains("尾段未能确认"));
+        if (delayed)
+        {
+            Assert.False(data.Complete); Assert.Equal(32, data.SampledSeconds);
+            Assert.Contains(data.Notes, note => note.Contains("尾段未能确认"));
+            deferredTail = final; clock.Ms += 1000;
+            data = service.Snapshot().Data!;
+        }
+        Assert.True(data.Complete); Assert.Equal(34, data.SampledSeconds);
+        Assert.Equal(37, data.Frames); Assert.Equal(51, data.DisciplineReminders);
+        Assert.DoesNotContain(data.Notes, note => note.Contains("尾段未能确认"));
+        Assert.Contains(data.Raw.Trend, point => point.Seconds == 1620 && point.SampledSeconds == 1);
+    }
+
+    [Theory]
+    [InlineData("scope")] [InlineData("version")] [InlineData("mode")] [InlineData("deselected")]
+    public async Task Deferred_terminal_receipt_cannot_restore_a_withdrawn_report_context(string change)
+    {
+        var clock = new Clock(); var id = Guid.NewGuid(); var state = Active(id); var statistics = Report(id);
+        string scope = "class-a"; bool selected = true;
+        var finished = new Dictionary<Guid, StudySessionReport>();
+        await using var service = new StudyReportService(() => (scope, selected, state), () => statistics, clock, false,
+            finishedStatistics: session => finished.GetValueOrDefault(session));
+        for (int i = 0; i < 17; i++)
+        {
+            id = Guid.NewGuid(); clock.Ms = i * 100_000;
+            state = Active(id) with { SchoolNow = Window.Start.AddSeconds((i + 1) * 100) };
+            statistics = Report(id); service.Snapshot();
+        }
+        var prior = state;
+        if (change == "scope") scope = "class-b";
+        if (change == "version") state = state with { Version = "version-b" };
+        if (change == "mode") state = state with { Mode = "Exam" };
+        if (change == "deselected") selected = false;
+        state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End, Execution = null };
+        finished[id] = statistics with { Complete = true };
+        statistics = Report(Guid.NewGuid(), true);
+        Assert.Null(service.Snapshot().Data);
+        scope = "class-a"; selected = true;
+        state = prior with { Phase = "Outside", Window = null, SchoolNow = Window.End, Execution = null };
+        clock.Ms += 5000;
+        Assert.Null(service.Snapshot().Data);
     }
 }
