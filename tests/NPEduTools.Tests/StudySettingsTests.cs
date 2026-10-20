@@ -159,6 +159,12 @@ public sealed class StudySettingsTests
             f.Tick(60000); f.Tick(); f.Tick();
             var sameDeadline = await HostClient.RequestAsync(pipe, "study.status", lifetime.Token);
             Assert.Equal(539, sameDeadline.Study!.Display!.HiddenRemainingSeconds);
+            var shown = await HostClient.RequestAsync(pipe, request with { Capability = "study.show", RequestId = Guid.NewGuid() }, lifetime.Token);
+            Assert.Equal("Succeeded", shown.Outcome); Assert.True(shown.Study!.Display!.Available);
+            Assert.Equal(sameDeadline.Study.Execution, shown.Study.Execution);
+            // Returning after a minute must not replay an expired start reminder.
+            Assert.Equal("STUDY_STATE_CHANGED", (await HostClient.RequestAsync(pipe, cue with { RequestId = Guid.NewGuid() }, lifetime.Token)).ErrorCode);
+            await HostClient.RequestAsync(pipe, request with { RequestId = Guid.NewGuid() }, lifetime.Token);
             f.Service.StudyFailed("STUDY_OFFLINE");
             var offline = await HostClient.RequestAsync(pipe, "study.status", lifetime.Token);
             Assert.True(offline.Study!.Display!.Selected); Assert.False(offline.Study.Display.Available);

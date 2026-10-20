@@ -96,12 +96,19 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                 return new(1, request.RequestId, "Succeeded", null, "仅允许当前阶段一次提示音。");
             }
             var command = request.StudyHide;
-            if (command is null || command.InstanceId != _instance || command.Version != state.Version ||
-                command.Window != state.Window || state.PolicyState != "APPLIED" || !state.ClockReady || state.Phase != "Active")
+            bool show = request.Capability == "study.show";
+            if (request.Capability is not ("study.hide" or "study.show") || command is null || command.InstanceId != _instance || command.Version != state.Version ||
+                command.Window != state.Window || state.PolicyState != "APPLIED" || !state.ClockReady ||
+                (show ? state.Phase is not ("Preparing" or "Active") || state.ProjectionPriority || state.Display?.Selected != true : state.Phase != "Active"))
                 return new(1, request.RequestId, "Rejected", "STUDY_STATE_CHANGED", "自习状态已变化，请重新查看。", Study: state);
-            if (_requests.Contains(request.RequestId)) return new(1, request.RequestId, "Succeeded", null, "沿用原无操作返回设置。", Study: state);
+            if (_requests.Contains(request.RequestId)) return new(1, request.RequestId, "Succeeded", null, "该展示请求已处理。", Study: state);
             _requests.Add(request.RequestId); _requestOrder.Enqueue(request.RequestId);
             if (_requestOrder.Count > 128) _requests.Remove(_requestOrder.Dequeue());
+            if (show)
+            {
+                _hiddenWindow = null; _manualHidden = false; _hiddenReturn.Clear();
+                return new(1, request.RequestId, "Succeeded", null, "已恢复当前自习展示，监测继续。", Study: Snapshot());
+            }
             if (state.Display!.HiddenRemainingSeconds <= 0)
             {
                 // Legacy school TemporaryHideSeconds is retained on the wire, but no longer limits

@@ -12,6 +12,8 @@ public partial class StudyMonitoringWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _reading;
+    private bool _returning;
+    private readonly StudyDisplayReturn _returnDisplay = new();
     private readonly NoiseCalibrationRead _calibrationRead = new();
     private long _viewGeneration;
     internal void WorkspaceVisibilityChanged(bool visible)
@@ -34,7 +36,7 @@ public partial class StudyMonitoringWindow : Window
     public void Shutdown() => Close();
     private async Task ReadAsync()
     {
-        if (_reading || _lifetime.IsCancellationRequested) return;
+        if (_reading || _returning || _lifetime.IsCancellationRequested) return;
         _reading = true;
         long generation = _viewGeneration;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
@@ -51,6 +53,9 @@ public partial class StudyMonitoringWindow : Window
     }
     internal void Render(StudyHostState? state)
     {
+        _returnDisplay.Observe(state);
+        ReturnStudyButton.Visibility = _returnDisplay.Available ? Visibility.Visible : Visibility.Collapsed;
+        ReturnStudyButton.IsEnabled = !_returning && _returnDisplay.Available;
         StudyPhase.Text = state is null || state.PolicyState != "APPLIED" ? StudySchedulePresentation.Unavailable(state) :
             state.Phase switch { "Preparing" => "准备自习", "Active" => "自习进行中", "Ended" => "自习结束", "Outside" => "当前不在自习时段", _ => "自习暂不可执行" };
         StudyConfiguration.Text = StudySchedulePresentation.Configuration(state);
@@ -58,7 +63,8 @@ public partial class StudyMonitoringWindow : Window
         StudySchedule.Text = state?.ClockReady == true && state.SchoolNow is { } now ? $"{(state.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")} {now:yyyy-MM-dd HH:mm:ss}" +
             (state.Window is { } w ? $"　当前时段 {StudySchedulePresentation.Span(w)}" : "") : state?.Mode == "Exam" ? "考试模式 Windows 时间尚未确认；不会自行启动。" : "学校时间未确认；不会按 Windows 时间自行启动。";
         StudyNext.Text = StudySchedulePresentation.Next(state);
-        StudyCapture.Text = state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "正在采集 · 已收到新鲜采样" :
+        StudyCapture.Text = state?.Execution?.Reason == "MICROPHONE_DISCONNECTED" ? "麦克风已断开 · 等待原设备重连" :
+            state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "正在采集 · 已收到新鲜采样" :
             state?.Execution is { Owner: "Manual" } ? "当前为手动采样" : state?.Execution is { State: "Starting" } ? "启动中 · 等待有效采样" :
             "采集状态待确认";
         StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先 · 自习展示暂缓" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
@@ -81,6 +87,22 @@ public partial class StudyMonitoringWindow : Window
         if (!_lifetime.IsCancellationRequested && WorkspacePanel.Visible(this)) await Devices.RefreshAsync();
     }
     private void NoiseClicked(object sender, RoutedEventArgs e) => _noise();
+    private async void ReturnStudyClicked(object sender, RoutedEventArgs e)
+    {
+        if (_returning || _returnDisplay.Request(false) is not { } request) return;
+        _returning = true; ReturnStudyButton.IsEnabled = false;
+        long generation = ++_viewGeneration;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(4000);
+        try
+        {
+            var reply = await HostClient.RequestAsync(_pipe, request, deadline.Token);
+            if (_lifetime.IsCancellationRequested || generation != _viewGeneration) return;
+            Render(reply.Study); StudyPresentation.Text = reply.Message;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
+        { if (!_lifetime.IsCancellationRequested && generation == _viewGeneration) { Render(null); StudyPresentation.Text = "返回结果待确认，请刷新状态后重试；后台监测继续。"; } }
+        finally { _returning = false; ReturnStudyButton.IsEnabled = _returnDisplay.Available; }
+    }
     private void SeatingClicked(object sender, RoutedEventArgs e) => new StudySeatingUploadWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
     private void CalibrationClicked(object sender, RoutedEventArgs e) => new NoiseCalibrationWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
     private void ReferenceClicked(object sender, RoutedEventArgs e) => new NoiseReferenceWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();

@@ -61,6 +61,7 @@
 </Expander>
   </StackPanel></ScrollViewer>
   <Border Grid.Row="1" BorderBrush="#DFE7E1" BorderThickness="0,1,0,0" Padding="0,12,0,0"><WrapPanel HorizontalAlignment="Right">
+    <Button x:Name="ReturnStudyButton" Content="回到自习展示" Click="ReturnStudyClicked" Visibility="Collapsed" IsEnabled="False" AutomationProperties.AutomationId="ReturnManualStudy"/>
     <Button x:Name="StartButton" Content="开始自习" Click="StartClicked" Style="{StaticResource Primary}" IsEnabled="False" AutomationProperties.AutomationId="NoiseStart"/>
     <Button x:Name="StopButton" Content="结束自习" Click="StopClicked" Style="{StaticResource Primary}" Visibility="Collapsed" IsEnabled="False" AutomationProperties.AutomationId="NoiseStop"/>
   </WrapPanel></Border>
