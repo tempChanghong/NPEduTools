@@ -7,6 +7,7 @@ public sealed partial class NoiseService
 {
     private sealed record ReconnectMarker(int Version, string ProfileId, string Reason);
     private bool _referenceReconnectPending;
+    private bool _referenceMarkerRecoverable;
     internal bool RecoverableDeviceFailure(Guid? session)
     { lock (_sync) return session is not null && _session is { DeviceDisconnected: true, Work.IsCompleted: true } s &&
         s.Id == session && !_cleanupFailed && _state == "Faulted"; }
@@ -45,7 +46,7 @@ public sealed partial class NoiseService
                 JsonSerializer.Serialize(stream, new ReconnectMarker(1, ProfileId(profile), reconnect ? "DeviceDisconnected" : "InUse"), Protocol.Json);
                 stream.Flush(true);
             }
-            File.Move(temporary, path, true); _referenceMarkerArmed = true; return true;
+            File.Move(temporary, path, true); _referenceMarkerArmed = true; _referenceMarkerRecoverable = reconnect; return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         { _referenceError = "REFERENCE_STORE_UNAVAILABLE"; return false; }

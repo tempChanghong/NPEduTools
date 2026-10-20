@@ -80,7 +80,7 @@ public sealed partial class NoiseService
             if (_referenceProfile is not null && ReferenceUsePath is { } usePath && File.Exists(usePath))
             {
                 if (_referenceInvalidated is null && ReconnectMarkerMatches(usePath, _referenceProfile))
-                { _referenceReconnectPending = true; _referenceMarkerArmed = true; }
+                { _referenceReconnectPending = true; _referenceMarkerArmed = true; _referenceMarkerRecoverable = true; }
                 else _referenceInvalidated ??= "INPUT_SETTINGS_UNAVAILABLE";
             }
         }
@@ -95,13 +95,18 @@ public sealed partial class NoiseService
         if (_referenceProfile is null || _referenceInvalidated is not null) return;
         if (_referenceError is not null) throw new ReferenceUseException();
         EnsureReferenceUseMarker();
-        // A crash during reopening must again leave conservative, unfinished-use evidence.
-        if (_referenceReconnectPending && !ReplaceReferenceMarker(false)) throw new ReferenceUseException();
         s.ReferenceUseArmed = true;
     }
     private void EnsureReferenceUseMarker()
     {
-        if (_referenceMarkerArmed) return;
+        if (_referenceMarkerArmed)
+        {
+            // A disconnect marker may only certify the preceding, unchanged input.
+            // Reopening AND later selection invalidation must first withdraw it, so
+            // a failed tombstone write cannot revive an older recoverable reference.
+            if (_referenceMarkerRecoverable && !ReplaceReferenceMarker(false)) throw new ReferenceUseException();
+            return;
+        }
         try
         {
             if (_referenceProfile is not { } profile) throw new ReferenceUseException();
@@ -117,7 +122,7 @@ public sealed partial class NoiseService
     }
     private bool ClearReferenceUse()
     {
-        try { if (ReferenceUsePath is { } path) File.Delete(path); _referenceMarkerArmed = false; _referenceReconnectPending = false; return true; }
+        try { if (ReferenceUsePath is { } path) File.Delete(path); _referenceMarkerArmed = false; _referenceMarkerRecoverable = false; _referenceReconnectPending = false; return true; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         { _referenceError = "REFERENCE_STORE_UNAVAILABLE"; _referenceInvalidated ??= "INPUT_SETTINGS_UNAVAILABLE"; return false; }
     }

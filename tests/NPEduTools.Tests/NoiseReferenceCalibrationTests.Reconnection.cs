@@ -5,6 +5,70 @@ namespace NPEduTools.Tests;
 
 public sealed partial class NoiseReferenceCalibrationTests
 {
+    [Fact]
+    public async Task A_disconnect_marker_cannot_override_later_failed_device_invalidation_on_reload()
+    {
+        await using var f = new Fixture(); await f.PrepareAsync(); f.Command("confirm"); await StartFormal(f);
+        f.Capture!.EndpointDisconnected = true; f.Capture.Disconnect(); await Until(() => !f.Noise.CaptureBusy);
+        Assert.Equal("DEVICE_RECONNECT_REQUIRED", f.Noise.CalibrationStatusSnapshot(null, null).Reason);
+        string profilePath = Path.Combine(f.DirectoryPath, "noise-reference-calibration.json");
+        using (var held = new FileStream(profilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            foreach (string id in new[] { "replacement", "mic" })
+            {
+                var state = f.Noise.Snapshot();
+                Assert.Equal("Succeeded", f.Noise.Handle(new(1, Guid.NewGuid(), "noise.command",
+                    Noise: new("select", state.InstanceId, state.Revision, id))).Outcome);
+            }
+            Assert.Equal("REFERENCE_STORE_UNAVAILABLE", f.State.Error);
+        }
+        await using var reload = new NoiseService(_ => new Capture(), () => [], f.Time, f.DirectoryPath);
+        var reference = reload.ReferenceHandle(new(1, Guid.NewGuid(), "noise.reference.status")).NoiseReference!;
+        Assert.Equal("INPUT_SETTINGS_UNAVAILABLE", reference.InvalidationReason);
+        Assert.False(reference.FreshSignatureMatched);
+    }
+
+    [Fact]
+    public async Task A_locked_disconnect_marker_rejects_selection_before_changing_the_saved_microphone()
+    {
+        await using var f = new Fixture(); await f.PrepareAsync(); f.Command("confirm"); await StartFormal(f);
+        f.Capture!.EndpointDisconnected = true; f.Capture.Disconnect(); await Until(() => !f.Noise.CaptureBusy);
+        string marker = Path.Combine(f.DirectoryPath, "noise-reference-use.pending");
+        using (var held = new FileStream(marker, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            var state = f.Noise.Snapshot();
+            var reply = f.Noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("select", state.InstanceId, state.Revision, "replacement")));
+            Assert.Equal("NoiseConfigurationUnavailable", reply.ErrorCode);
+            Assert.Equal("mic", f.Noise.Snapshot().SelectedDeviceId);
+        }
+        await using var reload = new NoiseService(_ => new Capture(), () => [], f.Time, f.DirectoryPath);
+        Assert.Equal("mic", reload.Snapshot().SelectedDeviceId);
+        Assert.Equal("DEVICE_RECONNECT_REQUIRED", reload.CalibrationStatusSnapshot(null, null).Reason);
+    }
+
+    [Fact]
+    public async Task Reopened_input_change_can_invalidate_and_release_capture_after_the_marker_is_rearmed()
+    {
+        await using var f = new Fixture(); await f.PrepareAsync(); f.Command("confirm"); await StartFormal(f);
+        f.Capture!.EndpointDisconnected = true; f.Capture.Disconnect(); await Until(() => !f.Noise.CaptureBusy);
+        Capture? capture = null; FileStream? held = null;
+        try
+        {
+            await using var reload = new NoiseService(_ =>
+            {
+                // The unfinished-use marker has already been written before opening the input.
+                held = new FileStream(Path.Combine(f.DirectoryPath, "noise-reference-use.pending"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                return capture = new Capture { Signature = Signature.Replace("gain=.7", "gain=.8") };
+            }, () => [], f.Time, f.DirectoryPath);
+            Assert.Equal("Accepted", reload.StartScheduled(Guid.NewGuid()).Outcome);
+            await Until(() => capture is not null && (reload.Snapshot().State == "Active" || !reload.CaptureBusy));
+            Assert.Equal("INPUT_SETTINGS_CHANGED", reload.ReferenceHandle(new(1, Guid.NewGuid(), "noise.reference.status")).NoiseReference!.InvalidationReason);
+            reload.StopScheduled(reload.Snapshot().SessionId!.Value); await Until(() => !reload.CaptureBusy);
+            Assert.True(capture!.Disposed);
+        }
+        finally { held?.Dispose(); }
+    }
+
     [Theory]
     [InlineData(false)] [InlineData(true)]
     public async Task Confirmed_endpoint_disconnect_preserves_reference_until_the_same_input_is_verified(bool reload)
