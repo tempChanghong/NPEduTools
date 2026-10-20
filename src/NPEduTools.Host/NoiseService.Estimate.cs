@@ -34,7 +34,9 @@ public sealed partial class NoiseService
         {
             if (p.DeviceId != s.DeviceId) InvalidateReference("DEVICE_CHANGED");
             else if (capture.ReferenceSignature != p.Signature) InvalidateReference("INPUT_SETTINGS_CHANGED");
+            else _referenceReconnectPending = false;
         }
+        catch (NoiseDeviceDisconnectedException) { DeviceDisconnected(s); }
         catch (Exception e) when (e is not OutOfMemoryException)
         { InvalidateReference("INPUT_SETTINGS_UNAVAILABLE"); }
     }
@@ -54,7 +56,9 @@ public sealed partial class NoiseService
         {
             if (weighted.ReferenceSignature != p.Signature)
             { InvalidateReference("INPUT_SETTINGS_CHANGED"); s.EstimateReason = _referenceInvalidated; return; }
+            _referenceReconnectPending = false;
         }
+        catch (NoiseDeviceDisconnectedException) { DeviceDisconnected(s); return; }
         catch (Exception e) when (e is not OutOfMemoryException)
         { InvalidateReference("INPUT_SETTINGS_UNAVAILABLE"); s.EstimateReason = _referenceInvalidated; return; }
         try
@@ -73,6 +77,7 @@ public sealed partial class NoiseService
             if (s.EstimateCapture.ReferenceSignature == p.Signature) return;
             InvalidateReference("INPUT_SETTINGS_CHANGED"); s.EstimateReason = _referenceInvalidated;
         }
+        catch (NoiseDeviceDisconnectedException) { DeviceDisconnected(s); }
         catch (Exception e) when (e is not OutOfMemoryException)
         { InvalidateReference("INPUT_SETTINGS_UNAVAILABLE"); s.EstimateReason = _referenceInvalidated; }
         s.EstimateCurrent = null; s.EstimateQuality = "Invalidated";

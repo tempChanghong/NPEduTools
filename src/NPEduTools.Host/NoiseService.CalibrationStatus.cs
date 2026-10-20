@@ -17,6 +17,7 @@ public sealed partial class NoiseService
             {
                 string? reason = _referenceInvalidated ?? (reference.DeviceId != _selected ? "DEVICE_CHANGED" : null);
                 if (reason is not null) return Status("Invalidated", reference.Method, reason, reference.ConfirmedAt);
+                if (_referenceReconnectPending) return Status("Unavailable", reference.Method, "DEVICE_RECONNECT_REQUIRED", reference.ConfirmedAt);
                 var session = _session;
                 bool live = _state == "Active" && session is { EstimateProfile: not null } &&
                     !session.Stop.IsCancellationRequested && session.EstimateProfile == reference;

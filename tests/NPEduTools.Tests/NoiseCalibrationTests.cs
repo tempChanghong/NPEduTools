@@ -92,7 +92,9 @@ public sealed partial class NoiseCalibrationTests
     private sealed class Capture : INoiseCapture, INoiseCaptureMetadata
     {
         public string DeviceName => "Synthetic microphone";
-        public string Signature { get; set; } = "pcm-energy-v1|48000|1|32|float|gain=.7|mute=False";
+        public bool EndpointDisconnected;
+        private string _signature = "pcm-energy-v1|48000|1|32|float|gain=.7|mute=False";
+        public string Signature { get => EndpointDisconnected ? throw new NoiseDeviceDisconnectedException() : _signature; set => _signature = value; }
         public bool Disposed;
         public bool Started;
         public event Action<NoiseFrame>? Frame;

@@ -23,12 +23,14 @@ internal static class NoiseCalibrationPresentation
             "DEVICE_CHANGED" => "监测麦克风已更换，请重新校准。",
             "INPUT_SETTINGS_CHANGED" => "输入音量、静音或采集格式已变化，请重新校准。",
             "INPUT_SETTINGS_UNAVAILABLE" => "无法核对输入设置，请重新校准。",
+            "DEVICE_RECONNECT_REQUIRED" => "原校准配置已保留；同一麦克风重连并核对采集格式、音量和静音设置后恢复使用。",
             "SCHOOL_CONFIGURATION_CHANGED" => "学校配置已变化，请重新确认快速校准的双阈值。",
             "SCHOOL_CONFIGURATION_UNCONFIRMED" => "学校配置尚未确认，快速阈值暂不应用。",
             "A_WEIGHTING_UNAVAILABLE" => "当前采集不支持 A 加权估算，原始 dBFS 采样仍可继续。",
             _ => "校准文件或当前输入不可用，请在校准页核对。"
         };
         if (status.State == "Invalidated") return new("校准已失效", reason, "Warning");
+        if (status.State == "Unavailable" && status.Reason == "DEVICE_RECONNECT_REQUIRED") return new("校准已保留 · 等待重连核对", reason, "Warning");
         if (status.State == "Unavailable") return new("校准不可用", reason, "Warning");
         if (status.State == "Uncalibrated") return new("未校准", "当前使用原始 dBFS。可通过快速校准确认双阈值；声级计参考用于估算 dB(A)。", "Muted");
         if (status.State is not ("Saved" or "Ready") || status.Method is not ("Quick" or "ManualReference" or "UsbReferenceBeta"))

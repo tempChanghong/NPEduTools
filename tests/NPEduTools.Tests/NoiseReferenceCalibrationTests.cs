@@ -132,9 +132,11 @@ public sealed partial class NoiseReferenceCalibrationTests
         public string DeviceName => "Synthetic reference microphone";
         private string _signature = NoiseReferenceCalibrationTests.Signature;
         public bool SignatureUnavailable;
+        public bool EndpointDisconnected;
         public string Signature
         {
-            get => SignatureUnavailable ? throw new IOException("Synthetic input metadata unavailable") : _signature;
+            get => EndpointDisconnected ? throw new NoiseDeviceDisconnectedException() :
+                SignatureUnavailable ? throw new IOException("Synthetic input metadata unavailable") : _signature;
             set => _signature = value;
         }
         public bool Disposed;

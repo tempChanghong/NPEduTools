@@ -34,6 +34,8 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
     private EffectiveNoiseSchedule _policy = new("None", []);
     private Guid? _owned;
     private SchoolNoiseWindow? _ownedWindow;
+    private sealed record DeviceRetry(SchoolNoiseWindow Window, string DeviceId, string Mode, double After);
+    private DeviceRetry? _deviceRetry;
     private string _owner = "None", _reason = "NOT_ELIGIBLE";
     private bool _priority;
     public bool ScheduledDue(){lock(_sync){Tick();return _priority;}}
@@ -103,7 +105,7 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             if (_scope != scope)
             {
                 if (_owned is { } id) _noise.StopScheduled(id);
-                _owned = null; _ownedWindow = null; _confirmedAt = -1; _version = null;
+                _owned = null; _ownedWindow = null; _deviceRetry = null; _confirmedAt = -1; _version = null;
                 _policy = new("None", []); _scope = scope;
                 _studySelected = false; _studySettings = null; _studyProbeComplete = false;
                 _studyResumeReceipt = null;
@@ -187,11 +189,18 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             { _tracker.Unavailable("学校日期超出支持范围", TimeSpan.FromMilliseconds(elapsed)); reading = _tracker.Read(TimeSpan.FromMilliseconds(elapsed)); }
             var status = _noise.Snapshot();
             bool active = status.State is "Starting" or "Active" or "Stopping";
-            if (_owned == status.SessionId && status.State == "Faulted" && _ownedWindow is { } failed)
+            // Completion/report callbacks still own this session until its task returns.
+            // Do not overwrite its durable identity with a rejected, premature retry.
+            if (_owned == status.SessionId && status.State == "Faulted" && _noise.CaptureBusy)
+            { _reason = "CAPTURE_BUSY"; return; }
+            if (_owned == status.SessionId && status.State == "Faulted" && !_noise.CaptureBusy && _ownedWindow is { } failed)
             {
                 // Selection may already have changed after cleanup. The failure belongs
                 // to the device that actually captured, not its replacement preference.
-                lock (_journalLock) { _journal.Blocks.Add(new(failed, "Failed", MicrophoneKey(status.DeviceId), _mode)); Trim(); Save(); }
+                if (_noise.RecoverableDeviceFailure(_owned) && status.DeviceId is { } disconnected)
+                    _deviceRetry = new(failed, disconnected, _mode, elapsed + 5000);
+                else
+                    lock (_journalLock) { _journal.Blocks.Add(new(failed, "Failed", MicrophoneKey(status.DeviceId), _mode)); Trim(); Save(); }
                 _owned = null;
             }
             // A former mode's scheduled capture may still be flushing after ownership
@@ -230,13 +239,25 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             if (decision.Action == "Stop" && _owned is { } stopped) _noise.StopScheduled(stopped);
             if (decision.Action == "Start")
             {
+                if (_deviceRetry is { } retry)
+                {
+                    if (retry.Window != decision.Window || retry.DeviceId != status.SelectedDeviceId || retry.Mode != _mode)
+                        _deviceRetry = null;
+                    else
+                    {
+                        _reason = "MICROPHONE_DISCONNECTED";
+                        if (elapsed < retry.After) return;
+                        _deviceRetry = retry with { After = elapsed + 5000 };
+                        if (!_noise.IsMicrophonePresent(retry.DeviceId)) return;
+                    }
+                }
                 var id = Guid.NewGuid(); _ownedWindow = decision.Window;
                 lock (_journalLock) { _journal = _journal with { OwnedId = id, OwnedWindow = decision.Window, OwnedMode = _mode }; Save(); }
                 if (_storeError is not null) return;
                 if (_studySelected && _studyReportScope is not null && decision.Window is { } reportWindow)
                     _studySession?.Invoke(id, new JsonObject { ["scope"] = _studyReportScope.DeepClone(), ["policyVersion"] = _version, ["mode"] = _mode, ["clockSource"] = _mode == "Exam" ? "Windows" : "ClassIsland", ["window"] = Window(reportWindow) });
                 var result = _noise.StartScheduled(id);
-                if (result.Outcome == "Accepted") { _owned = id; _owner = "Schedule"; _reason = "CAPTURE_STARTING"; }
+                if (result.Outcome == "Accepted") { _deviceRetry = null; _owned = id; _owner = "Schedule"; _reason = "CAPTURE_STARTING"; }
                 else
                 {
                     if (result.ErrorCode is "NoiseBusy" or "NoiseStateChanged") { _reason = "CAPTURE_BUSY"; return; }
