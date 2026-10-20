@@ -105,3 +105,12 @@
 - 对已获得展示许可、重新显示的窗口，清除之前不确定的收起请求 ID；同一个可见交互中的不确定重试仍保留 ID，不续造收起租期。处理成功或异常回执前还核对它是否仍为当前请求，旧回执不能收起返回后的页面或覆盖其反馈。未修改 Host 的收起期限、输入闲置计时、采集、照片或排程规则。
 - 修复后 WPF 工作区 16 项通过（`.artifacts/study-return-hide-after/result.json`），包含四个新增场景及原有返回、退出验证优先级、切页和隔离联机校准流程。相关原生回归 146 通过、0 失败、0 跳过（`.artifacts/study-return-hide-native.log`）。所有场景均使用独立管道和程序状态，不访问学校服务或真实麦克风/摄像头。
 - 完整自习展示 WPF 检查 46 项通过，含原有丢回执同上下文重试、窗口替换、闲置返回、长按与阶段展示（`.artifacts/study-return-hide-display/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/study-return-hide-release-build.log`）。本轮未推送、部署或发版，物理触控和学校现场仍待验收。
+
+## 2026-10-21：结束报告期间的临时状态丢失
+
+起点 `353d8d23e87f6a77bd6e4684e4ef2ed201179686`，工作区干净。
+
+- 原实现仅在尚未观察到结束时隔离保存统计。进入结束提醒或五分钟报告之后，学校时钟临时失效或配置暂不可用会清空本次汇总；同一上下文恢复后，已经结束的窗口无法重新见证，报告因此消失。11 个隔离反例均在修复前失败（`.artifacts/study-report-end-outage-before.log`），不能据此认定学校现场已经发生此路径。
+- 同一作用域、模式与配置上下文中的临时失败现在继续隔离保留结束报告和原单调截止时间，状态未确认时不展示。恢复只使用剩余期限；已经到期不重新弹出。允许已见证会话的终态统计在隔离期间收尾，不制造采样或采用其他会话。切班、配置版本／模式变更、取消选择与撤销授权仍清除旧报告。
+- 新增 16 项原生用例，覆盖结束提醒、报告中途、到期边界、迟到尾段与上下文撤回；相关原生回归 528 通过、0 失败、0 跳过（`.artifacts/study-report-end-outage-regression.log`）。
+- WPF 报告检查 5 项通过（`.artifacts/study-report-end-outage-ui/result.json`），新增用例直接连接实际 `StudyReportService` 与 `StudyReportWindow`：临时失去学校时钟时隐藏，恢复后原值与剩余期限保持，用户主动关闭的报告不因恢复而重新弹出。Release App 编译 0 警告、0 错误（`.artifacts/study-report-end-outage-release-build.log`）。本轮仅为合成统计和隔离 WPF 验证，没有真实麦克风、USB、学校服务或现场验收，未推送、部署或发版。

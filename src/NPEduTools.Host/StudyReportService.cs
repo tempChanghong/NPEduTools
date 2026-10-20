@@ -54,12 +54,14 @@ public sealed class StudyReportService : IAsyncDisposable
             // A temporary configuration or school-clock failure is not revocation of the
             // witnessed window's collected statistics. Quarantine the collection
             // without displaying it; reuse only after the same context is fresh again.
+            // This also applies after observing the end: keep its original monotonic
+            // report deadline, rather than erasing the report during a brief outage.
             bool configurationLost = s.PolicyState != "APPLIED" &&
                 s.Reason is "STUDY_OFFLINE" or "CONFIGURATION_STALE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED";
             bool clockLost = s.PolicyState == "APPLIED" && s.Version == _version && !s.ClockReady && s.Reason == "SCHOOL_CLOCK_UNAVAILABLE";
             if (selected && scope is not null && scope == _scope && _mode == s.Mode &&
                 _version is not null && (s.Version is null || s.Version == _version) &&
-                _window is not null && _ended is null && s.Phase == "Blocked" && (configurationLost || clockLost))
+                _window is not null && s.Phase == "Blocked" && (configurationLost || clockLost))
             {
                 Observe(s, _window.Start); // Updates only already tracked session IDs while blocked.
                 return State(false, "Unavailable", 0);
