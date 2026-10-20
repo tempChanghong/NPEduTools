@@ -67,3 +67,12 @@
 - 暂缓记录现在保留一个会话 ID 和最初见证时的趋势偏移。结束后只允许这个已见证 ID 补入；终态查询必须同时满足 ID 一致与 Complete。暂缓会话未处理前不固定报告，已过期的报告仍不重新展示；其他会话、切班、模式/版本变更和撤销选择不会借此恢复旧报告。真实缺段仍保留不完整提示，没有增加逐会话缓存上限。
 - 修复前证据 `.artifacts/study-deferred-terminal-before.log`（5 失败）；修复后专项 `.artifacts/study-deferred-terminal-after.log`，随后补上下文撤回用例并运行相关原生回归，最终 400 通过、0 失败、0 跳过，记录于 `.artifacts/study-deferred-terminal-regression.log`。覆盖累计统计、提醒次数、原始趋势偏移、迟到尾段与上下文隔离。
 - 实际 WPF 报告检查 4 项通过，结果 `.artifacts/study-deferred-terminal-ui/result.json`；Release App 编译 0 警告、0 错误，记录于 `.artifacts/study-deferred-terminal-release-build.log`。这轮为合成统计、隔离管道与 WPF 夹具验证；未使用真实麦克风、摄像头或学校服务，不能据此判定学校现场故障的具体原因。未推送、部署或发版。
+
+## 2026-10-21：手动结束报告遗漏参考失效说明
+
+起点 `31a9df14cc88fb29b1b138eaf9577f6737960280`，工作区干净。
+
+- 隔离反例确认：手动自习中改变合成麦克风增益，正式估算统计正确停止累计，原始统计继续；但生成本机结束报告时丢弃了 `EstimateReason`，展示及保存文件均没有参考失效说明。定时自习报告已有同类说明。这不是继续使用失效参考采样的问题，也没有证据表明旧有效估算值被改写。
+- 手动报告现在沿用定时报告的说明“参考已失效或不可用；估算数据仅包含有效参考期间。”。不删除失效前的有效数据，不改变均值、峰值、覆盖率、双阈值或会话收尾规则，校准来源说明仍保留。
+- 专项用例延伸到实际手动结束回调和本机 JSON 文件：输入变化时应保留说明，参考稳定时不得误报；同时核对原始及估算采样量。修复前 1 失败、1 通过，修复后 2 通过，分别记录于 `.artifacts/manual-reference-report-before.log`、`.artifacts/manual-reference-report-after.log`。
+- 校准、手动自习及报告相关原生回归 236 通过、0 失败、0 跳过（`.artifacts/manual-reference-report-regression.log`）；实际 WPF 通用报告检查 4 项通过（`.artifacts/manual-reference-report-ui/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/manual-reference-report-release-build.log`）。均为隔离合成输入和 WPF 夹具，没有实物 USB/声学校准或学校现场验收，没有推送、部署或发版。

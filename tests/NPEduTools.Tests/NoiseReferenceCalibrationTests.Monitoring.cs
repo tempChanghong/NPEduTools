@@ -9,8 +9,9 @@ namespace NPEduTools.Tests;
 
 public sealed partial class NoiseReferenceCalibrationTests
 {
-    [Fact]
-    public async Task Background_manual_statistics_use_estimated_units_and_stop_classifying_an_invalid_reference_without_a_display()
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Background_manual_statistics_and_saved_report_preserve_reference_validity_without_a_display(bool invalidate)
     {
         await using var f = new Fixture(); await f.PrepareAsync(); Assert.Equal("Succeeded", f.Command("confirm").Outcome);
         var policy = new StudyNoise(true, -40, -50, 600, 3, new(65, 50));
@@ -29,14 +30,25 @@ public sealed partial class NoiseReferenceCalibrationTests
         Assert.Equal(0, before.Raw.ThresholdSampledSeconds);
         Assert.Equal(4, before.Estimated!.HighSeconds, 6);
         Assert.Equal(4, before.Estimated.ThresholdSampledSeconds, 6);
-        f.Capture!.Signature = Signature.Replace("gain=.7", "gain=.8");
+        if (invalidate) f.Capture!.Signature = Signature.Replace("gain=.7", "gain=.8");
         for (int i = 0; i < 10; i++) { FormalFrames(f, 1, aDigital: -24); manual.Tick(); }
         var invalidated = f.Noise.StudyReportSnapshot()!;
-        Assert.Equal(before.Estimated.HighSeconds, invalidated.Estimated!.HighSeconds, 6);
+        Assert.Equal(before.Estimated.HighSeconds + (invalidate ? 0 : 1), invalidated.Estimated!.HighSeconds, 6);
         Assert.Equal(0, invalidated.Raw.ThresholdSampledSeconds);
         Assert.Equal(1, invalidated.Raw.SampledSeconds - before.Raw.SampledSeconds, 6);
-        Assert.Equal("INPUT_SETTINGS_CHANGED", invalidated.EstimateReason);
+        Assert.Equal(invalidate ? "INPUT_SETTINGS_CHANGED" : null, invalidated.EstimateReason);
         Assert.Equal("Active", f.Noise.Snapshot().State);
+        var active = manual.Status();
+        Assert.Equal("Succeeded", manual.Handle(new(1, Guid.NewGuid(), "manual.study.command",
+            ManualStudy: new("end", active.InstanceId, active.Revision, active.SessionId))).Outcome);
+        await Until(() => manual.Status().State == "Ended" && !f.Noise.CaptureBusy);
+        var report = manual.Report().Data!;
+        Assert.True(report.Complete);
+        Assert.Equal(invalidated.Raw.SampledSeconds, report.Raw.SampledSeconds, 6);
+        Assert.Equal(invalidated.Estimated.SampledSeconds, report.Estimated!.SampledSeconds, 6);
+        Assert.Equal(invalidate, report.Notes.Any(note => note.Contains("参考已失效或不可用")));
+        var saved = JsonNode.Parse(File.ReadAllText(Assert.Single(Directory.GetFiles(Path.Combine(f.DirectoryPath, "manual"), "*.json"))))!;
+        Assert.Equal(invalidate, saved["report"]!["notes"]!.AsArray().Any(note => note!.GetValue<string>().Contains("参考已失效或不可用")));
     }
 
     [Theory]
