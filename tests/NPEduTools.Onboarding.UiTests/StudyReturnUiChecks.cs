@@ -12,7 +12,12 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { StudyReturnCheck(false); StudyReturnCheck(true); }
+        try
+        {
+            StudyReturnCheck(false); StudyReturnCheck(true);
+            foreach (string presentation in new[] { "manual", "manual-report", "school-report" })
+                WorkspaceStudyNotificationPriority(presentation, "_exitBusy", duringRead: true);
+        }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static void StudyReturnCheck(bool manual)

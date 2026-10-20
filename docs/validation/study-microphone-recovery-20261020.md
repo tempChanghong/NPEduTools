@@ -43,3 +43,18 @@
 - 若达到边界时旧尾段仍都无法确认，不伪造终态或宣称报告完整；提供明确的不完整说明。切换学校/班级作用域、模式或配置版本仍清除前一上下文的汇总，保持原隔离规则。
 - 前后证据：`.artifacts/study-recovery-report-before.log`、`.artifacts/study-report-recovery-regression.log`。测试包含 17/64 段统计守恒、迟到尾段、参考说明、上下文撤回与趋势有界；未增加原音频、摄像头或线上操作。
 - 相关原生回归 321 通过、0 失败、0 跳过；WPF 报告 4 项及自习工作区 9 项检查通过（`.artifacts/study-followup-report-ui/`、`.artifacts/study-followup-workspace-ui/`）。Release App 编译 0 警告、0 错误；真实设备及学校现场仍待验证。
+
+## 2026-10-21：延后收录的报告状态
+
+起点 `7adeabd0a855c1da86f5ac87dbf3932ddb9866bb`，工作区干净。
+
+- 满额期间延后收录的仍是当前会话，之后旧尾段到齐，当前累计数据已经完整补入，原实现仍永久保留“不完整”标记。隔离反例中有效采样已完整保留 34 秒，但 `Complete` 错误为 false。
+- 现只额外记录一个待收录会话 ID；同一会话完整补入后解除暂缓状态。若未收录的会话已经被另一会话替代，仍保留真实缺口提示。未放宽采样、校准或统计质量标准，缓存仍有界。
+- 原生相关回归 323 通过、0 失败、0 跳过，记录于 `.artifacts/study-report-deferred-regression.log`；修复前反例 `.artifacts/study-report-deferred-before.log` 为 1 失败、1 通过，分别覆盖可恢复暂缓和真实漏段。
+
+## 2026-10-21：退出管理验证与迟到展示回包
+
+- 窗口级隔离反例确认：手动报告读取期间进入退出管理验证，旧回包仍可重新显示手动自习。学校/手动报告的回包路径也未统一复查当前退出验证状态。
+- 两条路径现复用既有 `SchoolStudyPresentationBlocked` 条件，在 await 返回后重新检查退出验证、警告窗口、管理对话框、通知、首次配置和桌面可用性。只暂缓界面，不提交停止或启动采集的命令；退出优先操作结束后，下一轮新鲜状态恢复展示。
+- WPF 自习工作区 12 项检查通过，含三个新交接场景：手动展示、手动报告和学校报告。前后证据分别为 `.artifacts/study-exit-priority-before/`（失败）与 `.artifacts/study-exit-priority-after/`（通过）。全部使用隔离管道与程序状态，不执行真实管理验证、摄像头或学校请求。
+- WPF 切页与展示并发 45 项检查通过，记录于 `.artifacts/study-priority-races-final/result.json`；Release App 编译 0 警告、0 错误，记录于 `.artifacts/study-report-priority-release-build.log`。未推送、部署或发版，真实一体机验收仍待进行。

@@ -96,8 +96,9 @@ public partial class MainWindow
                 {
                     using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
                     long reportAt=Stopwatch.GetTimestamp();var report=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.report.status"));
-                    // A notice may have opened while the report request was pending.
-                    if (NotificationPresentationActive) { HideStudyPresentations(); continue; }
+                    // Exit verification, notices or another priority operation may
+                    // have begun while the report request was pending.
+                    if (_lifetime.IsCancellationRequested || SchoolStudyPresentationBlocked) { HideStudyPresentations(); continue; }
                     if (report.Outcome == "Succeeded" && report.StudyReport is { Available: true, Data: not null } mr)
                     {
                         _manualStudyWindow?.HideDisplay(); _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
@@ -217,7 +218,7 @@ public partial class MainWindow
         var reply = await ManagementRequestAsync(new HostRequest(1, Guid.NewGuid(), "study.report.status"));
         if (reply.ErrorCode is "UnknownCapability" or "STUDY_REPORT_UNSUPPORTED") { _reportUnsupportedAt = Stopwatch.GetTimestamp(); _studyReportWindow?.HideDisplay(); return; }
         _reportUnsupportedAt = null;
-        if (_lifetime.IsCancellationRequested || blocked || NotificationPresentationActive || RuntimeOperationFile.PriorityRequested || !NotificationDesktopAvailable() ||
+        if (_lifetime.IsCancellationRequested || blocked || SchoolStudyPresentationBlocked ||
             reply.Outcome != "Succeeded" || reply.StudyReport is not { Available: true, Data: not null } report)
         { _studyReportWindow?.HideDisplay(); return; }
         using var probe = RuntimeOperationFile.TryAcquire(false);
