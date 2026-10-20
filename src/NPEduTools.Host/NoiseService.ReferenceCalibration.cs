@@ -136,7 +136,9 @@ public sealed partial class NoiseService
         }
         catch (NoiseDeviceDisconnectedException) { DeviceDisconnected(s); }
         catch (Exception e) when (e is not OutOfMemoryException) { InvalidateReference("INPUT_SETTINGS_UNAVAILABLE"); }
-        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated;
+        // A valid saved profile does not erase this session's unavailable A-weighting
+        // or an endpoint removal discovered during this final metadata check.
+        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated ?? s.EstimateReason;
     }
     private void FinishReferenceUse(Session s)
     {
@@ -145,7 +147,7 @@ public sealed partial class NoiseService
         { if (ReplaceReferenceMarker(true)) _referenceReconnectPending = true; return; }
         if (s.Failure.Length > 0) return; // Preserve the marker without relabelling an audio fault as an observed input change.
         if (_referenceInvalidated is null && _referenceError is null && SaveReference(_referenceDraft, _referenceProfile)) ClearReferenceUse();
-        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated;
+        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated ?? s.EstimateReason;
         // Any failure retains the prewritten marker, including a failed tombstone write.
     }
     private bool SaveReference(NoiseReferenceDraft? draft, NoiseReferenceProfile? profile)

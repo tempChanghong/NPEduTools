@@ -76,3 +76,12 @@
 - 手动报告现在沿用定时报告的说明“参考已失效或不可用；估算数据仅包含有效参考期间。”。不删除失效前的有效数据，不改变均值、峰值、覆盖率、双阈值或会话收尾规则，校准来源说明仍保留。
 - 专项用例延伸到实际手动结束回调和本机 JSON 文件：输入变化时应保留说明，参考稳定时不得误报；同时核对原始及估算采样量。修复前 1 失败、1 通过，修复后 2 通过，分别记录于 `.artifacts/manual-reference-report-before.log`、`.artifacts/manual-reference-report-after.log`。
 - 校准、手动自习及报告相关原生回归 236 通过、0 失败、0 跳过（`.artifacts/manual-reference-report-regression.log`）；实际 WPF 通用报告检查 4 项通过（`.artifacts/manual-reference-report-ui/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/manual-reference-report-release-build.log`）。均为隔离合成输入和 WPF 夹具，没有实物 USB/声学校准或学校现场验收，没有推送、部署或发版。
+
+## 2026-10-21：收尾时保留会话级参考异常
+
+起点 `539ce6e1c3b013ef1b057c1ae3741fc48bf20c5e`，工作区干净。
+
+- 两个反例确认：正式采集无法启用 A 加权，或端点恰在正常停止时失联，原实现在最终输入核对/使用标记收尾时将会话的 `EstimateReason` 覆盖为空，导致结束状态、终态统计和待上传报告失去异常原因。后者没有先发送失败事件，也没有提前读取状态；因此覆盖到了收尾才首次发现断开的路径。修复前两项均失败，证据 `.artifacts/reference-terminal-reason-before.log`。
+- 两个收尾赋值点现在保留既有的会话级异常；若发现持久参考失效或存储错误，仍优先报告更具体的错误。不把临时 A 加权不可用或设备断开写成永久参考失效，不删除已有有效估算统计，不改变原始 dBFS 数据或续采规则。
+- 用例检查终态 `NoiseEstimate`、`FinishedStudyReport` 与通过协议验证的待上传统计，并重新启动同一合成输入验证参考仍可复用且新会话不继承旧错误。初次修复后相关专项 7 项通过（`.artifacts/reference-terminal-reason-after.log`）；后续补同一输入恢复检查并执行完整相关回归。所有测试均不连接实物麦克风、2202 或学校服务。
+- 最终相关原生回归 411 项通过、0 失败、0 跳过（`.artifacts/reference-terminal-reason-regression.log`）；另跑统计上传箱回归 30 项通过（`.artifacts/reference-terminal-reason-transport.log`）。WPF 通用报告检查 4 项通过（`.artifacts/reference-terminal-reason-ui/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/reference-terminal-reason-release-build.log`）。这些是隔离程序和合成输入证据，不能代替实物断连、声学与学校现场验收。未推送、部署或发版。
