@@ -6,6 +6,33 @@ namespace NPEduTools.Tests;
 public sealed partial class StudyReportTests
 {
     [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task A_temporarily_full_collector_can_recover_the_current_session_but_not_hide_a_missed_session(bool missedSession)
+    {
+        var clock = new Clock(); var id = Guid.NewGuid(); var state = Active(id); var statistics = Report(id);
+        var finished = new Dictionary<Guid, StudySessionReport>();
+        var reports = new List<StudySessionReport>();
+        await using var service = new StudyReportService(() => ("class-a", true, state), () => statistics, clock, false,
+            finishedStatistics: session => finished.GetValueOrDefault(session));
+        int count = missedSession ? 18 : 17;
+        for (int i = 0; i < count; i++)
+        {
+            id = Guid.NewGuid(); clock.Ms = i * 100_000;
+            state = Active(id) with { SchoolNow = Window.Start.AddSeconds((i + 1) * 100) };
+            reports.Add(statistics = Report(id)); service.Snapshot();
+        }
+        // The same current session is still available when earlier terminal receipts arrive.
+        foreach (var report in reports) finished[report.SessionId] = report with { Complete = true };
+        statistics = finished[id]; clock.Ms += 1000; service.Snapshot();
+        state = state with { Phase = "Outside", Window = null, SchoolNow = Window.End, Execution = null };
+        service.Snapshot(); clock.Ms += 5000;
+        var data = service.Snapshot().Data!;
+        Assert.Equal(34, data.SampledSeconds);
+        Assert.Equal(!missedSession, data.Complete);
+        Assert.Equal(missedSession, data.Notes.Any(note => note.Contains("尾段未能确认")));
+    }
+
+    [Theory]
     [InlineData(17, "none")] [InlineData(64, "none")]
     [InlineData(64, "scope")] [InlineData(64, "mode")] [InlineData(64, "version")]
     public async Task Repeated_recovery_keeps_every_witnessed_terminal_session_in_the_final_report(int count, string withdraw)
