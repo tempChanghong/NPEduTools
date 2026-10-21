@@ -170,13 +170,24 @@ public partial class MainWindow
         if (response.Outcome != "Succeeded") return "后台未确认报告，请刷新或在学校后台查看历史报告。";
         if (response.StudyReport?.Data is not { } data) return "本机暂未返回报告；历史报告请在学校后台查看。";
         static string Number(double? value) => value is { } v ? v.ToString("F1") : "—";
+        static string Seconds(double value) => value is > 0 and < .01 ? "不足 0.01 秒" : $"{value:0.##} 秒";
+        static string Thresholds(string name, StudyReportChannel channel)
+        {
+            // Samples in another unit or without this threshold are unclassified,
+            // not evidence that no exceedance occurred over the whole session.
+            if (channel.ThresholdSampledSeconds <= 0) return name + "阈值超限：本单位没有有效阈值判定数据";
+            string medium = channel.MediumThresholdSampledSeconds > 0
+                ? $"中线 {Seconds(channel.MediumSeconds)}（判定采样 {Seconds(channel.MediumThresholdSampledSeconds)}）"
+                : "中线没有有效判定数据";
+            return $"{name}阈值超限：{medium} · 高线 {Seconds(channel.HighSeconds)}（判定采样 {Seconds(channel.ThresholdSampledSeconds)}）";
+        }
         var text = $"{StudySchedulePresentation.Span(data.Window)}\n" +
-            $"有效采样 {data.SampledSeconds:F0} 秒 · 覆盖率 {data.Coverage:P0} · 提醒 {data.DisciplineReminders} 次 · 削波 {data.ClippedPercent:F2}%\n" +
+            $"有效采样 {Seconds(data.SampledSeconds)} · 覆盖率 {data.Coverage:P0} · 提醒 {data.DisciplineReminders} 次 · 削波 {data.ClippedPercent:F2}%\n" +
             $"dBFS：能量均值 {Number(data.Raw.EnergyMean)} · 最高值 {Number(data.Raw.Maximum)}\n" +
-            $"原始阈值超限：中线 {data.Raw.MediumSeconds:F0} 秒 · 高线 {data.Raw.HighSeconds:F0} 秒";
+            Thresholds("原始", data.Raw);
         if (data.Estimated is { } estimate)
             text += $"\n估算 dB(A)：能量均值 {Number(estimate.EnergyMean)} · 最高值 {Number(estimate.Maximum)}\n" +
-                $"估算阈值超限：中线 {estimate.MediumSeconds:F0} 秒 · 高线 {estimate.HighSeconds:F0} 秒";
+                Thresholds("估算", estimate);
         return text + $"\n时间来源：{data.ClockSource} · " + (data.Complete ? "会话完整" : "会话不完整") +
             (data.Notes.Count > 0 ? "\n" + string.Join("\n", data.Notes) : "");
     }

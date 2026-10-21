@@ -123,3 +123,12 @@
 - 刷新前分别比较当前选择和上次确认的 Host 配置，只保留确实不同的未保存草稿。未编辑的选项跟随新回执；单独编辑麦克风或摄像头不会阻止另一个选项更新。“暂不使用摄像头”的空选择仍作为有效草稿保留，后台清除摄像头时未编辑的页面也能正确跟随。没有增加写入、自动选设备或采集操作。
 - 新增六个场景，校验两种设备的独立草稿、后台更改与清除、首次配置准备检查、磁盘中实际保存值、保存事件数及未开启采集。设备 WPF 检查共 41 项通过（`.artifacts/device-selection-refresh-after/result.json`）；设备、快速校准、管理验证与首次配置相关原生回归 167 通过、0 失败、0 跳过（`.artifacts/device-selection-refresh-native.log`）。
 - Release App 编译 0 警告、0 错误（`.artifacts/device-selection-refresh-release-build.log`）。全部为本机临时配置、实际程序组件及隔离管道验证，没有访问真实麦克风、摄像头、USB 或学校后台，不能代替现场验收。未推送、部署或发版。
+
+## 2026-10-21：工作区报告区分未判定与零超限
+
+起点 `2ee80b74456e4d39273d0c2a69fdfc6a8298310f`，工作区干净。
+
+- 通过实际 `StudyReportAccumulator` 生成统计，经隔离管道送入实际 MainWindow“自习 → 报告”页：使用估算单位阈值时，原始 dBFS 无对应阈值判定却显示中／高线均为 0 秒；仅配置高线时，没有判定的中线同样显示 0 秒。数字静音未计入阈值判定，也被显示成零超限。统计器保留了判定采样量，缺陷位于报告摘要文字，没有发现底层统计因此丢失。
+- 修复为按单位和阈值分别使用既有 `ThresholdSampledSeconds`、`MediumThresholdSampledSeconds`：无有效判定时明确说明，有判定时展示超限时长及对应判定采样量，真实零超限仍显示零。不足一秒的有效采样与超限时长保留小数，正数小于 0.01 秒标为“不足 0.01 秒”，不取整为零。未改阈值、校准、采集、上传与全屏展示样式。
+- 修复前十个学校／手动摘要场景均未通过新检查（`.artifacts/workspace-threshold-evidence-before-valid/result.json`），其中真实零与部分判定场景用于补充核对判定覆盖说明。最终新增十四项检查，包含分数秒与终态短尾段；WPF 工作区共 30 项通过（`.artifacts/workspace-threshold-evidence-final/result.json`），原有切页、返回、退出优先级及隔离校准流程继续通过。
+- 报告、手动自习与校准状态相关原生回归 151 通过、0 失败、0 跳过（`.artifacts/workspace-threshold-evidence-native.log`）；全屏报告 WPF 5 项通过（`.artifacts/workspace-threshold-evidence-report/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/workspace-threshold-evidence-release-build.log`）。均为合成统计、隔离管道和 WPF 证据，不涉及真实麦克风、摄像头、USB 或学校服务，不代替一体机现场验收。未推送、部署或发版。
