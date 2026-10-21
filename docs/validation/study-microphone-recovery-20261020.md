@@ -132,3 +132,12 @@
 - 修复为按单位和阈值分别使用既有 `ThresholdSampledSeconds`、`MediumThresholdSampledSeconds`：无有效判定时明确说明，有判定时展示超限时长及对应判定采样量，真实零超限仍显示零。不足一秒的有效采样与超限时长保留小数，正数小于 0.01 秒标为“不足 0.01 秒”，不取整为零。未改阈值、校准、采集、上传与全屏展示样式。
 - 修复前十个学校／手动摘要场景均未通过新检查（`.artifacts/workspace-threshold-evidence-before-valid/result.json`），其中真实零与部分判定场景用于补充核对判定覆盖说明。最终新增十四项检查，包含分数秒与终态短尾段；WPF 工作区共 30 项通过（`.artifacts/workspace-threshold-evidence-final/result.json`），原有切页、返回、退出优先级及隔离校准流程继续通过。
 - 报告、手动自习与校准状态相关原生回归 151 通过、0 失败、0 跳过（`.artifacts/workspace-threshold-evidence-native.log`）；全屏报告 WPF 5 项通过（`.artifacts/workspace-threshold-evidence-report/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/workspace-threshold-evidence-release-build.log`）。均为合成统计、隔离管道和 WPF 证据，不涉及真实麦克风、摄像头、USB 或学校服务，不代替一体机现场验收。未推送、部署或发版。
+
+## 2026-10-21：关闭展示后的迟到管理导航
+
+起点 `427a83a2b3265274ff4ab867c44e0b98f63bf4c1`，工作区干净。
+
+- 实际 `StudyWindow`、“监测管理”按钮和隔离 `StudyDisplayService` 管道复现：收起请求尚未确认时执行展示窗口 Shutdown，迟到回复被收起处理器正确丢弃，但 Surface 将暂停状态当作可导航条件，仍调用管理回调。首次四个关闭场景均出现迟到导航（`.artifacts/study-management-close-before/result.json`）；将回调接到已关闭的实际 MainWindow 恢复方法后，成功回执与断线两条路径、学校与手动自习均产生未处理 WPF 异常（`.artifacts/study-management-close-owner-before/result.json`）。这些是隔离复现，不能据此认定现场已发生此关闭路径。
+- 管理回调现在复查 StudyWindow 的既有 Shutdown 标记，关闭后不再导航或恢复主窗口。不改变普通 Hide、暂时使用电脑、返回展示、采集与照片策略；窗口未关闭时，正常确认仍打开管理一次，不确定回执仍不视为成功。
+- 新增八个 WPF 场景，覆盖学校／手动、正常／关闭、成功／断线组合。最终夹具在请求等待期间关闭主窗口和展示，再放行回复；通过异常拦截检查确保迟到回调不产生 UI 异常。工作区共 38 项通过（`.artifacts/study-management-close-after/result.json`），包含原有返回、报告证据、退出优先级、切页及隔离校准流程。
+- 原生自习展示、阶段提示、手动会话及报告回归 202 通过、0 失败、0 跳过（`.artifacts/study-management-close-native.log`）；完整自习展示 WPF 检查 46 项通过（`.artifacts/study-management-close-display/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/study-management-close-release-build.log`）。未连接真实麦克风、摄像头、USB 或学校服务，未推送、部署或发版，真实一体机验收仍待进行。

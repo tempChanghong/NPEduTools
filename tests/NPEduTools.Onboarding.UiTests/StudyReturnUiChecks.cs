@@ -14,6 +14,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            RunStudyManagementCloseChecks();
             StudyReturnCheck(false); StudyReturnCheck(true);
             var hideErrors = new List<Exception>();
             foreach (bool manual in new[] { false, true })

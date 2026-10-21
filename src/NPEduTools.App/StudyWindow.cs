@@ -50,7 +50,9 @@ public sealed partial class StudyWindow : Window
         _continuation = new(time);
         Left = Top = 0; Width = SystemParameters.PrimaryScreenWidth; Height = SystemParameters.PrimaryScreenHeight;
         ShowInTaskbar = false; Topmost = true; Title = manual?"NPEduTools · 手动自习":"NPEduTools · 学校自习";
-        _surface = new(HideAsync, () => { HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
+        // A pending management hide can settle after shutdown. Do not navigate
+        // back into the owning MainWindow once its presentation has been closed.
+        _surface = new(HideAsync, () => { if (_shutdown) return; HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
         _surface.RefreshCompleted += () => { if (!_manual && IsVisible && !_continuation.CanKeep) HideDisplay(); };
         if (!manual) _surface.SeatingUploadRequested += OpenSeatingUpload;
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; _surface.ReturnError("请长按“临时使用电脑”收起展示。"); } };
