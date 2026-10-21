@@ -141,3 +141,12 @@
 - 管理回调现在复查 StudyWindow 的既有 Shutdown 标记，关闭后不再导航或恢复主窗口。不改变普通 Hide、暂时使用电脑、返回展示、采集与照片策略；窗口未关闭时，正常确认仍打开管理一次，不确定回执仍不视为成功。
 - 新增八个 WPF 场景，覆盖学校／手动、正常／关闭、成功／断线组合。最终夹具在请求等待期间关闭主窗口和展示，再放行回复；通过异常拦截检查确保迟到回调不产生 UI 异常。工作区共 38 项通过（`.artifacts/study-management-close-after/result.json`），包含原有返回、报告证据、退出优先级、切页及隔离校准流程。
 - 原生自习展示、阶段提示、手动会话及报告回归 202 通过、0 失败、0 跳过（`.artifacts/study-management-close-native.log`）；完整自习展示 WPF 检查 46 项通过（`.artifacts/study-management-close-display/result.json`）；Release App 编译 0 警告、0 错误（`.artifacts/study-management-close-release-build.log`）。未连接真实麦克风、摄像头、USB 或学校服务，未推送、部署或发版，真实一体机验收仍待进行。
+
+## 2026-10-21：设备面板重开时的状态与刷新交接
+
+起点 `f18fae3182d490565d731a1137e309d95749a248`，工作区干净。
+
+- 实际 WPF 共享设备面板与隔离 Host 复现：面板在没有操作进行时被隐藏，仍保留旧的已连接／可编辑状态；重新显示时也不自动刷新。因此隐藏期间发生学校锁定变化或设备拔出，旧选项与保存按钮仍沿用以前的状态。Host 的保存权限检查没有被绕过。这轮修复前六个可见性场景均失败（`.artifacts/device-visibility-before/result.json`）。
+- 隐藏时现在一并撤回旧的可编辑状态，取消和退役本次读取；重新显示时只读刷新现有设备与锁定信息。并发的显示、初次加载、手动刷新和首次配置准备检查共用正在进行的刷新任务，避免“忙碌所以立即返回”被当作刷新完成。真正未保存的设备草稿、原设备断开后的选择仍保留，不自动换设备、保存或开启采集。
+- 新增八个场景：隐藏时失去旧编辑依据；重开时反映锁定／断连、恢复正常控制和保留草稿；并发刷新与准备检查只枚举一次；旧读取被隐藏取消后，立即重开只等待新读取，迟到旧回执不覆盖新的锁定和设备选择。设备 WPF 共 49 项通过（`.artifacts/device-visibility-final/result.json`）。
+- 自习工作区 WPF 38 项通过（`.artifacts/device-visibility-workspace/result.json`），包括切页、后台会话、隔离联机校准、返回与报告；设备、快速校准、首次配置与管理相关原生回归 172 通过、0 失败、0 跳过（`.artifacts/device-visibility-native.log`）；Release App 编译 0 警告、0 错误（`.artifacts/device-visibility-release-build.log`）。全部为临时配置、合成设备目录、隔离管道与 WPF 证据，没有访问真实麦克风、摄像头、USB 或学校服务。未推送、部署或发版，现场验收仍待进行。

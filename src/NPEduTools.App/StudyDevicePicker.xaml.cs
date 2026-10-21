@@ -17,6 +17,7 @@ public partial class StudyDevicePicker : UserControl
     private NoiseState? _noise;
     private StudyDeviceState? _camera;
     private CancellationTokenSource? _operation;
+    private Task? _refresh;
     private long _generation;
     private bool _busy, _rendering, _connected;
     private NoiseDevice[] _microphones = [];
@@ -24,7 +25,7 @@ public partial class StudyDevicePicker : UserControl
     public StudyDevicePicker()
     {
         InitializeComponent();
-        IsVisibleChanged += (_, _) => { if (!IsVisible) CancelPending(); };
+        IsVisibleChanged += async (_, _) => { if (!IsVisible) CancelPending(); else await RefreshAsync(); };
         Unloaded += (_, _) => CancelPending();
         UpdateButtons();
     }
@@ -32,7 +33,8 @@ public partial class StudyDevicePicker : UserControl
     public void CancelPending()
     {
         CalibrationStatus.Text = "校准状态待刷新"; CalibrationStatus.ToolTip = null;
-        if (_busy) { _connected = false; DeviceMessage.Text = "设备操作结果待确认，请刷新核对。"; }
+        if (_busy) DeviceMessage.Text = "设备操作结果待确认，请刷新核对。";
+        _connected = false; _refresh = null;
         _generation++; _operation?.Cancel(); _operation?.Dispose(); _operation = null; _busy = false; UpdateButtons();
     }
     private CancellationToken Begin()
@@ -42,9 +44,16 @@ public partial class StudyDevicePicker : UserControl
         DeviceMessage.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(170, 83, 55));
         UpdateButtons(); return _operation.Token;
     }
-    public async Task RefreshAsync()
+    public Task RefreshAsync()
     {
-        if (_pipe is null || _busy) return;
+        // Visibility, initial load and OOBE readiness may ask together. They must
+        // await the same fresh read, not treat an in-flight refresh as completed.
+        if (_refresh is { IsCompleted: false }) return _refresh;
+        if (_pipe is null || _busy) return Task.CompletedTask;
+        return _refresh = RefreshCoreAsync(_pipe);
+    }
+    private async Task RefreshCoreAsync(string pipe)
+    {
         var token = Begin(); long generation = _generation;
         // Preserve edits, not the last rendered saved value. Another settings client
         // may have changed the Host preference since this picker last refreshed.
@@ -53,12 +62,12 @@ public partial class StudyDevicePicker : UserControl
         try
         {
             long calibrationAt = System.Diagnostics.Stopwatch.GetTimestamp();
-            var microphones = await _calibrationRead.RequestAsync(_pipe, new(1, Guid.NewGuid(), "noise.devices"), token);
+            var microphones = await _calibrationRead.RequestAsync(pipe, new(1, Guid.NewGuid(), "noise.devices"), token);
             if (generation != _generation) return;
             if (microphones.Outcome != "Succeeded" || microphones.Noise is not { } microphoneState ||
                 microphoneState.InstanceId == Guid.Empty || microphoneState.Revision < 0 || microphones.NoiseDevices is null ||
                 microphones.NoiseDevices.Any(device => device is null)) throw new InvalidDataException("麦克风配置回执不完整。");
-            var cameras = await HostClient.RequestAsync(_pipe, "study.devices.refresh", token);
+            var cameras = await HostClient.RequestAsync(pipe, "study.devices.refresh", token);
             if (generation != _generation) return;
             // The camera snapshot also carries the school equipment lock. A
             // missing/rejected snapshot cannot certify microphone editability.
