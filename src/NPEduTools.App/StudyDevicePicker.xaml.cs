@@ -46,7 +46,10 @@ public partial class StudyDevicePicker : UserControl
     {
         if (_pipe is null || _busy) return;
         var token = Begin(); long generation = _generation;
-        string? draftMic = StudyMicrophone.SelectedValue as string, draftCamera = StudyCamera.SelectedValue as string;
+        // Preserve edits, not the last rendered saved value. Another settings client
+        // may have changed the Host preference since this picker last refreshed.
+        string? draftMic = StudyMicrophone.SelectedValue is string mic && mic != _noise?.SelectedDeviceId ? mic : null;
+        string? draftCamera = StudyCamera.SelectedValue is string cam && cam != (_camera?.CameraId ?? "") ? cam : null;
         try
         {
             long calibrationAt = System.Diagnostics.Stopwatch.GetTimestamp();

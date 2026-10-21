@@ -114,3 +114,12 @@
 - 同一作用域、模式与配置上下文中的临时失败现在继续隔离保留结束报告和原单调截止时间，状态未确认时不展示。恢复只使用剩余期限；已经到期不重新弹出。允许已见证会话的终态统计在隔离期间收尾，不制造采样或采用其他会话。切班、配置版本／模式变更、取消选择与撤销授权仍清除旧报告。
 - 新增 16 项原生用例，覆盖结束提醒、报告中途、到期边界、迟到尾段与上下文撤回；相关原生回归 528 通过、0 失败、0 跳过（`.artifacts/study-report-end-outage-regression.log`）。
 - WPF 报告检查 5 项通过（`.artifacts/study-report-end-outage-ui/result.json`），新增用例直接连接实际 `StudyReportService` 与 `StudyReportWindow`：临时失去学校时钟时隐藏，恢复后原值与剩余期限保持，用户主动关闭的报告不因恢复而重新弹出。Release App 编译 0 警告、0 错误（`.artifacts/study-report-end-outage-release-build.log`）。本轮仅为合成统计和隔离 WPF 验证，没有真实麦克风、USB、学校服务或现场验收，未推送、部署或发版。
+
+## 2026-10-21：设备刷新误保留旧的已保存选择
+
+起点 `7166625fbb2cc9d95df02ccebcb8d6ee97f04984`，工作区干净。
+
+- 实际 WPF 设备选择器与隔离 Host 管道复现：另一设置客户端保存新的麦克风、摄像头后，原页面刷新会更新“已保存”说明，却仍将先前显示的旧选择当作草稿保留。用户从未编辑过也会被首次配置检查判为“设备选择尚未保存”，再次保存还可能恢复旧配置。修复前四个场景中三个失败，真正同时编辑两个设备的场景通过；证据 `.artifacts/device-selection-refresh-before/result.json`。
+- 刷新前分别比较当前选择和上次确认的 Host 配置，只保留确实不同的未保存草稿。未编辑的选项跟随新回执；单独编辑麦克风或摄像头不会阻止另一个选项更新。“暂不使用摄像头”的空选择仍作为有效草稿保留，后台清除摄像头时未编辑的页面也能正确跟随。没有增加写入、自动选设备或采集操作。
+- 新增六个场景，校验两种设备的独立草稿、后台更改与清除、首次配置准备检查、磁盘中实际保存值、保存事件数及未开启采集。设备 WPF 检查共 41 项通过（`.artifacts/device-selection-refresh-after/result.json`）；设备、快速校准、管理验证与首次配置相关原生回归 167 通过、0 失败、0 跳过（`.artifacts/device-selection-refresh-native.log`）。
+- Release App 编译 0 警告、0 错误（`.artifacts/device-selection-refresh-release-build.log`）。全部为本机临时配置、实际程序组件及隔离管道验证，没有访问真实麦克风、摄像头、USB 或学校后台，不能代替现场验收。未推送、部署或发版。
