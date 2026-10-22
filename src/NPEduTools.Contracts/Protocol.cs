@@ -160,7 +160,7 @@ public static class Protocol
             return "InvalidStudySeatingRead";
         if (request.Capability == "study.seating.presentation" ? request.SeatingPresentation is not { InstanceId: var si, AppInstanceId: var ai, Sequence: > 0, Version.Length: 64, Revision: >= 0 } sp ||
             si == Guid.Empty || ai == Guid.Empty || !sp.Version.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') || sp.Sequence > 9007199254740991 || sp.AppliedHash is not null && (sp.AppliedHash.Length != 64 || !sp.AppliedHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')) ||
-            sp.RenderAgeMs is < 0 or > 999 || sp.Visible && (sp.AppliedHash is null || sp.RenderAgeMs is null) : request.SeatingPresentation is not null)
+            sp.ObservationEpoch == Guid.Empty || sp.RenderAgeMs is < 0 or > 999 || sp.Visible && (sp.AppliedHash is null || sp.RenderAgeMs is null) : request.SeatingPresentation is not null)
             return "InvalidStudySeatingPresentation";
         if (request.Capability == "study.homework" ? request.StudyHomework is not { SnapshotId.Length: 64, Index: >= 0 and < 128 } read ||
             !read.SnapshotId.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') : request.StudyHomework is not null)

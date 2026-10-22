@@ -45,6 +45,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 readDeadline.CancelAfter(TimeSpan.FromSeconds(2));
                 var request = await Protocol.ReadAsync<HostRequest>(pipe, readDeadline.Token);
+                bool seatingEpochRequested = request.Capability == "study.status.seating-epoch";
                 bool calibrationRequested = NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null;
                 if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
                     request = request with { Capability = calibrationBase };
@@ -240,6 +241,9 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                             status.Subject, status.IsTimerRunning, status.IsClassPlanLoaded, status.IsClassPlanEnabled,
                             status.CurrentSelectedIndex, status.ObservedEvents), Schedule: result.Schedule, Forecast: result.Forecast);
                 }
+                // Old Apps reject unknown fields, including nested seating metadata.
+                if (!seatingEpochRequested && response.Study?.Seating is { } legacySeating)
+                    response = response with { Study = response.Study with { Seating = legacySeating with { ObservationEpoch = null } } };
                 response = WithStudyConnection(request, response);
                 response = WithCalibrationStatus(calibrationRequested, response);
                 // Structured diagnostics contain identifiers and outcomes, never lesson contents.

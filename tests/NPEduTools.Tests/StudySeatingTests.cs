@@ -42,6 +42,28 @@ public sealed partial class StudySeatingTests
     }
     private sealed class NeverRead : ILessonStatusReader
     { public Task<StatusResult> ReadAsync(StatusQuery query,CancellationToken token)=>throw new InvalidOperationException("No real clock/device reads"); }
+    private sealed record LegacySeating(string State, string? Version, int Revision, string? Hash, int Chunks, int ByteCount, int Width, int Height);
+    [Fact]
+    public async Task Epoch_metadata_requires_opt_in_and_old_strict_Apps_keep_reading_seating()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        await using var f = new PresentationFixture();
+        string pipe = "NPEduTools.Test.seating-epoch." + Guid.NewGuid().ToString("N");
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var server = new PipeServer(pipe, new NeverRead(), _ => { }, study: f.Service).RunAsync(lifetime.Token);
+        try {
+            foreach (string capability in new[] { "study.status.seating", "study.status.photos", "study.status.calibration" }) {
+                var legacy = await HostClient.RequestAsync(pipe, capability, lifetime.Token);
+                Assert.Equal("READY", legacy.Study!.Seating!.State); Assert.Null(legacy.Study.Seating.ObservationEpoch);
+                var json = JsonSerializer.Serialize(legacy.Study.Seating, Protocol.Json);
+                Assert.DoesNotContain("observationEpoch", json);
+                Assert.NotNull(JsonSerializer.Deserialize<LegacySeating>(json, Protocol.Json));
+            }
+            var modern = await HostClient.RequestAsync(pipe, "study.status.seating-epoch", lifetime.Token);
+            Assert.Equal("Succeeded", modern.Outcome); Assert.NotNull(modern.Study!.Seating!.ObservationEpoch);
+            Assert.NotEqual(Guid.Empty, modern.Study.Seating.ObservationEpoch);
+        } finally { lifetime.Cancel(); try { await server; } catch (OperationCanceledException) { } }
+    }
     [Fact]
     public async Task Actual_Host_pipe_dispatcher_exposes_seating_only_after_new_status_capability()
     {

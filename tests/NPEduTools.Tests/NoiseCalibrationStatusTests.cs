@@ -52,6 +52,7 @@ public sealed class NoiseCalibrationStatusTests
     }
     [Theory]
     [InlineData("study.status.calibration", "study.status.photos")]
+    [InlineData("study.status.seating-epoch", "study.status.photos")]
     [InlineData("manual.study.status.calibration", "manual.study.status")]
     [InlineData("noise.status.calibration", "noise.status")]
     [InlineData("noise.devices.calibration", "noise.devices")]
@@ -93,5 +94,24 @@ public sealed class NoiseCalibrationStatusTests
         var reply = await reader.RequestAsync(new(1, Guid.NewGuid(), "noise.status"), request =>
         { calls++; return Task.FromResult(new HostResponse(1, request.RequestId, "Rejected", "NoiseConfigurationUnavailable", "fixture")); });
         Assert.Equal(1, calls); Assert.Equal("NoiseConfigurationUnavailable", reply.ErrorCode);
+    }
+    [Fact]
+    public async Task Seating_epoch_negotiation_preserves_calibration_on_older_host_and_reprobes_after_a_minute()
+    {
+        var clock = new Clock(); var reader = new NoiseCalibrationRead(clock); var calls = new List<string>();
+        bool modern = false;
+        Task<HostResponse> Send(HostRequest request) {
+            calls.Add(request.Capability);
+            return Task.FromResult(request.Capability == "study.status.seating-epoch" && !modern
+                ? new HostResponse(1, request.RequestId, "Rejected", "UnknownCapability", "old host")
+                : new HostResponse(1, request.RequestId, "Succeeded", null, "normal", NoiseCalibrationStatus: Status("Uncalibrated")));
+        }
+        var request = new HostRequest(1, Guid.NewGuid(), "study.status.photos");
+        Assert.NotNull((await reader.RequestAsync(request, Send)).NoiseCalibrationStatus);
+        await reader.RequestAsync(request, Send);
+        Assert.Equal(new[] { "study.status.seating-epoch", "study.status.calibration", "study.status.calibration" }, calls);
+        modern = true; clock.Ms = 60000;
+        await reader.RequestAsync(request, Send);
+        Assert.Equal("study.status.seating-epoch", calls[^1]);
     }
 }
