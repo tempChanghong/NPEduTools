@@ -14,6 +14,7 @@ internal static partial class Program
 {
     private static void RunRecordingWorkspaceChecks()
     {
+        RunRecordingQuickNavigationChecks();
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
