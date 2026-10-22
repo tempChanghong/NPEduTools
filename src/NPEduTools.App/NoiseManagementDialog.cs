@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using NPEduTools.Contracts;
 using System.Diagnostics;
 using System.Windows.Threading;
@@ -29,7 +30,7 @@ internal sealed class NoiseManagementDialog : Window
     public Guid? Ticket { get; private set; }
     private NoiseManagementDialog(Window owner, string pipe, NoiseProtectionState state, HostRequest? target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null)
     {
-        Owner = owner; _pipe = pipe; _state = state; _target = target;
+        Owner = PrepareOwner(owner); _pipe = pipe; _state = state; _target = target;
         _exit=exit;_exitRead=exitRead;
         Title = target is null ? "本机管理口令" : "定时监测 · 管理验证";
         Width = 460; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
@@ -109,6 +110,14 @@ internal sealed class NoiseManagementDialog : Window
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         return await HostClient.RequestAsync(pipe, request, deadline.Token);
     }
+    internal static Window PrepareOwner(Window owner)
+    {
+        owner = WorkspacePanel.DialogOwner(owner);
+        // Quiet login may never show MainWindow. A native source is required by
+        // WPF Owner, but creating it must not open or focus the hidden workspace.
+        new WindowInteropHelper(owner).EnsureHandle();
+        return owner;
+    }
     private static async Task<HostResponse?> ReadStateAsync(Window owner, string pipe)
     {
         bool closed = false;
@@ -128,6 +137,7 @@ internal sealed class NoiseManagementDialog : Window
     internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null)
     {
         if (!Protocol.NoiseInterruption(target)) return target;
+        owner = PrepareOwner(owner);
         var reply = await ReadStateAsync(owner, pipe);
         if (reply is null) return null;
         if (reply.Outcome != "Succeeded" || reply.NoiseProtection is not { } state)
@@ -145,6 +155,7 @@ internal sealed class NoiseManagementDialog : Window
     }
     internal static async Task ConfigureAsync(Window owner, string pipe)
     {
+        owner = PrepareOwner(owner);
         var reply = await ReadStateAsync(owner, pipe);
         if (reply is null) return;
         if (reply.NoiseProtection is not { } state || reply.Outcome != "Succeeded")

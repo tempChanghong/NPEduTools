@@ -31,7 +31,7 @@ internal static partial class Program
                 current=current with{State="Completed",WarningRemainingSeconds=0};PumpUntil(()=>!warning.IsVisible,"completed Host warning did not return to study");
                 Checks.Add("Exit warning: corrected ten languages, plain white glyphs, deep red, larger left area, 1080p fit, guarded close and acknowledged expiry; no sensors/audio");
             }finally{warning.Shutdown();owner.Close();}
-            RunExitDialogCheck(false);RunExitDialogCheck(true);RunNoiseManagementChecks();
+            RunExitDialogCheck(false);RunExitDialogCheck(true);RunColdTrayExitCheck();RunNoiseManagementChecks();
         }finally{SynchronizationContext.SetSynchronizationContext(prior);}
     }
     private static void RunExitDialogCheck(bool correct)

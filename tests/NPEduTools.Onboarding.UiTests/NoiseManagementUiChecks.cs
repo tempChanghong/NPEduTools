@@ -11,7 +11,7 @@ internal static partial class Program
     private static void RunNoiseManagementChecks()
     {
         var failures = new List<Exception>();
-        foreach (string ownerAction in new[] { "close", "keep", "hide" })
+        foreach (string ownerAction in new[] { "close", "keep", "hide", "cold-hidden" })
             foreach (string operation in new[] { "configure", "authorize", "unprotected" })
                 try { RunNoiseManagementOwnerCheck(operation, ownerAction); }
                 catch (Exception error) { failures.Add(new InvalidOperationException(operation + "/owner=" + ownerAction + ": " + error.Message, error)); }
@@ -57,7 +57,7 @@ internal static partial class Program
         }
         try
         {
-            owner.Show();
+            if (ownerAction != "cold-hidden") owner.Show();
             var read = Read();
             var method = type.GetMethod(operation == "configure" ? "ConfigureAsync" : "AuthorizeAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
             var action = (Task)method.Invoke(null, operation == "configure" ? [owner, pipe] : [owner, pipe, target, null, null, null])!;
