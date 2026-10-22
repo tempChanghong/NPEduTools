@@ -22,7 +22,10 @@ public sealed partial class NoiseService
         lock (_sync)
         {
             _scheduledPriority=active;
-            if(active && _session is {Scheduled:false, Work.IsCompleted:false} s && _state is "Starting" or "Active")
+            // Reference capture intentionally appears Idle in legacy status. It still
+            // owns the microphone and must be cancelled here, before the scheduler's
+            // capture-busy gate waits for all device cleanup and completion callbacks.
+            if(active && _session is {Scheduled:false, Work.IsCompleted:false} s && _state is "Starting" or "Active" or "ReferenceSampling")
             { if(s.Calibration is not null || s.Reference is not null)s.CalibrationInterrupted=true; s.EndReason="ScheduledTakeover"; _revision++; _state="Stopping"; _message="学校定时自习接管，正在结束手动会话并释放设备…"; s.Stop.Cancel(); }
         }
     }
