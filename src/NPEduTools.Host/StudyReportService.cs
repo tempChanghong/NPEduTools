@@ -23,6 +23,7 @@ public sealed class StudyReportService : IAsyncDisposable
     private bool _referenceListTruncated, _sessionOverflow;
     private (Guid Id, double Offset)? _deferredSession;
     private string? _scope, _version;
+    private StudySettings? _settings;
     private SchoolNoiseWindow? _window;
     private Guid _instance = Guid.NewGuid();
     private long? _ended;
@@ -42,6 +43,7 @@ public sealed class StudyReportService : IAsyncDisposable
     private void Clear()
     {
         _window = null; _ended = null; _frozen = null; _expired = false; _statisticsAt = null;
+        _settings = null;
         _sessions.Clear(); _archived = null; _archivedReferences.Clear(); _referenceListTruncated = _sessionOverflow = false;
         _deferredSession = null;
         _instance = Guid.NewGuid();
@@ -58,21 +60,32 @@ public sealed class StudyReportService : IAsyncDisposable
             // report deadline, rather than erasing the report during a brief outage.
             bool configurationLost = s.PolicyState != "APPLIED" &&
                 s.Reason is "STUDY_OFFLINE" or "CONFIGURATION_STALE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED";
-            bool clockLost = s.PolicyState == "APPLIED" && s.Version == _version && !s.ClockReady && s.Reason == "SCHOOL_CLOCK_UNAVAILABLE";
+            bool compatibleClockUpdate = s.Version is not null && StudyExecutionCompatibility.SameSchedule(_settings, s.Settings, s.Mode);
+            bool clockLost = s.PolicyState == "APPLIED" && !s.ClockReady && s.Reason == "SCHOOL_CLOCK_UNAVAILABLE" &&
+                (s.Version == _version || compatibleClockUpdate);
             if (selected && scope is not null && scope == _scope && _mode == s.Mode &&
-                _version is not null && (s.Version is null || s.Version == _version) &&
+                _version is not null && (s.Version is null || s.Version == _version || clockLost && compatibleClockUpdate) &&
                 _window is not null && s.Phase == "Blocked" && (configurationLost || clockLost))
             {
                 Observe(s, _window.Start); // Updates only already tracked session IDs while blocked.
+                if (clockLost && compatibleClockUpdate) { _version = s.Version; _settings = s.Settings; }
                 return State(false, "Unavailable", 0);
             }
-            if (_scope != scope || _version != s.Version || _mode != s.Mode) { Clear(); _scope = scope; _version = s.Version; _mode = s.Mode; }
+            // A version can change without ending this witnessed study window.
+            // Keep its per-session statistics; authorization loss, another class,
+            // mode or window still discards the presentation context.
+            bool sameWindow = selected && s.Version is not null && s.PolicyState == "APPLIED" && s.ClockReady &&
+                _window is { } witnessed && s.SchoolNow is { } schoolNow &&
+                (s.Phase == "Active" && s.Window == witnessed && schoolNow >= witnessed.Start && schoolNow < witnessed.End ||
+                 s.Phase is "Outside" or "Ended" && schoolNow >= witnessed.End && StillScheduled(s, witnessed));
+            if (_scope != scope || _mode != s.Mode || _version != s.Version && !sameWindow) Clear();
+            _scope = scope; _version = s.Version; _mode = s.Mode; _settings = s.Settings;
             if (!selected || scope is null || s.Version is null || s.PolicyState != "APPLIED" || !s.ClockReady || s.SchoolNow is not { } now ||
                 s.Phase is not ("Active" or "Outside" or "Ended"))
             { Clear(); return State(false, "Unavailable", 0); }
             if (s.Phase == "Active" && s.Window is { } active)
             {
-                if (_window != active) { Clear(); _window = active; }
+                if (_window != active) { Clear(); _window = active; _settings = s.Settings; }
                 // Threshold statistics must also work with the App closed and photography disabled.
                 if (s.Settings?.Noise is { Enabled: true } noise &&
                     s.Execution is { Owner: "Schedule", State: "Active", SignalFresh: true, SessionId: not null } execution)
@@ -98,6 +111,12 @@ public sealed class StudyReportService : IAsyncDisposable
             bool available = elapsed >= StudyPresentationTiming.StageNoticeSeconds;
             return State(available, available ? "Report" : "EndReminder", available ? remaining : DefaultDurationSeconds);
         }
+    }
+    private static bool StillScheduled(StudyHostState state, SchoolNoiseWindow window)
+    {
+        if (state.Settings?.Noise.Enabled != true) return false;
+        try { return SchoolStudySchedule.Windows(state.Settings.ForMode(state.Mode), window.Start).Current == window; }
+        catch (ArgumentException) { return false; }
     }
     private StudyReportState State(bool available, string state, double remaining) =>
         new(_instance, _version, available && _projection?.Invoke() != true, state, remaining, _window is null || state is "Monitoring" or "Unavailable" or "Expired" ? null : _frozen ?? Build());
