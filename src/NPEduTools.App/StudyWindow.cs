@@ -53,7 +53,7 @@ public sealed partial class StudyWindow : Window
         // A pending management hide can settle after shutdown. Do not navigate
         // back into the owning MainWindow once its presentation has been closed.
         _surface = new(HideAsync, () => { if (_shutdown) return; HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
-        _surface.RefreshCompleted += () => { if (!_manual && IsVisible && !_continuation.CanKeep) HideDisplay(); };
+        _surface.RefreshCompleted += () => { if (IsVisible && !_continuation.CanKeep) HideDisplay(); };
         if (!manual) _surface.SeatingUploadRequested += OpenSeatingUpload;
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; _surface.ReturnError("请长按“临时使用电脑”收起展示。"); } };
     }

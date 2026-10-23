@@ -93,7 +93,8 @@ internal static partial class Program
             if (scenario is "rejected-report" or "empty-report")
                 Assert(manualWindow?.IsVisible == true, "invalid report suppressed a fresh manual display");
             if (scenario == "delayed-manual")
-                Assert(manualWindow?.IsVisible != true && schoolWindow?.IsVisible != true, "time spent awaiting later reads was omitted from display freshness");
+                Assert(manualWindow?.IsVisible == true && schoolWindow?.IsVisible != true && manualReads >= 2,
+                    "slow auxiliary read did not revalidate manual status before displaying it");
             if (scenario == "delayed-school") Assert(schoolWindow?.IsVisible == true, "fresh revalidation did not keep the school display visible after an unrelated slow read");
             if (scenario is "delayed-school-withdrawn" or "delayed-school-projection") Assert(schoolWindow?.IsVisible != true, "revalidation ignored newly withdrawn policy or examination priority");
             if (scenario == "accepted-report") Assert(schoolWindow?.IsVisible != true, "manual report left the previous school display visible");

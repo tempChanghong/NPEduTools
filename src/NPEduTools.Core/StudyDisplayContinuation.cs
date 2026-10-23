@@ -18,7 +18,8 @@ public sealed class StudyDisplayContinuation(TimeProvider? time = null)
             state is not { PolicyState: "APPLIED", ClockReady: true, SchoolNow: { } now, Window: { } window,
                 Display: { Selected: true, Available: true }, ProjectionPriority: false, Phase: "Preparing" or "Active" or "Ended" } ||
             string.IsNullOrEmpty(state.Version) || window.End <= window.Start ||
-            (window.Start - now).TotalSeconds > StudyPresentationTiming.ScheduledDisplayLeadSeconds) return;
+            (window.Start - now).TotalSeconds > (state.Manual is { } manual
+                ? Math.Clamp(manual.DisplayLeadSeconds, 0, 1800) : StudyPresentationTiming.ScheduledDisplayLeadSeconds)) return;
         // A preparation observation cannot stand in for confirmation that a session actually started.
         var end = state.Phase == "Preparing" ? window.Start : window.End;
         _remaining = end - now + TimeSpan.FromSeconds(StudyPresentationTiming.StageNoticeSeconds) - transportAge;
