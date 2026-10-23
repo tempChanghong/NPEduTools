@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
@@ -86,7 +87,7 @@ internal static partial class Program
                 Assert(((TextBox)owner.FindName("MediumThreshold")).Text.Length > 0, "suggestion not filled");
                 Click(owner, "ConfirmThresholds");
                 PumpUntil(() => ((TextBlock)owner.FindName("ProfileStatus")).Text.Contains("适用"), "confirmed local thresholds not applied");
-                var policy = new StudyNoise(true, -10, -20, 600, 5);
+                var policy = config["effective"]!["settings"]!["noise"]!.Deserialize<StudyNoise>(Protocol.Json)!;
                 var effective = noise.ResolveCalibration(scope, config["version"]!.GetValue<string>(), policy);
                 Assert(effective.RedLineDbfs != policy.RedLineDbfs && effective.DisciplineCooldownSeconds == 600 &&
                     effective.HighContinuousSeconds == 5, "calibration changed school timing or failed to replace only local lines");
