@@ -37,12 +37,12 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                 if (_scope != current.Scope) _instance = Guid.NewGuid();
                 _scope = current.Scope; _lastWindow = _hiddenWindow = null; _hiddenReturn.Clear();_manualHidden=false;
                 _requests.Clear(); _requestOrder.Clear();
-                _presentations.Clear();
+                ResetPresentations();
                 _presentationWindow = null;
             }
             if (_version != state.Version || _mode != state.Mode) {
                 if (_mode != state.Mode || state.Manual is not null) { _hiddenWindow = null; _hiddenReturn.Clear(); _manualHidden = false; }
-                _mode = state.Mode; _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); _presentations.Clear();
+                _mode = state.Mode; _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); ResetPresentations();
             }
             // The end overlay is displayed only after observing this exact active window.
             // Reconnection, disabled policy, exam or invalid time cannot manufacture an end event.
@@ -54,7 +54,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             else if (state.Phase is not ("Active" or "Preparing" or "Ended")) _lastWindow = null;
             if (state.Window is { } presentationWindow && presentationWindow != _presentationWindow)
             {
-                _presentationWindow = presentationWindow; _instance = Guid.NewGuid(); _presentations.Clear();
+                _presentationWindow = presentationWindow; _instance = Guid.NewGuid(); ResetPresentations();
             }
             double hidden = _hiddenWindow is not null && state.Window == _hiddenWindow ? _manualHidden ? 10801 : _hiddenReturn.Remaining : 0;
             if (_hiddenWindow is not null && state.Window is not null && (state.Window != _hiddenWindow || hidden <= 0))
@@ -78,6 +78,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
         {
             var state = Snapshot();
             if (request.Capability == "study.status") return new(1, request.RequestId, "Succeeded", null, "学校自习状态。", Study: state);
+            if (request.Capability == "study.presentation.epoch") return PresentationEpoch(request, state);
             if (request.Capability == "study.presentation") return ReceivePresentation(request, state);
             if (request.Capability == "study.reminder")
             {

@@ -18,6 +18,7 @@ public sealed partial class StudyWindow : Window
     private bool _shutdown;
     private Guid? _hideRequest;
     private readonly Guid _appInstance = Guid.NewGuid();
+    private readonly StudyPresentationReporter _presentationReporter = new();
     private long _presentationSequence;
     public StudyPresentationPulse? PresentationPulse()
     {
@@ -30,11 +31,11 @@ public sealed partial class StudyWindow : Window
     }
     public async Task ReportPresentationAsync()
     {
-        if (PresentationPulse() is not { } pulse) return;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), _manual?"manual.study.presentation":"study.presentation", StudyPresentation: pulse), timeout.Token);
+            await _presentationReporter.ReportAsync(PresentationPulse,
+                (request, token) => HostClient.RequestAsync(_pipe, request, token), _manual, timeout.Token);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException) { }
         if(!_manual)await ReportSeatingAsync();

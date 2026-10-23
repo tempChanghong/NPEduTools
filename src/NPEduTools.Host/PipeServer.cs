@@ -133,7 +133,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                         : new(1, request.RequestId, "Succeeded", null, "学校自习状态。", Study: study.Snapshot());
                     if (request.Capability == "study.status.photos") response = response with { StudyPhotos = studyPhotos?.Snapshot() };
                 }
-                else if (request.Capability is "study.status" or "study.hide" or "study.show" or "study.reminder" or "study.presentation")
+                else if (request.Capability is "study.status" or "study.hide" or "study.show" or "study.reminder" or "study.presentation" or "study.presentation.epoch")
                 {
                     response = study is null ? new(Protocol.Version, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "请更新后台以读取自习配置。")
                         : studyDisplay is not null ? studyDisplay.Handle(request) with { Noise = noise?.Snapshot() }
