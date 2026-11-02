@@ -10,7 +10,7 @@ NPEduTools 是一款面向 Windows 教室大屏的桌面应用。通过常驻侧
 
 [下载](https://github.com/tempChanghong/NPEduTools/releases) · [使用指南](docs/GETTING-STARTED.md) · [文档目录](docs/README.md) · [反馈问题](https://github.com/tempChanghong/NPEduTools/issues) · [官方网站](https://novark.ink)
 
-当前源码版本：**v1.1.9 · EVA-02（二号机）**。[本版说明](docs/releases/v1.1.9.md) · [已发布版本与下载](https://github.com/tempChanghong/NPEduTools/releases)。本版仅包含自习页状态读取失败时的展示保留、作业分页改善，以及手动自习作业同步与来源变更清理的整合，保留 v1.1.8 的其他功能。源码版本不代表已发布安装包或已完成实机验收。
+当前源码版本：**v1.1.10 · EVA-02（二号机）**。[本版说明](docs/releases/v1.1.10.md) · [已发布版本与下载](https://github.com/tempChanghong/NPEduTools/releases)。本版重点改善麦克风重连、自习展示与报告连续性、快速校准和快捷入口稳定性，并增加返回当前自习展示的入口。源码版本不代表已发布安装包或已完成实机验收。
 
 ## 能做什么
 
