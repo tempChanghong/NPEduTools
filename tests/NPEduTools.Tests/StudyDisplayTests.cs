@@ -4,7 +4,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class StudyDisplayTests
+public sealed partial class StudyDisplayTests
 {
     private sealed class Clock : TimeProvider
     {

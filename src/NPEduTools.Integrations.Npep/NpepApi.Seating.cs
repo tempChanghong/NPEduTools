@@ -5,7 +5,7 @@ public sealed partial class NpepApi
     internal Task<JsonObject> SeatingAsync(string bearer, JsonObject body, bool chunk, CancellationToken token)
     {
         NpepSeatingProtocol.Validate(chunk ? "chunkRequest" : "manifestRequest", body);
-        return StudyAsync("device/study-settings/seating" + (chunk ? "/chunk" : ""), chunk ? "chunk" : "manifest", bearer, body, token, "0.14");
+        return StudyAsync("device/study-settings/seating" + (chunk ? "/chunk" : ""), chunk ? "chunk" : "manifest", bearer, body, token, "0.14", seatingSequence: !chunk);
     }
 }
 public sealed partial class NpepDevice

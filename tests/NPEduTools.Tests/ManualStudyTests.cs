@@ -189,6 +189,30 @@ public sealed class ManualStudyTests
         f.Time.Ms=1000;f.Captures.Last().Sample();var duplicate=f.Manual.Display.Handle(request with{Capability="study.hide"}).Study!;Assert.Equal(seconds is null?10801:599,duplicate.Display!.HiddenRemainingSeconds);
         Assert.Equal("Active",f.Noise.Snapshot().State);f.Time.Ms=601000;f.Captures.Last().Sample();Assert.Equal(seconds is not null,f.Manual.Display.Snapshot().Display!.Available);
     }
+    private sealed class NoSchoolRead : ILessonStatusReader
+    {
+        public Task<StatusResult> ReadAsync(StatusQuery query, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("No physical bridge allowed");
+    }
+    [Fact, System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task Return_pipe_restores_manual_display_without_restarting_capture()
+    {
+        await using var f = new Fixture(); f.Start(hide: null); await f.Active();
+        var session = f.Noise.Snapshot().SessionId;
+        string pipe = "NPEduTools.Test.manual-return." + Guid.NewGuid().ToString("N");
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var serving = new PipeServer(pipe, new NoSchoolRead(), _ => { }, noise: f.Noise, manualStudy: f.Manual).RunAsync(stop.Token);
+        try
+        {
+            var state = (await HostClient.RequestAsync(pipe, "manual.study.status", stop.Token)).Study!;
+            var hide = new HostRequest(1, Guid.NewGuid(), "manual.study.hide", StudyHide: new(state.Display!.InstanceId, state.Version!, state.Window!));
+            Assert.Equal("Succeeded", (await HostClient.RequestAsync(pipe, hide, stop.Token)).Outcome);
+            var shown = await HostClient.RequestAsync(pipe, hide with { Capability = "manual.study.show", RequestId = Guid.NewGuid() }, stop.Token);
+            Assert.Equal("Succeeded", shown.Outcome); Assert.True(shown.Study!.Display!.Available);
+            Assert.Single(f.Captures); Assert.Equal(session, f.Noise.Snapshot().SessionId); Assert.Equal("Active", f.Noise.Snapshot().State);
+        }
+        finally { await stop.CancelAsync(); await serving; }
+    }
     [Fact]
     public async Task Scheduled_takeover_saves_manual_report_and_old_end_cannot_stop_new_scheduled_capture()
     {

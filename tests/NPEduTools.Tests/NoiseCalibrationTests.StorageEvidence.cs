@@ -14,6 +14,9 @@ public sealed partial class NoiseCalibrationTests
     [InlineData("duplicate-profile-id")]
     [InlineData("duplicate-draft-id")]
     [InlineData("unknown-draft-quality")]
+    [InlineData("unknown-profile-version")]
+    [InlineData("unknown-draft-context-version")]
+    [InlineData("mixed-legacy-envelope")]
     public async Task ReloadCannotApplyQuickThresholdsFromInvalidConfirmationEvidence(string variant)
     {
         await using var f = new Fixture();
@@ -32,6 +35,9 @@ public sealed partial class NoiseCalibrationTests
             case "missing-discipline": profile[1]!["label"] = "Acceptable"; break;
             case "duplicate-profile-id": profile[1]!["id"] = profile[0]!["id"]!.DeepClone(); break;
             case "duplicate-draft-id": draft[1]!["id"] = draft[0]!["id"]!.DeepClone(); break;
+            case "unknown-profile-version": saved["profile"]!["version"] = 3; break;
+            case "unknown-draft-context-version": saved["draft"]!["contextVersion"] = 3; break;
+            case "mixed-legacy-envelope": saved["version"] = 1; break;
             default: draft[0]!["quality"] = "UnknownQuality"; break;
         }
         string original = saved.ToJsonString(); File.WriteAllText(path, original);

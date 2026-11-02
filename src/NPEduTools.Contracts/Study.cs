@@ -37,7 +37,10 @@ public sealed record StudyReminderCommand(Guid InstanceId, string Version, Schoo
     Guid? DisciplineId = null, Guid? SessionId = null);
 // Local UI observation, not permission to show or evidence of physical screen pixels.
 public sealed record StudyPresentationPulse(Guid InstanceId, Guid AppInstanceId, long Sequence, string Version,
-    SchoolNoiseWindow Window, string Phase, string State, int? RenderAgeMs);
+    SchoolNoiseWindow Window, string Phase, string State, int? RenderAgeMs,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ObservationEpoch = null);
+// Local, explicitly negotiated observation generation; independent of display and hide identity.
+public sealed record StudyPresentationEpoch(Guid InstanceId, Guid Epoch);
 // schoolNow is an offset-free school wall stamp, never deserialized as a Windows-local timestamp.
 public sealed record StudyExecutionWindow(string Start, string End);
 public sealed record StudyCaptureState(string Owner, string State, Guid? SessionId, string Reason,

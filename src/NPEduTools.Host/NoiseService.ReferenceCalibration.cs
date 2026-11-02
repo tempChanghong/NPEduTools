@@ -78,7 +78,11 @@ public sealed partial class NoiseService
             // This marker predates capture. A crash or a later unwritable directory cannot
             // erase the evidence that the preceding input checks did not finish durably.
             if (_referenceProfile is not null && ReferenceUsePath is { } usePath && File.Exists(usePath))
-                _referenceInvalidated ??= "INPUT_SETTINGS_UNAVAILABLE";
+            {
+                if (_referenceInvalidated is null && ReconnectMarkerMatches(usePath, _referenceProfile))
+                { _referenceReconnectPending = true; _referenceMarkerArmed = true; _referenceMarkerRecoverable = true; }
+                else _referenceInvalidated ??= "INPUT_SETTINGS_UNAVAILABLE";
+            }
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         { _referenceError = "REFERENCE_STORE_UNAVAILABLE"; } // Preserve originals, never activate malformed data.
@@ -95,7 +99,14 @@ public sealed partial class NoiseService
     }
     private void EnsureReferenceUseMarker()
     {
-        if (_referenceMarkerArmed) return;
+        if (_referenceMarkerArmed)
+        {
+            // A disconnect marker may only certify the preceding, unchanged input.
+            // Reopening AND later selection invalidation must first withdraw it, so
+            // a failed tombstone write cannot revive an older recoverable reference.
+            if (_referenceMarkerRecoverable && !ReplaceReferenceMarker(false)) throw new ReferenceUseException();
+            return;
+        }
         try
         {
             if (_referenceProfile is not { } profile) throw new ReferenceUseException();
@@ -111,27 +122,32 @@ public sealed partial class NoiseService
     }
     private bool ClearReferenceUse()
     {
-        try { if (ReferenceUsePath is { } path) File.Delete(path); _referenceMarkerArmed = false; return true; }
+        try { if (ReferenceUsePath is { } path) File.Delete(path); _referenceMarkerArmed = false; _referenceMarkerRecoverable = false; _referenceReconnectPending = false; return true; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         { _referenceError = "REFERENCE_STORE_UNAVAILABLE"; _referenceInvalidated ??= "INPUT_SETTINGS_UNAVAILABLE"; return false; }
     }
     private void CheckFinalReferenceInput(Session s)
     {
-        if (!s.ReferenceUseArmed || _referenceInvalidated is not null || _referenceProfile is not { } profile) return;
+        if (!s.ReferenceUseArmed || s.DeviceDisconnected || _referenceInvalidated is not null || _referenceProfile is not { } profile) return;
         try
         {
             if (s.Metadata is not IReferenceNoiseCapture input) InvalidateReference("INPUT_SETTINGS_UNAVAILABLE");
             else if (input.ReferenceSignature != profile.Signature) InvalidateReference("INPUT_SETTINGS_CHANGED");
         }
+        catch (NoiseDeviceDisconnectedException) { DeviceDisconnected(s); }
         catch (Exception e) when (e is not OutOfMemoryException) { InvalidateReference("INPUT_SETTINGS_UNAVAILABLE"); }
-        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated;
+        // A valid saved profile does not erase this session's unavailable A-weighting
+        // or an endpoint removal discovered during this final metadata check.
+        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated ?? s.EstimateReason;
     }
     private void FinishReferenceUse(Session s)
     {
         if (!s.ReferenceUseArmed) return;
+        if (s.DeviceDisconnected && !_cleanupFailed && _referenceInvalidated is null && _referenceError is null)
+        { if (ReplaceReferenceMarker(true)) _referenceReconnectPending = true; return; }
         if (s.Failure.Length > 0) return; // Preserve the marker without relabelling an audio fault as an observed input change.
         if (_referenceInvalidated is null && _referenceError is null && SaveReference(_referenceDraft, _referenceProfile)) ClearReferenceUse();
-        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated;
+        if (s.EstimateProfile is not null) s.EstimateReason = _referenceError ?? _referenceInvalidated ?? s.EstimateReason;
         // Any failure retains the prewritten marker, including a failed tombstone write.
     }
     private bool SaveReference(NoiseReferenceDraft? draft, NoiseReferenceProfile? profile)
@@ -167,7 +183,7 @@ public sealed partial class NoiseService
         return new(_instance, _referenceRevision, sampling ? "Sampling" : busy ? "Busy" : referenceCreate is null ? "Unsupported" : "Ready",
             _selected, _session is { } selectedSession && selectedSession.DeviceId == _selected ? selectedSession.DeviceName : null, progress,
             sampling ? _session!.Reference!.MeasuredSeconds : 0, _referenceDraft, NoiseReferenceCalibration.Evaluate(_referenceDraft),
-            _referenceProfile, _referenceError is null && _referenceInvalidated is null && RecentReferenceSignature && _referenceProfile is { } p && p.DeviceId == _selected && p.Signature == _lastReferenceSignature,
+            _referenceProfile, _referenceError is null && _referenceInvalidated is null && !_referenceReconnectPending && RecentReferenceSignature && _referenceProfile is { } p && p.DeviceId == _selected && p.Signature == _lastReferenceSignature,
             _referenceError, _session?.Reference is not null ? _message : null, _referenceInvalidated,
             sampling && _session!.UsbReference is not null ? MeterSnapshot(_session!) : null);
     }

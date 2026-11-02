@@ -52,7 +52,7 @@ internal static partial class Program
         typeof(MainWindow).GetField("_studyReportWindow", WorkspaceFlags)!.SetValue(main, reportWindow);
         Task? polling = null;
         void Block(bool value) => typeof(MainWindow).GetField(blocker, WorkspaceFlags)!.SetValue(main,
-            blocker == "_notificationOpening" ? value : value ? notice : null);
+            blocker is "_notificationOpening" or "_exitBusy" ? value : value ? notice : null);
         bool AllHidden() => !manualWindow.IsVisible && !reportWindow.IsVisible &&
             WorkspaceField<StudyWindow>(main, "_studyWindow")?.IsVisible != true;
         try
@@ -74,7 +74,7 @@ internal static partial class Program
             PumpUntil(() => resumed.Task.IsCompleted || polling.IsCompleted, "display did not resume after notification");
             Assert(!polling.IsCompleted && (presentation == "manual" ? manualWindow.IsVisible : reportWindow.IsVisible),
                 "closing notification did not restore the eligible study surface");
-            Checks.Add($"{presentation}/{blocker}/{(duringRead ? "during-read" : "before-read")}: notification suppresses study, late reports cannot reopen it, closing restores display without capture or session mutations");
+            Checks.Add($"{presentation}/{blocker}/{(duringRead ? "during-read" : "before-read")}: priority operation suppresses study, late reports cannot reopen it, closing restores display without capture or session mutations");
         }
         finally
         {

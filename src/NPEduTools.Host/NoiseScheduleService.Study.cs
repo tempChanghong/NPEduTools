@@ -75,7 +75,7 @@ public sealed partial class NoiseScheduleService
                 throw new NpepException("SESSION_SUPERSEDED");
             Bind(scope, true);
             _studyProbeComplete = true;
-            string source = configuration["effective"]!.AsObject().Text("source"); _studySource = source;
+            string source = configuration["effective"]!.AsObject().Text("source");
             string version = configuration.Text("version");
             if (source == "None")
             {
@@ -87,10 +87,17 @@ public sealed partial class NoiseScheduleService
                 }
                 return; // Unconfigured schools retain the established legacy protocol, with a fresh confirmation.
             }
-            if (!_studySelected || _version != version) _studyConfirmedAt = -1;
+            var nextSettings = configuration["effective"]!["settings"]?.Deserialize<StudySettings>(Protocol.Json);
+            var nextReportScope = new JsonObject { ["schoolId"] = configuration["scope"]!["schoolId"]!.DeepClone(), ["termId"] = configuration["scope"]!["termId"]!.DeepClone(), ["classId"] = configuration["scope"]!["classId"]!.DeepClone() };
+            bool sameExecution = _studySelected && _studySource is "Grade" or "Class" && source is "Grade" or "Class" &&
+                JsonNode.DeepEquals(_studyReportScope, nextReportScope) &&
+                StudyExecutionCompatibility.SameSchedule(_studySettings, nextSettings, _mode);
+            // Preserve only the existing grant's deadline, never renew it from a
+            // configuration read. Old-version commands and receipts remain fenced.
+            if (!sameExecution) _studyConfirmedAt = -1;
             _confirmedAt = -1; _studySelected = true; _version = version;
-            _studyReportScope = new JsonObject { ["schoolId"] = configuration["scope"]!["schoolId"]!.DeepClone(), ["termId"] = configuration["scope"]!["termId"]!.DeepClone(), ["classId"] = configuration["scope"]!["classId"]!.DeepClone() };
-            _studySettings = configuration["effective"]!["settings"]?.Deserialize<StudySettings>(Protocol.Json);
+            _studySource = source; _studyReportScope = nextReportScope;
+            _studySettings = nextSettings;
             _policy = new(_studySettings?.Noise.Enabled == true ? source : "Disabled", _studySettings?.Schedule.Rules ?? []);
             Tick();
         }

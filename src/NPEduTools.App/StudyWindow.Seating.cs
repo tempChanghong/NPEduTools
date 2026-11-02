@@ -54,7 +54,7 @@ public sealed partial class StudyWindow
         if (_state is not { Version: { } version, Display: { } display, Seating.State: "READY" }) return;
         bool visible = !_shutdown && IsVisible && WindowState != WindowState.Minimized && _surface.SeatingVisible;
         var p = new StudySeatingPulse(display.InstanceId, _appInstance, ++_seatingSequence, version,
-            _surface.SeatingRevision, _surface.SeatingHash, visible, visible ? _surface.FreshRenderAgeMs : null);
+            _surface.SeatingRevision, _surface.SeatingHash, visible, visible ? _surface.FreshRenderAgeMs : null, _state.Seating.ObservationEpoch);
         try { using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "study.seating.presentation", SeatingPresentation: p), timeout.Token);
         } catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException or TimeoutException) { }

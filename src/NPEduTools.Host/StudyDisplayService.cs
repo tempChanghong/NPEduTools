@@ -37,12 +37,12 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                 if (_scope != current.Scope) _instance = Guid.NewGuid();
                 _scope = current.Scope; _lastWindow = _hiddenWindow = null; _hiddenReturn.Clear();_manualHidden=false;
                 _requests.Clear(); _requestOrder.Clear();
-                _presentations.Clear();
+                ResetPresentations();
                 _presentationWindow = null;
             }
             if (_version != state.Version || _mode != state.Mode) {
                 if (_mode != state.Mode || state.Manual is not null) { _hiddenWindow = null; _hiddenReturn.Clear(); _manualHidden = false; }
-                _mode = state.Mode; _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); _presentations.Clear();
+                _mode = state.Mode; _lastWindow = null; _version = state.Version; _instance = Guid.NewGuid(); ResetPresentations();
             }
             // The end overlay is displayed only after observing this exact active window.
             // Reconnection, disabled policy, exam or invalid time cannot manufacture an end event.
@@ -54,7 +54,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
             else if (state.Phase is not ("Active" or "Preparing" or "Ended")) _lastWindow = null;
             if (state.Window is { } presentationWindow && presentationWindow != _presentationWindow)
             {
-                _presentationWindow = presentationWindow; _instance = Guid.NewGuid(); _presentations.Clear();
+                _presentationWindow = presentationWindow; _instance = Guid.NewGuid(); ResetPresentations();
             }
             double hidden = _hiddenWindow is not null && state.Window == _hiddenWindow ? _manualHidden ? 10801 : _hiddenReturn.Remaining : 0;
             if (_hiddenWindow is not null && state.Window is not null && (state.Window != _hiddenWindow || hidden <= 0))
@@ -78,6 +78,7 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
         {
             var state = Snapshot();
             if (request.Capability == "study.status") return new(1, request.RequestId, "Succeeded", null, "学校自习状态。", Study: state);
+            if (request.Capability == "study.presentation.epoch") return PresentationEpoch(request, state);
             if (request.Capability == "study.presentation") return ReceivePresentation(request, state);
             if (request.Capability == "study.reminder")
             {
@@ -96,12 +97,19 @@ public sealed partial class StudyDisplayService(Func<(string? Scope, bool Select
                 return new(1, request.RequestId, "Succeeded", null, "仅允许当前阶段一次提示音。");
             }
             var command = request.StudyHide;
-            if (command is null || command.InstanceId != _instance || command.Version != state.Version ||
-                command.Window != state.Window || state.PolicyState != "APPLIED" || !state.ClockReady || state.Phase != "Active")
+            bool show = request.Capability == "study.show";
+            if (request.Capability is not ("study.hide" or "study.show") || command is null || command.InstanceId != _instance || command.Version != state.Version ||
+                command.Window != state.Window || state.PolicyState != "APPLIED" || !state.ClockReady ||
+                (show ? state.Phase is not ("Preparing" or "Active") || state.ProjectionPriority || state.Display?.Selected != true : state.Phase != "Active"))
                 return new(1, request.RequestId, "Rejected", "STUDY_STATE_CHANGED", "自习状态已变化，请重新查看。", Study: state);
-            if (_requests.Contains(request.RequestId)) return new(1, request.RequestId, "Succeeded", null, "沿用原无操作返回设置。", Study: state);
+            if (_requests.Contains(request.RequestId)) return new(1, request.RequestId, "Succeeded", null, "该展示请求已处理。", Study: state);
             _requests.Add(request.RequestId); _requestOrder.Enqueue(request.RequestId);
             if (_requestOrder.Count > 128) _requests.Remove(_requestOrder.Dequeue());
+            if (show)
+            {
+                _hiddenWindow = null; _manualHidden = false; _hiddenReturn.Clear();
+                return new(1, request.RequestId, "Succeeded", null, "已恢复当前自习展示，监测继续。", Study: Snapshot());
+            }
             if (state.Display!.HiddenRemainingSeconds <= 0)
             {
                 // Legacy school TemporaryHideSeconds is retained on the wire, but no longer limits

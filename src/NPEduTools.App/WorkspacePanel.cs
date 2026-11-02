@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 
 namespace NPEduTools.App;
 
@@ -12,6 +13,10 @@ internal sealed class WorkspacePanel : ContentControl
     internal WorkspacePanel(Window controller, Window owner, Action<bool>? visibilityChanged = null)
     {
         Controller = controller;
+        // Quiet login leaves MainWindow unshown. WPF rejects such an Owner
+        // until it has a native source; create the handle without showing it.
+        // Every embedded workspace uses this path, including quick-bar entries.
+        new WindowInteropHelper(owner).EnsureHandle();
         controller.Owner = owner;
         var view = (FrameworkElement)controller.Content;
         controller.Content = null;

@@ -7,6 +7,47 @@ namespace NPEduTools.Tests;
 public sealed partial class NoiseReferenceCalibrationTests
 {
     [Theory]
+    [InlineData("format", "A_WEIGHTING_UNAVAILABLE")]
+    [InlineData("disconnect-on-stop", "INPUT_SETTINGS_UNAVAILABLE")]
+    public async Task Finalization_preserves_session_reference_failure_in_statistics_and_upload(string cause, string reason)
+    {
+        await using var f = new Fixture();
+        await f.PrepareAsync(); Assert.Equal("Succeeded", f.Command("confirm").Outcome);
+        var profile = f.State.Profile;
+        var transport = new NoiseTransport(f.Noise, Path.Combine(f.DirectoryPath, "outbox")); transport.Bind("synthetic-school-class");
+        f.NormalReferenceUnavailable = cause == "format";
+        await StartFormal(f); FormalFrames(f, 60);
+        var before = f.Noise.Snapshot();
+        if (cause == "format") Assert.Equal(reason, before.Estimate!.Reason);
+        else
+        {
+            Assert.Equal("Active", before.Estimate!.State);
+            // The endpoint vanishes at normal stopping, without a failure event or
+            // a live status read discovering it before the final metadata check.
+            f.Capture!.EndpointDisconnected = true;
+        }
+        f.Noise.StopScheduled(before.SessionId!.Value);
+        await Until(() => !f.Noise.CaptureBusy);
+        var final = f.Noise.Snapshot();
+        Assert.Equal(reason, final.Estimate!.Reason);
+        Assert.Equal("Invalidated", final.Estimate.State); Assert.Null(final.Estimate.CurrentDbA);
+        Assert.Equal(before.Estimate!.Summary, final.Estimate.Summary);
+        var statistics = f.Noise.FinishedStudyReport(before.SessionId.Value)!;
+        Assert.True(statistics.Complete); Assert.Equal(reason, statistics.EstimateReason);
+        var uploaded = transport.Reports().Single()!.AsObject(); NpepNoiseProtocol.Validate("report", uploaded);
+        Assert.Equal(reason, uploaded["estimate"]!["reason"]!.GetValue<string>());
+        Assert.Null(f.State.InvalidationReason); // Runtime unavailability is not permanent profile invalidation.
+        Assert.Equal(profile, f.State.Profile);
+        f.NormalReferenceUnavailable = false;
+        await StartFormal(f); FormalFrames(f, 60);
+        var recovered = f.Noise.Snapshot().Estimate!;
+        Assert.Equal("Active", recovered.State); Assert.Null(recovered.Reason);
+        Assert.Equal(60, recovered.CurrentDbA!.Value, 6);
+        Assert.Equal(profile, f.State.Profile);
+        await StopFormal(f);
+    }
+
+    [Theory]
     [InlineData("manual")]
     [InlineData("scheduled")]
     [InlineData("failure")]

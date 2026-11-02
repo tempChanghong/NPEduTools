@@ -89,7 +89,8 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyState? ManualStudy = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadState? SeatingUpload = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepConnectionHistory? ConnectionHistory = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationStatus? NoiseCalibrationStatus = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationStatus? NoiseCalibrationStatus = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyPresentationEpoch? PresentationEpoch = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -131,7 +132,7 @@ public static class Protocol
         if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
             return Validate(request with { Capability = calibrationBase });
         if (request.Version != Version) return "ProtocolVersionMismatch";
-        if (request.Capability is "manual.study.hide" or "manual.study.reminder" or "manual.study.presentation")
+        if (request.Capability is "manual.study.hide" or "manual.study.show" or "manual.study.reminder" or "manual.study.presentation" or "manual.study.presentation.epoch")
             return Validate(request with { Capability=request.Capability[7..] });
         if (request.Capability=="manual.study.command" ? request.ManualStudy is not {Action:"start" or "end",InstanceId:var mid,Revision:>=0} || mid==Guid.Empty : request.ManualStudy is not null) return "InvalidManualStudyCommand";
         if (request.ManualStudy is { } manual && (manual.Action == "end" ? manual.SessionId is null || manual.SessionId == Guid.Empty : manual.SessionId is not null)) return "InvalidManualStudyCommand";
@@ -148,7 +149,7 @@ public static class Protocol
         if (request.Capability == "study.presentation" ? request.StudyPresentation is not { } pulse ||
             !ValidStudyDisplayIdentity(pulse.InstanceId, pulse.Version, pulse.Window) || pulse.AppInstanceId == Guid.Empty ||
             pulse.Sequence is <= 0 or > 9007199254740991 || pulse.Phase is not ("Preparing" or "Active" or "Ended") ||
-            pulse.State is not ("Visible" or "Hidden" or "Stale") ||
+            pulse.State is not ("Visible" or "Hidden" or "Stale") || pulse.ObservationEpoch == Guid.Empty ||
             (pulse.State == "Visible" ? pulse.RenderAgeMs is not (>= 0 and < 1000) : pulse.RenderAgeMs is not null)
             : request.StudyPresentation is not null) return "InvalidStudyPresentation";
         if (request.Capability == "study.seating.upload" ? request.SeatingUpload is not { TicketId: var ticket, UploadId: var upload, Version.Length: 64, Hash.Length: 64, ExpectedRevision: >= 0 and < int.MaxValue, ByteCount: > 0 and <= 2097152, Width: > 0 and <= 4096, Height: > 0 and <= 4096 } image ||
@@ -160,7 +161,7 @@ public static class Protocol
             return "InvalidStudySeatingRead";
         if (request.Capability == "study.seating.presentation" ? request.SeatingPresentation is not { InstanceId: var si, AppInstanceId: var ai, Sequence: > 0, Version.Length: 64, Revision: >= 0 } sp ||
             si == Guid.Empty || ai == Guid.Empty || !sp.Version.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') || sp.Sequence > 9007199254740991 || sp.AppliedHash is not null && (sp.AppliedHash.Length != 64 || !sp.AppliedHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')) ||
-            sp.RenderAgeMs is < 0 or > 999 || sp.Visible && (sp.AppliedHash is null || sp.RenderAgeMs is null) : request.SeatingPresentation is not null)
+            sp.ObservationEpoch == Guid.Empty || sp.RenderAgeMs is < 0 or > 999 || sp.Visible && (sp.AppliedHash is null || sp.RenderAgeMs is null) : request.SeatingPresentation is not null)
             return "InvalidStudySeatingPresentation";
         if (request.Capability == "study.homework" ? request.StudyHomework is not { SnapshotId.Length: 64, Index: >= 0 and < 128 } read ||
             !read.SnapshotId.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') : request.StudyHomework is not null)
@@ -172,7 +173,7 @@ public static class Protocol
                 reminder.SessionId is null || reminder.SessionId == Guid.Empty : reminder.DisciplineId is not null || reminder.SessionId is not null)
             : request.StudyReminder is not null)
             return "InvalidStudyReminderCommand";
-        if (request.Capability == "study.hide" ? request.StudyHide is not { } hide || !ValidStudyDisplayIdentity(hide.InstanceId, hide.Version, hide.Window)
+        if (request.Capability is "study.hide" or "study.show" ? request.StudyHide is not { } hide || !ValidStudyDisplayIdentity(hide.InstanceId, hide.Version, hide.Window)
             : request.StudyHide is not null) return "InvalidStudyHideCommand";
         if (request.Capability == "noise.display.return" ? request.NoiseDisplay is null || !NoiseDisplayContract.Valid(request.NoiseDisplay) : request.NoiseDisplay is not null)
             return "InvalidNoiseDisplayCommand";
@@ -189,7 +190,7 @@ public static class Protocol
         if (request.Capability == "npep.notifications" ? request.Notification is null || !NpepNotificationContract.Valid(request.Notification) : request.Notification is not null) return "InvalidNotificationCommand";
         if (request.RequestId == Guid.Empty) return "InvalidRequestId";
         if (request.Capability is not ("remoteexam.preflight" or "remoteexam.inspect" or "remoteexam.status" or "remoteexam.command" or "npep.status" or "npep.diagnostics" or "npep.command" or "npep.notifications" or "host.ping" or "host.stop" or "host.cached-status" or "classroom.status" or "classroom.refresh" or "classroom.set" or "classroom.restore" or "classroom.retry" or "classisland.status" or "classisland.watch" or
-            "manual.study.command" or "manual.study.status" or "manual.study.report.status" or "study.recovery.status" or "study.report.status" or "study.exit.begin" or "study.exit.status" or "study.photos.exit-intent" or "study.photos.flush" or "study.status.photos" or "study.devices.microphone" or "study.devices.status" or "study.devices.refresh" or "study.devices.select" or "study.status.seating" or "study.seating" or "study.seating.upload.status" or "study.seating.upload" or "study.seating.presentation" or "study.status" or "study.hide" or "study.reminder" or "study.homework" or "study.presentation" or "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
+            "manual.study.command" or "manual.study.status" or "manual.study.report.status" or "study.recovery.status" or "study.report.status" or "study.exit.begin" or "study.exit.status" or "study.photos.exit-intent" or "study.photos.flush" or "study.status.photos" or "study.devices.microphone" or "study.devices.status" or "study.devices.refresh" or "study.devices.select" or "study.status.seating" or "study.seating" or "study.seating.upload.status" or "study.seating.upload" or "study.seating.presentation" or "study.status" or "study.hide" or "study.show" or "study.reminder" or "study.homework" or "study.presentation" or "study.presentation.epoch" or "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
             "noise.meter.command" or "noise.reference.status" or "noise.reference.command" or "noise.calibration.status" or "noise.calibration.command" or "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or

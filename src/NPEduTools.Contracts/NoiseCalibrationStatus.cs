@@ -8,6 +8,8 @@ public static class NoiseCalibrationStatusContract
 {
     public static string? BaseCapability(string capability) => capability switch
     {
+        // New seating generation metadata is opt-in; includes existing photo/calibration status.
+        "study.status.seating-epoch" => "study.status.photos",
         "study.status.calibration" => "study.status.photos",
         "manual.study.status.calibration" => "manual.study.status",
         "noise.status.calibration" => "noise.status",

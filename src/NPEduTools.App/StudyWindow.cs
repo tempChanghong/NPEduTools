@@ -18,6 +18,7 @@ public sealed partial class StudyWindow : Window
     private bool _shutdown;
     private Guid? _hideRequest;
     private readonly Guid _appInstance = Guid.NewGuid();
+    private readonly StudyPresentationReporter _presentationReporter = new();
     private long _presentationSequence;
     public StudyPresentationPulse? PresentationPulse()
     {
@@ -30,11 +31,11 @@ public sealed partial class StudyWindow : Window
     }
     public async Task ReportPresentationAsync()
     {
-        if (PresentationPulse() is not { } pulse) return;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), _manual?"manual.study.presentation":"study.presentation", StudyPresentation: pulse), timeout.Token);
+            await _presentationReporter.ReportAsync(PresentationPulse,
+                (request, token) => HostClient.RequestAsync(_pipe, request, token), _manual, timeout.Token);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException or InvalidDataException or JsonException or UnauthorizedAccessException or TimeoutException) { }
         if(!_manual)await ReportSeatingAsync();
@@ -50,8 +51,10 @@ public sealed partial class StudyWindow : Window
         _continuation = new(time);
         Left = Top = 0; Width = SystemParameters.PrimaryScreenWidth; Height = SystemParameters.PrimaryScreenHeight;
         ShowInTaskbar = false; Topmost = true; Title = manual?"NPEduTools · 手动自习":"NPEduTools · 学校自习";
-        _surface = new(HideAsync, () => { HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
-        _surface.RefreshCompleted += () => { if (!_manual && IsVisible && !_continuation.CanKeep) HideDisplay(); };
+        // A pending management hide can settle after shutdown. Do not navigate
+        // back into the owning MainWindow once its presentation has been closed.
+        _surface = new(HideAsync, () => { if (_shutdown) return; HideDisplay(); manage(); }, muted, time, AuthorizeReminderAsync,manual?EndAsync:null); Content = _surface;
+        _surface.RefreshCompleted += () => { if (IsVisible && !_continuation.CanKeep) HideDisplay(); };
         if (!manual) _surface.SeatingUploadRequested += OpenSeatingUpload;
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; _surface.ReturnError("请长按“临时使用电脑”收起展示。"); } };
     }
@@ -79,7 +82,13 @@ public sealed partial class StudyWindow : Window
     public void ShowDisplay()
     {
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        if (!IsVisible) Show();
+        if (!IsVisible)
+        {
+            // A Host-authorized return begins a new visible interaction. An earlier
+            // uncertain hide must not deduplicate the user's next deliberate hide.
+            if (_state?.Display?.Available == true) _hideRequest = null;
+            Show();
+        }
     }
     public void Shutdown() { _shutdown = true; DismissSeatingUpload(); _homeworkRead?.Cancel(); _seatingRead?.Cancel(); _seatingKey = null; _surface.ClearSeating(); _surface.Stop(); Close(); }
     private void UpdateHomework(StudyHostState state)
@@ -155,7 +164,7 @@ public sealed partial class StudyWindow : Window
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var reply = await HostClient.RequestAsync(_pipe, new HostRequest(1, id, _manual?"manual.study.hide":"study.hide", StudyHide: new(display.InstanceId, version, window)), timeout.Token);
-            if (_shutdown || _state?.Display?.InstanceId != display.InstanceId || _state.Window != window || _state.Version != version) return;
+            if (_shutdown || _hideRequest != id || _state?.Display?.InstanceId != display.InstanceId || _state.Window != window || _state.Version != version) return;
             if (reply.Outcome == "Succeeded" && reply.Study is { Display: { Available: false } confirmation } confirmed &&
                 confirmation.InstanceId == display.InstanceId && confirmed.Version == version && confirmed.Window == window &&
                 double.IsFinite(confirmation.HiddenRemainingSeconds) && confirmation.HiddenRemainingSeconds>0 &&
@@ -167,7 +176,7 @@ public sealed partial class StudyWindow : Window
         catch (Exception e) when (e is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException or UnauthorizedAccessException)
         {
             // Retain request id: uncertain transport must not create a renewed hide lease.
-            if (!_shutdown && _state?.Display?.InstanceId == display.InstanceId && _state.Window == window && _state.Version == version)
+            if (!_shutdown && _hideRequest == id && _state?.Display?.InstanceId == display.InstanceId && _state.Window == window && _state.Version == version)
                 _surface.ReturnError("后台连接待恢复，请重试；没有停止监测。");
         }
     }

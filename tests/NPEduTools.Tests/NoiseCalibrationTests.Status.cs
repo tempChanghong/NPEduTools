@@ -53,7 +53,8 @@ public sealed partial class NoiseCalibrationTests
         Assert.Equal("Succeeded", f.Command("confirm", medium: -40, high: -30).Outcome);
         var saved = f.Noise.CalibrationStatusSnapshot(Scope, Study);
         Assert.Equal(("Saved", "Quick"), (saved.State, saved.Method)); Assert.Equal(2, f.Creates);
-        Assert.Equal("SCHOOL_CONFIGURATION_CHANGED", f.Noise.CalibrationStatusSnapshot(Scope, Study with { Version = new string('b', 64) }).Reason);
+        Assert.Null(f.Noise.CalibrationStatusSnapshot(Scope, Study with { Version = new string('b', 64) }).Reason);
+        Assert.Equal("SCHOOL_CONFIGURATION_CHANGED", f.Noise.CalibrationStatusSnapshot("another-binding", Study).Reason);
         Assert.Equal("SCHOOL_CONFIGURATION_UNCONFIRMED", f.Noise.CalibrationStatusSnapshot(null, null).Reason);
         var normal = f.Noise.Snapshot();
         f.Noise.Handle(new(1, Guid.NewGuid(), "noise.command", Noise: new("start", normal.InstanceId, normal.Revision, "mic")));

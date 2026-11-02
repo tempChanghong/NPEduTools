@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using NPEduTools.Contracts;
 using NPEduTools.Core;
@@ -15,15 +13,13 @@ public interface INoiseCaptureMetadata
 public sealed partial class NoiseService
 {
     private sealed record CalibrationDraft(Guid Id, string DeviceId, string? Context, string? Signature,
-        IReadOnlyList<NoiseCalibrationSample> Samples);
+        IReadOnlyList<NoiseCalibrationSample> Samples, int ContextVersion = 1);
     private sealed record CalibrationFile(int Version, CalibrationDraft? Draft, NoiseCalibrationProfile? Profile);
     private CalibrationDraft? _calDraft;
     private NoiseCalibrationProfile? _calProfile;
     private long _calRevision;
     private bool _calLoaded;
     private string? _calError, _lastSignature;
-    private static string? ContextKey(string? scope, string? version) => scope is null || version is null ? null :
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(scope + "\n" + version)));
     private string? CalibrationPath => directory is null ? null : Path.Combine(directory, "noise-quick-calibration.json");
 
     private static bool ValidSample(NoiseCalibrationSample? s) => s is not null && s.Id != Guid.Empty &&
@@ -44,12 +40,13 @@ public sealed partial class NoiseService
             if (CalibrationPath is not { } path || !File.Exists(path)) return;
             if (new FileInfo(path).Length > 128 * 1024) throw new InvalidDataException();
             var saved = JsonSerializer.Deserialize<CalibrationFile>(File.ReadAllText(path), Protocol.Json);
-            if (saved is not { Version: 1 }) throw new InvalidDataException();
+            if (saved is not { Version: 1 or 2 }) throw new InvalidDataException();
             if (saved.Draft is { } d && (d.Id == Guid.Empty || !NoiseContract.ValidDeviceId(d.DeviceId) ||
+                d.ContextVersion is not (1 or 2) || saved.Version == 1 && d.ContextVersion != 1 ||
                 d.Samples is null || d.Samples.Count > 20 || d.Samples.Any(s => !ValidSample(s)) ||
                 d.Samples.Select(s => s.Id).Distinct().Count() != d.Samples.Count ||
                 d.Context is { Length: not 64 } || d.Signature is { Length: > 4096 })) throw new InvalidDataException();
-            if (saved.Profile is { } p && (p.Version != 1 || !NoiseContract.ValidDeviceId(p.DeviceId) ||
+            if (saved.Profile is { } p && (p.Version is not (1 or 2) || saved.Version == 1 && p.Version != 1 || !NoiseContract.ValidDeviceId(p.DeviceId) ||
                 !NoiseCalibrationContract.Thresholds(p.MediumDbfs, p.HighDbfs) || p.Context is not { Length: 64 } ||
                 p.Signature is not { Length: > 0 and <= 4096 } || p.Samples is null || p.Samples.Count is < 2 or > 20 ||
                 // Loading a confirmed profile must enforce the same evidence invariants
@@ -71,7 +68,7 @@ public sealed partial class NoiseService
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
-            { JsonSerializer.Serialize(stream, new CalibrationFile(1, draft, profile), Protocol.Json); stream.Flush(true); }
+            { JsonSerializer.Serialize(stream, new CalibrationFile(2, draft, profile), Protocol.Json); stream.Flush(true); }
             File.Move(temporary, path, true); _calDraft = draft; _calProfile = profile; _calRevision++; return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -83,8 +80,9 @@ public sealed partial class NoiseService
         lock (_sync)
         {
             LoadCalibration();
+            UpgradeCalibrationContext(scope, version, policy);
             if (policy.Estimated is null && _calError is null && _calProfile is { } p && p.DeviceId == _selected &&
-                p.Context == ContextKey(scope, version) && p.Signature == _lastSignature)
+                p.Context == CalibrationContextKey(scope, version, policy) && p.Signature == _lastSignature)
                 return policy with { MediumLineDbfs = p.MediumDbfs, RedLineDbfs = p.HighDbfs };
             return policy;
         }
@@ -109,8 +107,9 @@ public sealed partial class NoiseService
         bool paused = CalibrationRuntimePaused();
         lock (_sync)
         {
-            string? context = study?.PolicyState == "APPLIED" ? ContextKey(scope, study.Version) : null;
+            string? context = study?.PolicyState == "APPLIED" ? CalibrationContextKey(scope, study.Version, study.Settings?.Noise) : null;
             LoadCalibration();
+            if (study?.PolicyState == "APPLIED") UpgradeCalibrationContext(scope, study.Version, study.Settings?.Noise);
             HostResponse Reply(string? error = null, string message = "快速校准状态。", string outcome = "Succeeded") =>
                 new(1, request.RequestId, error is null ? outcome : "Rejected", error, message,
                     NoiseCalibration: CalibrationSnapshot(context, paused || study?.Phase is "Preparing" or "Active" || study?.Reason == "EXAM_PAUSED"));
@@ -136,7 +135,7 @@ public sealed partial class NoiseService
             if (_selected is null) return Reply("MicrophoneNotConfigured", "请先保存监测麦克风。");
             if (cmd.Action == "begin")
             {
-                var draft = new CalibrationDraft(Guid.NewGuid(), _selected, context, null, []);
+                var draft = new CalibrationDraft(Guid.NewGuid(), _selected, context, null, [], 2);
                 return SaveCalibration(draft, _calProfile) ? Reply(message: "已新建采样草稿；原确认阈值保留。") : Reply(_calError);
             }
             if (_calDraft is not { } current || current.Id != cmd.DraftId || current.DeviceId != _selected || current.Context != context)
@@ -156,7 +155,7 @@ public sealed partial class NoiseService
                 if (current.Signature is null || current.Signature != _lastSignature || good.Length < 2 ||
                     !good.Any(s => s.Label == "Acceptable") || !good.Any(s => s.Label == "Discipline"))
                     return Reply("CALIBRATION_SAMPLES_REQUIRED", "需要同一设备设置下可接受、纪律场景的有效样本；电平重叠时可手动确认。");
-                var profile = new NoiseCalibrationProfile(1, _selected, current.Signature, context, cmd.MediumDbfs!.Value,
+                var profile = new NoiseCalibrationProfile(2, _selected, current.Signature, context, cmd.MediumDbfs!.Value,
                     cmd.HighDbfs!.Value, _time.GetUtcNow(), good);
                 return SaveCalibration(current, profile) ? Reply(message: "已确认本机双阈值；学校公共设置未更改，仍使用 dBFS。") : Reply(_calError);
             }

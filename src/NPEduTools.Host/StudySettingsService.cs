@@ -23,6 +23,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
     private readonly Task _loop;
     private SchoolClockTracker _tracker = new();
     private string? _scope, _version;
+    private JsonObject? _configurationScope;
     private string _source = "None", _error = "WAITING_CONFIGURATION";
     private StudySettings? _settings;
     private TimeSpan? _confirmedAt;
@@ -76,7 +77,7 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
         {
             if (_scope == scope) return;
             _capture?.BindStudyCapture(scope);
-            _scope = scope; _settings = null; _version = null; _confirmedAt = null; _source = "None"; _running = null;
+            _scope = scope; _settings = null; _version = null; _confirmedAt = null; _source = "None"; _running = null; _configurationScope = null;
             ClearHomework(); ClearSeating(); _seatingRevisionVersion = null; _highestSeatingRevision = 0;
             _tracker = new(); _error = scope is null ? "NOT_ELIGIBLE" : "WAITING_CONFIGURATION"; _state = Empty(_error);
         }
@@ -91,10 +92,16 @@ public sealed partial class StudySettingsService : INpepStudySettings, INpepStud
         {
             if (_scope is null || !JsonNode.DeepEquals(JsonNode.Parse(_scope), configuration["identity"]))
                 throw new NpepException("SESSION_SUPERSEDED");
-            if (_version != configuration.Text("version")) { ClearHomework(); _running = null; }
+            var nextSettings = configuration["effective"]!["settings"]?.Deserialize<StudySettings>(Protocol.Json);
+            var nextSource = configuration["effective"]!.AsObject().Text("source");
+            bool sameExecution = _source is "Grade" or "Class" && nextSource is "Grade" or "Class" &&
+                JsonNode.DeepEquals(_configurationScope, configuration["scope"]) &&
+                StudyExecutionCompatibility.SameSchedule(_settings, nextSettings, _mode);
+            if (_version != configuration.Text("version")) ClearHomework();
+            if (!sameExecution) _running = null;
+            _configurationScope = configuration["scope"]!.DeepClone().AsObject();
             _seatingClassId = configuration["scope"]!.AsObject().Text("classId");
-            _source = configuration["effective"]!.AsObject().Text("source");
-            _settings = configuration["effective"]!["settings"]?.Deserialize<StudySettings>(Protocol.Json);
+            _source = nextSource; _settings = nextSettings;
             _version = configuration.Text("version"); _confirmedAt = Elapsed; _error = "";
             _capture?.SelectStudy(configuration, _scope);
         }

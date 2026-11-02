@@ -12,12 +12,29 @@ public sealed partial class StudySettingsService
     private sealed record SeatingObservation(StudySeatingPulse Pulse, TimeSpan At);
     private string _seatingError = "WAITING";
     private readonly Dictionary<Guid, SeatingObservation> _seatingPresentations = [];
-    private void ClearSeating() { _seatingBytes = null; _seating = null; _seatingAt = null; _seatingPresentations.Clear(); }
+    private Guid _seatingObservationEpoch = Guid.NewGuid();
+    private Guid? _seatingDisplayInstance;
+    private bool _seatingEpochRequired;
+    private long _seatingHostSequence;
+    private SeatingObservation? _seatingReported;
+    private void ResetSeatingObservations(bool requireEpoch = false)
+    {
+        _seatingObservationEpoch = Guid.NewGuid(); _seatingPresentations.Clear();
+        // Once tombstones were retired, never reopen a legacy null-epoch path in
+        // this Host lifetime (including image expiry, withdrawal and redownload).
+        _seatingEpochRequired |= requireEpoch; _seatingReported = null;
+        // The Host sequence spans all image/display generations in this Host lifetime.
+    }
+    private void ClearSeating() {
+        if (_seating is not null || _seatingPresentations.Count > 0) ResetSeatingObservations();
+        _seatingBytes = null; _seating = null; _seatingAt = null; _seatingDisplayInstance = null;
+    }
     private StudySeatingState SeatingState()
     {
         bool eligible = _state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active" };
         if (!eligible || _seating?.Version != _version || !ContinuingOffline && _seatingAt is { } at && (Elapsed < at || Elapsed - at >= TimeSpan.FromSeconds(15))) ClearSeating();
-        return _seating ?? new(!eligible ? "WAITING" : _seatingError, _version, 0, null, 0, 0, 0, 0);
+        return _seating is { } ready ? ready with { ObservationEpoch = _seatingObservationEpoch }
+            : new(!eligible ? "WAITING" : _seatingError, _version, 0, null, 0, 0, 0, 0);
     }
     public JsonObject? StudySeatingRequest() { var s = Snapshot(); return s is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active", Version: { } v } ? new() { ["version"] = v } : null; }
     public bool HasSeating(string version, string hash, int revision) { lock (_sync) { var s = SeatingState(); return s.Version == version && s.Hash == hash && s.Revision == revision && _seatingBytes is not null; } }
@@ -54,10 +71,23 @@ public sealed partial class StudySettingsService
     {
         lock (_sync) {
             var s = SeatingState(); var p = request.SeatingPresentation!;
-            if (s.State != "READY" || display.Display?.InstanceId != p.InstanceId || display.Version != p.Version ||
-                _seatingPresentations.TryGetValue(p.AppInstanceId, out var prior) && p.Sequence <= prior.Pulse.Sequence)
+            if (s.State != "READY" || display.Display?.InstanceId != p.InstanceId || display.Version != p.Version)
                 return new(1, request.RequestId, "Rejected", "SEATING_CHANGED", "座位表观测已过期。");
-            if (!_seatingPresentations.ContainsKey(p.AppInstanceId) && _seatingPresentations.Count >= 16) return new(1, request.RequestId, "Rejected", "TOO_MANY_APPS", "展示端实例过多。");
+            if (_seatingDisplayInstance is { } previous && previous != p.InstanceId) ResetSeatingObservations();
+            _seatingDisplayInstance = p.InstanceId;
+            if (p.ObservationEpoch is { } epoch ? epoch != _seatingObservationEpoch : _seatingEpochRequired)
+                return new(1, request.RequestId, "Rejected", "SEATING_OBSERVATION_CHANGED", "座位表观测世代已更新，请读取当前状态后重试。");
+            if (_seatingPresentations.TryGetValue(p.AppInstanceId, out var prior) && p.Sequence <= prior.Pulse.Sequence)
+                return new(1, request.RequestId, "Rejected", "SEATING_CHANGED", "座位表观测已过期。");
+            if (!_seatingPresentations.ContainsKey(p.AppInstanceId) && _seatingPresentations.Count >= 16) {
+                // Rotate only after every observation expires, and only for a client that
+                // proves it read this generation. Old queued packets cannot rotate it again.
+                if (p.ObservationEpoch == _seatingObservationEpoch && _seatingPresentations.Values.All(x => Elapsed >= x.At && Elapsed - x.At >= TimeSpan.FromSeconds(1))) {
+                    ResetSeatingObservations(requireEpoch: true);
+                    return new(1, request.RequestId, "Rejected", "SEATING_OBSERVATION_CHANGED", "座位表观测世代已更新，请读取当前状态后重试。");
+                }
+                return new(1, request.RequestId, "Rejected", "TOO_MANY_APPS", "同时有效的展示端实例过多。");
+            }
             _seatingPresentations[p.AppInstanceId] = new(p, Elapsed);
             return new(1, request.RequestId, "Succeeded", null, "已记录展示端座位表观测。");
         }
@@ -70,13 +100,14 @@ public sealed partial class StudySettingsService
             var now = Elapsed;
             int? RenderAge(SeatingObservation seen) => seen.Pulse.RenderAgeMs is { } a ? a + (int)(now - seen.At).TotalMilliseconds : null;
             // A hidden or stale App cannot overwrite another App's fresh visible observation.
-            // Keep sequence tombstones after receipt expiry, bounded to the existing 16-client limit.
+            // Keep sequence tombstones until a fenced epoch rotation, never remove individual cursors.
             var seen = _seatingPresentations.Values.Where(s => now >= s.At && now - s.At < TimeSpan.FromSeconds(1))
                 .OrderByDescending(s => s.Pulse.Visible && RenderAge(s) is >= 0 and < 1000)
                 .ThenByDescending(s => s.At).FirstOrDefault();
             if (seen is null) return null;
+            if (!ReferenceEquals(_seatingReported, seen)) { _seatingReported = seen; _seatingHostSequence++; }
             var p = seen.Pulse; int? age = RenderAge(seen);
-            return new() { ["appInstanceId"] = p.AppInstanceId.ToString(), ["sequence"] = p.Sequence, ["revision"] = p.Revision,
+            return new() { ["appInstanceId"] = p.AppInstanceId.ToString(), ["sequence"] = p.Sequence, ["hostSequence"] = _seatingHostSequence, ["revision"] = p.Revision,
                 ["appliedHash"] = p.AppliedHash, ["visible"] = p.Visible && age is >= 0 and < 1000, ["renderAgeMs"] = age is >= 0 and < 1000 ? age : null };
         }
     }

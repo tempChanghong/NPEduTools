@@ -197,6 +197,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     {
         public string DeviceId { get; } = device;
         public bool Scheduled;
+        public bool DeviceDisconnected;
         public bool ManualStudy;
         public string? EndReason;
         public string? TimeLimitReason;
@@ -405,6 +406,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                         _calDraft?.Signature is { } savedSignature && savedSignature != signature))
                     { s.CalibrationInterrupted = true; s.Stop.Cancel(); }
                 }
+                catch (NoiseDeviceDisconnectedException) { DeviceDisconnected(s); }
                 catch (Exception e) when (e is not OutOfMemoryException)
                 { _lastSignature = null; if (s.Calibration is not null) { s.CalibrationInterrupted = true; s.Stop.Cancel(); } }
             }
@@ -520,6 +522,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             await Task.Delay(Timeout.InfiniteTimeSpan, s.Stop.Token);
         }
         catch (OperationCanceledException) when (s.Stop.IsCancellationRequested) { }
+        catch (NoiseDeviceDisconnectedException) { lock (_sync) DeviceDisconnected(s); }
         catch (Exception error) when (error is not OutOfMemoryException)
         { lock (_sync) s.Failure = error is SoundMeterException ?
             "USB 声级计读取失败（" + ((SoundMeterException)error).Error + "），本段作废；请关闭 SoundLab2、检查仪表后显式重试。" :
@@ -536,6 +539,12 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             {
                 s.FinishedSeconds = _time.GetElapsedTime(s.Started).TotalSeconds;
                 s.Finishing = true;
+                if (s.Failure.Length > 0 && s.Metadata is { } metadata)
+                {
+                    try { _ = metadata.Signature; }
+                    catch (NoiseDeviceDisconnectedException) { DeviceDisconnected(s); }
+                    catch (Exception error) when (error is not OutOfMemoryException) { }
+                }
                 CheckFinalReferenceInput(s);
                 CheckFinalCalibrationSignature(s);
             }

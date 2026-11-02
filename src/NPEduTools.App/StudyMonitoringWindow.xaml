@@ -22,6 +22,7 @@
     </StackPanel>
    </Border>
    <WrapPanel Margin="0,0,0,12">
+    <Button x:Name="ReturnStudyButton" Content="回到自习展示" Click="ReturnStudyClicked" Style="{StaticResource Primary}" Visibility="Collapsed" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="ReturnSchoolStudy"/>
     <Button Content="实时监测 / 手动自习" Click="NoiseClicked" Padding="14,8" Margin="0,0,10,6"/>
     <Button Content="自习座位表" Click="SeatingClicked" Padding="14,8" Margin="0,0,10,6"/>
    </WrapPanel>

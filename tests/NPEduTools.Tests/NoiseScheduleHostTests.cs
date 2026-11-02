@@ -34,8 +34,10 @@ public sealed partial class NoiseScheduleHostTests
             public ValueTask DisposeAsync()=>ValueTask.CompletedTask;
         }
     }
-    private sealed class Capture : INoiseCapture
+    private sealed class Capture : INoiseCapture, INoiseCaptureMetadata
     {
+        public bool EndpointDisconnected;
+        public string Signature => EndpointDisconnected ? throw new NoiseDeviceDisconnectedException() : "synthetic-signature";
         public string DeviceName => "Synthetic; no audio hardware";
         public event Action<NoiseFrame>? Frame;
         public event Action<string>? Failed;
@@ -56,13 +58,16 @@ public sealed partial class NoiseScheduleHostTests
         public NoiseScheduleService Scheduler;
         public bool Exam, Frozen, ModeExam;
         public bool StatisticsReady=true;
+        public bool MicrophonePresent=true;
+        public int Enumerations;
         public string Scope = "test-school-and-binding";
         public DateTimeOffset Base = new(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
         private readonly Guid _connection = Guid.NewGuid(), _bridge = Guid.NewGuid();
         private long _sequence;
         public Fixture(ManualResetEventSlim? startGate = null)
         {
-            Noise = new(_ => { var c = new Capture { StartGate = startGate }; lock (Captures) Captures.Add(c); return c; }, () => [], Time);
+            Noise = new(_ => { var c = new Capture { StartGate = startGate }; lock (Captures) Captures.Add(c); return c; },
+                () => { Enumerations++; return MicrophonePresent ? [new("synthetic", "Synthetic")] : []; }, Time);
             Noise.Handle(Command("select", "synthetic"));
             Scheduler = NewScheduler(); Scheduler.Bind(Scope, true); Scheduler.Confirm(Policy());
         }

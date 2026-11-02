@@ -460,6 +460,9 @@ public partial class MainWindow : Window
         bool shutdownDispatched = false;
         try
         {
+            // Prepare the verification owner before exit.begin starts its timed
+            // audit/photo intent. Quiet login must remain hidden throughout.
+            NoiseManagementDialog.PrepareOwner(this);
             var shutdownRequest = new HostRequest(Protocol.Version, Guid.NewGuid(), "host.stop");
             if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var modeHost))
             {

@@ -31,12 +31,13 @@ public sealed partial class NpepApi
         NpepStudyProtocol.Validate("resumeExchangeRequest", body);
         return StudyAsync("device/study-settings/resume-exchange", "resumeExchangeResponse", bearer, body, token, "0.11");
     }
-    private async Task<JsonObject> StudyAsync(string path, string definition, string bearer, JsonObject? body, CancellationToken token, string version = "0.10", int deadlineSeconds = 8, int requestLimit = 65536)
+    private async Task<JsonObject> StudyAsync(string path, string definition, string bearer, JsonObject? body, CancellationToken token, string version = "0.10", int deadlineSeconds = 8, int requestLimit = 65536, bool seatingSequence = false)
     {
         string requestId = body?.Text("requestId") ?? NpepProtocol.Id();
         using var request = new HttpRequestMessage(body is null ? HttpMethod.Get : HttpMethod.Post, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
         request.Headers.Add("X-NPEP-Version", version); request.Headers.Add("X-Request-Id", requestId);
+        if (seatingSequence) request.Headers.Add("X-NPEP-Seating-Sequence", "1");
         if (body is not null)
         {
             var bytes = System.Text.Encoding.UTF8.GetBytes(body.ToJsonString());

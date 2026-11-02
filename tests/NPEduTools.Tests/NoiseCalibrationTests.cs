@@ -10,7 +10,9 @@ public sealed partial class NoiseCalibrationTests
     private const string Secret = "calibration-admin-2026";
     private const string Scope = "synthetic-school/class/screen";
     private static readonly StudyNoise Policy = new(true, -15, -25, 600, 5);
-    private static readonly StudyHostState Study = new(new string('a', 64), "APPLIED", "", "", "Outside", "", true, null, null, null, null);
+    private static readonly StudyHostState Study = new(new string('a', 64), "APPLIED", "", "", "Outside", "", true, null, null, null,
+        new(new("Asia/Shanghai", "2026-10-01", null, [], []), new("StatusTrend", 600),
+            new(false, "OwnClass", [], 60), Policy, new(false, 5, 30, 30, true, false)));
     [Fact]
     public async Task Background_manual_statistics_resolve_the_same_quick_calibration_as_the_display()
     {
@@ -92,7 +94,9 @@ public sealed partial class NoiseCalibrationTests
     private sealed class Capture : INoiseCapture, INoiseCaptureMetadata
     {
         public string DeviceName => "Synthetic microphone";
-        public string Signature { get; set; } = "pcm-energy-v1|48000|1|32|float|gain=.7|mute=False";
+        public bool EndpointDisconnected;
+        private string _signature = "pcm-energy-v1|48000|1|32|float|gain=.7|mute=False";
+        public string Signature { get => EndpointDisconnected ? throw new NoiseDeviceDisconnectedException() : _signature; set => _signature = value; }
         public bool Disposed;
         public bool Started;
         public event Action<NoiseFrame>? Frame;
@@ -267,7 +271,7 @@ public sealed partial class NoiseCalibrationTests
         Assert.Equal("Succeeded", f.Command("confirm", medium: suggested.MediumDbfs, high: suggested.HighDbfs).Outcome);
         Assert.Equal(suggested.MediumDbfs, f.Noise.ResolveCalibration(Scope, Study.Version, Policy).MediumLineDbfs);
         Assert.Equal(Policy, f.Noise.ResolveCalibration("another-school", Study.Version, Policy));
-        Assert.Equal(Policy, f.Noise.ResolveCalibration(Scope, new string('b', 64), Policy));
+        Assert.Equal(suggested.MediumDbfs, f.Noise.ResolveCalibration(Scope, new string('b', 64), Policy).MediumLineDbfs);
         Assert.Equal(0, f.Reports);
         string json = File.ReadAllText(Path.Combine(f.DirectoryPath, "noise-quick-calibration.json"));
         Assert.DoesNotContain(Secret, json); Assert.DoesNotContain("audio", json, StringComparison.OrdinalIgnoreCase);
@@ -370,7 +374,7 @@ public sealed partial class NoiseCalibrationTests
 
     [Theory]
     [InlineData("null")]
-    [InlineData("{\"version\":2,\"draft\":null,\"profile\":null}")]
+    [InlineData("{\"version\":3,\"draft\":null,\"profile\":null}")]
     [InlineData("{\"version\":1,\"draft\":{\"id\":\"00000000-0000-0000-0000-000000000000\",\"deviceId\":\"mic\",\"context\":null,\"signature\":null,\"samples\":[]},\"profile\":null}")]
     [InlineData("oversize")]
     public async Task Structurally_invalid_quick_store_is_reported_without_throwing_or_replacing_original(string content)

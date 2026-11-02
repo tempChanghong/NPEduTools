@@ -154,5 +154,43 @@ internal static partial class Program
             Checks.Add("Detailed report: clock-style overview, independent raw/estimated statistics, complete-period trend, unit labels and primary-channel fallback, no private data, panel fit and exact offscreen 1920x1080/1280x720 content viewports, bounded redraw, local monotonic expiry, close and no-data behavior; no sensors/audio/Host startup");
         }
         finally { window.Shutdown(); }
+        RunStudyReportRecoveryCheck(data);
+    }
+    private static void RunStudyReportRecoveryCheck(StudyReportData data)
+    {
+        var clock = new StudyUiClock(); var source = StudyFixture();
+        var statistics = new StudySessionReport(source.Execution!.SessionId!.Value, true, data.ExpectedSeconds, 0,
+            data.Frames, data.DisciplineReminders, data.Raw, data.Estimated, null);
+        var service = new NPEduTools.Host.StudyReportService(() => ("isolated-report", true, source), () => statistics, clock, false);
+        var window = new StudyReportWindow { WindowState = WindowState.Normal, Width = 1280, Height = 720,
+            Left = 5000, Top = 5000, Topmost = false, ShowActivated = false };
+        try
+        {
+            service.Snapshot();
+            source = source with { Phase = "Outside", Window = null, SchoolNow = source.Window!.End, Execution = null };
+            service.Snapshot(); clock.Ms = 30000;
+            var report = service.Snapshot(); window.Apply(report, TimeSpan.Zero);
+            Assert(window.IsVisible && report.Available, "actual Host report fixture did not present");
+            var ended = source;
+            void LoseClock()
+            {
+                source = ended with { Phase = "Blocked", ClockReady = false, SchoolNow = null, Reason = "SCHOOL_CLOCK_UNAVAILABLE" };
+                var unavailable = service.Snapshot(); window.Apply(unavailable, TimeSpan.Zero);
+                Assert(!window.IsVisible && unavailable.Data is null, "unknown clock kept a report visible");
+            }
+            LoseClock(); clock.Ms = 50000; source = ended;
+            var resumed = service.Snapshot(); window.Apply(resumed, TimeSpan.Zero);
+            Assert(window.IsVisible && resumed.InstanceId == report.InstanceId && resumed.RemainingSeconds == 255 &&
+                ((TextBlock)window.FindName("RawValues")).Text == "-35.0 / -18.0", "temporary clock loss erased the report or renewed its deadline");
+            var close = ReportVisuals(window).OfType<Button>().Single(b => Equals(b.Content, "关闭报告"));
+            close.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            LoseClock(); clock.Ms = 60000; source = ended; window.Apply(service.Snapshot(), TimeSpan.Zero);
+            Assert(!window.IsVisible, "recovery reopened a report the user had dismissed");
+            LoseClock(); clock.Ms = 305000; source = ended;
+            var expired = service.Snapshot(); window.Apply(expired, TimeSpan.Zero);
+            Assert(!window.IsVisible && expired.State == "Expired" && expired.Data is null, "outage extended the original report deadline");
+            Checks.Add("Actual Host/report WPF: transient school-clock loss hides without erasing the finished report; same-identity recovery preserves values and remaining deadline, user dismissal and expiry remain authoritative; no sensors");
+        }
+        finally { window.Shutdown(); service.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
 }

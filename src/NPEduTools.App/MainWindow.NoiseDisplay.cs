@@ -23,6 +23,21 @@ public partial class MainWindow
     {
         if (SchoolStudyPresentationBlocked || _studyWindow?.CanKeepAfterReadFailure != true) _studyWindow?.HideDisplay();
     }
+    private void RetainConfirmedManualDisplay()
+    {
+        if (SchoolStudyPresentationBlocked || _manualStudyWindow?.CanKeepAfterReadFailure != true) _manualStudyWindow?.HideDisplay();
+    }
+    private void ReconcileExistingManualDisplay(HostResponse response, TimeSpan age, StudyPhotoState? photos)
+    {
+        if (SchoolStudyPresentationBlocked) { _manualStudyWindow?.HideDisplay(); return; }
+        if (response.Outcome != "Succeeded" || age < TimeSpan.Zero || age >= TimeSpan.FromSeconds(1.5)) return;
+        if (response.Study is not { Display: { Selected: true, Available: true }, PolicyState: "APPLIED", ClockReady: true, ProjectionPriority: false })
+        { _manualStudyWindow?.HideDisplay(); return; }
+        // Confirm withdrawal or the current session before a report query can fail.
+        // This updates an existing display only; stale reads cannot reopen one.
+        if (_manualStudyWindow?.IsVisible == true)
+            _manualStudyWindow.Apply(response.Study, response.Noise, age, photos, response.Npep, response.NoiseCalibrationStatus);
+    }
     private void ReconcileExistingSchoolDisplay(HostResponse response, TimeSpan age)
     {
         if (SchoolStudyPresentationBlocked) { _studyWindow?.HideDisplay(); return; }
@@ -85,19 +100,25 @@ public partial class MainWindow
                 _quickProjectionAt = studyResponse.Outcome == "Succeeded" && studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
                 if (_quickProjectionAt is not null) UpdateQuickPresentationVisibility();
                 ReconcileExistingSchoolDisplay(studyResponse, studyRoundTrip);
+                if (studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(1.5) &&
+                    (studyResponse.Study?.ProjectionPriority == true ||
+                     studyResponse.Study is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active" }))
+                    _manualStudyWindow?.HideDisplay();
                 await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
                 long manualAt=Stopwatch.GetTimestamp();
                 var manual=await calibrationRead.RequestAsync(new(1,Guid.NewGuid(),"manual.study.status"), ManagementRequestAsync);
                 var manualAge=Stopwatch.GetElapsedTime(manualAt);
                 UpdateWorkspaceManual(manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(3.5) ? manual.ManualStudy : null);
+                ReconcileExistingManualDisplay(manual, manualAge, studyResponse.StudyPhotos);
                 bool schoolPriority=studyResponse.Outcome == "Succeeded" && studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
                 if(schoolPriority)_manualStudyWindow?.HideDisplay();
                 else if(studyResponse.Study?.ProjectionPriority != true && !_exitBusy && _exitWarning is not {IsVisible:true} && !NotificationPresentationActive && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
                 {
                     using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
                     long reportAt=Stopwatch.GetTimestamp();var report=await ManagementRequestAsync(new(1,Guid.NewGuid(),"manual.study.report.status"));
-                    // A notice may have opened while the report request was pending.
-                    if (NotificationPresentationActive) { HideStudyPresentations(); continue; }
+                    // Exit verification, notices or another priority operation may
+                    // have begun while the report request was pending.
+                    if (_lifetime.IsCancellationRequested || SchoolStudyPresentationBlocked) { HideStudyPresentations(); continue; }
                     if (report.Outcome == "Succeeded" && report.StudyReport is { Available: true, Data: not null } mr)
                     {
                         _manualStudyWindow?.HideDisplay(); _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
@@ -108,7 +129,16 @@ public partial class MainWindow
                     // A later report/exit read may have consumed the status's freshness budget.
                     // Re-evaluate age at presentation, including every intervening await.
                     manualAge = Stopwatch.GetElapsedTime(manualAt);
-                    if (manualAge < TimeSpan.FromSeconds(1.5) && manual.Study is { Display.Available: true } ms)
+                    if (manualAge >= TimeSpan.FromSeconds(1.5))
+                    {
+                        manualAt = Stopwatch.GetTimestamp();
+                        manual = await calibrationRead.RequestAsync(new(1, Guid.NewGuid(), "manual.study.status"), ManagementRequestAsync);
+                        manualAge = Stopwatch.GetElapsedTime(manualAt);
+                        ReconcileExistingManualDisplay(manual, manualAge, studyResponse.StudyPhotos);
+                    }
+                    if (_lifetime.IsCancellationRequested || SchoolStudyPresentationBlocked) { HideStudyPresentations(); continue; }
+                    if (manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(1.5) &&
+                        manual.Study is { Display: { Selected: true, Available: true }, PolicyState: "APPLIED", ClockReady: true, ProjectionPriority: false } ms)
                     {
                         _studyReportWindow?.HideDisplay();
                         _studyWindow?.HideDisplay(); _scheduledNoiseWindow?.Hide();
@@ -117,8 +147,10 @@ public partial class MainWindow
                         _manualStudyWindow.ShowDisplay();
                         continue;
                     }
-                    _manualStudyWindow?.HideDisplay();
+                    if (manual.Outcome != "Succeeded" || manualAge >= TimeSpan.FromSeconds(1.5)) RetainConfirmedManualDisplay();
+                    else _manualStudyWindow?.HideDisplay();
                 }
+                else if (manual.Outcome != "Succeeded" && studyResponse.Study?.ProjectionPriority != true) RetainConfirmedManualDisplay();
                 else _manualStudyWindow?.HideDisplay();
                 if (studyResponse.Study is not { Display.Selected: true, PolicyState: "APPLIED", Seating.State: "READY" }) _studyWindow?.InvalidateSeating();
                 bool blocked = _exitBusy || NotificationPresentationActive ||
@@ -195,7 +227,7 @@ public partial class MainWindow
             {
                 UpdateStudyHome(null); UpdateWorkspaceManual(null); UpdateWorkspaceReadiness(null, null);
                 _scheduledNoiseWindow?.Hide(); RetainConfirmedSchoolDisplay();
-                _studyReportWindow?.HideDisplay(); _manualStudyWindow?.HideDisplay();
+                _studyReportWindow?.HideDisplay(); RetainConfirmedManualDisplay();
             }
             finally
             {
@@ -217,7 +249,7 @@ public partial class MainWindow
         var reply = await ManagementRequestAsync(new HostRequest(1, Guid.NewGuid(), "study.report.status"));
         if (reply.ErrorCode is "UnknownCapability" or "STUDY_REPORT_UNSUPPORTED") { _reportUnsupportedAt = Stopwatch.GetTimestamp(); _studyReportWindow?.HideDisplay(); return; }
         _reportUnsupportedAt = null;
-        if (_lifetime.IsCancellationRequested || blocked || NotificationPresentationActive || RuntimeOperationFile.PriorityRequested || !NotificationDesktopAvailable() ||
+        if (_lifetime.IsCancellationRequested || blocked || SchoolStudyPresentationBlocked ||
             reply.Outcome != "Succeeded" || reply.StudyReport is not { Available: true, Data: not null } report)
         { _studyReportWindow?.HideDisplay(); return; }
         using var probe = RuntimeOperationFile.TryAcquire(false);

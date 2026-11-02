@@ -10,12 +10,20 @@ internal static partial class Program
         var state=StudyFixture() with {Homework=null};var time=new StudyUiClock();
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var pulses=new List<StudyPresentationPulse>();
+        var epoch=Guid.NewGuid();int negotiations=0;
         var server=Task.Run(async()=>
         {
-            for(int index=0;index<5;index++)
+            while(pulses.Count<5)
             {
                 using var stream=new NamedPipeServerStream(pipe,PipeDirection.InOut,1,PipeTransmissionMode.Byte,PipeOptions.Asynchronous|PipeOptions.CurrentUserOnly);
                 await stream.WaitForConnectionAsync(timeout.Token);var request=await Protocol.ReadAsync<HostRequest>(stream,timeout.Token);
+                if(request.Capability=="study.presentation.epoch")
+                {
+                    Assert(Protocol.Validate(request) is null && request.StudyPresentation is null,"invalid epoch handshake");
+                    negotiations++;
+                    await Protocol.WriteAsync(stream,new HostResponse(1,request.RequestId,"Succeeded",null,"fixture",PresentationEpoch:new(state.Display!.InstanceId,epoch)),timeout.Token);
+                    continue;
+                }
                 Assert(request.Capability=="study.presentation" && Protocol.Validate(request) is null,"invalid WPF presence frame");
                 Assert(!Protocol.NoiseInterruption(request),"presence is a capture interruption");
                 pulses.Add(request.StudyPresentation!);
@@ -37,6 +45,7 @@ internal static partial class Program
                 Assert(pulses.Select(p=>p.State).SequenceEqual(["Visible","Hidden","Visible","Stale","Hidden"]),"visibility or stale-render observation mislabeled");
                 Assert(pulses[0].RenderAgeMs==0 && pulses[2].RenderAgeMs==0 && pulses[3].RenderAgeMs is null && pulses[4].RenderAgeMs is null,"render age fabricated");
                 Assert(pulses.Select(p=>p.AppInstanceId).Distinct().Count()==1 && pulses[4].Sequence>pulses[3].Sequence,"App identity/sequence changed");
+                Assert(negotiations==1 && pulses.All(p=>p.ObservationEpoch==epoch),"WPF did not retain its negotiated observation generation");
                 Checks.Add("Study WPF actual Named Pipe: shown + fresh render, minimize/restore, stale school receipt, hidden; no capture command");
                 window.Shutdown();
             });

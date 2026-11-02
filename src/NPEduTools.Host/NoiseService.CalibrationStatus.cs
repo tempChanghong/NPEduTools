@@ -11,12 +11,14 @@ public sealed partial class NoiseService
             LoadCalibration(); LoadReference();
             NoiseCalibrationStatus Status(string state, string method, string? reason = null, DateTimeOffset? at = null) =>
                 new(_instance, _revision, state, method, reason, at);
-            // This only reads existing evidence. It never opens a microphone, meter or camera.
+            // Uses saved evidence only (with a proven-context v1 migration below).
+            // It never opens a microphone, meter or camera.
             if (_referenceError is not null) return Status("Unavailable", "Reference", _referenceError);
             if (_referenceProfile is { } reference)
             {
                 string? reason = _referenceInvalidated ?? (reference.DeviceId != _selected ? "DEVICE_CHANGED" : null);
                 if (reason is not null) return Status("Invalidated", reference.Method, reason, reference.ConfirmedAt);
+                if (_referenceReconnectPending) return Status("Unavailable", reference.Method, "DEVICE_RECONNECT_REQUIRED", reference.ConfirmedAt);
                 var session = _session;
                 bool live = _state == "Active" && session is { EstimateProfile: not null } &&
                     !session.Stop.IsCancellationRequested && session.EstimateProfile == reference;
@@ -26,7 +28,11 @@ public sealed partial class NoiseService
             }
             if (_calError is not null) return Status("Unavailable", "Quick", _calError);
             if (_calProfile is not { } quick) return Status("Uncalibrated", "None");
-            string? context = study?.PolicyState == "APPLIED" ? ContextKey(scope, study.Version) : null;
+            if (study?.PolicyState == "APPLIED") UpgradeCalibrationContext(scope, study.Version, study.Settings?.Noise);
+            if (_calError is not null) return Status("Unavailable", "Quick", _calError);
+            // The upgrade may have replaced the record after its legacy match.
+            quick = _calProfile!;
+            string? context = study?.PolicyState == "APPLIED" ? CalibrationContextKey(scope, study.Version, study.Settings?.Noise) : null;
             string? invalid = quick.DeviceId != _selected ? "DEVICE_CHANGED" :
                 context is not null && quick.Context != context ? "SCHOOL_CONFIGURATION_CHANGED" :
                 _lastSignature is not null && _lastSignature != quick.Signature ? "INPUT_SETTINGS_CHANGED" : null;

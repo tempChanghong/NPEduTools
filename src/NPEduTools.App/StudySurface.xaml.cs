@@ -120,6 +120,7 @@ public partial class StudySurface : UserControl
         NoiseStatus.Text = !fresh ? "监测状态待确认" : capturing ? "正在监测" : state.Execution?.Owner == "Manual" ? "当前为手动监测" :
             state.Settings?.Noise.Enabled == false ? "噪音监测未启用" :
             state.Execution?.Reason == "MICROPHONE_NOT_CONFIGURED" ? "尚未选择麦克风" :
+            state.Execution?.Reason == "MICROPHONE_DISCONNECTED" ? "麦克风已断开 · 等待重连" :
             state.CaptureState switch { "STARTING" or "WAITING_FRESH_SIGNAL" or "ACTIVE" => "正在等待采样", "STOPPING" => "正在停止监测", "STOPPED" => "监测已停止", "FAULTED" => "监测暂不可用", _ => "尚未开始采集" };
         NoiseStatus.Foreground = capturing ? Collecting : Muted;
         bool estimated = state.Settings?.Noise.Estimated is not null;

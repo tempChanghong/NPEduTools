@@ -132,14 +132,17 @@ public sealed partial class NoiseReferenceCalibrationTests
         public string DeviceName => "Synthetic reference microphone";
         private string _signature = NoiseReferenceCalibrationTests.Signature;
         public bool SignatureUnavailable;
+        public bool EndpointDisconnected;
         public string Signature
         {
-            get => SignatureUnavailable ? throw new IOException("Synthetic input metadata unavailable") : _signature;
+            get => EndpointDisconnected ? throw new NoiseDeviceDisconnectedException() :
+                SignatureUnavailable ? throw new IOException("Synthetic input metadata unavailable") : _signature;
             set => _signature = value;
         }
         public bool Disposed;
         public bool Started;
         public bool CleanupFails;
+        public bool CleanupStarted;
         public ManualResetEventSlim? CleanupGate;
         public bool ReferenceUnavailable;
         public int ReferenceEnableCalls;
@@ -154,7 +157,7 @@ public sealed partial class NoiseReferenceCalibrationTests
         public void EmitNormal() => Frame?.Invoke(new(.1, .001, .1, 0, false));
         public void EmitRaw(NoiseFrame frame) => Frame?.Invoke(frame);
         public void Disconnect() => Failed?.Invoke("Synthetic reference disconnect");
-        public void Dispose() { CleanupGate?.Wait(TimeSpan.FromSeconds(6)); Disposed = true; if (CleanupFails) throw new IOException("Synthetic cleanup failure"); }
+        public void Dispose() { CleanupStarted = true; CleanupGate?.Wait(TimeSpan.FromSeconds(6)); Disposed = true; if (CleanupFails) throw new IOException("Synthetic cleanup failure"); }
     }
     private sealed class Fixture : IAsyncDisposable
     {
@@ -494,10 +497,14 @@ public sealed partial class NoiseReferenceCalibrationTests
         NpepNoiseProtocol.Validate("status", transport.Observe()); Assert.Empty(transport.Reports());
     }
 
-    [Fact]
-    public async Task ActualSchedulerTreatsReferenceAsPreemptibleNotAsManualMonitoring()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualSchedulerTreatsReferenceAsPreemptibleNotAsManualMonitoring(bool delayedCleanup)
     {
         await using var f = new Fixture(); f.Command("begin"); await f.StartAsync(); var reference = f.Capture!;
+        using var cleanup = new ManualResetEventSlim(!delayedCleanup);
+        reference.CleanupGate = cleanup;
         var connection = Guid.NewGuid(); var bridge = Guid.NewGuid(); long sequence = 0;
         // Synthetic Thursday school wall time. No real school or configuration is touched.
         var schoolBase = new DateTimeOffset(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
@@ -509,7 +516,19 @@ public sealed partial class NoiseReferenceCalibrationTests
             {"policy":{"version":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"Grade",
             "rules":[{"days":[4],"start":"19:00","end":"21:30"}]},"leaseSeconds":86400,"confirmed":true,"command":null}
             """)!.AsObject());
-        for (int i = 0; i < 3; i++) { f.Time.Advance(.5); scheduler.Tick(); }
+        try
+        {
+            for (int i = 0; i < 3; i++) { f.Time.Advance(.5); scheduler.Tick(); }
+            await Until(() => reference.CleanupStarted);
+            if (delayedCleanup)
+            {
+                for (int i = 0; i < 3; i++) { f.Time.Advance(.5); scheduler.Tick(); }
+                Assert.False(reference.Disposed); Assert.True(f.Noise.CaptureBusy);
+                Assert.Equal(0, f.NormalCreates);
+                Assert.Equal("CAPTURE_BUSY", scheduler.Observe()["reason"]!.GetValue<string>());
+            }
+        }
+        finally { cleanup.Set(); }
         await Until(() => reference.Disposed && !f.Noise.CaptureBusy);
         Assert.Equal("Interrupted", f.State.Draft!.Samples.Single().Quality);
         f.Time.Advance(.5); scheduler.Tick(); await Until(() => f.Noise.Snapshot().State == "Active");

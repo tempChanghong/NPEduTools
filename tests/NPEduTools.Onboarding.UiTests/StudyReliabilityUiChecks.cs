@@ -15,8 +15,12 @@ internal static partial class Program
             var errors = new List<Exception>();
             foreach (string scenario in new[] { "manual-status-error", "school-report-error", "school-status-error", "withdrawn-with-error", "projection-with-error", "notification-with-error", "clock-with-error", "policy-with-error", "hidden-status-error", "expired-status-error" })
                 try { StudyTemporaryReadFailureCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
+            foreach (string scenario in new[] { "healthy", "slow-report", "failed-report", "failed-manual-status", "failed-manual-response", "failed-school-status",
+                "withdrawn-with-error", "ended-with-error", "takeover-with-error", "projection-with-error", "hidden-with-error", "expired-with-error", "notification-with-error" })
+                try { ManualDisplayReadFailureCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException("manual/" + scenario + ": " + e.Message, e)); }
             try { StudyMediumHomeworkCheck(); } catch (Exception e) { errors.Add(e); }
             try { StudyContinuationExpiryCheck(); } catch (Exception e) { errors.Add(e); }
+            try { StudyContinuationExpiryCheck(manual: true); } catch (Exception e) { errors.Add(e); }
             if (errors.Count > 0) throw new AggregateException(errors);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
@@ -112,17 +116,18 @@ internal static partial class Program
         }
         finally { surface.Stop(); window.Close(); }
     }
-    private static void StudyContinuationExpiryCheck()
+    private static void StudyContinuationExpiryCheck(bool manual = false)
     {
         var clock = new StudyUiClock(); var state = StudyFixture("Active", 8999);
-        var window = new StudyWindow("NPEduTools.Test.expiry." + Guid.NewGuid().ToString("N"), () => { }, muted: true, time: clock);
+        if (manual) state = state with { Manual = new(Guid.NewGuid(), 1, state.Execution!.SessionId, "Active", null, null, null, true, 600) };
+        var window = new StudyWindow("NPEduTools.Test.expiry." + Guid.NewGuid().ToString("N"), () => { }, muted: true, time: clock, manual: manual);
         try
         {
             window.Apply(state, null); window.ShowDisplay(); Assert(window.CanKeepAfterReadFailure, "confirmed display cannot continue");
             clock.Ms += 6000;
             PumpUntil(() => !window.IsVisible, "cached display exceeded its deadline without any new pipe response");
             Assert(!window.CanKeepAfterReadFailure, "expired/hidden display remains eligible");
-            Checks.Add("Confirmed display expires at original end plus end-notice duration using monotonic time even while status reads do not complete");
+            Checks.Add((manual ? "Manual" : "School") + " confirmed display expires at original end plus end-notice duration using monotonic time even while status reads do not complete");
         }
         finally { window.Shutdown(); }
     }

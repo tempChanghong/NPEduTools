@@ -31,6 +31,8 @@ internal static partial class Program
             RunStudyDeviceSaveEvidenceChecks();
             RunStudyDeviceUnlockFeedbackChecks();
             RunStudyDeviceProtocolChecks();
+            RunDeviceVisibilityChecks();
+            RunDeviceSelectionRefreshUiChecks();
             RunDeviceRefreshSnapshotChecks();
             RunDeviceRejectionStateChecks();
             RunSelectedInventoryUiChecks();

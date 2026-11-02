@@ -56,6 +56,17 @@ public sealed class StudyDisplayContinuationTests
         Assert.False(continuation.CanKeep);
     }
     [Fact]
+    public void Manual_preparation_uses_configured_lead_but_never_continues_past_start_without_confirmation()
+    {
+        var clock = new Clock(); var continuation = new StudyDisplayContinuation(clock); var state = State();
+        state = state with { Phase = "Preparing", SchoolNow = state.Window!.Start.AddMinutes(-10),
+            Manual = new(Guid.NewGuid(), 1, Guid.NewGuid(), "Preparing", null, null, null, true, 600, 900) };
+        continuation.Observe(state); Assert.True(continuation.CanKeep);
+        clock.Ms = 605000; Assert.False(continuation.CanKeep);
+        continuation.Observe(state with { Manual = state.Manual with { DisplayLeadSeconds = 120 } });
+        Assert.False(continuation.CanKeep);
+    }
+    [Fact]
     public void Fresh_shorter_window_replaces_deadline_and_preparation_and_end_are_bounded()
     {
         var clock = new Clock(); var continuation = new StudyDisplayContinuation(clock); var state = State();

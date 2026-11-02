@@ -13,6 +13,8 @@ public sealed partial class NpepRuntime
         public int Next;
     }
     private SeatingDownload? _seatingDownload;
+    private JsonObject? _seatingSequenceContext;
+    private bool _seatingSupportsHostSequence;
     private void InitializeStudySeating(INpepStudySettings study)
     {
         _studySeatingLoop = Task.Run(async () => {
@@ -37,11 +39,26 @@ public sealed partial class NpepRuntime
     internal async Task SeatingCycleAsync(INpepStudySettings study, JsonObject request, CancellationToken token)
     {
         var context = await StudyContextAsync(token);
+        if (!JsonNode.DeepEquals(_seatingSequenceContext, context)) {
+            _seatingSequenceContext = context.Copy(); _seatingSupportsHostSequence = false;
+        }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(30));
-        var manifest = await _device!.SeatingAsync(() => new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
-            ["version"] = request["version"]!.DeepClone(), ["observation"] = study.ObserveSeating(), ["downloaded"] = study.ObserveSeatingDownload() }, false, deadline.Token);
+        JsonObject Body() {
+            var observation = study.ObserveSeating();
+            if (!_seatingSupportsHostSequence) observation?.Remove("hostSequence");
+            return new() { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
+                ["version"] = request["version"]!.DeepClone(), ["observation"] = observation, ["downloaded"] = study.ObserveSeatingDownload() };
+        }
+        JsonObject manifest;
+        try { manifest = await _device!.SeatingAsync(Body, false, deadline.Token); }
+        catch (NpepException e) when (_seatingSupportsHostSequence && e.Status == 400 && e.Code == "INVALID_REQUEST") {
+            // A rolled-back server may reject the optional field. Next poll renegotiates
+            // with a legacy body; never retry a stale sampled observation immediately.
+            _seatingSupportsHostSequence = false; throw;
+        }
         await RequireStudyContextAsync(context, deadline.Token);
         if (manifest.Text("version") != request.Text("version")) throw new NpepException("POLICY_CHANGED");
+        _seatingSupportsHostSequence = manifest["supportsHostSequence"]?.GetValue<bool>() == true;
         if (manifest["asset"] is not JsonObject asset) { _seatingDownload = null; study.ApplySeating(manifest, null); return; }
         string hash = asset.Text("hash"); int revision = manifest["revision"]!.GetValue<int>();
         if (study.HasSeating(request.Text("version"), hash, revision)) { _seatingDownload = null; study.ApplySeating(manifest, null); return; }

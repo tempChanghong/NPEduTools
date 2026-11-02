@@ -14,6 +14,7 @@ public partial class NoiseWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private NoiseState? _state;
     private ManualStudyState? _manual;
+    private readonly StudyDisplayReturn _returnDisplay = new();
     private bool _closing, _busy, _connected;
     private long _uiOperation;
     private readonly NoiseCalibrationRead _calibrationRead = new();
@@ -70,6 +71,7 @@ public partial class NoiseWindow : Window
                     var manual=await HostClient.RequestAsync(_pipe,new HostRequest(1,Guid.NewGuid(),"manual.study.status"),manualTimeout.Token);
                     if(_lifetime.IsCancellationRequested || operation!=_uiOperation)continue;
                     _manual=manual.Outcome == "Succeeded" && System.Diagnostics.Stopwatch.GetElapsedTime(manualAt).TotalSeconds < 3.5 ? manual.ManualStudy : null;
+                    _returnDisplay.Observe(_manual is not null ? manual.Study : null);
                     ManualStatus.Text = _manual is { } m ? ManualStateText(m) : "手动会话状态待确认，不能据此判断已结束。";
                     bool signalFresh = System.Diagnostics.Stopwatch.GetElapsedTime(calibrationAt).TotalSeconds < 3.5;
                     RenderWithCalibration(signalFresh ? response.Noise : null, signalFresh ? response.NoiseCalibrationStatus : null);
@@ -101,6 +103,8 @@ public partial class NoiseWindow : Window
     }
     private void UpdateButtons()
     {
+        ReturnStudyButton.Visibility = _returnDisplay.Available ? Visibility.Visible : Visibility.Collapsed;
+        ReturnStudyButton.IsEnabled = _connected && !_busy && _returnDisplay.Available;
         bool manualRunning = _manual?.State is "Waiting" or "Preparing" or "Starting" or "Active" or "Stopping";
         ManualConfiguration.Visibility = manualRunning ? Visibility.Collapsed : Visibility.Visible;
         ManualHeading.Text = manualRunning ? "当前手动自习" : "开始一节手动自习";
@@ -140,6 +144,7 @@ public partial class NoiseWindow : Window
         _connected = state is not null;
         if (state is null)
         {
+            _returnDisplay.Observe(null);
             StateText.Text = "后台连接中断，当前监测状态未知。";
             DisplayStatusText.Text = "网页与备用展示状态未知，等待后台重新连接。";
             LevelText.Text = "—"; LevelBar.Value = -100; QualityText.Text = "未知";
@@ -186,6 +191,21 @@ public partial class NoiseWindow : Window
         DrawTrend(); UpdateButtons();
     }
     private static string FormatDb(double? value) => NoiseSignalPresentation.Statistic(value);
+    private async void ReturnStudyClicked(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _returnDisplay.Request(true) is not { } request) return;
+        _busy = true; long operation = ++_uiOperation; UpdateButtons();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(4000);
+        try
+        {
+            var reply = await HostClient.RequestAsync(_pipe, request, deadline.Token);
+            if (_lifetime.IsCancellationRequested || operation != _uiOperation) return;
+            _returnDisplay.Observe(reply.Study); MessageText.Text = reply.Message;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
+        { if (!_lifetime.IsCancellationRequested && operation == _uiOperation) { Render(null); MessageText.Text = "返回结果待确认，请等待最新状态后重试；后台监测继续。"; } }
+        finally { _busy = false; UpdateButtons(); }
+    }
     private void DrawTrend()
     {
         TrendCanvas.Children.Clear();

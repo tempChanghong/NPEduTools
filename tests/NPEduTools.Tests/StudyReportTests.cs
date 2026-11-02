@@ -5,7 +5,7 @@ using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
-public sealed class StudyReportTests
+public sealed partial class StudyReportTests
 {
     private sealed class Clock : TimeProvider
     {

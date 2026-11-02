@@ -18,7 +18,12 @@ public sealed class StudyReportService : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
     private readonly Dictionary<Guid, (double Offset, StudySessionReport Report)> _sessions = [];
+    private StudySessionReport? _archived;
+    private readonly HashSet<string> _archivedReferences = new(StringComparer.Ordinal);
+    private bool _referenceListTruncated, _sessionOverflow;
+    private (Guid Id, double Offset)? _deferredSession;
     private string? _scope, _version;
+    private StudySettings? _settings;
     private SchoolNoiseWindow? _window;
     private Guid _instance = Guid.NewGuid();
     private long? _ended;
@@ -38,7 +43,10 @@ public sealed class StudyReportService : IAsyncDisposable
     private void Clear()
     {
         _window = null; _ended = null; _frozen = null; _expired = false; _statisticsAt = null;
-        _sessions.Clear(); _instance = Guid.NewGuid();
+        _settings = null;
+        _sessions.Clear(); _archived = null; _archivedReferences.Clear(); _referenceListTruncated = _sessionOverflow = false;
+        _deferredSession = null;
+        _instance = Guid.NewGuid();
     }
     public StudyReportState Snapshot()
     {
@@ -48,23 +56,36 @@ public sealed class StudyReportService : IAsyncDisposable
             // A temporary configuration or school-clock failure is not revocation of the
             // witnessed window's collected statistics. Quarantine the collection
             // without displaying it; reuse only after the same context is fresh again.
+            // This also applies after observing the end: keep its original monotonic
+            // report deadline, rather than erasing the report during a brief outage.
             bool configurationLost = s.PolicyState != "APPLIED" &&
                 s.Reason is "STUDY_OFFLINE" or "CONFIGURATION_STALE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED";
-            bool clockLost = s.PolicyState == "APPLIED" && s.Version == _version && !s.ClockReady && s.Reason == "SCHOOL_CLOCK_UNAVAILABLE";
+            bool compatibleClockUpdate = s.Version is not null && StudyExecutionCompatibility.SameSchedule(_settings, s.Settings, s.Mode);
+            bool clockLost = s.PolicyState == "APPLIED" && !s.ClockReady && s.Reason == "SCHOOL_CLOCK_UNAVAILABLE" &&
+                (s.Version == _version || compatibleClockUpdate);
             if (selected && scope is not null && scope == _scope && _mode == s.Mode &&
-                _version is not null && (s.Version is null || s.Version == _version) &&
-                _window is not null && _ended is null && s.Phase == "Blocked" && (configurationLost || clockLost))
+                _version is not null && (s.Version is null || s.Version == _version || clockLost && compatibleClockUpdate) &&
+                _window is not null && s.Phase == "Blocked" && (configurationLost || clockLost))
             {
                 Observe(s, _window.Start); // Updates only already tracked session IDs while blocked.
+                if (clockLost && compatibleClockUpdate) { _version = s.Version; _settings = s.Settings; }
                 return State(false, "Unavailable", 0);
             }
-            if (_scope != scope || _version != s.Version || _mode != s.Mode) { Clear(); _scope = scope; _version = s.Version; _mode = s.Mode; }
+            // A version can change without ending this witnessed study window.
+            // Keep its per-session statistics; authorization loss, another class,
+            // mode or window still discards the presentation context.
+            bool sameWindow = selected && s.Version is not null && s.PolicyState == "APPLIED" && s.ClockReady &&
+                _window is { } witnessed && s.SchoolNow is { } schoolNow &&
+                (s.Phase == "Active" && s.Window == witnessed && schoolNow >= witnessed.Start && schoolNow < witnessed.End ||
+                 s.Phase is "Outside" or "Ended" && schoolNow >= witnessed.End && StillScheduled(s, witnessed));
+            if (_scope != scope || _mode != s.Mode || _version != s.Version && !sameWindow) Clear();
+            _scope = scope; _version = s.Version; _mode = s.Mode; _settings = s.Settings;
             if (!selected || scope is null || s.Version is null || s.PolicyState != "APPLIED" || !s.ClockReady || s.SchoolNow is not { } now ||
                 s.Phase is not ("Active" or "Outside" or "Ended"))
             { Clear(); return State(false, "Unavailable", 0); }
             if (s.Phase == "Active" && s.Window is { } active)
             {
-                if (_window != active) { Clear(); _window = active; }
+                if (_window != active) { Clear(); _window = active; _settings = s.Settings; }
                 // Threshold statistics must also work with the App closed and photography disabled.
                 if (s.Settings?.Noise is { Enabled: true } noise &&
                     s.Execution is { Owner: "Schedule", State: "Active", SignalFresh: true, SessionId: not null } execution)
@@ -86,10 +107,16 @@ public sealed class StudyReportService : IAsyncDisposable
             double remaining = Math.Max(0, DefaultDurationSeconds + StudyPresentationTiming.StageNoticeSeconds - elapsed);
             if (remaining <= 0) { _expired = true; return State(false, "Expired", 0); }
             // Freeze only after terminal tails have been flushed. Until then show honest provisional statistics.
-            if (_frozen is null && _sessions.Count > 0 && _sessions.Values.All(x => x.Report.Complete)) _frozen = Build();
+            if (_frozen is null && _deferredSession is null && _sessions.Count > 0 && _sessions.Values.All(x => x.Report.Complete)) _frozen = Build();
             bool available = elapsed >= StudyPresentationTiming.StageNoticeSeconds;
             return State(available, available ? "Report" : "EndReminder", available ? remaining : DefaultDurationSeconds);
         }
+    }
+    private static bool StillScheduled(StudyHostState state, SchoolNoiseWindow window)
+    {
+        if (state.Settings?.Noise.Enabled != true) return false;
+        try { return SchoolStudySchedule.Windows(state.Settings.ForMode(state.Mode), window.Start).Current == window; }
+        catch (ArgumentException) { return false; }
     }
     private StudyReportState State(bool available, string state, double remaining) =>
         new(_instance, _version, available && _projection?.Invoke() != true, state, remaining, _window is null || state is "Monitoring" or "Unavailable" or "Expired" ? null : _frozen ?? Build());
@@ -100,21 +127,64 @@ public sealed class StudyReportService : IAsyncDisposable
             s.Execution?.SessionId is { } current && _sessions.ContainsKey(current)) return;
         _statisticsAt = _time.GetTimestamp();
         if (_finishedStatistics is not null)
+        {
             foreach (var (id, cached) in _sessions.ToArray())
                 if (!cached.Report.Complete && _finishedStatistics(id) is { Complete: true } final && final.SessionId == id)
                     _sessions[id] = (cached.Offset, final);
+            // The deferred ID was witnessed in this window before capacity ran out.
+            // Its terminal receipt can arrive after capture ends or a manual session starts.
+            if (_deferredSession is { } pending && _finishedStatistics(pending.Id) is { Complete: true } tail && tail.SessionId == pending.Id)
+                AdoptDeferred(tail);
+        }
         if (_statistics() is not { } report) return;
         if (_sessions.TryGetValue(report.SessionId, out var old))
         { if (!old.Report.Complete) _sessions[report.SessionId] = (old.Offset, report); }
+        else if (_deferredSession is { } pending && pending.Id == report.SessionId)
+            AdoptDeferred(report);
         else if (_window is { } window && s.Phase == "Active" &&
-            s.Execution is { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null } execution && execution.SessionId == report.SessionId && _sessions.Count < 16)
-            _sessions[report.SessionId] = (Math.Max(0, (now - window.Start).TotalSeconds - report.ElapsedSeconds), report);
+            s.Execution is { Owner: "Schedule", State: "Starting" or "Active", SessionId: not null } execution && execution.SessionId == report.SessionId)
+        {
+            // One still-current session can be adopted later from its cumulative
+            // snapshot. A superseded, untracked session is an actual unresolved gap.
+            if (_deferredSession is { } deferred && deferred.Id != report.SessionId) _sessionOverflow = true;
+            double offset = Math.Max(0, (now - window.Start).TotalSeconds - report.ElapsedSeconds);
+            if (_sessions.Count >= 16 && !ArchiveCompleted()) { _deferredSession = (report.SessionId, offset); return; }
+            _sessions[report.SessionId] = (offset, report);
+            _deferredSession = null;
+        }
+    }
+    private void AdoptDeferred(StudySessionReport report)
+    {
+        if (_deferredSession is not { } pending || pending.Id != report.SessionId ||
+            (_sessions.Count >= 16 && !ArchiveCompleted())) return;
+        _sessions[report.SessionId] = (pending.Offset, report);
+        _deferredSession = null;
+    }
+    private bool ArchiveCompleted()
+    {
+        // Keep the existing bound on individually tracked tails. Completed sessions
+        // can be folded into one fixed-resolution channel without losing statistics.
+        var completed = _sessions.Where(x => x.Value.Report.Complete).Take(1).ToArray();
+        if (completed.Length == 0) return false;
+        var (id, value) = completed[0];
+        if (value.Report.ReferenceNote is { } note && !_archivedReferences.Contains(note))
+        { if (_archivedReferences.Count < 16) _archivedReferences.Add(note); else _referenceListTruncated = true; }
+        var sources = new List<(double Offset, StudySessionReport Report)> { value };
+        if (_archived is { } archived) sources.Add((0, archived));
+        double expected = (_window!.End - _window.Start).TotalSeconds;
+        _archived = new(Guid.Empty, true, 0, sources.Sum(x => x.Report.ClippedSeconds), sources.Sum(x => x.Report.Frames),
+            sources.Sum(x => x.Report.DisciplineReminders), Merge("dBFS", sources.Select(x => (x.Offset, x.Report.Raw)), expected),
+            sources.Any(x => x.Report.Estimated is not null) ? Merge("estimated-dB(A)",
+                sources.Where(x => x.Report.Estimated is not null).Select(x => (x.Offset, x.Report.Estimated!)), expected) : null,
+            sources.Select(x => x.Report.EstimateReason).FirstOrDefault(x => x is not null));
+        _sessions.Remove(id); return true;
     }
     private StudyReportData Build()
     {
         var window = _window!;
         double expected = (window.End - window.Start).TotalSeconds;
-        var sessions = _sessions.Values.ToArray();
+        var sessions = _sessions.Values.ToList();
+        if (_archived is { } archived) sessions.Add((0, archived));
         var raw = Merge("dBFS", sessions.Select(x => (x.Offset, x.Report.Raw)), expected);
         var estimated = sessions.Any(x => x.Report.Estimated is not null)
             ? Merge("estimated-dB(A)", sessions.Where(x => x.Report.Estimated is not null).Select(x => (x.Offset, x.Report.Estimated!)), expected) : null;
@@ -123,12 +193,15 @@ public sealed class StudyReportService : IAsyncDisposable
         if (raw.SampledSeconds > 0 && raw.EnergyMean is null or <= -100) notes.Add("输入为数字静音或接近静音，请检查静音、输入增益与麦克风；不据此判断教室安静。");
         if (raw.SampledSeconds < expected * .95) notes.Add("采集覆盖不足；空白时段未记作安静。");
         if (sessions.Any(x => x.Report.EstimateReason is not null)) notes.Add("参考已失效或不可用；估算数据仅包含有效参考期间。");
-        notes.AddRange(sessions.Select(x=>x.Report.ReferenceNote).OfType<string>().Distinct());
+        notes.AddRange(_archivedReferences.Concat(sessions.Select(x=>x.Report.ReferenceNote).OfType<string>()).Distinct());
+        if (_referenceListTruncated) notes.Add("本次校准参考说明较多，仅列出部分；此列表不影响已确认采样的统计。");
+        bool unresolved = _sessionOverflow || _deferredSession is not null;
+        if (unresolved) notes.Add("部分采集会话尾段未能确认，报告可能不完整；未补造缺失数据。");
         notes.Add("超限时长按采样时生效的阈值统计；中线以上包含高线以上。未判定时段不记作未超限。");
         return new(window, expected, raw.SampledSeconds, Math.Clamp(raw.SampledSeconds / expected, 0, 1),
             raw.SampledSeconds > 0 ? 100 * sessions.Sum(x => x.Report.ClippedSeconds) / raw.SampledSeconds : 0,
             sessions.Sum(x => x.Report.Frames), sessions.Sum(x => x.Report.DisciplineReminders), raw, estimated,
-            sessions.All(x => x.Report.Complete), notes, _mode, _mode == "Exam" ? "Windows" : "ClassIsland");
+            !unresolved && sessions.All(x => x.Report.Complete), notes, _mode, _mode == "Exam" ? "Windows" : "ClassIsland");
     }
     private static StudyReportChannel Merge(string unit, IEnumerable<(double Offset, StudyReportChannel Data)> source, double expected)
     {

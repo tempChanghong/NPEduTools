@@ -12,6 +12,8 @@ internal static partial class Program
 {
     private static void RunStudyWorkspaceChecks()
     {
+        RunWorkspaceReportThresholdChecks();
+        RunStudyReturnChecks();
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         string folder = Path.Combine(_output, "workspace-private-fixture");
