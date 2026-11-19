@@ -78,8 +78,8 @@ public partial class StudyMonitoringWindow : Window
     {
         var label = NoiseCalibrationPresentation.Describe(status, noise);
         CalibrationStatus.Text = label.Text; CalibrationDetail.Text = label.Detail;
-        CalibrationStatus.Foreground = label.Tone == "Warning" ? System.Windows.Media.Brushes.Sienna :
-            new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(97, 120, 107));
+        CalibrationStatus.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+            label.Tone == "Warning" ? "TeacherWarningBrush" : "TeacherMutedBrush");
     }
     private async void RefreshClicked(object sender, RoutedEventArgs e)
     {

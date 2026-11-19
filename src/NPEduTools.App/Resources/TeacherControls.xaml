@@ -1,0 +1,134 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <SolidColorBrush x:Key="TeacherPageBrush" Color="#F4F6F5" />
+  <SolidColorBrush x:Key="TeacherSurfaceBrush" Color="White" />
+  <SolidColorBrush x:Key="TeacherTextBrush" Color="#202925" />
+  <SolidColorBrush x:Key="TeacherMutedBrush" Color="#52635A" />
+  <SolidColorBrush x:Key="TeacherLineBrush" Color="#DCE3DE" />
+  <SolidColorBrush x:Key="TeacherControlLineBrush" Color="#AFBDB5" />
+  <SolidColorBrush x:Key="TeacherAccentBrush" Color="#116B58" />
+  <SolidColorBrush x:Key="TeacherAccentHoverBrush" Color="#0F5748" />
+  <SolidColorBrush x:Key="TeacherOnAccentBrush" Color="White" />
+  <SolidColorBrush x:Key="TeacherHoverBrush" Color="#EDF3EF" />
+  <SolidColorBrush x:Key="TeacherSelectedBrush" Color="#DDEFE6" />
+  <SolidColorBrush x:Key="TeacherSelectedTextBrush" Color="#105B49" />
+  <SolidColorBrush x:Key="TeacherSuccessBrush" Color="#286848" />
+  <SolidColorBrush x:Key="TeacherWarningBrush" Color="#885407" />
+  <SolidColorBrush x:Key="TeacherErrorBrush" Color="#AA3634" />
+  <SolidColorBrush x:Key="TeacherDisabledBrush" Color="#64716A" />
+  <FontFamily x:Key="TeacherFont">MiSans Regular, MiSans, Microsoft YaHei UI</FontFamily>
+
+  <Style x:Key="TeacherInput" TargetType="Control">
+    <Setter Property="FontFamily" Value="{DynamicResource TeacherFont}" />
+    <Setter Property="FontSize" Value="15" /><Setter Property="MinHeight" Value="44" />
+    <Setter Property="Padding" Value="10,6" /><Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource TeacherTextBrush}" />
+    <Setter Property="Background" Value="{DynamicResource TeacherSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource TeacherControlLineBrush}" />
+    <Setter Property="Template">
+      <Setter.Value><ControlTemplate TargetType="Control">
+        <Border x:Name="InputSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6">
+          <ScrollViewer x:Name="PART_ContentHost" />
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="{DynamicResource TeacherAccentBrush}" /><Setter TargetName="InputSurface" Property="BorderThickness" Value="2" /></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource TeacherDisabledBrush}" /></Trigger>
+          <Trigger Property="Validation.HasError" Value="True"><Setter TargetName="InputSurface" Property="BorderBrush" Value="{DynamicResource TeacherErrorBrush}" /></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="TeacherButton" TargetType="Button">
+    <Setter Property="FontFamily" Value="{DynamicResource TeacherFont}" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="MinHeight" Value="44" />
+    <Setter Property="Padding" Value="14,6" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource TeacherSurfaceBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TeacherTextBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource TeacherControlLineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True" />
+            </Border>
+            <Border x:Name="FocusRing" BorderBrush="{TemplateBinding Foreground}" BorderThickness="2" CornerRadius="5" Margin="2" Visibility="Hidden" IsHitTestVisible="False" />
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="FocusRing" Property="Visibility" Value="Visible" /></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource TeacherHoverBrush}" /></Trigger>
+      <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="{DynamicResource TeacherSelectedBrush}" /><Setter Property="Foreground" Value="{DynamicResource TeacherSelectedTextBrush}" /></Trigger>
+      <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource TeacherDisabledBrush}" /><Setter Property="Background" Value="{DynamicResource TeacherPageBrush}" /><Setter Property="BorderBrush" Value="{DynamicResource TeacherLineBrush}" /></Trigger>
+    </Style.Triggers>
+  </Style>
+  <Style x:Key="TeacherPrimary" TargetType="Button" BasedOn="{StaticResource TeacherButton}">
+    <Setter Property="Background" Value="{DynamicResource TeacherAccentBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource TeacherAccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TeacherOnAccentBrush}" />
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource TeacherAccentHoverBrush}" /></Trigger>
+      <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="{DynamicResource TeacherSelectedBrush}" /><Setter Property="Foreground" Value="{DynamicResource TeacherSelectedTextBrush}" /></Trigger>
+    </Style.Triggers>
+  </Style>
+  <Style x:Key="TeacherQuiet" TargetType="Button" BasedOn="{StaticResource TeacherButton}">
+    <Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource TeacherMutedBrush}" />
+  </Style>
+
+  <Style x:Key="TeacherNavigation" TargetType="Button" BasedOn="{StaticResource TeacherQuiet}">
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Margin" Value="0,0,0,4" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="Frame" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="2" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" RecognizesAccessKey="True" />
+            </Border>
+            <Border x:Name="Indicator" Width="3" Height="18" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="2,0" Background="{TemplateBinding Foreground}" CornerRadius="2" Visibility="Hidden" />
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Tag" Value="active"><Setter TargetName="Indicator" Property="Visibility" Value="Visible" /></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource TeacherTextBrush}" /></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="Tag" Value="active"><Setter Property="Background" Value="{DynamicResource TeacherSelectedBrush}" /><Setter Property="Foreground" Value="{DynamicResource TeacherSelectedTextBrush}" /></Trigger>
+    </Style.Triggers>
+  </Style>
+  <Style x:Key="TeacherTab" TargetType="Button" BasedOn="{StaticResource TeacherQuiet}">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="Frame" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="2" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" RecognizesAccessKey="True" />
+            </Border>
+            <Border x:Name="Indicator" Width="22" Height="3" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2" CornerRadius="2" Background="{TemplateBinding Foreground}" Visibility="Hidden" />
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Tag" Value="active"><Setter TargetName="Indicator" Property="Visibility" Value="Visible" /></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource TeacherTextBrush}" /></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="Tag" Value="active"><Setter Property="Foreground" Value="{DynamicResource TeacherAccentBrush}" /><Setter Property="FontWeight" Value="SemiBold" /></Trigger>
+    </Style.Triggers>
+  </Style>
+</ResourceDictionary>

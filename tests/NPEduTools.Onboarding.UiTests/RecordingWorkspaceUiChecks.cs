@@ -131,8 +131,34 @@ internal static partial class Program
                 Click(main, "RecordingNav");
                 Assert(ReferenceEquals(manual, Field<RecordingWindow>("_recordingWindow")) && probes == 1, "navigation duplicated controller or reset devices");
                 Click(manual, "RecordPause"); PumpUntil(() => state.Phase == "Paused" && Button(manual, "RecordPause").Content.ToString() == "继续录制", "pause receipt not shown");
-                Click(manual, "RecordPause"); PumpUntil(() => state.Phase == "Recording", "resume did not continue session");
+                Click(manual, "RecordPause");
+                PumpUntil(() => state.Phase == "Recording" && Button(manual, "RecordPause") is { IsEnabled: true, Content: "暂停" } &&
+                    Button(manual, "RecordStop").IsEnabled, "resume did not reconcile the live controls");
                 Snapshot(main, "recording-workspace-live.png");
+                var (fullWidth, fullHeight, minWidth, minHeight) = (main.Width, main.Height, main.MinWidth, main.MinHeight);
+                var root = (FrameworkElement)main.Content;
+                var fullScale = root.LayoutTransform;
+                main.MinWidth = main.MinHeight = 0;
+                main.Width = 760; main.Height = 520;
+                root.LayoutTransform = new ScaleTransform(.8, .8);
+                main.UpdateLayout();
+                var body = (ScrollViewer)manual.FindName("RecordingBodyScroll");
+                body.ScrollToBottom(); main.UpdateLayout();
+                foreach (string name in new[] { "RecordPause", "RecordStop" })
+                {
+                    var button = Button(manual, name);
+                    Reachable(main, button);
+                    var target = button.TransformToAncestor(main).TransformBounds(new Rect(button.RenderSize));
+                    var at = button.TranslatePoint(new Point(button.ActualWidth / 2, button.ActualHeight / 2), main);
+                    Assert(target.Height >= 43.99 && target.Width >= 43.99, $"{name} has a {target.Size} DIP target at compact density");
+                    var hit = main.InputHitTest(at);
+                    Assert(hit is DependencyObject visual && (ReferenceEquals(visual, button) || button.IsAncestorOf(visual)),
+                        $"{name} centre hit {hit?.GetType().Name ?? "nothing"} outside the scrolled recording body");
+                }
+                Snapshot(main, "recording-workspace-live-760x520.png");
+                main.Width = fullWidth; main.Height = fullHeight; main.MinWidth = minWidth; main.MinHeight = minHeight;
+                root.LayoutTransform = fullScale;
+                Checks.Add("Ready-to-use recording controls stay in the footer after scrolling at 760x520 and 80-percent content density, with 44-DIP hit targets");
                 Click(main, "RecordingPlanTab");
                 Click(plan, "RealSkip");
                 PumpUntil(() => requests.Any(r => r.Automatic?.Action == "skip-upcoming"), "skip-next action used the old stop-current command");
@@ -149,9 +175,12 @@ internal static partial class Program
                     "disconnected workspace retains a confirmed-live claim or active stop command");
                 offline = false;
                 PumpUntil(Available, "fresh polling did not recover controls", 8);
-                Click(plan, "StopCurrent");
+                Click(main, "RecordingManualTab");
+                Click(manual, "RecordStop");
                 PumpUntil(() => state.Phase == "Saved" && !Button(manual, "RecordStop").IsVisible, "bound stop did not reconcile both views");
-                Click(main, "RecordingRecordsTab");
+                Invoke("HomeNavClicked", main, new RoutedEventArgs());
+                Click(main, "RecordingHomeButton");
+                Assert(((Button)main.FindName("RecordingRecordsTab")).Tag as string == "active", "saved result did not route from the homepage to history");
                 Assert(((TextBlock)plan.FindName("LatestRecordingPath")).Text.EndsWith("synthetic.mp4"), "records omitted recent manual result");
                 Snapshot(main, "recording-workspace-records.png");
                 foreach (var size in new[] { new Size(1280, 700), new Size(1024, 700), new Size(1024, 540), new Size(840, 580), new Size(760, 520) })

@@ -1,6 +1,9 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:local="clr-namespace:NPEduTools.App">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="RecordingControls.xaml" />
+  </ResourceDictionary.MergedDictionaries>
   <SolidColorBrush x:Key="SettingsText" Color="#202522" />
   <SolidColorBrush x:Key="SettingsBackdrop" Color="Transparent" />
   <SolidColorBrush x:Key="SettingsSecondaryText" Color="#59675F" />

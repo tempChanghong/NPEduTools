@@ -9,9 +9,26 @@ public partial class App : Application
     private Mutex? _instance;
     private EventWaitHandle? _activation;
     private RegisteredWaitHandle? _activationWait;
+    private static readonly Uri TeacherContrastSource = new("/NPEduTools.App;component/Resources/TeacherControls.HighContrast.xaml", UriKind.Relative);
+
+    private void TeacherSystemSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.HighContrast))
+            Dispatcher.InvokeAsync(() => SetTeacherContrast(Resources, SystemParameters.HighContrast));
+    }
+
+    internal static void SetTeacherContrast(ResourceDictionary resources, bool enabled)
+    {
+        var overlay = resources.MergedDictionaries.FirstOrDefault(dictionary => dictionary.Source == TeacherContrastSource);
+        if (enabled && overlay is null) resources.MergedDictionaries.Add(new ResourceDictionary { Source = TeacherContrastSource });
+        else if (!enabled && overlay is not null) resources.MergedDictionaries.Remove(overlay);
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        SetTeacherContrast(Resources, SystemParameters.HighContrast);
+        SystemParameters.StaticPropertyChanged += TeacherSystemSettingsChanged;
         AppLaunchOptions options;
         try { options = AppLaunchOptions.Parse(e.Args, PipeEndpoint.DefaultName); }
         catch (ArgumentException error)
@@ -63,6 +80,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         // App exit never stops the persistent guardian. Verified Host exit suppresses only this window.
+        SystemParameters.StaticPropertyChanged -= TeacherSystemSettingsChanged;
         _activationWait?.Unregister(null); _activation?.Dispose(); _instance?.Dispose();
         base.OnExit(e);
     }

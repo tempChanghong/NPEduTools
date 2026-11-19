@@ -11,6 +11,15 @@ public partial class AutoRecordingWindow
     private bool _automaticChanging;
     private RecordingExecution[] _recordRows = [];
     private int _recordFilter;
+    private sealed record ExecutionRow(string Title, string Reason, string? Video, string? Recovery)
+    {
+        public string Location => Video is not null ? "视频：" + Video : Recovery is not null ? "保留片段：" + Recovery : "";
+        public string? Folder => Video is not null ? Path.GetDirectoryName(Video) : Recovery;
+        public bool HasVideo => !string.IsNullOrWhiteSpace(Video);
+        public bool HasFolder => !string.IsNullOrWhiteSpace(Folder);
+        public string FolderAction => Video is null ? "打开保留片段" : "打开文件夹";
+        public override string ToString() => string.Join("\n", Title, Reason, Location);
+    }
     private void RecordFilterChanged(object sender, SelectionChangedEventArgs e)
     { _recordFilter = RecordFilter.SelectedIndex; RefreshRecordRows(); }
     private void RefreshRecordRows()
@@ -19,21 +28,38 @@ public partial class AutoRecordingWindow
         var rows = _recordRows.Where(e => _recordFilter == 0 || _recordFilter == 1 && (e.Phase is "Failed" or "Interrupted" or "Conflict" or "Missed") || _recordFilter == 2 && e.Phase == "Recorded").ToArray();
         RealEventsEmpty.Visibility = rows.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         RealEventsEmpty.Text = _recordFilter == 0 ? "暂无自动录课记录；到达已启用的计划时间后才会执行。" : "此筛选下暂无自动录课记录。";
-        RealEvents.ItemsSource = rows.Select(e => $"{e.Date:yyyy-MM-dd} {e.Start:HH:mm} · {e.Subject} · {PhaseLabel(e.Phase)}\n{e.Reason}" +
-            (e.OutputFile is null ? e.RecoveryDirectory is null ? "" : "\n保留片段：" + e.RecoveryDirectory : "\n视频：" + e.OutputFile)).ToArray();
+        RealEvents.ItemsSource = rows.Select(e => new ExecutionRow(
+            $"{e.Date:yyyy-MM-dd} {e.Start:HH:mm} · {e.Subject} · {PhaseLabel(e.Phase)}", e.Reason,
+            e.Phase == "Recorded" && !string.IsNullOrWhiteSpace(e.OutputFile) ? e.OutputFile : null,
+            string.IsNullOrWhiteSpace(e.RecoveryDirectory) ? null : e.RecoveryDirectory)).ToArray();
     }
+    private static ExecutionRow LatestResult(RecordingState state) => new("", state.Message,
+        state.Phase == "Saved" && !string.IsNullOrWhiteSpace(state.OutputFile) ? state.OutputFile : null,
+        state.Phase == "Failed" && !string.IsNullOrWhiteSpace(state.RecoveryDirectory) ? state.RecoveryDirectory : null);
     private void RecordingChanged(RecordingState state)
     {
+        var result = LatestResult(state);
         LatestRecording.Text = _realRecording.StateAvailable ? state.Message : "当前录制状态未确认；下列位置是最后收到的结果，不代表新任务已经完成。";
-        LatestRecordingPath.Text = state.OutputFile ?? state.RecoveryDirectory ?? "后台尚未返回视频或保留片段位置。";
-        OpenLatestVideo.IsEnabled = state.OutputFile is not null;
-        OpenLatestFolder.IsEnabled = state.OutputFile is not null || state.RecoveryDirectory is not null;
+        if (_realRecording.StateAvailable && state.Phase == "Failed" && !string.IsNullOrWhiteSpace(state.Error) && state.Error != state.Message)
+            LatestRecording.Text += " · " + state.Error;
+        LatestRecordingPath.Text = result.Video ?? result.Recovery ?? "后台尚未返回视频或保留片段位置。";
+        OpenLatestVideo.IsEnabled = result.HasVideo;
+        OpenLatestFolder.IsEnabled = result.HasFolder;
+        OpenLatestFolder.Content = result.Recovery is not null ? "打开保留片段" : "打开文件夹";
         StopCurrent.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
         StopCurrent.IsEnabled = _realRecording.StateAvailable && state.Active && !state.Busy;
         RefreshAutomaticControls();
     }
-    private void OpenLatestVideoClicked(object sender, RoutedEventArgs e) => OpenLatestPath(_realRecording.State.OutputFile);
-    private void OpenLatestFolderClicked(object sender, RoutedEventArgs e) => OpenLatestPath(_realRecording.State.OutputFile is { } file ? Path.GetDirectoryName(file) : _realRecording.State.RecoveryDirectory);
+    private void OpenLatestVideoClicked(object sender, RoutedEventArgs e) => OpenLatestPath(LatestResult(_realRecording.State).Video);
+    private void OpenLatestFolderClicked(object sender, RoutedEventArgs e) => OpenLatestPath(LatestResult(_realRecording.State).Folder);
+    private void OpenRecordVideoClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ExecutionRow row }) OpenLatestPath(row.Video);
+    }
+    private void OpenRecordFolderClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ExecutionRow row }) OpenLatestPath(row.Folder);
+    }
     private void OpenLatestPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
@@ -50,7 +76,19 @@ public partial class AutoRecordingWindow
         RefreshAutomaticControls();
         RealSkipDay.Content = state.SkipDate is not null && state.SkipDate == _today ? "恢复今日自动录制" : "今天不再录制";
         if (!_recordRows.SequenceEqual(state.Recent)) { _recordRows = state.Recent; RefreshRecordRows(); }
+        RefreshAutomaticOverview();
+    }
 
+    private void RefreshAutomaticOverview()
+    {
+        var clock = _clock.Read(Elapsed);
+        PlanClockOverview.Text = clock is { CanStart: true, Now: { } now }
+            ? $"ClassIsland 学校时间 · {now:HH:mm:ss}"
+            : "ClassIsland 学校时间待确认";
+        var state = _realRecording.Automatic;
+        NextPlanOverview.Text = !clock.CanStart && state.NextState == "Ready"
+            ? "下一项 · 学校时间待确认"
+            : "下一项 · " + HomeRecordingPresentation.Next(state, _realRecording.AutomaticAvailable);
     }
     private void RefreshAutomaticControls()
     {
@@ -65,6 +103,7 @@ public partial class AutoRecordingWindow
     private void SetAutomaticFeedback(string? message, bool pending = false)
     {
         AutomaticFeedbackText.Text = message is null ? "" : (pending ? "本次操作：" : "上次操作提示：") + message;
+        AutomaticFeedbackText.SetResourceReference(TextBlock.ForegroundProperty, pending ? "TeacherMutedBrush" : "TeacherErrorBrush");
         AutomaticFeedbackText.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
     }
     private async Task AutomaticActionAsync(string action, RecordingOptions? options = null)
@@ -81,7 +120,7 @@ public partial class AutoRecordingWindow
         try
         {
             var options = RecordingWindow.ReadSavedOptions(_pipe);
-            if (options is null) { SetAutomaticFeedback("请先到“立即录制 → 修改录制设置”配置屏幕、音源和目录，点击“保存设置”。"); return; }
+            if (options is null) { SetAutomaticFeedback("请先到“立即录制 → 修改录制设置”配置屏幕、音源和目录，点击“保存录制设置”。"); return; }
             await AutomaticActionAsync("enable", options);
         }
         catch (Exception error) when (error is not OutOfMemoryException) { SetAutomaticFeedback("录制设置无法读取：" + error.Message); }

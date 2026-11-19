@@ -1,14 +1,49 @@
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using NPEduTools.App;
 
 internal static partial class Program
 {
+    [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
+    private static extern nint QuickForeground();
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static extern int QuickWindowStyle(nint window, int index);
+
+    private static void TraceQuickFocus(QuickAccessWindow quick, Window other, string action, bool? activated = null)
+    {
+        var edge = (Button)quick.FindName("EdgeHandle");
+        var handle = new WindowInteropHelper(quick).Handle;
+        Checks.Add($"{action}: activation={activated?.ToString() ?? "unrequested"}, foreground={QuickForeground():X}, " +
+            $"rail={handle:X}/{quick.IsActive}, fixture={new WindowInteropHelper(other).Handle:X}/{other.IsActive}, " +
+            $"railExStyle={QuickWindowStyle(handle, -20):X}, mouseCapture={edge.IsMouseCaptured}, touches={edge.TouchesCaptured.Count()}");
+    }
+
+    private static bool HasForeground(Window window) => window.IsActive && QuickForeground() == new WindowInteropHelper(window).Handle;
+
+    private static void ActivateFocusFixture(QuickAccessWindow quick, Window other)
+    {
+        other.Show();
+        TraceQuickFocus(quick, other, "focus fixture", other.Activate());
+        if (HasForeground(other)) return;
+        // An OS-denied Activate may still mark a window active on its own WPF thread.
+        // Establish actual foreground using a click on the fixture's own visible HWND.
+        other.Topmost = true;
+        try
+        {
+            other.UpdateLayout();
+            ClickFixturePoint(new WindowInteropHelper(other).Handle, other.PointToScreen(new Point(36, 40)), QuickForeground(),
+                () => PumpUntil(() => HasForeground(other), "the fixture did not acquire actual keyboard foreground"));
+        }
+        finally { other.Topmost = false; }
+    }
+
     private static void RunQuickBoundaryChecks()
     {
         const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
@@ -63,10 +98,11 @@ internal static partial class Program
             Case("Folding the active panel returns focus to the previous application", () =>
             {
                 other = new Window { Title = "NPEduTools.Test.quick-focus", Width = 240, Height = 160 };
-                other.Show(); other.Activate(); PumpUntil(() => other.IsActive, "focus fixture could not become foreground");
-                quick.OpenPanel(); PumpUntil(() => quick.IsActive, "quick panel could not become foreground");
+                ActivateFocusFixture(quick, other);
+                quick.OpenPanel(); TraceQuickFocus(quick, other, "panel opened");
+                PumpUntil(() => HasForeground(quick), "quick panel could not become foreground");
                 Click(quick, "RailFold"); Settle();
-                Assert(other.IsActive && !quick.IsActive, "folded rail retained keyboard focus");
+                Assert(HasForeground(other) && !quick.IsActive, "folded rail retained keyboard focus");
                 other.Close(); other = null;
             });
             Case("Expanded touch drag keeps capture until release in full and compact layouts", () =>
@@ -99,8 +135,8 @@ internal static partial class Program
             Case("Dragging an expanded panel returns keyboard focus only after touch release", () =>
             {
                 other = new Window { Title = "NPEduTools.Test.drag-focus", Width = 240, Height = 160 };
-                other.Show(); other.Activate(); PumpUntil(() => other.IsActive, "drag focus fixture could not become foreground");
-                quick.OpenPanel(); quick.UpdateLayout(); PumpUntil(() => quick.IsActive, "expanded drag could not become foreground");
+                ActivateFocusFixture(quick, other);
+                quick.OpenPanel(); quick.UpdateLayout(); PumpUntil(() => HasForeground(quick), "expanded drag could not become foreground");
                 var start = edge.TranslatePoint(new Point(20, 20), quick);
                 touch.MoveTo(start); Touch(UIElement.PreviewTouchDownEvent);
                 double scale = (double)typeof(QuickAccessWindow).GetField("_gestureScale", flags)!.GetValue(quick)!;
@@ -108,7 +144,7 @@ internal static partial class Program
                 touch.MoveTo(quick.PointFromScreen(end)); Touch(UIElement.PreviewTouchMoveEvent);
                 Assert(quick.IsActive && edge.TouchesCaptured.Any(), "drag restores focus before releasing capture");
                 touch.MoveTo(quick.PointFromScreen(end)); Touch(UIElement.PreviewTouchUpEvent); Settle();
-                Assert(other.IsActive && !quick.IsActive && !edge.TouchesCaptured.Any(), "completed expanded drag retained foreground focus");
+                Assert(HasForeground(other) && !quick.IsActive && !edge.TouchesCaptured.Any(), "completed expanded drag retained foreground focus");
                 other.Close(); other = null;
             });
         }

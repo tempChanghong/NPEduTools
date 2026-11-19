@@ -164,6 +164,11 @@ public partial class AutoRecordingWindow : Window
         SkipDay.IsEnabled = _writable && clock.CanStart;
         SkipDay.Content = clock.Now is { } date && _preview.State.SkipDate == DateOnly.FromDateTime(date.Date) ? "恢复今日试运行" : "今天不再试运行";
         TodayButton.IsEnabled = TomorrowButton.IsEnabled = AfterTomorrowButton.IsEnabled = clock.CanStart;
+        int? selectedDay = clock.CanStart ? _viewDate?.DayNumber - _today?.DayNumber : null;
+        TodayButton.Tag = selectedDay == 0 ? "active" : null;
+        TomorrowButton.Tag = selectedDay == 1 ? "active" : null;
+        AfterTomorrowButton.Tag = selectedDay == 2 ? "active" : null;
+        RefreshAutomaticOverview();
         SkipLesson.IsEnabled = _writable && _viewDate == _today;
         OnlyExplicit.IsEnabled = _writable && ViewSource is { ProfileId: var profile } && profile != Guid.Empty;
         OnlyExplicit.IsChecked = _book.Days.Any(d => d.Date == _viewDate && d.ProfileId == ViewSource?.ProfileId && d.OnlyExplicit);

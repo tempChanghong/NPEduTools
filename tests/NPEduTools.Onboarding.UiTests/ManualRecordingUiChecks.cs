@@ -54,6 +54,9 @@ internal static partial class Program
                     Assert(probes == 1 && Button(owner, "RecordStart").IsEnabled, "synthetic device environment did not load");
                     Show(active with { Frames = 100, Bytes = 1048576 });
                     Assert(Text("RecordingClock") == "00:02:00" && Text("RecordingPhase") == "录制中", "confirmed recording does not render");
+                    Assert(Text("RecordingPhaseMark") == "●", "recording indicator missing");
+                    Show(active with { Phase = "Paused" });
+                    Assert(Text("RecordingPhaseMark") == "Ⅱ" && Text("RecordingPhase") == "已暂停", "paused and recording have the same indicator");
                     var unavailable = type.GetMethod("MarkUnavailable", BindingFlags.Instance | BindingFlags.NonPublic)!;
                     unavailable.Invoke(client, [null, null]);
                     Assert(Text("RecordingClock") == "—" && Text("RecordingPhase") == "状态未知", "unknown window retains live clock or phase");
@@ -66,6 +69,11 @@ internal static partial class Program
                     Snapshot(owner, "manual-disconnected-details.png");
                     Show(new RecordingState("Saved", "已保存", OutputFile: "fixture.mp4"));
                     Assert(Available() && Text("RecordingPhase") == "已保存" && Button(owner, "OpenVideo").Visibility == Visibility.Visible, "fresh saved result did not recover controls and video entry");
+                    Show(new RecordingState("Failed", "录制中断", OutputFile: "incomplete.mp4"));
+                    Assert(Text("RecordingPhaseMark") == "!" && Button(owner, "OpenVideo").Visibility != Visibility.Visible &&
+                        !Button(owner, "OpenFolder").Content.ToString()!.Contains("保留片段"), "failed recording claimed a saved video or recovery folder");
+                    Show(new RecordingState("Failed", "录制中断", RecoveryDirectory: _output));
+                    Assert(Button(owner, "OpenFolder").Content.ToString()!.Contains("保留片段"), "confirmed recovery folder has no entry");
                     Show(idle);
                     Assert(Button(owner, "RecordStart").IsEnabled && !Text("RecordingMetrics").Contains("100"), "fresh idle state keeps old recording data or blocks start");
                     unavailable.Invoke(client, [null, "本次操作未确认；隔离连接中断"]);

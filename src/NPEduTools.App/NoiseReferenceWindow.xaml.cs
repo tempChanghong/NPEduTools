@@ -292,9 +292,9 @@ public partial class NoiseReferenceWindow : Window
         SetupStep.IsEnabled = !_busy && !_closing && !_verifying && (!_connected || navigating);
         SamplingStep.IsEnabled = ReviewSamples.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath;
         ResultStep.IsEnabled = navigating && _state?.Draft?.MeterDevicePath == _meterPath && _state?.Draft?.Samples.Count is > 0;
-        SetupStep.Style = TryFindResource(_step == 1 ? (object)"Primary" : typeof(Button)) as Style;
-        SamplingStep.Style = TryFindResource(_step == 2 ? (object)"Primary" : typeof(Button)) as Style;
-        ResultStep.Style = TryFindResource(_step == 3 ? (object)"Primary" : typeof(Button)) as Style;
+        SetupStep.Tag = _step == 1 ? "active" : null;
+        SamplingStep.Tag = _step == 2 ? "active" : null;
+        ResultStep.Tag = _step == 3 ? "active" : null;
     }
     private void Navigate(int step)
     {

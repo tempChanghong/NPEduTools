@@ -64,9 +64,10 @@ public partial class MainWindow
     private void ShowRecordingSettings() { ShowRecording(); _recordingWindow?.ShowSettingsPanel(); }
     private void RefreshRecording(RecordingState state)
     {
-        string clock = TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss");
+        var phase = HomeRecordingPresentation.Phase(state.Phase, _recording.StateAvailable);
+        HomeRecordingPresentation.ShowMark(HomeRecordingPhaseMark, phase.Mark, phase.Brush);
         RecordingHomeTitle.Text = HomeRecordingPresentation.Title(state, _recording.StateAvailable);
-        RecordingHomeStatus.Text = !_recording.StateAvailable ? "录制后台未确认当前状态，等待重新连接。" : state.Active ? $"{state.Message} · {clock}" : state.Message;
+        RecordingHomeStatus.Text = HomeRecordingPresentation.Detail(state, _recording.StateAvailable, includeOwner: state.Phase != "Recording");
         RecordingHomeAction.Text = HomeRecordingPresentation.Action(state, _recording.StateAvailable);
         _quick?.UpdateRecording(state, _recording.StateAvailable);
     }

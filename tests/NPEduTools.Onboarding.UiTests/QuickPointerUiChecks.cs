@@ -75,8 +75,11 @@ internal static partial class Program
             quick.OpenPanel(); quick.UpdateLayout();
             Snapshot(quick, "quick-pointer-expanded.png");
             other = new Window { Title = "NPEduTools.Test.focus", Width = 240, Height = 160 };
-            other.Show(); other.Activate(); quick.Activate();
-            PumpUntil(() => quick.IsActive, "fixture could not reactivate the quick panel");
+            ActivateFocusFixture(quick, other);
+            quick.OpenPanel(); PumpUntil(() => HasForeground(quick), "could not prepare transient foreground change");
+            TraceQuickFocus(quick, other, "transient focus", other.Activate());
+            TraceQuickFocus(quick, other, "reactivate open panel", quick.Activate());
+            PumpUntil(() => HasForeground(quick), "fixture could not reactivate the quick panel");
             Assert(panel.Visibility == Visibility.Visible, "transient activation change collapsed the panel after focus returned");
             other.Activate();
             PumpUntil(() => panel.Visibility == Visibility.Collapsed, "real focus loss did not dismiss quick panel");

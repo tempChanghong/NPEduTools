@@ -1,0 +1,22 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="SettingsRows.HighContrast.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+  <SolidColorBrush x:Key="TeacherPageBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+  <SolidColorBrush x:Key="TeacherSurfaceBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+  <SolidColorBrush x:Key="TeacherTextBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherMutedBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherLineBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherControlLineBrush" Color="{DynamicResource {x:Static SystemColors.ControlTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherAccentBrush" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+  <SolidColorBrush x:Key="TeacherAccentHoverBrush" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+  <SolidColorBrush x:Key="TeacherOnAccentBrush" Color="{DynamicResource {x:Static SystemColors.HighlightTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherHoverBrush" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+  <SolidColorBrush x:Key="TeacherSelectedBrush" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+  <SolidColorBrush x:Key="TeacherSelectedTextBrush" Color="{DynamicResource {x:Static SystemColors.HighlightTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherSuccessBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherWarningBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherErrorBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TeacherDisabledBrush" Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+</ResourceDictionary>

@@ -4,6 +4,8 @@
     <ResourceDictionary.MergedDictionaries>
       <ResourceDictionary Source="Resources/Branding.xaml" />
       <ResourceDictionary Source="Resources/CommonControls.xaml" />
+      <ResourceDictionary Source="Resources/SettingsRows.xaml" />
+      <ResourceDictionary Source="Resources/TeacherControls.xaml" />
     </ResourceDictionary.MergedDictionaries>
     <DataTemplate x:Key="ShortcutTileContent">
       <StackPanel>
@@ -15,14 +17,14 @@
       </StackPanel>
     </DataTemplate>
     <DataTemplate x:Key="ShortcutContent">
-      <Grid>
+      <Grid ToolTip="{Binding Tip}">
         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-        <Border Background="{Binding Tint}" Width="36" Height="36" CornerRadius="10" Margin="0,0,10,0">
-          <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="{Binding Ink}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Border Background="{DynamicResource TeacherPageBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" Width="36" Height="36" CornerRadius="6" Margin="0,0,10,0">
+          <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="{DynamicResource TeacherTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-          <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="{Binding KindLabel}" FontSize="11" Foreground="#7B8991" Margin="0,3,0,0" />
+          <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock FontSize="13" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"><Run Text="{Binding KindLabel, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Target, Mode=OneWay}"/></TextBlock>
         </StackPanel>
       </Grid>
     </DataTemplate>

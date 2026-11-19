@@ -50,10 +50,8 @@ public partial class MainWindow
         ClassroomModeTitle.Text = view.Title;
         ConnectionsModeTitle.Text = view.Title;
         ClassroomModeDetail.Text = view.Detail;
-        ClassroomModeCard.Background = new System.Windows.Media.SolidColorBrush(
-            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(view.Attention ? "#FFF5E6" : "#EAF6F2"));
-        ClassroomModeCard.BorderBrush = new System.Windows.Media.SolidColorBrush(
-            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(view.Attention ? "#E8D3AD" : "#C8E4D9"));
+        ClassroomModeCard.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "TeacherSurfaceBrush");
+        ClassroomModeCard.SetResourceReference(System.Windows.Controls.Border.BorderBrushProperty, view.Attention ? "TeacherWarningBrush" : "TeacherLineBrush");
         _quick?.UpdateClassroomMode(view);
     }
 }

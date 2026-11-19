@@ -1,51 +1,51 @@
 <Window x:Class="NPEduTools.App.StudyMonitoringWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:NPEduTools.App"
- Title="自习监测 · NPEduTools" Width="900" Height="660" MinWidth="640" MinHeight="460" Background="#F6F8F7" Foreground="#202E35" FontFamily="Microsoft YaHei UI" Icon="/Assets/npedutools.ico" WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
+ Title="自习监测 · NPEduTools" Width="900" Height="660" MinWidth="640" MinHeight="460" Background="{DynamicResource TeacherPageBrush}" Foreground="{DynamicResource TeacherTextBrush}" FontFamily="{DynamicResource TeacherFont}" Icon="/Assets/npedutools.ico" WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
  <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
   <StackPanel Margin="24,20">
    <DockPanel Margin="0,0,0,16">
-    <Button DockPanel.Dock="Right" Content="刷新状态" Click="RefreshClicked" Padding="14,8" VerticalAlignment="Center"/>
-    <StackPanel><TextBlock Text="自习监测" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="查看学校安排与本机执行状态" Foreground="#64776D" Margin="0,5,0,0"/></StackPanel>
+    <Button Style="{StaticResource TeacherButton}" DockPanel.Dock="Right" Content="刷新状态" Click="RefreshClicked" Padding="14,8" VerticalAlignment="Center"/>
+    <StackPanel><TextBlock Text="自习监测" FontSize="26" FontWeight="SemiBold"/><TextBlock Text="查看学校安排与本机执行状态" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,5,0,0"/></StackPanel>
    </DockPanel>
-   <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
+   <Border Style="{StaticResource SettingsGroupSurface}" Padding="18" Margin="0,0,0,14">
     <StackPanel>
      <TextBlock x:Name="StudyPhase" Text="正在读取学校安排…" FontSize="20" FontWeight="SemiBold"/>
-     <TextBlock x:Name="StudySchedule" Foreground="#61786B" TextWrapping="Wrap" Margin="0,6,0,12"/>
-     <Border Background="#F0F5F2" CornerRadius="8" Padding="12,10"><TextBlock x:Name="StudyNext" Text="下一次定时自习：学校安排待确认" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="StudyNextSchedule"/></Border>
-     <Expander Header="已收到的安排与同步详情" Foreground="#61786B" HorizontalContentAlignment="Stretch" Margin="0,10,0,0">
+     <TextBlock x:Name="StudySchedule" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,12"/>
+     <Border Background="{DynamicResource TeacherPageBrush}" CornerRadius="8" Padding="12,10"><TextBlock x:Name="StudyNext" Text="下一次定时自习：学校安排待确认" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="StudyNextSchedule"/></Border>
+     <Expander Header="已收到的安排与同步详情" Foreground="{DynamicResource TeacherMutedBrush}" HorizontalContentAlignment="Stretch" Margin="0,10,0,0">
       <TextBlock x:Name="StudyConfiguration" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="StudyConfiguration"/>
      </Expander>
      <Grid Margin="0,14,0,0">
       <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="18"/><ColumnDefinition/></Grid.ColumnDefinitions>
-      <StackPanel><TextBlock Text="噪音采集" Foreground="#718089" FontSize="12"/><TextBlock x:Name="StudyCapture" Text="采集状态待确认" TextWrapping="Wrap" Margin="0,5,0,0" AutomationProperties.AutomationId="StudyCaptureStatus"/></StackPanel>
-      <StackPanel Grid.Column="2"><TextBlock Text="全屏展示" Foreground="#718089" FontSize="12"/><TextBlock x:Name="StudyPresentation" Text="展示状态待确认" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel>
+      <StackPanel><TextBlock Text="噪音采集" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13"/><TextBlock x:Name="StudyCapture" Text="采集状态待确认" TextWrapping="Wrap" Margin="0,5,0,0" AutomationProperties.AutomationId="StudyCaptureStatus"/></StackPanel>
+      <StackPanel Grid.Column="2"><TextBlock Text="全屏展示" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13"/><TextBlock x:Name="StudyPresentation" Text="展示状态待确认" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel>
      </Grid>
     </StackPanel>
    </Border>
    <WrapPanel Margin="0,0,0,12">
-    <Button x:Name="ReturnStudyButton" Content="回到自习展示" Click="ReturnStudyClicked" Style="{StaticResource Primary}" Visibility="Collapsed" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="ReturnSchoolStudy"/>
-    <Button Content="实时监测 / 手动自习" Click="NoiseClicked" Padding="14,8" Margin="0,0,10,6"/>
-    <Button Content="自习座位表" Click="SeatingClicked" Padding="14,8" Margin="0,0,10,6"/>
+    <Button x:Name="ReturnStudyButton" Content="回到自习展示" Click="ReturnStudyClicked" Style="{StaticResource TeacherPrimary}" Visibility="Collapsed" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="ReturnSchoolStudy"/>
+    <Button Style="{StaticResource TeacherButton}" Content="实时监测 / 手动自习" Click="NoiseClicked" Padding="14,8" Margin="0,0,10,6"/>
+    <Button Style="{StaticResource TeacherButton}" Content="自习座位表" Click="SeatingClicked" Padding="14,8" Margin="0,0,10,6"/>
    </WrapPanel>
-   <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
+   <Border Style="{StaticResource SettingsGroupSurface}" Padding="18" Margin="0,0,0,14">
     <StackPanel>
      <TextBlock Text="噪音校准" FontSize="17" FontWeight="SemiBold"/>
-     <TextBlock x:Name="CalibrationStatus" Text="校准状态待确认" FontWeight="SemiBold" Foreground="#61786B" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="SchoolCalibrationStatus"/>
-     <TextBlock x:Name="CalibrationDetail" Foreground="#718089" FontSize="12" Margin="0,5,0,0" TextWrapping="Wrap"/>
-     <TextBlock Text="校准结果由手动与定时自习共用。" TextWrapping="Wrap" Foreground="#61786B" Margin="0,6,0,10"/>
+     <TextBlock x:Name="CalibrationStatus" Text="校准状态待确认" FontWeight="SemiBold" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="SchoolCalibrationStatus"/>
+     <TextBlock x:Name="CalibrationDetail" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,5,0,0" TextWrapping="Wrap"/>
+     <TextBlock Text="校准结果由手动与定时自习共用。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,10"/>
      <WrapPanel>
-      <Button x:Name="OpenMeterCalibration" Content="联机校准 (Beta)" Style="{StaticResource Primary}" Click="MeterClicked" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="OpenMeterCalibration"/>
-      <Button Content="快速校准" Click="CalibrationClicked" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="OpenQuickCalibration"/>
-      <Button Content="手动输入声级计参考" Click="ReferenceClicked" Padding="14,8" Margin="0,0,0,6" AutomationProperties.AutomationId="OpenReferenceCalibration"/>
+      <Button x:Name="OpenMeterCalibration" Content="联机校准 (Beta)" Style="{StaticResource TeacherPrimary}" Click="MeterClicked" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="OpenMeterCalibration"/>
+      <Button Style="{StaticResource TeacherButton}" Content="快速校准" Click="CalibrationClicked" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="OpenQuickCalibration"/>
+      <Button Style="{StaticResource TeacherButton}" Content="手动输入声级计参考" Click="ReferenceClicked" Padding="14,8" Margin="0,0,0,6" AutomationProperties.AutomationId="OpenReferenceCalibration"/>
      </WrapPanel>
     </StackPanel>
    </Border>
-   <Border Background="White" BorderBrush="#E5EBE7" BorderThickness="1" CornerRadius="12" Padding="16,12" Margin="0,0,0,12">
+   <Border Style="{StaticResource SettingsGroupSurface}" Padding="16,12" Margin="0,0,0,12">
     <Expander x:Name="DeviceSettings" IsExpanded="False" HorizontalContentAlignment="Stretch">
-     <Expander.Header><StackPanel><TextBlock Text="麦克风与摄像头" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="DeviceSummary" Text="设备状态正在读取…" Foreground="#61786B" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Expander.Header>
+     <Expander.Header><StackPanel><TextBlock Text="麦克风与摄像头" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="DeviceSummary" Text="设备状态正在读取…" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Expander.Header>
      <local:StudyDevicePicker x:Name="Devices" Margin="0,14,0,0"/>
     </Expander>
    </Border>
-   <Expander Header="时间来源与运行规则" Foreground="#61786B" HorizontalContentAlignment="Stretch" Padding="0,4">
+   <Expander Header="时间来源与运行规则" Foreground="{DynamicResource TeacherMutedBrush}" HorizontalContentAlignment="Stretch" Padding="0,4">
     <StackPanel Margin="0,8,0,0">
      <TextBlock Text="学校排程在 NPClassworks 后台设置；本页仅读取有效安排。新建默认时段为北京时间 19:15–21:30，实际日期、星期及例外日以学校配置为准。" TextWrapping="Wrap" Margin="0,0,0,8"/>
      <TextBlock Text="日常模式使用 ClassIsland 学校时间，考试模式使用 Windows 时间。考试放映优先，期间继续后台采集与按策略拍照，过期提示音不补播。" TextWrapping="Wrap" Margin="0,0,0,8"/>

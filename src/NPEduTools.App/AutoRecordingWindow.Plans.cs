@@ -82,6 +82,8 @@ public partial class AutoRecordingWindow
     private void RecordingMarginsClicked(object sender, RoutedEventArgs e)
     {
         AutoSections.SelectedIndex = 1;
+        RecordingMarginsDetails.IsExpanded = true;
+        RecordingMargins.UpdateLayout();
         RecordingMargins.BringIntoView();
         if (LeadMinutes.IsEnabled) LeadMinutes.Focus();
         else RuleList.Focus();
@@ -191,7 +193,7 @@ public partial class AutoRecordingWindow
     private async void RelativeDayClicked(object sender, RoutedEventArgs e)
     {
         if (_clock.Read(Elapsed) is not { CanStart: true, Now: { } now }) return;
-        int offset = int.Parse((string)((Button)sender).Tag);
+        int offset = int.Parse((string)((Button)sender).CommandParameter);
         SetViewDate(DateOnly.FromDateTime(now.Date).AddDays(offset), offset == 0); await ReadCalendarAsync(true);
     }
     private TimeSpan _calendarRetry;

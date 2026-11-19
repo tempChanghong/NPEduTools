@@ -20,7 +20,7 @@ internal static partial class Program
     private static int Main(string[] args)
     {
         bool aboutVersionOnly = args.Length == 2 && args[1] == "--about-version";
-        bool quickBoundariesOnly = args.Length == 2 && args[1] == "--quick-boundaries";
+        bool quickBoundariesOnly = args.Length == 2 && args[1] is "--quick-boundaries" or "--quick-slideshow";
         bool quickWorkspaceOnly = args.Length == 2 && args[1] == "--quick-workspace";
         bool homeWorkspaceOnly = args.Length == 2 && args[1] == "--home-workspace";
         bool connectionWorkspaceOnly = args.Length == 2 && args[1] == "--connection-workspace";
@@ -58,7 +58,7 @@ internal static partial class Program
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] == "--notification-inbox";
         bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
-        if (args.Length != 1 && !aboutVersionOnly && !quickBoundariesOnly && !quickWorkspaceOnly && !connectionWorkspaceOnly && !homeWorkspaceOnly && !recordingWorkspaceOnly && !workspaceRacesOnly && !workspaceOnly && !manualStudyOnly && !readingLayoutOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyReliabilityOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--about-version|--quick-boundaries|--quick-workspace|--connection-workspace|--home-workspace|--recording-workspace|--study-workspace|--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--homework-reading-layout|--study-reliability|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
+        if (args.Length != 1 && !aboutVersionOnly && !quickBoundariesOnly && !quickWorkspaceOnly && !connectionWorkspaceOnly && !homeWorkspaceOnly && !recordingWorkspaceOnly && !workspaceRacesOnly && !workspaceOnly && !manualStudyOnly && !readingLayoutOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyReliabilityOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--about-version|--quick-boundaries|--quick-slideshow|--quick-workspace|--connection-workspace|--home-workspace|--recording-workspace|--study-workspace|--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--homework-reading-layout|--study-reliability|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         // Load only the real styling, never App.OnStartup or any production Host/endpoint.
@@ -75,7 +75,7 @@ internal static partial class Program
         {
             if (studyReliabilityOnly) { RunStudyReliabilityChecks(); WriteResult("PASSED", null); return 0; }
             if (aboutVersionOnly) { RunAboutVersionChecks(); WriteResult("PASSED", null); return 0; }
-            if (quickBoundariesOnly) { RunQuickBoundaryChecks(); WriteResult("PASSED", null); return 0; }
+            if (quickBoundariesOnly) { if (args[1] == "--quick-slideshow") RunQuickSlideShowChecks(); else RunQuickBoundaryChecks(); WriteResult("PASSED", null); return 0; }
             if (quickWorkspaceOnly) { RunQuickWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (connectionWorkspaceOnly) { RunConnectionWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (homeWorkspaceOnly) { RunHomeWorkspaceChecks(); WriteResult("PASSED", null); return 0; }

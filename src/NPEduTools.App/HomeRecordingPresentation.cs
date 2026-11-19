@@ -2,8 +2,35 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.App;
 
-internal static class HomeRecordingPresentation
+internal static partial class HomeRecordingPresentation
 {
+    public static (string Text, string Mark, string Brush) Phase(string phase, bool confirmed) => (confirmed ? phase : "") switch
+    {
+        "Idle" => ("准备录制", "○", "TeacherMutedBrush"),
+        "Starting" => ("准备中", "…", "TeacherMutedBrush"),
+        "Recording" => ("录制中", "●", "TeacherErrorBrush"),
+        "Pausing" => ("暂停中", "…", "TeacherWarningBrush"),
+        "Paused" => ("已暂停", "Ⅱ", "TeacherWarningBrush"),
+        "Saving" => ("保存中", "…", "TeacherMutedBrush"),
+        "Saved" => ("已保存", "✓", "TeacherSuccessBrush"),
+        "Failed" => ("未完成", "!", "TeacherErrorBrush"),
+        _ => ("状态未知", "?", "TeacherMutedBrush")
+    };
+
+    private static string Owner(RecordingState state) => state.Control?.Owner switch
+    {
+        "Automatic" => "自动录课", "Manual" => "手动录课", _ => "来源待确认"
+    };
+
+    public static string Detail(RecordingState state, bool confirmed, bool includeOwner = true)
+    {
+        if (!confirmed) return "录制后台未确认当前状态，等待重新连接。";
+        if (!state.Active) return state.Message;
+        var clock = TimeSpan.FromSeconds(state.Seconds).ToString(@"hh\:mm\:ss");
+        return (includeOwner ? $"{Owner(state)} · " : "") + clock +
+            (string.IsNullOrWhiteSpace(state.Message) ? "" : $" · {state.Message}");
+    }
+
     public static string Title(RecordingState state, bool confirmed) => !confirmed ? "录课状态待确认" : state.Phase switch
     {
         "Starting" => "录课准备中", "Recording" => state.Control?.Owner switch

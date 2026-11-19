@@ -120,8 +120,7 @@ public partial class OnboardingWindow : Window
         StepList.ItemsSource = stages.Select((title, index) => new
         {
             Title = $"{index + 1}  {title}",
-            Background = index == stage ? "#EAF6F2" : "#EEF2F0",
-            Foreground = index == stage ? "#147D68" : "#718089"
+            Current = index == stage
         }).ToArray();
     }
     private void ChoicesChanged(object sender, RoutedEventArgs e)

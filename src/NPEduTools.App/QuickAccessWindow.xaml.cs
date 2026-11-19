@@ -42,7 +42,7 @@ public partial class QuickAccessWindow : Window
         ClassroomModeDetail.Text = view.Detail;
         RailModeText.Text = view.RailLabel;
         EdgeHandle.ToolTip = view.Title + "\n" + view.Detail + "\n点击展开或收起；拖动调整位置";
-        ClassroomModeTitle.Foreground = new SolidColorBrush(view.Attention ? Color.FromRgb(156, 87, 33) : Color.FromRgb(32, 46, 53));
+        ClassroomModeTitle.SetResourceReference(TextBlock.ForegroundProperty, view.Attention ? "TeacherWarningBrush" : "TeacherTextBrush");
     }
     public void SetExamAwareAction(Action action) => _examAware = action;
     private void ExamAwareClicked(object sender, RoutedEventArgs e) => _examAware?.Invoke();
@@ -53,7 +53,8 @@ public partial class QuickAccessWindow : Window
     private readonly Action<ShortcutEntry> _openShortcut;
     private readonly Action _manageShortcuts, _repairShortcut;
     private Placement _placement = new();
-    private nint _handle, _previous;
+    private nint _handle, _previous, _lastExternalForeground, _foregroundHook;
+    private readonly ForegroundCallback _foregroundChanged;
     private bool _autoHidden;
     private bool _expanded, _dragging, _closing, _positioning, _shortcutsSelected;
     private Point? _dragStart;
@@ -88,6 +89,7 @@ public partial class QuickAccessWindow : Window
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
         SelectShortcutPage(false); RefreshCompact();
+        _foregroundChanged = (_, _, window, _, _, _, _) => RememberExternalForeground(window);
         _idleTimer.Tick += (_, _) => RefreshHandleOpacity();
         _idleTimer.Start();
         EdgeHandle.MouseEnter += (_, _) => HandleActivity();
@@ -98,6 +100,9 @@ public partial class QuickAccessWindow : Window
         {
             _handle = new WindowInteropHelper(this).Handle;
             HwndSource.FromHwnd(_handle)?.AddHook(WindowHook);
+            RememberExternalForeground(GetForegroundWindow());
+            const uint foregroundEvent = 3; // EVENT_SYSTEM_FOREGROUND, delivered on this UI thread.
+            _foregroundHook = SetWinEventHook(foregroundEvent, foregroundEvent, 0, _foregroundChanged, 0, 0, 0);
             Position();
         };
         Deactivated += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
@@ -109,7 +114,13 @@ public partial class QuickAccessWindow : Window
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Collapse(); } };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(Position);
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplayChanged;
-        Closed += (_, _) => { _closing = true; _idleTimer.Stop(); Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplayChanged; };
+        Closed += (_, _) =>
+        {
+            _closing = true;
+            _idleTimer.Stop();
+            if (_foregroundHook != 0) UnhookWinEvent(_foregroundHook);
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplayChanged;
+        };
         EdgeHandle.PreviewMouseLeftButtonDown += (_, e) =>
         {
             if (!IsPromotedTouch(e) && _handleTouch is null && _dragStart is null) { BeginDrag(PointToScreen(e.GetPosition(this))); if (!EdgeHandle.CaptureMouse()) CancelDrag(); }
@@ -140,8 +151,22 @@ public partial class QuickAccessWindow : Window
     private nint WindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
         // A collapsed handle must not take keyboard focus away from the slide show.
-        if (message == 0x21 && !_expanded) { handled = true; return 3; } // WM_MOUSEACTIVATE / MA_NOACTIVATE
+        if (!_expanded && message == 0x21) // WM_MOUSEACTIVATE
+        {
+            RememberExternalForeground(GetForegroundWindow());
+            handled = true;
+            return 3; // MA_NOACTIVATE
+        }
+        // WPF can activate a button while processing a real pointer down. By release the
+        // foreground may already be this rail; WM_ACTIVATE still identifies its predecessor.
+        if (!_expanded && message == 0x06 && (wParam.ToInt64() & 0xffff) != 0)
+            RememberExternalForeground(lParam);
         return 0;
+    }
+
+    private void RememberExternalForeground(nint window)
+    {
+        if (window != 0 && window != _handle) _lastExternalForeground = window;
     }
 
     private void DisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(Position);
@@ -191,7 +216,11 @@ public partial class QuickAccessWindow : Window
     public void OpenPanel()
     {
         if (_closing || _autoHidden) return;
-        if (!_expanded) _previous = GetForegroundWindow();
+        if (!_expanded)
+        {
+            RememberExternalForeground(GetForegroundWindow());
+            _previous = _lastExternalForeground;
+        }
         bool animate = !_expanded && SystemParameters.ClientAreaAnimation;
         RefreshTaskOrder(); _expanded = true; RefreshCompact();
         PanelSurface.Visibility = Visibility.Visible;
@@ -216,6 +245,7 @@ public partial class QuickAccessWindow : Window
         RefreshRail();
         Position();
         if (restoreFocus && wasExpanded && GetForegroundWindow() == _handle && _previous != 0 && IsWindow(_previous)) SetForegroundWindow(_previous);
+        if (wasExpanded) _previous = 0;
     }
 
     public bool LeftSide => _placement.LeftSide;
@@ -340,8 +370,8 @@ public partial class QuickAccessWindow : Window
         PauseButton.IsEnabled = available;
         ClassIslandStatus.Text = classIslandStatus; ClassIslandButton.IsEnabled = canStart;
         ClassIslandButton.Content = startLabel;
-        RailStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(
-            state?.Error is not null ? "#CD7552" : state?.Running != true ? "#A5B3AB" : state.Paused ? "#C69A4F" : "#147D68"));
+        RailStatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,
+            state?.Error is not null ? "TeacherErrorBrush" : state?.Running != true ? "TeacherMutedBrush" : state.Paused ? "TeacherWarningBrush" : "TeacherSuccessBrush");
         RailStatusDot.ToolTip = "PPT 辅助 · " + status;
     }
 
@@ -412,6 +442,8 @@ public partial class QuickAccessWindow : Window
     private void AutomaticSkipDayClicked(object sender, RoutedEventArgs e) { if (AutomaticSkipDay.IsEnabled && AutomaticSkipDay.Visibility == Visibility.Visible) _skipAutomaticToday?.Invoke(); }
     public void UpdateRecording(RecordingState state, bool stateAvailable = true)
     {
+        var phase = HomeRecordingPresentation.Phase(state.Phase, stateAvailable);
+        HomeRecordingPresentation.ShowMark(QuickRecordingPhaseMark, phase.Mark, phase.Brush);
         bool active = stateAvailable && state.Active;
         if (_recordingTask != active) { _recordingTask = active; _taskOrderDirty = true; }
         RefreshTaskOrder();
@@ -423,10 +455,10 @@ public partial class QuickAccessWindow : Window
             RecordingPause.IsEnabled = RecordingStop.IsEnabled = false;
             return;
         }
-        RecordingStatus.Text = state.Active ? $"{state.Message} · {TimeSpan.FromSeconds(Math.Max(0, state.Seconds)):hh\\:mm\\:ss}" : state.Message;
+        RecordingStatus.Text = HomeRecordingPresentation.Detail(state, stateAvailable);
         RecordingButton.Content = state.Active ? "控制" : "录制";
         if (state.Active && state.Control is { Owner: "Automatic", HardDeadline: > 0 } c)
-            RecordingStatus.Text = "自动 · " + RecordingStatus.Text + $" · 至多剩余 {TimeSpan.FromSeconds(Math.Max(0, RecorderDeadline.SecondsUntil(c.HardDeadline))):hh\\:mm\\:ss}";
+            RecordingStatus.Text += $" · 至多剩余 {TimeSpan.FromSeconds(Math.Max(0, RecorderDeadline.SecondsUntil(c.HardDeadline))):hh\\:mm\\:ss}";
         RecordingControls.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
         RecordingPause.IsEnabled = RecordingStop.IsEnabled = !state.Busy;
         RecordingPause.Content = state.Phase == "Paused" ? "继续" : "暂停";
@@ -461,12 +493,8 @@ public partial class QuickAccessWindow : Window
         _shortcutsSelected = shortcuts;
         ToolsPage.Visibility = SettingsFooter.Visibility = shortcuts ? Visibility.Collapsed : Visibility.Visible;
         ShortcutsPage.Visibility = ShortcutsFooter.Visibility = shortcuts ? Visibility.Visible : Visibility.Collapsed;
-        var active = (System.Windows.Media.Brush)FindResource("Accent");
-        var inactive = Brushes.Transparent;
-        ToolsTab.Background = shortcuts ? inactive : active;
-        ToolsTab.Foreground = shortcuts ? System.Windows.Media.Brushes.DarkSlateGray : System.Windows.Media.Brushes.White;
-        ShortcutsTab.Background = shortcuts ? active : inactive;
-        ShortcutsTab.Foreground = shortcuts ? System.Windows.Media.Brushes.White : System.Windows.Media.Brushes.DarkSlateGray;
+        ToolsTab.Tag = shortcuts ? null : "active";
+        ShortcutsTab.Tag = shortcuts ? "active" : null;
         RefreshRail();
     }
     private void RefreshRail()
@@ -485,6 +513,10 @@ public partial class QuickAccessWindow : Window
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    private delegate void ForegroundCallback(nint hook, uint eventType, nint window, int objectId, int childId, uint thread, uint time);
+    [DllImport("user32.dll")] private static extern nint SetWinEventHook(uint first, uint last, nint module,
+        ForegroundCallback callback, uint processId, uint threadId, uint flags);
+    [DllImport("user32.dll")] private static extern bool UnhookWinEvent(nint hook);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindow(nint hwnd);
 }

@@ -10,6 +10,7 @@ internal static partial class Program
 {
     private static void RunHomeWorkspaceChecks()
     {
+        RunShortcutKeyboardChecks();
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         string pipe = "NPEduTools.Test.home-workspace." + Guid.NewGuid().ToString("N");
         var main = (MainWindow)typeof(MainWindow).GetConstructors(flags).Single().Invoke([pipe, null, false]);
@@ -57,11 +58,22 @@ internal static partial class Program
                     main.MinWidth = main.MinHeight = 0; main.Width = size.Width; main.Height = size.Height;
                     ((FrameworkElement)main.Content).LayoutTransform = new ScaleTransform(.8, .8);
                     Element<ScrollViewer>("HomePage").ScrollToTop(); main.UpdateLayout();
-                    Reachable(main, Element<Button>("WorkspacePrimary")); Reachable(main, Element<Button>("RecordingHomeButton"));
+                    foreach (string name in new[] { "WorkspacePrimary", "RecordingHomeButton" })
+                    {
+                        var button = Element<Button>(name);
+                        Reachable(main, button);
+                        var target = button.TransformToAncestor(main).TransformBounds(new Rect(button.RenderSize));
+                        Assert(target.Width >= 44 && target.Height >= 44, $"{name} has a {target.Size} DIP hit area at {size}");
+                        var center = button.TranslatePoint(new Point(button.ActualWidth / 2, button.ActualHeight / 2), main);
+                        Assert(main.InputHitTest(center) is DependencyObject hit && (ReferenceEquals(hit, button) || button.IsAncestorOf(hit)),
+                            $"{name} centre is not reachable from the first screen at {size}");
+                    }
                     Reachable(main, Element<TextBlock>("StudyHomeNext")); Reachable(main, Element<TextBlock>("HomeRecordingNext"));
                     Snapshot(main, $"home-first-screen-{size.Width}-{size.Height}.png");
+                    CheckTeacherDpi(main, size);
                 }
-                Checks.Add("Actual homepage: study and recording remain independent, source-specific next items, both task controls and upcoming summaries fit first screen at 2K/200-percent-sized and compact logical viewports");
+                CheckTeacherThemeAndFont(main);
+                Checks.Add("Actual homepage: independent study and recording, source-specific next items, 44-DIP task targets and upcoming summaries on the first screen at all three logical sizes");
                 Recording(recording, upcoming with { NextState = "ClockPending" });
                 Assert(!Element<TextBlock>("HomeRecordingNext").Text.Contains("数学"), "clock loss retained stale future recording time");
                 client.GetType().GetMethod("MarkUnavailable", flags)!.Invoke(client, [null, null]);
@@ -86,6 +98,10 @@ internal static partial class Program
                     "completed recording primary action goes back into setup");
                 Invoke("HomeNavClicked", main, new RoutedEventArgs());
                 Assert(Element<TextBlock>("RecordingHomeTitle").Text.Contains("已保存"), "return home lost recent result");
+                Recording(recording with { Phase = "Failed", Message = "音源中断", RecoveryDirectory = _output }, upcoming);
+                Click(main, "RecordingHomeButton");
+                Assert(Element<Button>("RecordingRecordsTab").Tag?.ToString() == "active", "failed recording did not lead to records");
+                Invoke("HomeNavClicked", main, new RoutedEventArgs());
                 Checks.Add("Homepage authority and routing: clock/pipe loss withdraws cached time; fresh snapshot recovers; Windows study source remains separate; manual reservation is explicit; saved result opens records without starting capture");
                 Invoke("ShowClassroomModeState", (object?)null);
                 Assert(Element<Expander>("HomeClassroomModeDetails").IsExpanded, "mode warning was hidden inside closed details");

@@ -36,6 +36,7 @@ public partial class RecordingWindow : Window
         _probe = probe;
         _preferencesPath = StartupPreferencesStore.PathFor(endpoint).Replace(".startup.json", ".recording.json", StringComparison.Ordinal);
         InitializeComponent();
+        OutputDirectory.TextChanged += (_, _) => { if (_viewReady) { RecordingPreferenceFeedback.Text = ""; UpdateReadySummary(); } };
         DesktopDialogSizing.Attach(this, endpoint);
         OutputDirectory.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "NPEduTools");
         try
@@ -67,6 +68,7 @@ public partial class RecordingWindow : Window
         // Freeze the selection draft before awaiting enumeration so its result
         // cannot overwrite edits made while the device snapshot is in flight.
         RecordingSettings.IsEnabled = RecordStart.IsEnabled = SaveSettings.IsEnabled = false;
+        UpdateSound();
         try
         {
             string? display = DisplayChoice.SelectedValue as string ?? _saved?.Display;
@@ -105,9 +107,14 @@ public partial class RecordingWindow : Window
         var (width, height) = RecordingContract.OutputSize(display.Width, display.Height, MaximumHeight);
         CaptureSummary.Text = $"采集 {display.Width} × {display.Height} → 保存 {width} × {height} · {Fps} fps · MP4";
     }
-    private void ChoicesChanged(object sender, SelectionChangedEventArgs e) { if (_viewReady) { UpdateSummary(); UpdateReadySummary(); } }
-    private void SoundChanged(object sender, RoutedEventArgs e) { if (_viewReady) { UpdateSound(); UpdateReadySummary(); } }
-    private void UpdateSound() { SpeakerChoice.IsEnabled = SystemSound.IsChecked == true; MicrophoneChoice.IsEnabled = MicrophoneSound.IsChecked == true; }
+    private void ChoicesChanged(object sender, SelectionChangedEventArgs e) { if (_viewReady) { RecordingPreferenceFeedback.Text = ""; UpdateSummary(); UpdateReadySummary(); } }
+    private void SoundChanged(object sender, RoutedEventArgs e) { if (_viewReady) { RecordingPreferenceFeedback.Text = ""; UpdateSound(); UpdateReadySummary(); } }
+    private void UpdateSound()
+    {
+        // A settings row's content may not yet have a visual parent on the first layout pass.
+        SpeakerChoice.IsEnabled = RecordingSettings.IsEnabled && SystemSound.IsChecked == true;
+        MicrophoneChoice.IsEnabled = RecordingSettings.IsEnabled && MicrophoneSound.IsChecked == true;
+    }
     private async void RefreshClicked(object sender, RoutedEventArgs e) => await ProbeAsync();
     private void BrowseClicked(object sender, RoutedEventArgs e)
     {
@@ -118,6 +125,7 @@ public partial class RecordingWindow : Window
     {
         var options = OptionsFromForm(); if (options is null) return;
         SavePreferences(options);
+        RecordingPreferenceFeedback.Text = "";
         await _client.SendAsync("start", options);
     }
     private RecordingOptions? OptionsFromForm()
@@ -151,7 +159,9 @@ public partial class RecordingWindow : Window
                 Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
                 File.WriteAllText(_preferencesPath + ".tmp", JsonSerializer.Serialize(new Preferences(1, options)));
                 File.Move(_preferencesPath + ".tmp", _preferencesPath, true); _saved = options;
-                RecordingError.Text = "录制设置已保存，可在自动安排中启用。"; return true;
+                RecordingError.Text = "";
+                RecordingPreferenceFeedback.Text = "录制设置已保存。";
+                return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { RecordingError.Text = "录制设置未能保存；本次使用当前选项。"; }
         }
@@ -159,8 +169,8 @@ public partial class RecordingWindow : Window
     }
     private void SaveSettingsClicked(object sender, RoutedEventArgs e)
     { if (OptionsFromForm() is { } options) { if (SavePreferences(options)) _editing = false; Apply(_client.State); } }
-    internal void ShowSettingsPanel() { if (!_client.State.Active) { _editing = true; Apply(_client.State); } }
-    private void EditSettingsClicked(object sender, RoutedEventArgs e) { _editing = !_editing; Apply(_client.State); }
+    internal void ShowSettingsPanel() { if (!_client.State.Active) { RecordingPreferenceFeedback.Text = ""; _editing = true; Apply(_client.State); } }
+    private void EditSettingsClicked(object sender, RoutedEventArgs e) { RecordingPreferenceFeedback.Text = ""; _editing = !_editing; Apply(_client.State); }
     private void UpdateReadySummary()
     {
         var deviceError = DeviceSelectionError();
@@ -188,7 +198,10 @@ public partial class RecordingWindow : Window
         SaveSettings.Visibility = ReturnRecordingSettings.Visibility = !state.Active && _editing ? Visibility.Visible : Visibility.Collapsed;
         UpdateReadySummary();
         RecordingClock.Text = available ? TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss") : "—";
-        RecordingPhase.Text = available ? state.Phase switch { "Starting" => "准备中", "Recording" => "录制中", "Paused" => "已暂停", "Pausing" => "暂停中", "Saving" => "保存中", "Saved" => "已保存", "Failed" => "未完成", _ => "准备录制" } : "状态未知";
+        var phase = HomeRecordingPresentation.Phase(state.Phase, available);
+        RecordingPhase.Text = phase.Text;
+        HomeRecordingPresentation.ShowMark(RecordingPhaseMark, phase.Mark, phase.Brush);
+        if (!available || state.Active || state.Error is not null) RecordingPreferenceFeedback.Text = "";
         RecordingMessage.Text = available ? state.Message : "录制后台未确认当前状态，等待重新连接；不能据此判断录制已经停止。";
         if (state.Error is not null) RecordingError.Text = state.Error;
         else if (state.Active || state.Phase == "Saved" || _stateError is not null && RecordingError.Text == _stateError) RecordingError.Text = "";
@@ -198,19 +211,26 @@ public partial class RecordingWindow : Window
             ? "低帧率适合课件与讲解，快速视频和动画会不够流畅。"
             : $"{state.Frames:N0} 帧 · {state.Bytes / 1048576.0:F1} MB · 丢帧 {state.DroppedFrames} · 音频缓冲异常 {state.AudioOverruns}";
         RecordingSettings.IsEnabled = available && !state.Active && !_probing;
+        UpdateSound();
         RecordStart.Visibility = state.Active ? Visibility.Collapsed : Visibility.Visible;
         RecordStart.IsEnabled = available && !state.Active && !_probing && _environment?.Ready == true;
         SaveSettings.IsEnabled = RecordStart.IsEnabled;
         RecordPause.Visibility = RecordStop.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
         RecordPause.IsEnabled = RecordStop.IsEnabled = available && !state.Busy;
         RecordPause.Content = state.Phase == "Paused" ? "继续录制" : "暂停";
-        OpenVideo.Visibility = state.OutputFile is null ? Visibility.Collapsed : Visibility.Visible;
+        OpenVideo.Visibility = available && state.Phase == "Saved" && !string.IsNullOrWhiteSpace(state.OutputFile) ? Visibility.Visible : Visibility.Collapsed;
         OpenFolder.Visibility = Visibility.Visible;
-        OpenFolder.Content = state.Phase == "Failed" ? "打开保留片段" : "打开文件夹";
+        OpenFolder.Content = available && state.Phase == "Failed" && !string.IsNullOrWhiteSpace(state.RecoveryDirectory) ? "打开保留片段" : "打开文件夹";
     }
     private void HideClicked(object sender, RoutedEventArgs e) { if (WorkspaceReturn is { } back) back(); else Hide(); }
     private void OpenVideoClicked(object sender, RoutedEventArgs e) => OpenPath(_client.State.OutputFile);
-    private void OpenFolderClicked(object sender, RoutedEventArgs e) => OpenPath(_client.State.OutputFile is { } file ? Path.GetDirectoryName(file) : _client.State.RecoveryDirectory ?? OutputDirectory.Text.Trim());
+    private void OpenFolderClicked(object sender, RoutedEventArgs e)
+    {
+        var state = _client.State;
+        string? folder = _client.StateAvailable && state.Phase == "Failed" ? state.RecoveryDirectory :
+            _client.StateAvailable && state.Phase == "Saved" && state.OutputFile is { } file ? Path.GetDirectoryName(file) : null;
+        OpenPath(string.IsNullOrWhiteSpace(folder) ? OutputDirectory.Text.Trim() : folder);
+    }
     private void OpenPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))

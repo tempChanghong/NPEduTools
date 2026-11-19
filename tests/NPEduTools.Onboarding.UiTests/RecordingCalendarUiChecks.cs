@@ -84,6 +84,9 @@ internal static partial class Program
                     Click(owner, newOffset == 0 ? "TodayButton" : newOffset == 1 ? "TomorrowButton" : "AfterTomorrowButton");
                     Assert((DateOnly?)Field("_viewDate") == today.AddDays(newOffset) && Field("_forecast") is null,
                         "date buttons did not change the selected day or clear the previous forecast");
+                    var dayButtons = new[] { "TodayButton", "TomorrowButton", "AfterTomorrowButton" };
+                    Assert(dayButtons.Select(name => Button(owner, name).Tag as string).Where(tag => tag == "active").Count() == 1 &&
+                        Button(owner, dayButtons[newOffset]).Tag as string == "active", "date selection highlight diverged from the selected school date");
                     if (lostReply) oldServer.Disconnect();
                     else
                     {

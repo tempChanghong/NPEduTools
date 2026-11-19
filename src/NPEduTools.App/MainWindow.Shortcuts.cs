@@ -11,7 +11,7 @@ public partial class MainWindow
 {
     private ShortcutCatalog _shortcutStore = null!;
     private ShortcutEntry[] _shortcuts = [];
-    private ShortcutEntry[]? _beforeShortcutDelete;
+    private (ShortcutEntry[] Items, Guid RemovedId)? _beforeShortcutDelete;
     private bool _shortcutsReadable, _shortcutBusy;
     private Guid? _shortcutRepairId;
     private string _shortcutMessage = "";
@@ -33,7 +33,7 @@ public partial class MainWindow
         catch (Exception error) when (IsShortcutError(error))
         {
             _shortcutsReadable = false; _shortcuts = [];
-            SetShortcutMessage("快捷启动配置未能读取，原文件已保留。修复配置后可重新读取。");
+            SetShortcutMessage("快捷启动配置未能读取，原文件已保留。修复配置后可重新读取。", error: true);
         }
         PopulateShortcuts();
     }
@@ -43,11 +43,12 @@ public partial class MainWindow
         HomeShortcutItems.ItemsSource = _shortcuts.Take(6).ToArray();
         ShortcutList.ItemsSource = _shortcuts;
         ShortcutList.SelectedItem = _shortcuts.FirstOrDefault(item => item.Id == selection);
-        ShortcutEmpty.Visibility = _shortcuts.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShortcutEmpty.Visibility = _shortcutsReadable && _shortcuts.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         HomeShortcutEmpty.Visibility = ShortcutEmpty.Visibility;
         HomeShortcutCount.Text = !_shortcutsReadable ? "暂不可用"
             : _shortcuts.Length > 6 ? $"{_shortcuts.Length} 项 · 显示前 6 项" : $"{_shortcuts.Length} 项";
-        ShortcutCount.Text = $"{_shortcuts.Length} / {ShortcutCatalog.MaximumItems} 项 · 顺序同步到贴边面板";
+        ShortcutCount.Text = _shortcutsReadable ? $"{_shortcuts.Length} / {ShortcutCatalog.MaximumItems} 项" : "快捷项暂不可用";
+        ShortcutSelectionText.Visibility = _shortcuts.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _quick?.SetShortcuts(_shortcuts);
         RefreshShortcutControls();
     }
@@ -68,10 +69,13 @@ public partial class MainWindow
         _quick?.SetShortcutStatus(_shortcutMessage, !_shortcutBusy, _shortcutRepairId is not null);
     }
 
-    private void SetShortcutMessage(string message, Guid? repair = null)
+    private void SetShortcutMessage(string message, Guid? repair = null, bool error = false)
     {
         _shortcutMessage = message; _shortcutRepairId = repair;
         ShortcutMessage.Text = HomeShortcutMessage.Text = message;
+        string brush = error || repair is not null ? "TeacherErrorBrush" : "TeacherMutedBrush";
+        ShortcutMessage.SetResourceReference(TextBlock.ForegroundProperty, brush);
+        HomeShortcutMessage.SetResourceReference(TextBlock.ForegroundProperty, brush);
         RefreshShortcutControls();
     }
 
@@ -90,11 +94,21 @@ public partial class MainWindow
     private void EditShortcut(ShortcutEntry? entry)
     {
         if (!_shortcutsReadable || _shortcutBusy || (entry is null && _shortcuts.Length >= ShortcutCatalog.MaximumItems)) return;
+        Guid? previous = entry?.Id ?? (ShortcutList.SelectedItem as ShortcutEntry)?.Id;
         ShowShortcutManager();
         var editor = new ShortcutEditorWindow(entry) { Owner = this };
-        if (editor.ShowDialog() != true || editor.Result is not { } result) return;
+        if (editor.ShowDialog() != true || editor.Result is not { } result)
+        {
+            FocusShortcut(previous);
+            return;
+        }
         var next = entry is null ? [.. _shortcuts, result] : _shortcuts.Select(item => item.Id == entry.Id ? result : item).ToArray();
-        if (SaveShortcuts(next, result.Id)) SetShortcutMessage("已保存，主页面与贴边面板已同步。");
+        if (SaveShortcuts(next, result.Id))
+        {
+            SetShortcutMessage("已保存，主页面与贴边面板已同步。");
+            FocusShortcut(result.Id);
+        }
+        else FocusShortcut(previous);
     }
 
     private bool SaveShortcuts(ShortcutEntry[] next, Guid? selection = null)
@@ -108,7 +122,7 @@ public partial class MainWindow
         {
             SetShortcutMessage(error is InvalidDataException
                 ? $"未能保存更改，列表保持原样。{error.Message}"
-                : "未能保存更改，列表保持原样。请检查配置目录的访问权限。");
+                : "未能保存更改，列表保持原样。请检查配置目录的访问权限。", error: true);
             return false;
         }
     }
@@ -117,14 +131,20 @@ public partial class MainWindow
     {
         if (_shortcutBusy || ShortcutList.SelectedItem is not ShortcutEntry entry) return;
         var before = _shortcuts;
-        if (!SaveShortcuts(_shortcuts.Where(item => item.Id != entry.Id).ToArray())) return;
-        _beforeShortcutDelete = before;
+        int index = ShortcutList.SelectedIndex;
+        var next = _shortcuts.Where(item => item.Id != entry.Id).ToArray();
+        Guid? neighbour = next.Length == 0 ? null : next[Math.Min(index, next.Length - 1)].Id;
+        if (!SaveShortcuts(next, neighbour)) return;
+        _beforeShortcutDelete = (before, entry.Id);
         SetShortcutMessage($"已移除“{entry.Name}”。原应用或文件仍保留，可撤销本次移除。");
+        FocusShortcut(neighbour);
     }
 
     private void UndoShortcutClicked(object sender, RoutedEventArgs e)
     {
-        if (!_shortcutBusy && _beforeShortcutDelete is { } before && SaveShortcuts(before)) SetShortcutMessage("已恢复移除前的列表。");
+        if (_shortcutBusy || _beforeShortcutDelete is not { } before || !SaveShortcuts(before.Items, before.RemovedId)) return;
+        SetShortcutMessage("已恢复移除前的列表。");
+        FocusShortcut(before.RemovedId);
     }
 
     private void MoveShortcutClicked(object sender, RoutedEventArgs e)
@@ -133,7 +153,23 @@ public partial class MainWindow
         int current = ShortcutList.SelectedIndex, nextIndex = current + (ReferenceEquals(sender, MoveShortcutUp) ? -1 : 1);
         if (nextIndex < 0 || nextIndex >= _shortcuts.Length) return;
         var next = _shortcuts.ToArray(); (next[current], next[nextIndex]) = (next[nextIndex], next[current]);
-        if (SaveShortcuts(next, entry.Id)) SetShortcutMessage("顺序已保存。");
+        if (!SaveShortcuts(next, entry.Id)) return;
+        SetShortcutMessage("顺序已保存。");
+        FocusShortcut(entry.Id);
+    }
+
+    private void FocusShortcut(Guid? id)
+    {
+        if (!ShortcutPage.IsVisible) return;
+        if (id is not null && _shortcuts.FirstOrDefault(item => item.Id == id) is { } entry)
+        {
+            ShortcutList.SelectedItem = entry;
+            ShortcutList.ScrollIntoView(entry);
+            ShortcutList.UpdateLayout();
+            if (ShortcutList.ItemContainerGenerator.ContainerFromItem(entry) is ListBoxItem row && row.Focus()) return;
+            if (ShortcutList.Focus()) return;
+        }
+        if (!AddShortcutButton.Focus()) ReloadShortcutsButton.Focus();
     }
 
     private void ShortcutSelectionChanged(object sender, SelectionChangedEventArgs e) { if (AddShortcutButton is not null) RefreshShortcutControls(); }

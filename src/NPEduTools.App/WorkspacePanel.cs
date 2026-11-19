@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Interop;
 
 namespace NPEduTools.App;
@@ -22,9 +23,9 @@ internal sealed class WorkspacePanel : ContentControl
         controller.Content = null;
         Content = view;
         Resources = controller.Resources;
-        FontFamily = controller.FontFamily;
-        FontSize = controller.FontSize;
-        Foreground = controller.Foreground;
+        SetBinding(FontFamilyProperty, new Binding(nameof(FontFamily)) { Source = controller });
+        SetBinding(FontSizeProperty, new Binding(nameof(FontSize)) { Source = controller });
+        SetBinding(ForegroundProperty, new Binding(nameof(Foreground)) { Source = controller });
         // Dialogs have their own outer margin; the workspace already provides one.
         var scroll = view as ScrollViewer ?? (view as Panel)?.Children.OfType<ScrollViewer>().FirstOrDefault();
         if (scroll?.Content is StackPanel body) body.Margin = new Thickness(4, 0, 4, 12);

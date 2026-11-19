@@ -41,7 +41,7 @@ public partial class StudyDevicePicker : UserControl
     {
         _operation?.Cancel(); _operation?.Dispose(); _operation = new(); _operation.CancelAfter(6000);
         _busy = true; _generation++; DeviceMessage.Text = "";
-        DeviceMessage.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(170, 83, 55));
+        DeviceMessage.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "TeacherWarningBrush");
         UpdateButtons(); return _operation.Token;
     }
     public Task RefreshAsync()
@@ -188,7 +188,7 @@ public partial class StudyDevicePicker : UserControl
             {
                 DeviceMessage.Text = camera ? "摄像头选择已保存，未开始捕获。" : "监测麦克风已保存，未开始采集。";
                 if (!camera) { CalibrationStatus.Text = "校准状态待刷新"; CalibrationStatus.ToolTip = "麦克风选择已保存，请刷新核对校准状态。"; }
-                DeviceMessage.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 125, 104));
+                DeviceMessage.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "TeacherSuccessBrush");
                 SelectionSaved?.Invoke(this, EventArgs.Empty);
             }
             RenderStatus();
@@ -248,7 +248,7 @@ public partial class StudyDevicePicker : UserControl
                 feedback = "解锁请求已受理，但刷新后未确认设备已解锁，请核对学校配置。";
             DeviceMessage.Text = _connected ? feedback : feedback + "\n" + DeviceMessage.Text;
             if (accepted && _connected && _camera?.Locked == false)
-                DeviceMessage.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 125, 104));
+                DeviceMessage.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "TeacherSuccessBrush");
         }
     }
 }

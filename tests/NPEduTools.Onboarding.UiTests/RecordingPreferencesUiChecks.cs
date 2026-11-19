@@ -91,7 +91,11 @@ internal static partial class Program
                     {
                         var saved = (RecordingOptions?)typeof(RecordingWindow).GetMethod("ReadSavedOptions", BindingFlags.Static | BindingFlags.NonPublic)!
                             .Invoke(null, [pipe]);
-                        Assert(saved?.Display == "fixture" && Feedback().Contains("录制设置已保存"), "healthy preferences cannot be saved");
+                        var receipt = (TextBlock)owner.FindName("RecordingPreferenceFeedback");
+                        Assert(saved?.Display == "fixture" && receipt.Text.Contains("录制设置已保存") && Feedback() == "",
+                            "saving preferences must show a separate success receipt");
+                        Click(owner, "EditSettings");
+                        Assert(receipt.Text == "", "the old receipt survived a new settings edit");
                     }
                     Checks.Add(scenario + ": actual recording window opens with a synthetic device; invalid file remains intact, or healthy settings load and save");
                 }

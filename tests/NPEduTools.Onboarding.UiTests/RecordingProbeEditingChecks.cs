@@ -95,7 +95,9 @@ internal static partial class Program
                         Choice("SpeakerChoice").SelectedValue as string == "speaker-b" &&
                         Choice("MicrophoneChoice").SelectedValue as string == "mic-b" &&
                         ((TextBox)owner.FindName("OutputDirectory")).Text == directory,
-                        "device detection discarded the preexisting unsaved draft");
+                        $"device detection discarded the draft: display={Choice("DisplayChoice").SelectedValue}, " +
+                        $"speaker={Choice("SpeakerChoice").SelectedValue}, microphone={Choice("MicrophoneChoice").SelectedValue}, " +
+                        $"directory still matches={((TextBox)owner.FindName("OutputDirectory")).Text == directory}");
                     Click(owner, "SaveSettings");
                     var expected = saved with { Display = "display-b", SpeakerId = "speaker-b", MicrophoneId = "mic-b",
                         FramesPerSecond = 15, MaximumHeight = 720, OutputDirectory = directory };

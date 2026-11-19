@@ -75,6 +75,26 @@ internal static partial class Program
                 Assert(list.Items.Count == 1, "saved filter lost a recorded video");
                 recordFilter.SelectedIndex = 0;
                 Checks.Add("Actual record filters distinguish saved/attention states; unchanged polling keeps the history ItemsSource and reading position");
+                var failed = record with
+                {
+                    Key = "failed-fixture", SessionId = Guid.NewGuid(), Phase = "Failed", Subject = "隔离实验课",
+                    Reason = "保存过程被中断，保留已写入的片段。", OutputFile = @"C:\Isolated\incomplete.mp4",
+                    RecoveryDirectory = @"C:\Isolated\recordings\recovery"
+                };
+                var sections = (TabControl)owner.FindName("AutoSections");
+                sections.SelectedIndex = 4;
+                Show(active with { Recent = [record, failed] });
+                recordFilter.SelectedIndex = 1;
+                owner.UpdateLayout();
+                Assert(list.Items.Count == 1 && list.Items[0].ToString()!.Contains("保留片段") &&
+                    Descendants<Button>(list).Any(action => action.IsVisible && Equals(action.Content, "打开保留片段")) &&
+                    !Descendants<Button>(list).Any(action => action.IsVisible && Equals(action.Content, "打开视频")),
+                    "unsuccessful history row did not show a recovery location and the matching action");
+                recordFilter.SelectedIndex = 0;
+                Snapshot(owner, "teacher-recording-history.png");
+                sections.SelectedIndex = 0;
+                Show(active);
+                Checks.Add("Actual history shows a failed row's reason and recovery action separately from a saved video");
                 Show(idle);
                 File.WriteAllText(preferences.Replace(".startup.json", ".recording.json", StringComparison.Ordinal), "{");
                 Click(owner, "ToggleReal");
