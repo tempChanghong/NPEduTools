@@ -145,6 +145,8 @@ internal static partial class Program
         using var oldServer = Server();
         var saves = new List<OnboardingState>();
         var window = PreparationWindow(pipe, new(Features: step == "noise" ? OnboardingFeatures.Noise : OnboardingFeatures.Classroom, Step: step), saves.Add);
+        // The visible picker polls inventory independently. Keep it offline so the staged replies belong to the page visit being tested.
+        if (step == "noise") ((StudyDevicePicker)window.FindName("StudyDevices")).Bind(pipe + ".inventory");
         window.Width = 900; window.Height = 680;
         try
         {

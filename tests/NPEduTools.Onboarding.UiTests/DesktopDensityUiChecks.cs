@@ -9,6 +9,7 @@ internal static partial class Program
     private static void RunDesktopDensityChecks()
     {
         RunDesktopDensityRecoveryChecks();
+        RunGeneralSettingsRowChecks();
         string pipe = "NPEduTools.Test.density." + Guid.NewGuid().ToString("N");
         var main = (MainWindow)Activator.CreateInstance(typeof(MainWindow), BindingFlags.NonPublic | BindingFlags.Instance,
             null, [pipe, null, false], null)!;

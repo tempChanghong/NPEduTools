@@ -48,9 +48,16 @@ public partial class MainWindow
     }
     private void DensityChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_densityReady || DensityChoiceBox.SelectedItem is not DensityChoice choice) return;
-        try { DesktopDensity.Save(_pipe, choice.Value); _densityPreference = choice.Value; ApplyDensity(); DensityMessage.Text = "已保存，主页与快捷侧栏即时生效；全屏自习展示保持原有布局。"; }
+        if (!_densityReady || DensityChoiceBox.SelectedItem is not DensityChoice choice || choice.Value == _densityPreference) return;
+        try { DesktopDensity.Save(_pipe, choice.Value); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { DensityMessage.Text = "未能保存界面大小，当前配置保留。"; }
+        {
+            DensityChoiceBox.SelectedValue = _densityPreference;
+            DensityMessage.Text = "未能保存界面大小，当前配置保留。";
+            return;
+        }
+        _densityPreference = choice.Value;
+        ApplyDensity();
+        DensityMessage.Text = "已保存，主页与快捷侧栏已使用所选尺寸。";
     }
 }

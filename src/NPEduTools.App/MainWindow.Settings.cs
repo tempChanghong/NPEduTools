@@ -1,9 +1,50 @@
+using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
 
 namespace NPEduTools.App;
 
 public partial class MainWindow
 {
+    private ResourceDictionary? _settingsContrast;
+
+    private void SettingsRowsLoaded(object sender, RoutedEventArgs e)
+    {
+        SetSettingsContrast(SystemParameters.HighContrast);
+        SystemParameters.StaticPropertyChanged += SettingsSystemParametersChanged;
+    }
+    private void SettingsRowsUnloaded(object sender, RoutedEventArgs e) =>
+        SystemParameters.StaticPropertyChanged -= SettingsSystemParametersChanged;
+
+    private void SettingsSystemParametersChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.HighContrast)) SetSettingsContrast(SystemParameters.HighContrast);
+    }
+    private void SetSettingsContrast(bool enabled)
+    {
+        if (enabled == (_settingsContrast is not null)) return;
+        var dictionaries = DisplayOperationSettings.Resources.MergedDictionaries;
+        if (enabled)
+        {
+            _settingsContrast = new ResourceDictionary { Source = new Uri("/NPEduTools.App;component/Resources/SettingsRows.HighContrast.xaml", UriKind.Relative) };
+            dictionaries.Add(_settingsContrast);
+        }
+        else
+        {
+            dictionaries.Remove(_settingsContrast!);
+            _settingsContrast = null;
+        }
+    }
+
+    private void EntrySideKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.None || e.Key is not (Key.Left or Key.Right)) return;
+        var side = e.Key == Key.Left ? DockLeft : DockRight;
+        side.Focus();
+        side.IsChecked = true;
+        e.Handled = true;
+    }
+
     private void GeneralSettingsClicked(object sender, RoutedEventArgs e) => SelectSettingsCategory("General");
     private void TeachingSettingsClicked(object sender, RoutedEventArgs e) => SelectSettingsCategory("Teaching");
     private void ConnectionsSettingsClicked(object sender, RoutedEventArgs e) => ShowConnectionSettings();

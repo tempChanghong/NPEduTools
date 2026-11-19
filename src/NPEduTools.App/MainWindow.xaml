@@ -27,26 +27,6 @@
         </Track>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
-    <Style x:Key="PositionChoice" TargetType="RadioButton">
-      <Setter Property="MinHeight" Value="52" /><Setter Property="FontSize" Value="14" /><Setter Property="Cursor" Value="Hand" />
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
-        <Border x:Name="Choice" Background="#F5F7F9" BorderBrush="#E2E8EA" BorderThickness="1" CornerRadius="10" Padding="16,12">
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-            <Border x:Name="Ring" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#8B999F" Margin="0,0,10,0">
-              <Ellipse x:Name="Mark" Width="8" Height="8" Fill="#147D68" Visibility="Hidden" />
-            </Border>
-            <ContentPresenter VerticalAlignment="Center" />
-          </StackPanel>
-        </Border>
-        <ControlTemplate.Triggers>
-          <Trigger Property="IsChecked" Value="True">
-            <Setter TargetName="Choice" Property="Background" Value="#EAF6F2" /><Setter TargetName="Choice" Property="BorderBrush" Value="#147D68" />
-            <Setter TargetName="Ring" Property="BorderBrush" Value="#147D68" /><Setter TargetName="Mark" Property="Visibility" Value="Visible" /><Setter Property="Foreground" Value="#147D68" />
-          </Trigger>
-          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Choice" Property="BorderBrush" Value="#202E35" /></Trigger>
-        </ControlTemplate.Triggers>
-      </ControlTemplate></Setter.Value></Setter>
-    </Style>
     <Style x:Key="Surface" TargetType="Border">
       <Setter Property="Background" Value="White" /><Setter Property="CornerRadius" Value="16" />
       <Setter Property="BorderBrush" Value="#E5EBE7" /><Setter Property="BorderThickness" Value="1" />
@@ -414,28 +394,48 @@
 
               </StackPanel>
             </Border>
-            <Border Style="{StaticResource Surface}">
-              <StackPanel>
-                <TextBlock Text="界面大小" FontSize="16" FontWeight="SemiBold" />
-                <ComboBox x:Name="DensityChoiceBox" DisplayMemberPath="Name" SelectedValuePath="Value" SelectionChanged="DensityChanged" Margin="0,10,0,6" AutomationProperties.AutomationId="DesktopDensity" />
-                <TextBlock x:Name="DensityMessage" Text="按 Windows 缩放后的可用空间适配主页与侧栏；可选择更紧凑的尺寸。" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" Margin="0,0,0,18" />
-                <TextBlock Text="快捷入口" FontSize="16" FontWeight="SemiBold" />
-                <TextBlock Text="选择顺手的一侧，拖动侧边栏顶部的图标调整高度。" TextWrapping="Wrap" Foreground="#7B8991" FontSize="12" Margin="0,6,0,16" />
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition />
-                    <ColumnDefinition />
-                  </Grid.ColumnDefinitions>
-                  <RadioButton x:Name="DockLeft" Content="屏幕左侧" GroupName="EntrySide" Style="{StaticResource PositionChoice}" Checked="DockLeftClicked" Margin="0,0,6,0" AutomationProperties.AutomationId="DockLeft" />
-                  <RadioButton x:Name="DockRight" Content="屏幕右侧" GroupName="EntrySide" Style="{StaticResource PositionChoice}" Checked="DockRightClicked" Grid.Column="1" Margin="6,0,0,0" AutomationProperties.AutomationId="DockRight" />
-                </Grid>
-                <TextBlock Text="更改即时生效，位置会在下次启动时保留。" Foreground="#7B8991" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0" />
-              </StackPanel>
-            </Border>
-            <Border Style="{StaticResource Surface}"><DockPanel>
-              <Button Content="打开初始设置" DockPanel.Dock="Right" Click="OpenOnboardingClicked" AutomationProperties.AutomationId="OpenOnboarding" Margin="16,0,0,0" />
-              <StackPanel><TextBlock Text="配置向导" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="重新检查连接、录课与快捷入口。" FontSize="12" Foreground="#64776D" TextWrapping="Wrap" Margin="0,8,0,0" /></StackPanel>
-            </DockPanel></Border>
+            <StackPanel x:Name="DisplayOperationSettings" TextElement.FontFamily="{DynamicResource SettingsBodyFont}" Background="{DynamicResource SettingsBackdrop}" Margin="0,0,0,18"
+                        Loaded="SettingsRowsLoaded" Unloaded="SettingsRowsUnloaded">
+              <StackPanel.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources/SettingsRows.xaml" />
+              </ResourceDictionary.MergedDictionaries></ResourceDictionary></StackPanel.Resources>
+              <TextBlock Text="显示与操作" Style="{StaticResource SettingsLabel}" FontSize="17" Margin="0,0,0,8" />
+              <Border Style="{StaticResource SettingsGroupSurface}"><StackPanel>
+                <local:SettingsRow Style="{StaticResource SettingsRow}" Icon="M4,4 H20 Q22,4 22,6 V15 Q22,17 20,17 H4 Q2,17 2,15 V6 Q2,4 4,4 Z M12,17 V21 M8,21 H16">
+                  <local:SettingsRow.Header><StackPanel>
+                    <TextBlock x:Name="DensityLabel" Text="界面大小" Style="{StaticResource SettingsLabel}" />
+                    <TextBlock x:Name="DensityMessage" Text="随 Windows 缩放适配主页与侧栏，也可手动选择尺寸。" Style="{StaticResource SettingsHint}" AutomationProperties.LiveSetting="Polite" />
+                  </StackPanel></local:SettingsRow.Header>
+                  <ComboBox x:Name="DensityChoiceBox" Width="184" MinHeight="44" Style="{DynamicResource SettingsChoice}" DisplayMemberPath="Name" SelectedValuePath="Value"
+                            SelectionChanged="DensityChanged" AutomationProperties.AutomationId="DesktopDensity" AutomationProperties.LabeledBy="{Binding ElementName=DensityLabel}" />
+                </local:SettingsRow>
+                <Border Height="1" Background="{DynamicResource SettingsLine}" />
+                <local:SettingsRow Style="{StaticResource SettingsRow}" Icon="M4,4 H20 Q22,4 22,6 V18 Q22,20 20,20 H4 Q2,20 2,18 V6 Q2,4 4,4 Z M8,4 V20 M4.5,8 H5.5 M4.5,11 H5.5">
+                  <local:SettingsRow.Header><StackPanel>
+                    <TextBlock Text="快捷入口" Style="{StaticResource SettingsLabel}" />
+                    <TextBlock Text="选择贴边位置，拖动侧栏顶部的图标可调整高度。" Style="{StaticResource SettingsHint}" />
+                  </StackPanel></local:SettingsRow.Header>
+                  <Border Width="184" CornerRadius="6" Padding="2" BorderThickness="1" Background="{DynamicResource SettingsTrack}" BorderBrush="{DynamicResource SettingsControlLine}">
+                    <UniformGrid Columns="2" KeyboardNavigation.TabNavigation="Once" PreviewKeyDown="EntrySideKeyDown">
+                      <RadioButton x:Name="DockLeft" Content="屏幕左侧" GroupName="EntrySide" Style="{DynamicResource SettingsSegment}" IsTabStop="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
+                                   Checked="DockLeftClicked" AutomationProperties.AutomationId="DockLeft" />
+                      <RadioButton x:Name="DockRight" Content="屏幕右侧" GroupName="EntrySide" Style="{DynamicResource SettingsSegment}" IsTabStop="{Binding IsChecked, RelativeSource={RelativeSource Self}}"
+                                   Checked="DockRightClicked" AutomationProperties.AutomationId="DockRight" />
+                    </UniformGrid>
+                  </Border>
+                </local:SettingsRow>
+              </StackPanel></Border>
+              <TextBlock Text="更改即时生效，入口位置会在下次启动时保留。" Style="{StaticResource SettingsHint}" Margin="1,6,0,16" />
+              <Border Style="{StaticResource SettingsGroupSurface}">
+                <local:SettingsRow Style="{StaticResource SettingsRow}" Icon="M3,6 H8 M14,6 H21 M11,3 A3,3 0 1 1 10.99,3 Z M3,17 H13 M19,17 H21 M16,14 A3,3 0 1 1 15.99,14 Z">
+                  <local:SettingsRow.Header><StackPanel>
+                    <TextBlock Text="配置向导" Style="{StaticResource SettingsLabel}" />
+                    <TextBlock Text="重新检查连接、录课与快捷入口。" Style="{StaticResource SettingsHint}" />
+                  </StackPanel></local:SettingsRow.Header>
+                  <Button Content="打开初始设置" MinHeight="44" Style="{DynamicResource SettingsAction}" Click="OpenOnboardingClicked" AutomationProperties.AutomationId="OpenOnboarding" />
+                </local:SettingsRow>
+              </Border>
+            </StackPanel>
             </StackPanel>
             <StackPanel x:Name="TeachingSettingsPanel" Visibility="Collapsed">
             <Border Style="{StaticResource Surface}"><StackPanel>
