@@ -237,16 +237,17 @@ internal static partial class Program
             Exercise(main, owner =>
             {
                 WorkspaceCall(main, "ShowStudyWorkspace", "Reports");
-                var school = (TextBlock)main.FindName("WorkspaceSchoolReport");
-                var manual = (TextBlock)main.FindName("WorkspaceManualReport");
-                try { PumpUntil(() => !school.Text.Contains("正在读取") && !manual.Text.Contains("正在读取"), "independent reports did not settle", 7); }
+                var school = (ContentControl)main.FindName("WorkspaceSchoolReport");
+                var manual = (ContentControl)main.FindName("WorkspaceManualReport");
+                try { PumpUntil(() => school.Content is StudyWorkspaceReport { State: not WorkspaceReportState.Loading } &&
+                    manual.Content is StudyWorkspaceReport { State: not WorkspaceReportState.Loading }, "independent reports did not settle", 7); }
                 finally { File.WriteAllText(Path.Combine(_output, successfulCapability + (invalidProtocol ? ".protocol" : ".disconnect") + ".txt"),
-                    string.Join(",", requests) + "\n" + school.Text + "\n" + manual.Text + "\n" +
+                    string.Join(",", requests) + "\n" + school.Content + "\n" + manual.Content + "\n" +
                     typeof(MainWindow).GetField("_workspaceReportGeneration", WorkspaceFlags)!.GetValue(main)); }
                 var successful = successfulCapability == "study.report.status" ? school : manual;
                 var failed = ReferenceEquals(successful, school) ? manual : school;
-                Assert(successful.Text.Contains("dBFS") && successful.Text.Contains("提醒 2 次"), "one failed report erased the independently available report");
-                Assert(failed.Text.Contains("未确认") && !failed.Text.Contains("dBFS"), "failed report reused a successful or stale report");
+                Assert(successful.Content is StudyWorkspaceReport { State: WorkspaceReportState.Complete, Raw: not null, ReminderCount: "2 次" }, "one failed report erased the independently available report");
+                Assert(failed.Content is StudyWorkspaceReport { State: WorkspaceReportState.Failed, HasData: false, Raw: null }, "failed report reused a successful or stale report");
                 Checks.Add(successfulCapability + ": private " + (invalidProtocol ? "protocol mismatch" : "disconnect") + " in the other source preserves this report and labels only the failed source unknown");
                 main.Close();
             });

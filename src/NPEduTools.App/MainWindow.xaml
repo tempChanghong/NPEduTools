@@ -113,25 +113,48 @@
           </WrapPanel>
           <Grid Grid.Row="1"><ContentControl x:Name="RecordingManualHost"/><ContentControl x:Name="RecordingPlanHost" Visibility="Collapsed"/></Grid>
         </Grid>
-        <Grid x:Name="StudyWorkspace" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid x:Name="StudyWorkspace" Visibility="Collapsed">
+          <Grid.Resources>
+            <ResourceDictionary Source="Resources/StudyWorkspaceReports.xaml" />
+          </Grid.Resources>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,12">
-            <Button x:Name="ManualWorkspaceTab" Content="手动自习" Click="ManualWorkspaceClicked" Style="{StaticResource Navigation}" Margin="0,0,8,0"/>
-            <Button x:Name="SchoolWorkspaceTab" Content="学校定时自习" Click="SchoolWorkspaceClicked" Style="{StaticResource Navigation}" Margin="0,0,8,0"/>
-            <Button x:Name="ReportWorkspaceTab" Content="报告" Click="ReportWorkspaceClicked" Style="{StaticResource Navigation}"/>
+            <Button x:Name="ManualWorkspaceTab" Content="手动自习" Click="ManualWorkspaceClicked" Style="{DynamicResource TeacherTab}" AutomationProperties.AutomationId="ManualWorkspaceTab" Margin="0,0,8,4"/>
+            <Button x:Name="SchoolWorkspaceTab" Content="学校定时自习" Click="SchoolWorkspaceClicked" Style="{DynamicResource TeacherTab}" AutomationProperties.AutomationId="SchoolWorkspaceTab" Margin="0,0,8,4"/>
+            <Button x:Name="ReportWorkspaceTab" Content="报告" Click="ReportWorkspaceClicked" Style="{DynamicResource TeacherTab}" AutomationProperties.AutomationId="ReportWorkspaceTab" Margin="0,0,0,4"/>
           </WrapPanel>
           <Grid Grid.Row="1">
             <ContentControl x:Name="ManualWorkspaceHost" Visibility="Collapsed"/>
             <ContentControl x:Name="SchoolWorkspaceHost" Visibility="Collapsed"/>
-            <ScrollViewer x:Name="WorkspaceReports" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel>
-              <Border Style="{StaticResource Surface}"><StackPanel><TextBlock Text="学校定时自习报告" FontSize="20" FontWeight="SemiBold"/><TextBlock x:Name="WorkspaceSchoolReport" Text="打开报告页后读取本机最近结果。" TextWrapping="Wrap" Margin="0,12,0,0" LineHeight="26"/></StackPanel></Border>
-              <Border Style="{StaticResource Surface}"><StackPanel><TextBlock Text="手动自习报告" FontSize="20" FontWeight="SemiBold"/><TextBlock x:Name="WorkspaceManualReport" TextWrapping="Wrap" Margin="0,12,0,0" LineHeight="26"/></StackPanel></Border>
-              <TextBlock Text="这里显示本机最近结果，不代表报告已上传。学校历史报告、照片和管理记录请在 NPClassworks 后台查看。" Foreground="#61786B" TextWrapping="Wrap"/>
-              <Button Content="刷新报告" Click="RefreshWorkspaceReportsClicked" HorizontalAlignment="Left" Margin="0,12,0,0"/>
-            </StackPanel></ScrollViewer>
+            <DockPanel x:Name="WorkspaceReports" Visibility="Collapsed" TextElement.FontFamily="{DynamicResource TeacherFont}"
+                       TextElement.Foreground="{DynamicResource TeacherTextBrush}">
+              <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                <Button x:Name="WorkspaceRefreshReports" Content="刷新报告" Click="RefreshWorkspaceReportsClicked"
+                        Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" VerticalAlignment="Top" Margin="12,0,0,0"
+                        AutomationProperties.AutomationId="WorkspaceRefreshReports" />
+                <TextBlock Text="本机最近报告" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"
+                           VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level1" />
+              </DockPanel>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                            PanningMode="VerticalOnly" AutomationProperties.Name="本机自习报告">
+                <ScrollViewer.Resources>
+                  <!-- Use the system scrollbar and its high-contrast colors. -->
+                  <Style TargetType="ScrollBar" />
+                </ScrollViewer.Resources>
+                <StackPanel>
+                  <ContentControl x:Name="WorkspaceSchoolReport" ContentTemplate="{StaticResource StudyWorkspaceReport}"
+                                  AutomationProperties.AutomationId="WorkspaceSchoolReport" />
+                  <ContentControl x:Name="WorkspaceManualReport" ContentTemplate="{StaticResource StudyWorkspaceReport}"
+                                  AutomationProperties.AutomationId="WorkspaceManualReport" />
+                  <TextBlock Text="学校历史报告和上传状态请在 NPClassworks 后台查看。"
+                             Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,10" />
+                </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
           </Grid>
-          <Border Grid.Row="2" BorderBrush="#DFE7E1" BorderThickness="0,1,0,0" Padding="0,10,0,0"><WrapPanel>
-            <Button Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{StaticResource Quiet}" Margin="0,0,8,0"/>
-            <Button Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{StaticResource Quiet}"/>
+          <Border Grid.Row="2" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0"><WrapPanel>
+            <Button Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,0"/>
+            <Button Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{DynamicResource TeacherQuiet}"/>
           </WrapPanel></Border>
         </Grid>
         <Grid x:Name="WorkspaceCalibration" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><Button Content="← 返回自习" Click="ReturnFromCalibrationClicked" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Margin="0,0,0,10"/><ContentControl x:Name="WorkspaceCalibrationHost" Grid.Row="1"/></Grid>

@@ -135,15 +135,13 @@ internal static partial class Program
                 Assert(formalCapture == 0 && manual.Status().State == "Cancelled", "calibration navigation mutated formal monitoring");
                 Checks.Add("Actual embedded USB flow: denied/verified credentials, same-page reference transition, compact pinned actions, owned sample cancellation and secret cleanup; synthetic HID/microphone only");
                 Invoke("ShowStudyWorkspace", "Reports");
-                PumpUntil(() => !Element<TextBlock>("WorkspaceSchoolReport").Text.Contains("正在读取"), "report refresh stalled");
-                Assert(Element<TextBlock>("WorkspaceSchoolReport").Text.Contains("后台") && !Element<TextBlock>("WorkspaceSchoolReport").Text.Contains("已上传"), "unsupported report claims successful upload");
-                var reportData = new StudyReportData(StudyFixture().Window!, 600, 590, 590d / 600, .1, 100, 2,
-                    new("dBFS", 590, -55, -30, 580, 30, 10, []), new("dB(A)", 580, 60, 70, 570, 20, 5, []), true, []);
-                var reportResponse = new HostResponse(1, Guid.NewGuid(), "Succeeded", null, "fixture",
-                    StudyReport: new(Guid.NewGuid(), "fixture", true, "Ended", 0, reportData));
-                var reportText = (string)typeof(MainWindow).GetMethod("ReportText", flags | BindingFlags.Static)!.Invoke(null, [reportResponse])!;
-                Assert(reportText.Contains("dBFS") && reportText.Contains("估算 dB(A)") && reportText.Contains("覆盖率") &&
-                    reportText.Contains("提醒 2 次") && reportText.Contains("ClassIsland") && !reportText.Contains("已上传"), "report mixed units, dropped coverage or claimed upload");
+                var schoolReport = Element<ContentControl>("WorkspaceSchoolReport");
+                var manualReport = Element<ContentControl>("WorkspaceManualReport");
+                PumpUntil(() => schoolReport.Content is StudyWorkspaceReport { State: WorkspaceReportState.Failed } &&
+                    manualReport.Content is StudyWorkspaceReport { State: WorkspaceReportState.Empty }, "unsupported and empty reports were not distinguished");
+                main.UpdateLayout();
+                Assert(!Descendants<Expander>(schoolReport).Any(e => e.IsVisible) && !Descendants<Expander>(manualReport).Any(e => e.IsVisible),
+                    "an unavailable report shows sampling details");
                 Invoke("SettingsNavClicked", main, new RoutedEventArgs());
                 Assert(!Element<FrameworkElement>("StudyWorkspace").IsVisible && !Element<FrameworkElement>("WorkspaceCalibration").IsVisible, "settings leaves an overlapping workspace");
                 Checks.Add("Reports/settings navigation: unknown/unsupported report stays explicit, no upload claim and no overlapping page");

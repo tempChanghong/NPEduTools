@@ -141,8 +141,7 @@ public partial class MainWindow
     private async Task RefreshWorkspaceReportsAsync()
     {
         CancelWorkspaceReports();
-        long generation = ++_workspaceReportGeneration;
-        WorkspaceSchoolReport.Text = WorkspaceManualReport.Text = "正在读取本机最近报告…";
+        long generation = _workspaceReportGeneration;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _workspaceReportRead = deadline;
         deadline.CancelAfter(5000);
@@ -150,45 +149,20 @@ public partial class MainWindow
         {
             // Each source owns its feedback. A broken or slow reply must not
             // hide the other report, and both requests share navigation cancellation.
-            await Task.WhenAll(ReadReportAsync("study.report.status", WorkspaceSchoolReport),
-                ReadReportAsync("manual.study.report.status", WorkspaceManualReport));
+            await Task.WhenAll(ReadReportAsync("study.report.status", "学校定时自习", WorkspaceSchoolReport),
+                ReadReportAsync("manual.study.report.status", "手动自习", WorkspaceManualReport));
         }
         finally { if (ReferenceEquals(_workspaceReportRead, deadline)) _workspaceReportRead = null; }
 
-        async Task ReadReportAsync(string capability, System.Windows.Controls.TextBlock target)
+        async Task ReadReportAsync(string capability, string title, ContentControl target)
         {
-            string text;
-            try { text = ReportText(await HostClient.RequestAsync(_pipe, capability, deadline.Token)); }
+            target.Content = StudyWorkspaceReport.Loading(title);
+            StudyWorkspaceReport report;
+            try { report = StudyWorkspaceReport.FromResponse(title, await HostClient.RequestAsync(_pipe, capability, deadline.Token)); }
             catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-            { text = "报告状态未确认，请检查后台连接后刷新；不沿用旧结果。"; }
+            { report = StudyWorkspaceReport.Failed(title); }
             if (!_lifetime.IsCancellationRequested && generation == _workspaceReportGeneration)
-                target.Text = text;
+                target.Content = report;
         }
-    }
-    private static string ReportText(HostResponse response)
-    {
-        if (response.Outcome != "Succeeded") return "后台未确认报告，请刷新或在学校后台查看历史报告。";
-        if (response.StudyReport?.Data is not { } data) return "本机暂未返回报告；历史报告请在学校后台查看。";
-        static string Number(double? value) => value is { } v ? v.ToString("F1") : "—";
-        static string Seconds(double value) => value is > 0 and < .01 ? "不足 0.01 秒" : $"{value:0.##} 秒";
-        static string Thresholds(string name, StudyReportChannel channel)
-        {
-            // Samples in another unit or without this threshold are unclassified,
-            // not evidence that no exceedance occurred over the whole session.
-            if (channel.ThresholdSampledSeconds <= 0) return name + "阈值超限：本单位没有有效阈值判定数据";
-            string medium = channel.MediumThresholdSampledSeconds > 0
-                ? $"中线 {Seconds(channel.MediumSeconds)}（判定采样 {Seconds(channel.MediumThresholdSampledSeconds)}）"
-                : "中线没有有效判定数据";
-            return $"{name}阈值超限：{medium} · 高线 {Seconds(channel.HighSeconds)}（判定采样 {Seconds(channel.ThresholdSampledSeconds)}）";
-        }
-        var text = $"{StudySchedulePresentation.Span(data.Window)}\n" +
-            $"有效采样 {Seconds(data.SampledSeconds)} · 覆盖率 {data.Coverage:P0} · 提醒 {data.DisciplineReminders} 次 · 削波 {data.ClippedPercent:F2}%\n" +
-            $"dBFS：能量均值 {Number(data.Raw.EnergyMean)} · 最高值 {Number(data.Raw.Maximum)}\n" +
-            Thresholds("原始", data.Raw);
-        if (data.Estimated is { } estimate)
-            text += $"\n估算 dB(A)：能量均值 {Number(estimate.EnergyMean)} · 最高值 {Number(estimate.Maximum)}\n" +
-                Thresholds("估算", estimate);
-        return text + $"\n时间来源：{data.ClockSource} · " + (data.Complete ? "会话完整" : "会话不完整") +
-            (data.Notes.Count > 0 ? "\n" + string.Join("\n", data.Notes) : "");
     }
 }
