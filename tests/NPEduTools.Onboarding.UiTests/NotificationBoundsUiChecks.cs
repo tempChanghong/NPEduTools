@@ -13,7 +13,7 @@ internal static partial class Program
         double Value(object bounds, string name) => (double)boundsType.GetProperty(name)!.GetValue(bounds)!;
         foreach (var area in new[] { new System.Drawing.Rectangle(0, 0, 2560, 1360),
             new System.Drawing.Rectangle(-3840, 40, 3840, 2080), new System.Drawing.Rectangle(2560, -1440, 3840, 1380) })
-        foreach (double scale in new[] { 1d, 1.5, 2 })
+        foreach (double scale in new[] { 1d, 1.25, 1.5, 2 })
         {
             object workArea = Activator.CreateInstance(boundsType, [(double)area.Left, (double)area.Top, (double)area.Width, (double)area.Height])!;
             var output = centered.Invoke(null, [workArea, 1120 * scale, 720 * scale])!;
@@ -24,7 +24,7 @@ internal static partial class Program
                 Math.Abs(y + h / 2 - (area.Top + area.Height / 2d)) < .001,
                 "notification centering scaled the monitor's absolute pixel origin");
         }
-        Checks.Add("Notification geometry: native-pixel centering at 100/150/200%, negative and offset monitor origins; oversized content stays in the target work area (simulated topology)");
+        Checks.Add("Notification geometry: native-pixel centering at 100/125/150/200%, negative and offset monitor origins; oversized content stays in the target work area (simulated topology)");
 
         var window = new SchoolNotificationWindow(SchoolNotification.Preview(SchoolNotificationPriority.Minor));
         try
@@ -49,8 +49,15 @@ internal static partial class Program
             SetWindowPos(handle, 0, area.Left + 12, area.Top + 12, 600, 400, 0x0214);
             typeof(SchoolNotificationWindow).GetMethod("FitWorkArea", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
             window.UpdateLayout(); CheckCentered();
+            SetWindowPos(handle, 0, area.Left - 8, area.Top + 5, 0, 0, 0x0215);
+            typeof(SchoolNotificationWindow).GetMethod("FitAfterMove", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
+            window.UpdateLayout();
+            Assert(GetWindowRect(handle, out var dropped) && Math.Abs(dropped.Left - area.Left) <= 1 &&
+                Math.Abs(dropped.Top - (area.Top + 5)) <= 1 && dropped.Right <= area.Right && dropped.Bottom <= area.Bottom,
+                "a notice dropped at the taskbar/work-area edge did not preserve the reachable position");
             window.Shutdown();
             Checks.Add("Minor notification preview: actual HWND fits and centers within the current work area after first show and refit; no school service, sound or modal backdrop");
+            Checks.Add("Minor notification after a drag or DPI change: actual HWND moves the clipped edge into view and keeps the chosen vertical position");
         }
         finally { window.Shutdown(); }
     }

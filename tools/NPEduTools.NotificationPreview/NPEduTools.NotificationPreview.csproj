@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" />
+    <Compile Include="../../src/NPEduTools.App/DesktopWindowBounds.cs" Link="DesktopWindowBounds.cs" />
     <Compile Include="../../src/NPEduTools.App/SchoolNotification.cs" Link="SchoolNotification.cs" />
     <Compile Include="../../src/NPEduTools.App/SchoolNotificationWindow.xaml.cs" Link="SchoolNotificationWindow.xaml.cs" />
     <Compile Include="../../src/NPEduTools.App/SchoolNotificationWindow.Attention.cs" Link="SchoolNotificationWindow.Attention.cs" />

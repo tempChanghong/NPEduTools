@@ -94,12 +94,31 @@ internal static partial class Program
         typeof(MainWindow).GetField("_studyReportWindow", WorkspaceFlags)!.SetValue(main, report);
         try
         {
-            manual.Apply(StudyFixture(), null); manual.ShowDisplay(); report.Show();
-            WorkspaceCall(main, "NotificationPreviewClicked", new Button { Tag = "Minor" }, new RoutedEventArgs());
+            var study = StudyFixture();
+            manual.Apply(study, null);
+            manual.ShowDisplay();
+            var surface = (StudySurface)manual.Content;
+            var snapshot = new StudyHomeworkSnapshot(study.Version!, "2026-10-12",
+                [new("physics", 1, "物理", "课堂练习", "完成第 42 页练习。", [new("source", "本班")])]);
+            string snapshotId = new('a', 64);
+            surface.Apply(study with { Homework = new("READY", snapshotId, 1, snapshot.Date, snapshot.Version) }, null);
+            surface.ApplyHomework(snapshotId, snapshot);
+            var open = (Button)surface.FindName("OpenHomeworkReader");
+            PumpUntil(() => open.IsEnabled, "homework was not available for the interruption check");
+            open.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            var reader = (HomeworkReaderView)surface.FindName("ReaderBody");
+            PumpUntil(() => reader.IsVisible && reader.PageCount > 0, "homework did not reach its enlarged reading view");
+            report.Show();
+            ((ComboBox)main.FindName("NotificationPreviewPriority")).SelectedIndex = 0;
+            Click(main, "NotificationPreviewButton");
             var preview = WorkspaceField<SchoolNotificationWindow>(main, "_notificationPreview");
             Assert(preview?.IsVisible == true && !manual.IsVisible && !report.IsVisible,
                 "opening notification preview did not immediately hide manual study and its report");
+            Assert(!reader.IsVisible && reader.Position is null && reader.PageCount == 0,
+                "a notification left the previous homework reader active underneath it");
             preview!.Shutdown();
+            Assert(!manual.IsVisible && !report.IsVisible, "closing the preview revived study before the next authorized status");
+            Checks.Add("An open enlarged homework page released its content and input when interrupted; closing the notification waited for the next eligible study status");
             Assert(WorkspaceField<SchoolNotificationWindow>(main, "_notificationPreview") is null,
                 "closing notification preview retained its display blocker");
             Checks.Add("Actual notification preview event immediately hides manual display/report and releases its blocker on close; no Host or physical capture");

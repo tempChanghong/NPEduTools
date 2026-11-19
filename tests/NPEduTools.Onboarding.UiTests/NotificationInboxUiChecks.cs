@@ -117,8 +117,10 @@ internal static partial class Program
                     PumpUntil(() => read.IsCompleted, "the same inbox poll did not recover"); request = read.GetAwaiter().GetResult();
                     Assert(request.Notification!.Offset == 0, "recovery did not reread the first page");
                     Reply(request, fresh);
+                    string range = ((TextBlock)owner.FindName("NotificationPageRange")).Text;
                     Assert(items.Items.Count == (empty ? 0 : 1) && Field("_inboxScope") as string == fresh.Scope &&
-                        Message().Contains($"当前有效通知 {fresh.Total} 条") && !Button(owner, "NotificationPrevious").IsEnabled &&
+                        (empty ? Message().Contains("当前没有有效通知") && range.Length == 0 : range == "第 1–1 条，共 12 条") &&
+                        !Button(owner, "NotificationPrevious").IsEnabled &&
                         Button(owner, "NotificationNext").IsEnabled == !empty, "fresh or genuinely empty inbox did not restore the correct list and paging");
                     if (!empty) Assert(((NpepNoticeSummary)items.Items[0]).PublicationId == "fresh-notice", "old rows survived fresh scope recovery");
                     Assert(Field("_schoolNotification") is null && Field("_shownNotice") is null && requests.Count == 3 &&

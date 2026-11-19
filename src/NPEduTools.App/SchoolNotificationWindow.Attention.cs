@@ -13,15 +13,49 @@ public partial class SchoolNotificationWindow
 {
     private readonly List<NotificationBackdrop> _backdrops = [];
     private bool _attentionReleased;
+    private bool _headerDragging;
+    private nint _previousForeground;
+    private uint _previousProcess;
+    private string? _openingDisplay;
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
     internal IReadOnlyList<NotificationBackdrop> Backdrops => _backdrops;
     private static bool MotionEnabled => SystemParameters.ClientAreaAnimation && !SystemParameters.HighContrast;
 
+    internal void CapturePresentationTarget()
+    {
+        // The study window may be hidden before the notification HWND is created.
+        _previousForeground = GetForegroundWindow();
+        if (_previousForeground == 0) return;
+        GetWindowThreadProcessId(_previousForeground, out _previousProcess);
+        _openingDisplay = System.Windows.Forms.Screen.FromHandle(_previousForeground).DeviceName;
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        if (_openingDisplay is null) CapturePresentationTarget();
+        base.OnSourceInitialized(e);
+        var handle = new WindowInteropHelper(this).Handle;
+        var target = System.Windows.Forms.Screen.AllScreens.FirstOrDefault(screen => screen.DeviceName == _openingDisplay);
+        if (target is null || target.DeviceName == System.Windows.Forms.Screen.FromHandle(handle).DeviceName) return;
+        // Move to the intended monitor before Loaded measures the window in that monitor's DIP.
+        var area = target.WorkingArea;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        DesktopWindowBounds.PlaceCentered(this, new(area.Left, area.Top, area.Width, area.Height),
+            Width * dpi.DpiScaleX, Height * dpi.DpiScaleY);
+    }
+
     private void InitializeAttention()
     {
+        SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
+        DpiChanged += NoticeDpiChanged;
         if (RequiresResponse)
         {
             RebuildBackdrops();
-            SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
+            if (_attentionReleased) return;
             Activate();
             MessageScroll.Focus();
         }
@@ -33,8 +67,32 @@ public partial class SchoolNotificationWindow
 
     private void DisplaySettingsChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() =>
     {
-        if (!_attentionReleased && IsVisible) { RebuildBackdrops(); FitWorkArea(); }
+        if (_attentionReleased || !IsVisible) return;
+        FitWorkArea();
+        if (RequiresResponse) RebuildBackdrops();
     });
+
+    private void NoticeDpiChanged(object sender, DpiChangedEventArgs e) => Dispatcher.InvokeAsync(() =>
+    {
+        if (!_attentionReleased && !_headerDragging && IsVisible) FitAfterMove();
+    }, System.Windows.Threading.DispatcherPriority.Loaded);
+
+    private void FitAfterMove()
+    {
+        SizeToMonitor(center: false);
+        var bounds = System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle).Bounds;
+        if (_backdrops.FirstOrDefault(mask => mask.Bounds == bounds) is { } mask && Owner != mask)
+            Owner = mask;
+    }
+
+    private void ReturnToPreviousWindow()
+    {
+        // A minor notice never took the foreground. The teacher might have switched apps since it arrived.
+        if (!RequiresResponse || _attentionReleased || GetForegroundWindow() != new WindowInteropHelper(this).Handle ||
+            _previousForeground == 0 || !IsWindowVisible(_previousForeground) || IsIconic(_previousForeground)) return;
+        if (GetWindowThreadProcessId(_previousForeground, out uint process) != 0 && process == _previousProcess)
+            SetForegroundWindow(_previousForeground);
+    }
 
     private void RebuildBackdrops()
     {
@@ -43,6 +101,7 @@ public partial class SchoolNotificationWindow
         try
         {
             var current = System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle);
+            NotificationBackdrop? currentBackdrop = null;
             foreach (var screen in System.Windows.Forms.Screen.AllScreens)
             {
                 var backdrop = new NotificationBackdrop(screen.Bounds, new WindowInteropHelper(this).Handle,
@@ -52,18 +111,22 @@ public partial class SchoolNotificationWindow
                 backdrop.Place();
                 if (MotionEnabled) backdrop.BeginAnimation(OpacityProperty,
                     new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { FillBehavior = FillBehavior.Stop });
-                if (screen.DeviceName == current.DeviceName) Owner = backdrop;
+                if (screen.DeviceName == current.DeviceName) currentBackdrop = backdrop;
             }
+            Owner = currentBackdrop ?? next.FirstOrDefault();
             _backdrops.Clear(); _backdrops.AddRange(next);
             foreach (var backdrop in old) backdrop.Shutdown();
         }
-        catch
+        catch (Exception error)
         {
             // Never strand an input-blocking surface if monitor/window creation fails.
             Owner = null;
             foreach (var backdrop in next) backdrop.Shutdown();
             foreach (var backdrop in old) backdrop.Shutdown();
             _backdrops.Clear();
+            // Removing a display can invalidate a native placement mid-rebuild. Yield
+            // this presentation so the next poll can verify it again on the new topology.
+            if (error is Win32Exception) { Shutdown(); return; }
             throw;
         }
     }
@@ -82,6 +145,7 @@ public partial class SchoolNotificationWindow
         if (_attentionReleased) return;
         _attentionReleased = true;
         SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
+        DpiChanged -= NoticeDpiChanged;
         // Detach before closing the owner so it cannot recursively close this window.
         Owner = null;
         foreach (var backdrop in _backdrops) backdrop.Shutdown();

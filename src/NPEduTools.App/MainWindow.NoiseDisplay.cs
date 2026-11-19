@@ -61,7 +61,8 @@ public partial class MainWindow
         bool projector = _quickProjectionAt is { } at && Stopwatch.GetElapsedTime(at) < TimeSpan.FromSeconds(1.5);
         static bool Visible(Window? window) => window is { IsVisible: true } && window.WindowState != WindowState.Minimized;
         bool study = Visible(_studyWindow) || Visible(_manualStudyWindow) || Visible(_studyReportWindow) || Visible(_exitWarning);
-        _quick?.SetAutoHidden(projector || study);
+        bool noticeNeedsResponse = _schoolNotification?.RequiresResponse == true || _notificationPreview?.RequiresResponse == true;
+        _quick?.SetAutoHidden(projector || study || noticeNeedsResponse);
     }
     private T TrackStudyPresentationWindow<T>(T window) where T : Window
     {

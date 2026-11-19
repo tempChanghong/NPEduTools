@@ -4,39 +4,56 @@
         Title="学校通知 · NPEduTools" Width="1120" Height="720"
         WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="Manual"
         Topmost="True" ShowActivated="False" ShowInTaskbar="True"
-        Background="{Binding Surface}" Foreground="White"
+        Background="{Binding Surface}" Foreground="{DynamicResource NotificationInk}"
         FontFamily="Segoe UI, Microsoft YaHei UI" UseLayoutRounding="True"
-        TextOptions.TextFormattingMode="Display" AutomationProperties.AutomationId="SchoolNotificationWindow">
+        TextOptions.TextFormattingMode="Display" AutomationProperties.AutomationId="SchoolNotificationWindow"
+        Loaded="NotificationVisualLoaded" Unloaded="NotificationVisualUnloaded">
   <Window.Resources>
+    <SolidColorBrush x:Key="NotificationInk" Color="White" />
+    <Style x:Key="NotificationReadingFocus" TargetType="Control">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Control">
+            <Rectangle Margin="-6" RadiusX="3" RadiusY="3" StrokeThickness="2" StrokeDashArray="2 2"
+                       Stroke="{DynamicResource NotificationInk}" IsHitTestVisible="False" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style TargetType="ScrollBar">
-      <Setter Property="Width" Value="12" />
+      <Setter Property="Width" Value="14" />
+      <Setter Property="Focusable" Value="False" />
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
         <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
                Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" ViewportSize="{TemplateBinding ViewportSize}">
           <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
-          <Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="White" Opacity="0.7" CornerRadius="3" Margin="3,0" /></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+          <Track.Thumb><Thumb Focusable="False"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{DynamicResource NotificationInk}" CornerRadius="3" Margin="3,0" /></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
           <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
         </Track>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="NotificationClose" TargetType="Button">
-      <Setter Property="Background" Value="White" /><Setter Property="Foreground" Value="{Binding Surface}" />
-      <Setter Property="BorderBrush" Value="White" /><Setter Property="BorderThickness" Value="2" />
+      <Setter Property="Background" Value="{DynamicResource NotificationActionSurface}" /><Setter Property="Foreground" Value="{DynamicResource NotificationActionInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NotificationActionBorder}" /><Setter Property="BorderThickness" Value="2" />
       <Setter Property="FontSize" Value="22" /><Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Padding" Value="32,14" /><Setter Property="MinWidth" Value="196" /><Setter Property="MinHeight" Value="64" /><Setter Property="Cursor" Value="Hand" />
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
         <Grid>
-        <Border x:Name="FocusCue" BorderBrush="White" BorderThickness="2" Margin="-6" Visibility="Collapsed" />
+        <Border x:Name="FocusCue" BorderBrush="{DynamicResource NotificationInk}" BorderThickness="2" Margin="-5" Visibility="Collapsed" IsHitTestVisible="False" />
         <Border x:Name="Outline" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                 BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
           <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
         </Grid>
         <ControlTemplate.Triggers>
-          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Outline" Property="Opacity" Value="0.9" /></Trigger>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Outline" Property="BorderBrush" Value="{DynamicResource NotificationActionInk}" /></Trigger>
           <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="FocusCue" Property="Visibility" Value="Visible" /></Trigger>
-          <Trigger Property="IsPressed" Value="True"><Setter TargetName="Outline" Property="Opacity" Value="0.8" /></Trigger>
-          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Outline" Property="Opacity" Value="0.6" /></Trigger>
+          <Trigger Property="IsPressed" Value="True">
+            <Setter TargetName="Outline" Property="Background" Value="{DynamicResource NotificationPressedSurface}" />
+            <Setter TargetName="Outline" Property="BorderBrush" Value="{DynamicResource NotificationInk}" />
+            <Setter Property="Foreground" Value="{DynamicResource NotificationPressedInk}" />
+          </Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource NotificationDisabledInk}" /></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
@@ -47,22 +64,24 @@
     <!-- Uninterrupted color bands balance the priority mark on the right. -->
     <Grid x:Name="SignalPanel" IsHitTestVisible="False" Focusable="False">
       <UniformGrid Columns="4">
-        <Rectangle Fill="{Binding TonePale}" /><Rectangle Fill="{Binding ToneLight}" />
-        <Rectangle Fill="{Binding ToneMiddle}" /><Rectangle Fill="{Binding ToneInner}" />
+        <Rectangle Fill="{DynamicResource NotificationTonePale}" /><Rectangle Fill="{DynamicResource NotificationToneLight}" />
+        <Rectangle Fill="{DynamicResource NotificationToneMiddle}" /><Rectangle Fill="{DynamicResource NotificationToneInner}" />
       </UniformGrid>
     </Grid>
     <Grid x:Name="ContentGrid" Grid.Column="1" Margin="40">
     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-    <Grid MouseLeftButtonDown="HeaderDrag">
+    <Grid MouseLeftButtonDown="HeaderDrag" Background="Transparent">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-      <TextBlock Text="NPEP / 学校通知" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
-      <TextBlock Grid.Column="1" Text="{Binding HeaderLabel}" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <TextBlock Text="NPEP / 学校通知" FontSize="19" FontWeight="Medium" VerticalAlignment="Center" TextWrapping="Wrap" />
+      <TextBlock x:Name="NotificationHeader" Grid.Column="1" Text="{Binding HeaderLabel}" FontSize="19" FontWeight="SemiBold"
+                 VerticalAlignment="Center" Margin="12,0,0,0" />
     </Grid>
-    <Border Grid.Row="1" Height="2" Background="White" Margin="0,20,0,24" />
+    <Border x:Name="HeaderRule" Grid.Row="1" Height="2" Background="{DynamicResource NotificationInk}" Margin="0,20,0,24" />
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
       <ScrollViewer x:Name="MessageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                    PanningMode="VerticalOnly" Padding="0,0,12,0" Focusable="True" AutomationProperties.Name="通知完整内容">
+                    PanningMode="VerticalOnly" Padding="0,0,12,0" Focusable="True" KeyboardNavigation.TabIndex="0"
+                    Margin="0,0,4,0" FocusVisualStyle="{StaticResource NotificationReadingFocus}" AutomationProperties.Name="通知完整内容">
         <!-- Fill a short viewport to center the message; grow naturally for long scrollable text. -->
         <Grid MinHeight="{Binding ViewportHeight, ElementName=MessageScroll}">
         <StackPanel x:Name="MessageContent" VerticalAlignment="Center">
@@ -70,28 +89,34 @@
                      LineHeight="60" LineStackingStrategy="BlockLineHeight" AutomationProperties.AutomationId="SchoolNotificationTitle" />
           <TextBlock x:Name="NotificationBody" Text="{Binding Notification.Body}" FontSize="28" TextWrapping="Wrap"
                      LineHeight="44" LineStackingStrategy="BlockLineHeight" Margin="0,22,0,0" AutomationProperties.AutomationId="SchoolNotificationBody" />
+          <TextBlock x:Name="FullNotificationSource" Visibility="Collapsed" FontSize="20" TextWrapping="Wrap"
+                     Margin="0,18,0,0" AutomationProperties.AutomationId="SchoolNotificationFullSource" />
         </StackPanel>
         </Grid>
       </ScrollViewer>
       <StackPanel x:Name="PriorityMark" Grid.Column="1" Width="136" Margin="32,0,0,0" VerticalAlignment="Center"
                   IsHitTestVisible="False" Focusable="False">
-        <Border Height="4" Background="White" />
+        <Border Height="4" Background="{DynamicResource NotificationInk}" />
         <TextBlock Text="通知等级" FontSize="16" FontWeight="SemiBold" Margin="0,14,0,0" />
         <TextBlock Text="{Binding PriorityNumber}" FontFamily="Segoe UI" FontSize="104" FontWeight="Bold"
                    LineHeight="116" LineStackingStrategy="BlockLineHeight" />
         <TextBlock Text="{Binding Appearance.Label}" FontSize="22" FontWeight="SemiBold" Margin="0,8,0,0" />
       </StackPanel>
     </Grid>
-    <Grid Grid.Row="3" Margin="0,24,0,0">
-      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <Grid x:Name="NotificationFooter" Grid.Row="3" Margin="0,24,0,0">
+      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
       <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-      <Border Grid.ColumnSpan="2" Height="2" Background="White" Margin="0,0,0,20" />
-      <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,0,20,0">
-        <TextBlock x:Name="NotificationSource" Text="{Binding Notification.Source}" TextWrapping="Wrap" FontSize="18" FontWeight="SemiBold" MaxHeight="52" />
-        <TextBlock Text="{Binding TimeLabel}" FontSize="16" Margin="0,6,0,0" TextWrapping="Wrap" />
-      </StackPanel>
-      <Button x:Name="DismissButton" Grid.Row="1" Grid.Column="1" Content="关闭通知  ×" Style="{StaticResource NotificationClose}"
-              Click="DismissClicked" AutomationProperties.Name="关闭通知" AutomationProperties.AutomationId="SchoolNotificationDismiss" />
+      <Border x:Name="FooterRule" Grid.ColumnSpan="2" Height="2" Background="{DynamicResource NotificationInk}" Margin="0,0,0,20" />
+      <TextBlock x:Name="NotificationCloseStatus" Grid.Row="1" Grid.ColumnSpan="2" Visibility="Collapsed"
+                 FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,10"
+                 AutomationProperties.AutomationId="SchoolNotificationCloseStatus" AutomationProperties.LiveSetting="Polite" />
+      <Border x:Name="NotificationFooterMetadata" Grid.Row="2" Margin="0,0,20,0" VerticalAlignment="Center"
+              SizeChanged="NotificationFooterSizeChanged">
+        <TextBlock x:Name="NotificationSource" TextWrapping="Wrap" FontSize="17" FontWeight="SemiBold"
+                   AutomationProperties.AutomationId="SchoolNotificationMetadata" />
+      </Border>
+      <Button x:Name="DismissButton" Grid.Row="2" Grid.Column="1" Content="关闭通知" Style="{StaticResource NotificationClose}"
+              Click="DismissClicked" KeyboardNavigation.TabIndex="1" AutomationProperties.Name="关闭通知" AutomationProperties.AutomationId="SchoolNotificationDismiss" />
     </Grid>
     </Grid>
   </Grid>

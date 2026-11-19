@@ -3,7 +3,9 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using NPEduTools.App;
+using NPEduTools.Contracts;
 
 internal static partial class Program
 {
@@ -117,6 +119,19 @@ internal static partial class Program
                 PostSlideKey(slideHandle, 0x101, 0x27, unchecked((nint)(int)0xC14D0001)), "could not deliver the right-arrow key");
             PumpUntil(() => (int)show.View.CurrentShowPosition == 2, "PowerPoint did not advance after focus restoration");
             Checks.Add($"PowerPoint {office.Version}: new two-slide full-screen show → expanded rail → collapse → foreground restored → Right arrow advanced to slide 2.");
+
+            quick.Shutdown();
+            quick = null;
+            show.View.GotoSlide(1);
+            PumpUntil(() => (int)show.View.CurrentShowPosition == 1 && QuickForeground() == slideHandle,
+                "the test slide show was not ready for a notification");
+            VerifyNotificationOverSlideShow(slideHandle);
+            Assert((int)show.View.CurrentShowPosition == 1 && QuickForeground() == slideHandle,
+                "reading the notification changed slides or lost foreground");
+            Assert(PostSlideKey(slideHandle, 0x100, 0x27, 0x014D0001) &&
+                PostSlideKey(slideHandle, 0x101, 0x27, unchecked((nint)(int)0xC14D0001)), "could not deliver the post-notification arrow");
+            PumpUntil(() => (int)show.View.CurrentShowPosition == 2, "PowerPoint did not advance after closing the notification");
+            Checks.Add($"PowerPoint {office.Version}: minor notice preserved foreground; normal notice focused its text, closed by mouse, restored the slide show, and Right advanced to slide 2.");
         }
         finally
         {
@@ -134,6 +149,69 @@ internal static partial class Program
             if (startedOffice && remainingDecks == 0) office.Quit();
             Checks.Add($"Fixture cleanup: remaining presentations={remainingDecks}");
             Marshal.FinalReleaseComObject(office);
+        }
+    }
+
+    private static void VerifyNotificationOverSlideShow(nint slideHandle)
+    {
+        var minor = new SchoolNotificationWindow(SchoolNotification.Preview(SchoolNotificationPriority.Minor));
+        try
+        {
+            minor.Show();
+            Assert(minor.IsVisible && QuickForeground() == slideHandle, "a minor notification interrupted the slide show");
+        }
+        finally { minor.Shutdown(); }
+
+        string pipe = "NPEduTools.Test.notice-slide." + Guid.NewGuid().ToString("N");
+        using var stop = new CancellationTokenSource();
+        var payload = new NpepNotice("classroom-demo", 1, "下节课调整至实验楼 203", "请带上学习单和笔。", "NORMAL",
+            DateTimeOffset.Now, null, "教务处", true);
+        int displayed = 0, dismissed = 0;
+        var server = Task.Run(() => WorkspaceProxy(pipe, request =>
+        {
+            var command = request.Notification!;
+            Assert(request.Capability == "npep.notifications" && NpepNotificationContract.Valid(command), "unexpected slide fixture request");
+            if (command.Action != "poll")
+                Assert(command.Scope == NoticeScope && command.PublicationId == payload.PublicationId &&
+                    command.Revision == payload.Revision, "the slide-show notification changed identity");
+            if (command.Action == "displayed") Interlocked.Increment(ref displayed);
+            if (command.Action == "dismissed") Interlocked.Increment(ref dismissed);
+            var inbox = new NpepInboxState(NoticeScope, "ONLINE", "已同步", 1,
+                [new(payload.PublicationId, payload.Revision, payload.Title, payload.Priority, true, dismissed > 0)],
+                Current: dismissed == 0 ? payload : null, CanPresent: true);
+            return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "isolated", Inbox: inbox));
+        }, stop.Token));
+        var main = IsolatedMainWindow(pipe);
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(main.Dispatcher));
+        Task? poll = null;
+        try
+        {
+            poll = (Task)typeof(MainWindow).GetMethod("NotificationPollAsync", NoticeMembers)!.Invoke(main, null)!;
+            PumpUntil(() => NoticeField<SchoolNotificationWindow>(main, "_schoolNotification")?.IsVisible == true &&
+                Volatile.Read(ref displayed) == 1, "verified school notification did not appear over the slide show");
+            var notice = NoticeField<SchoolNotificationWindow>(main, "_schoolNotification")!;
+            var handle = new WindowInteropHelper(notice).Handle;
+            var message = (ScrollViewer)notice.FindName("MessageScroll");
+            PumpUntil(() => notice.IsActive && QuickForeground() == handle && message.IsKeyboardFocusWithin,
+                "normal notification did not focus its text above PowerPoint");
+            var close = (Button)notice.FindName("DismissButton");
+            var center = close.PointToScreen(new Point(close.ActualWidth / 2, close.ActualHeight / 2));
+            ClickFixturePoint(handle, center, handle, () => PumpUntil(() => !notice.IsVisible &&
+                QuickForeground() == slideHandle, "closing the notification did not restore the slide show"));
+            Assert(displayed == 1 && dismissed == 1 && notice.Backdrops.Count == 0, "the notification did not release its masks and record the two receipts");
+        }
+        finally
+        {
+            main.Close();
+            stop.Cancel();
+            try
+            {
+                if (poll is not null) PumpUntil(() => poll.IsCompleted, "notification polling did not stop");
+                server.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+            finally { SynchronizationContext.SetSynchronizationContext(previous); }
         }
     }
 }

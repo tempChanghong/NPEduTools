@@ -30,6 +30,11 @@ public partial class MainWindow
     private Task<HostResponse> NotificationRequestAsync(NpepNotificationCommand command) =>
         ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "npep.notifications", Notification: command));
 
+    private static NpepNotice? VerifiedNotice(HostResponse reply, string? scope, string publicationId, long revision) =>
+        reply.Outcome == "Succeeded" && scope is not null &&
+        reply.Inbox is { CanPresent: true, Current: { } current } inbox && inbox.Scope == scope &&
+        current.PublicationId == publicationId && current.Revision == revision ? current : null;
+
     private async Task NotificationPollAsync()
     {
         while (!_lifetime.IsCancellationRequested)
@@ -50,21 +55,15 @@ public partial class MainWindow
                     if (reply.Inbox is not { } inbox)
                     {
                         if (navigationVersion == _inboxNavigationVersion)
-                            NotificationInboxMessage.Text = "请更新并重启后台以接收学校通知。";
-                        InvalidateUnverifiedNotification(navigationVersion == _inboxNavigationVersion);
+                            ClearNotificationInbox(0, "请更新并重启后台以接收学校通知。");
+                        InvalidateUnverifiedNotification();
                     }
                     else
                     {
                         // A page selected while this request was pending owns the list UI.
                         // Keep verifying any shown notice even when these page rows are obsolete.
                         if (navigationVersion == _inboxNavigationVersion)
-                        {
-                            _inboxScope = inbox.Scope;
-                            NotificationInboxMessage.Text = inbox.Message + $"（当前有效通知 {inbox.Total} 条）";
-                            NotificationInboxItems.ItemsSource = inbox.Items; _inboxNext = inbox.NextOffset;
-                            if (_inboxOffset >= inbox.Total && _inboxOffset != 0) _inboxOffset = 0;
-                            NotificationNext.IsEnabled = _inboxNext is not null; NotificationPrevious.IsEnabled = _inboxOffset > 0;
-                        }
+                            ApplyNotificationInbox(inbox);
                         bool bodyVerified = true;
                         if (_schoolNotification is { Invalidated: false } notification && _shownNotice is { } shown)
                         {
@@ -79,8 +78,8 @@ public partial class MainWindow
                 catch (Exception error) when (IsManagementError(error))
                 {
                     if (navigationVersion == _inboxNavigationVersion)
-                        NotificationInboxMessage.Text = "通知后台暂不可用，正在重试。";
-                    InvalidateUnverifiedNotification(navigationVersion == _inboxNavigationVersion);
+                        ClearNotificationInbox(0, "通知后台暂不可用，正在重试。");
+                    InvalidateUnverifiedNotification();
                 }
                 finally { _notificationReading = false; }
             }
@@ -97,7 +96,7 @@ public partial class MainWindow
         {
             var current = await NotificationRequestAsync(new("get", scope, notice.PublicationId, notice.Revision));
             if (!StillCurrent()) return false;
-            if (current.Inbox is not { CanPresent: true, Current: not null } || current.Inbox.Scope != scope)
+            if (VerifiedNotice(current, scope, notice.PublicationId, notice.Revision) is null)
                 window.InvalidateNotice("通知已撤回、更新、过期，或学校互联已停用。请关闭此窗口。新通知会继续按顺序显示。");
             return true;
         }
@@ -108,31 +107,15 @@ public partial class MainWindow
         }
     }
 
-    private void InvalidateUnverifiedNotification(bool clearInbox = true)
+    private void InvalidateUnverifiedNotification()
     {
-        if (clearInbox) ClearNotificationInbox(0);
         if (Stopwatch.GetElapsedTime(_lastNotificationRead).TotalSeconds > 60)
             _schoolNotification?.InvalidateNotice("无法核对通知的有效性，正文已暂时隐藏。请关闭窗口，连接恢复后会重新核对通知。");
     }
 
-    private void ClearNotificationInbox(int offset)
+    private async Task ShowSchoolNotificationAsync(string scope, NpepNotice notice, long? inboxVersion = null)
     {
-        _inboxScope = null; _inboxNext = null; _inboxOffset = offset;
-        NotificationInboxItems.ItemsSource = null;
-        NotificationNext.IsEnabled = false; NotificationPrevious.IsEnabled = offset > 0;
-    }
-
-    private void SelectNotificationPage(int offset)
-    {
-        if (offset == _inboxOffset) return;
-        _inboxNavigationVersion++;
-        ClearNotificationInbox(offset);
-        NotificationInboxMessage.Text = "正在读取通知列表…";
-    }
-
-    private async Task ShowSchoolNotificationAsync(string scope, NpepNotice notice)
-    {
-        if (_schoolNotification is not null || _notificationPreview is not null || _notificationOpening || _lifetime.IsCancellationRequested) return;
+        if (NotificationPresentationActive || _lifetime.IsCancellationRequested) return;
         _notificationOpening = true;
         IDisposable? reservation = null;
         try
@@ -143,39 +126,71 @@ public partial class MainWindow
             if (reservation is null) return;
             // Check this exact version just before opening, including manual opens from an older list.
             var check = await NotificationRequestAsync(new("get", scope, notice.PublicationId, notice.Revision));
-            if (_lifetime.IsCancellationRequested || check.Inbox is not { CanPresent: true, Current: not null } || !NotificationDesktopAvailable()) return;
-            notice = check.Inbox.Current;
+            if (_lifetime.IsCancellationRequested || NPEduTools.Core.RuntimeOperationFile.PriorityRequested ||
+                inboxVersion.HasValue && (inboxVersion != _inboxNavigationVersion || scope != _inboxScope) ||
+                VerifiedNotice(check, scope, notice.PublicationId, notice.Revision) is not { } verified ||
+                !NotificationDesktopAvailable()) return;
+            notice = verified;
             var priority = Enum.Parse<SchoolNotificationPriority>(notice.Priority, true);
             var window = new SchoolNotificationWindow(new(string.IsNullOrWhiteSpace(notice.Title) ? "学校通知" : notice.Title,
                 string.IsNullOrWhiteSpace(notice.Content) ? "（此通知没有正文）" : notice.Content,
                 string.IsNullOrWhiteSpace(notice.Source) ? "学校通知" : notice.Source, notice.PublishAt, priority));
-            HideStudyPresentations();
             _schoolNotification = window; _shownNotice = notice; _shownScope = scope;
+            bool Current() => !_lifetime.IsCancellationRequested && ReferenceEquals(_schoolNotification, window) && !window.Invalidated;
+            bool rendered = false;
+            Task<bool>? displayReceipt = null;
             async Task<bool> Mark(string action)
             {
+                if (!Current()) return false;
                 try
                 {
                     var response = await NotificationRequestAsync(new(action, scope, notice.PublicationId, notice.Revision));
-                    if (response.ErrorCode == "NoticeChanged") { window.InvalidateNotice("通知或连接已变化，请关闭此窗口。"); return true; }
-                    return response.Outcome == "Succeeded";
+                    if (!Current()) return false;
+                    if (response.ErrorCode == "NoticeChanged")
+                    {
+                        window.InvalidateNotice("通知或连接已变化，请关闭此窗口。");
+                        return false;
+                    }
+                    return response.Outcome == "Succeeded" && response.Inbox?.Scope == scope;
                 }
                 catch (Exception error) when (IsManagementError(error)) { return false; }
             }
-            window.BeforeDismissAsync = async () => await Mark("displayed") && await Mark("dismissed");
+            Task<bool> MarkDisplayed()
+            {
+                // A close can arrive while ContentRendered is still waiting for its receipt.
+                if (displayReceipt is { IsCompletedSuccessfully: true, Result: false }) displayReceipt = null;
+                return displayReceipt ??= Mark("displayed");
+            }
+            window.BeforeDismissAsync = async () =>
+            {
+                if (!rendered || !NotificationDesktopAvailable()) return false;
+                if (!await MarkDisplayed() || !Current()) return window.Invalidated;
+                return await Mark("dismissed") || window.Invalidated;
+            };
             window.ContentRendered += async (_, _) =>
             {
-                if (!window.Invalidated && NotificationDesktopAvailable()) await Mark("displayed");
+                rendered = true;
+                if (Current() && NotificationDesktopAvailable()) await MarkDisplayed();
             };
             var visibleReservation = reservation;
             window.Closed += (_, _) =>
             {
                 _schoolNotification = null; _shownNotice = null; _shownScope = null;
                 visibleReservation.Dispose();
+                if (!_lifetime.IsCancellationRequested) UpdateQuickPresentationVisibility();
+                if (inboxVersion is { } version && window.RequiresResponse)
+                    Dispatcher.InvokeAsync(() => RestoreNotificationRowFocus(scope, version, notice),
+                        System.Windows.Threading.DispatcherPriority.Input);
             };
-            window.Show();
+            ShowNotificationWindow(window);
             reservation = null; // Ownership transferred to Closed.
         }
-        finally { reservation?.Dispose(); _notificationOpening = false; }
+        finally
+        {
+            reservation?.Dispose();
+            _notificationOpening = false;
+            if (NotificationPreviewMessage.Text == OpeningNotificationMessage) NotificationPreviewMessage.Text = "";
+        }
     }
 
     private async void OpenSchoolNotificationClicked(object sender, RoutedEventArgs e) => await OpenSchoolNotificationAsync(sender);
@@ -183,6 +198,8 @@ public partial class MainWindow
     private async Task OpenSchoolNotificationAsync(object sender)
     {
         if (_schoolNotification is not null) { _schoolNotification.Activate(); return; }
+        if (_notificationPreview is not null) { _notificationPreview.Activate(); return; }
+        if (_notificationOpening || _lifetime.IsCancellationRequested) return;
         if (sender is not Button { Tag: NpepNoticeSummary summary } || _inboxScope is null) return;
         var scope = _inboxScope;
         var navigationVersion = _inboxNavigationVersion;
@@ -192,7 +209,8 @@ public partial class MainWindow
         {
             var response = await NotificationRequestAsync(new("get", scope, summary.PublicationId, summary.Revision));
             if (!StillCurrent()) return;
-            if (response.Inbox is { CanPresent: true, Current: not null }) await ShowSchoolNotificationAsync(scope, response.Inbox.Current);
+            if (VerifiedNotice(response, scope, summary.PublicationId, summary.Revision) is { } current)
+                await ShowSchoolNotificationAsync(scope, current, navigationVersion);
             else NotificationInboxMessage.Text = "通知已变化或尚未完成在线核对，请等待刷新。";
         }
         catch (Exception error) when (IsManagementError(error))
@@ -200,6 +218,4 @@ public partial class MainWindow
             if (StillCurrent()) NotificationInboxMessage.Text = "无法打开通知，请稍后重试。";
         }
     }
-    private void NotificationPreviousClicked(object sender, RoutedEventArgs e) => SelectNotificationPage(Math.Max(0, _inboxOffset - 10));
-    private void NotificationNextClicked(object sender, RoutedEventArgs e) { if (_inboxNext is { } offset) SelectNotificationPage(offset); }
 }

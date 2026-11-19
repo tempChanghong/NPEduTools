@@ -15,14 +15,8 @@ public sealed record SchoolNotification(string Title, string Body, string Source
     }
 
     public static SchoolNotification Preview(SchoolNotificationPriority priority) => new(
-        priority switch
-        {
-            SchoolNotificationPriority.Minor => "让每一条消息，清晰可见。",
-            SchoolNotificationPriority.Normal => "请留意下一节课的安排。",
-            SchoolNotificationPriority.Important => "重要事项，请及时查看。",
-            _ => "紧急通知，请立即关注。"
-        },
-        "这是通知样式预览。\n\n学校通知将在这里显示完整内容。窗口保持置顶，阅读后请手动关闭。",
+        "下节课调整至实验楼 203",
+        "请携带综合实践学习单和笔，到实验楼二层集合。下课后返回原教室。",
         "NPEduTools · 本地预览", DateTimeOffset.Now, priority, true);
 }
 
