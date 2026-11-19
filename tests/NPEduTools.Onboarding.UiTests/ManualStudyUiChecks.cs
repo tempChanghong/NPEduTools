@@ -7,6 +7,7 @@ internal static partial class Program
 {
     private static void RunManualStudyChecks()
     {
+        RunStudyHomeworkReaderChecks(manual: true);
         RunManualHomeworkUiChecks();
         RunStudyHoldIntentCheck();
         var clock=new StudyUiClock();int ends=0;

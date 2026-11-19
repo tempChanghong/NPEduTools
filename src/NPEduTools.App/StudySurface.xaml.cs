@@ -43,6 +43,7 @@ public partial class StudySurface : UserControl
     private bool _drawnEstimated;
     private string? _shownNotice;
     private string? _returnError;
+    private const double HoldSeconds = 2;
     private long? _holdAt;
     private bool _busy, _paused = true;
     private long? _renderedAt;
@@ -71,7 +72,11 @@ public partial class StudySurface : UserControl
         {
             if (_holdAt is not { } at) return;
             if (!_timeline.Fresh || _timeline.State?.Phase != "Active") { CancelHold(); return; }
-            if (_time.GetElapsedTime(at).TotalSeconds < 2) return;
+            double seconds = _time.GetElapsedTime(at).TotalSeconds;
+            var progress = _endHold ? EndHoldProgress : TemporaryHoldProgress;
+            var button = _endHold ? EndButton : HoldButton;
+            progress.Width = Math.Max(0, button.ActualWidth - 28) * Math.Clamp(seconds / HoldSeconds, 0, 1);
+            if (seconds < HoldSeconds) return;
             bool ending=_endHold; CancelHold(); if(ending)await EndStudyAsync();else await HideAsync();
         };
     }
@@ -85,7 +90,20 @@ public partial class StudySurface : UserControl
         _paused = false; _timeline.Apply(state, transportAge); _noise = noise; _connection = connection; _calibration = calibration; _timer.Start(); Render();
     }
     public void Suspend()
-        { _paused = true; _reminderGeneration++; _timer.Stop(); _pager.Advance(false); CancelHold(); _timeline.Suspend(); CloseSeatingView(); DismissNotice(); SetEdge("None"); _audio.Stop(); }
+    {
+        _paused = true;
+        _reminderGeneration++;
+        _timer.Stop();
+        CloseReader(false);
+        CancelOverviewPreparation();
+        _pager.Advance(false);
+        CancelHold();
+        _timeline.Suspend();
+        CloseSeatingView();
+        DismissNotice();
+        SetEdge("None");
+        _audio.Stop();
+    }
     public void Stop() { Suspend(); ClearSeating(); _audio.Dispose(); }
     private void Render()
     {
@@ -95,7 +113,10 @@ public partial class StudySurface : UserControl
         bool manual=state.Manual is not null;
         ClassTitle.Text=manual?"手动自习":"学校自习";
         EndButton.Visibility=manual?Visibility.Visible:Visibility.Collapsed;EndButton.IsEnabled=fresh && state.Phase=="Active" && !_busy;
-        if(manual){SeatingButton.Visibility=SeatingStatus.Visibility=Visibility.Collapsed;Canvas.SetLeft(HoldButton,266);Canvas.SetLeft(ManageButton,492);}
+        SeatingButton.Visibility = SeatingStatus.Visibility = manual ? Visibility.Collapsed : Visibility.Visible;
+        Canvas.SetLeft(HoldButton, manual ? 266 : 40);
+        Canvas.SetLeft(TemporaryHoldProgress, manual ? 280 : 54);
+        Canvas.SetLeft(ManageButton, manual ? 492 : 266);
         HoldHint.Text=manual?state.Manual!.HideSeconds is {} seconds?$"长按 2 秒 · 闲置 {seconds/60.0:g} 分钟":"长按 2 秒 · 不自动返回":$"长按 2 秒 · 闲置 {StudyIdleReturn.DefaultSeconds/60} 分钟";
         HoldButton.ToolTip=manual && state.Manual!.HideSeconds is null ? "临时收起后不自动返回；后台监测与照片策略继续。" :
             "临时收起后，当前 Windows 会话连续无操作达到设定时长才返回；操作其他软件也会重新计时。后台监测与照片策略继续。";
@@ -296,20 +317,40 @@ public partial class StudySurface : UserControl
         try { await _hide(); }
         finally { _busy = false; if (!_paused) Render(); }
     }
-    public void BeginHold()
-    { if (_busy || !_timeline.Fresh || _timeline.State?.Phase != "Active" || _holdAt is not null) return; _holdAt = _time.GetTimestamp(); HoldText.Text = "继续按住…"; _holdTimer.Start(); }
+    public void BeginHold() => StartHold(false);
+
+    private void StartHold(bool ending)
+    {
+        if (_busy || ReaderOpen || !_timeline.Fresh || _timeline.State?.Phase != "Active" || _holdAt is not null) return;
+        _endHold = ending;
+        _holdAt = _time.GetTimestamp();
+        (ending ? EndText : HoldText).Text = "继续按住…";
+        var progress = ending ? EndHoldProgress : TemporaryHoldProgress;
+        progress.Width = 0;
+        progress.Visibility = Visibility.Visible;
+        _holdTimer.Start();
+    }
     private void BeginEndHold()
     {
         // A second contact/key cannot repurpose the time already held on temporary use.
-        if (_end is null || !EndButton.IsEnabled || _holdAt is not null) return;
-        BeginHold(); _endHold = _holdAt is not null;
+        if (_end is null || !EndButton.IsEnabled) return;
+        StartHold(true);
     }
     private void EndMouseDown(object sender,MouseButtonEventArgs e){if(e.StylusDevice is not null)return;BeginEndHold();EndButton.CaptureMouse();e.Handled=true;}
     private void EndMouseUp(object sender,MouseButtonEventArgs e){CancelHold();EndButton.ReleaseMouseCapture();e.Handled=true;}
     private void EndTouchDown(object sender,TouchEventArgs e){BeginEndHold();EndButton.CaptureTouch(e.TouchDevice);e.Handled=true;}
     private void EndTouchUp(object sender,TouchEventArgs e){CancelHold();EndButton.ReleaseTouchCapture(e.TouchDevice);e.Handled=true;}
     private void EndKeyDown(object sender,KeyEventArgs e){if(e.Key is Key.Space or Key.Enter){if(!e.IsRepeat)BeginEndHold();e.Handled=true;}}
-    public void CancelHold() { _endHold=false; _holdAt = null; _holdTimer.Stop(); HoldText.Text = "临时使用电脑"; }
+    public void CancelHold()
+    {
+        if (_holdAt is null) return;
+        _endHold = false;
+        _holdAt = null;
+        _holdTimer.Stop();
+        HoldText.Text = "临时使用电脑";
+        EndText.Text = "结束自习";
+        TemporaryHoldProgress.Visibility = EndHoldProgress.Visibility = Visibility.Collapsed;
+    }
     public void ReturnError(string? message) { _returnError = message; if (!_paused) Render(); }
     private void HoldMouseDown(object sender, MouseButtonEventArgs e) { if (e.StylusDevice is not null) return; BeginHold(); HoldButton.CaptureMouse(); e.Handled = true; }
     private void HoldMouseUp(object sender, MouseButtonEventArgs e) { CancelHold(); HoldButton.ReleaseMouseCapture(); e.Handled = true; }

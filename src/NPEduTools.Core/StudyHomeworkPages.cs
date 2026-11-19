@@ -3,19 +3,33 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.Core;
 
-public sealed record StudyHomeworkPart(StudyHomeworkItem Item, string Text, int Part, int Parts);
+public sealed record StudyHomeworkPart(StudyHomeworkItem Item, string Text, int Part, int Parts)
+{
+    public int StartOffset { get; init; }
+}
 public sealed record StudyHomeworkPage(bool Wide, IReadOnlyList<StudyHomeworkPart> Items, bool Tall = false);
 
 public static class StudyHomeworkPages
 {
     public const double CompactWidth = 535, CompactHeight = 72, WideWidth = 835, WideHeight = 218;
-    public static StudyHomeworkPage[] Build(IReadOnlyList<StudyHomeworkItem> work, Func<string, double, double> height)
+    public static bool IsDisplayable(StudyHomeworkItem item) =>
+        !string.IsNullOrWhiteSpace(item.Title) || !string.IsNullOrWhiteSpace(item.Content);
+
+    public static string ReadingText(StudyHomeworkItem item) =>
+        string.IsNullOrWhiteSpace(item.Title) ? item.Content :
+        string.IsNullOrWhiteSpace(item.Content) ? item.Title : item.Title + "\n" + item.Content;
+
+    public static StudyHomeworkPage[] Build(IReadOnlyList<StudyHomeworkItem> work, Func<string, double, double> height) =>
+        Build(work, height, CancellationToken.None);
+
+    public static StudyHomeworkPage[] Build(IReadOnlyList<StudyHomeworkItem> work, Func<string, double, double> height, CancellationToken cancellation)
     {
         var fragments = new List<(StudyHomeworkPart Part, int Layout)>();
         foreach (var item in work.DistinctBy(w => w.Id))
         {
-            string content = string.IsNullOrWhiteSpace(item.Title) ? item.Content : string.IsNullOrWhiteSpace(item.Content) ? item.Title : item.Title + "\n" + item.Content;
-            if (string.IsNullOrWhiteSpace(content)) continue;
+            cancellation.ThrowIfCancellationRequested();
+            if (!IsDisplayable(item)) continue;
+            string content = ReadingText(item);
             // Very long content goes straight to wide pages; never shape its entire body just to test a small card.
             if (content.Length <= 1024)
             {
@@ -27,6 +41,7 @@ public static class StudyHomeworkPages
             int[] positions = StringInfo.ParseCombiningCharacters(content); int start = 0;
             while (start < positions.Length)
             {
+                cancellation.ThrowIfCancellationRequested();
                 int low = start + 1, high = Math.Min(positions.Length, start + 32), best = start;
                 int offset = positions[start];
                 // Exponential search bounds measurement to roughly one page instead of repeatedly
@@ -50,7 +65,12 @@ public static class StudyHomeworkPages
                 int limit = best == positions.Length ? content.Length : positions[best];
                 parts.Add(content[offset..limit]); start = best;
             }
-            for (int i = 0; i < parts.Count; i++) fragments.Add((new(item, parts[i], i + 1, parts.Count), 2));
+            int partOffset = 0;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                fragments.Add((new StudyHomeworkPart(item, parts[i], i + 1, parts.Count) { StartOffset = partOffset }, 2));
+                partOffset += parts[i].Length;
+            }
         }
         var pages = new List<StudyHomeworkPage>(); var current = new List<StudyHomeworkPart>(); int layout = 0;
         static int Capacity(int kind) => kind == 2 ? 2 : kind == 1 ? 3 : 6;

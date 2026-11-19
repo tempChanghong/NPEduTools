@@ -14,6 +14,7 @@
     <EmbeddedResource Include="../../LICENSE" LogicalName="NPEduTools.Legal.GPL-3.0.txt" />
     <Resource Include="../../images/branding/npedutools.ico" Link="Assets/npedutools.ico" />
     <Resource Include="Assets/Study/Fonts/*.ttf" />
+    <Resource Include="Assets/Study/npclassworks-64.png" />
     <Content Include="Assets/Study/Audio/*" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Assets/Study/Fonts/*.md;Assets/Study/Fonts/*.txt" CopyToOutputDirectory="PreserveNewest" />
     <Using Remove="System.Windows.Forms" />
