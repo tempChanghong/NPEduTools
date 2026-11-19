@@ -95,7 +95,7 @@ public partial class StudySurface : UserControl
         _reminderGeneration++;
         _timer.Stop();
         CloseReader(false);
-        CancelOverviewPreparation();
+        if (_overviewPreparation is not null) DiscardPendingHomework();
         _pager.Advance(false);
         CancelHold();
         _timeline.Suspend();

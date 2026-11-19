@@ -19,10 +19,12 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         try
         {
+            RunNotificationAuditChecks();
             RunNotificationPresentationChecks();
             RunLongNotificationChecks();
             RunNotificationEntryOrdering(previewFirst: false, stale: false);
             RunNotificationEntryOrdering(previewFirst: false, stale: true);
+            RunNotificationEntryOrdering(previewFirst: false, stale: false, leaveInbox: true);
             RunNotificationEntryOrdering(previewFirst: true, stale: false);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }

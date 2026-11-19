@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         _pipe = pipe;
         _upstream = upstream;
         InitializeComponent();
+        NotificationInboxCard.IsVisibleChanged += (_, e) => { if (!(bool)e.NewValue) _inboxNavigationVersion++; };
         InitializeDensity(initializeServices);
         InitializeStudyWorkspace();
         InitializeBridgeClock();

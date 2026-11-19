@@ -255,6 +255,10 @@ internal static partial class Program
             var clock = Stopwatch.StartNew();
             Receive(large, 'a');
             Assert(!open.IsEnabled && Waiting(), "initial heavy overview blocked until pagination was complete");
+            state = state with { Homework = state.Homework! with { SnapshotId = new string('e', 64) } };
+            surface.Apply(state, null);
+            Assert(!Waiting() && !open.IsEnabled, "superseded pagination stayed active while the next payload was unavailable");
+            Receive(large, 'a');
             state = state with { Homework = state.Homework! with { State = "DISABLED", SnapshotId = null } };
             surface.Apply(state, null);
             Assert(!Waiting() && !open.IsEnabled, "revoking a pending first snapshot retained the old loading state");

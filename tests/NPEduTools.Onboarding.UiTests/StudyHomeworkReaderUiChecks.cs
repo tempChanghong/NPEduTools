@@ -41,7 +41,8 @@ internal static partial class Program
             Work("empty", "空白来源", " ")
         ];
         var original = new StudyHomeworkSnapshot(state.Version!, "2026-10-12", work);
-        var updated = original with { Items = [Work("b", "物理走班 B", "新版作业。") with { Revision = 2 }] };
+        var superseded = original with { Items = [Work("b", "物理走班 B", "中间版作业。") with { Revision = 2 }] };
+        var updated = original with { Items = [Work("b", "物理走班 B", "新版作业。") with { Revision = 3 }] };
         string kind = manual ? "manual" : "school";
         T Element<T>(string name) where T : FrameworkElement => (T)surface.FindName(name);
         var body = Element<HomeworkReaderView>("ReaderBody");
@@ -167,9 +168,21 @@ internal static partial class Program
             clock.Ms += 61000;
             state = state with { Homework = state.Homework! with { SnapshotId = updatedId } };
             Apply();
-            surface.ApplyHomework(updatedId, updated);
+            surface.ApplyHomework(updatedId, superseded);
             var newer = Element<Button>("ReaderUpdate");
             Assert(newer.IsVisible && pager.Page == openedPage, "copying did not pause rotation or announce a new snapshot");
+            var supersedingId = new string('c', 64);
+            state = state with { Homework = state.Homework! with { SnapshotId = supersedingId } };
+            Apply();
+            surface.ApplyHomework(updatedId, superseded);
+            Assert(!newer.IsVisible && !Element<TextBlock>("WorkUpdateLabel").Text.Contains("作业已更新"),
+                "the reader offered a superseded revision while the current assignment was downloading");
+            Activate(newer);
+            Activate(pick);
+            Assert(choices.Items.Count == 3, "an obsolete update replaced the student's pinned assignments");
+            Press(choices, Key.Escape);
+            surface.ApplyHomework(supersedingId, updated);
+            Assert(newer.IsVisible, "the latest verified assignment did not restore the update action");
             Activate(newer);
             Ready();
             Assert(body.Position?.ItemId == "b" && !newer.IsVisible && Pages().SelectMany(p => p.Items).Any(p => p.Item.Id == "lab"),
@@ -194,7 +207,7 @@ internal static partial class Program
             Activate(pick);
             state = state with { Homework = manual ? null : state.Homework! with { State = "DISABLED", SnapshotId = null } };
             Apply();
-            surface.ApplyHomework(updatedId, updated);
+            surface.ApplyHomework(supersedingId, updated);
             Assert(!reader.IsVisible && !open.IsEnabled && choices.Items.Count == 0 && body.PageCount == 0 &&
                 Pages() is [{ Items.Count: 0 }], "scope revocation or a late read left stale homework in one of the views");
             Assert(hides == 0 && ends == 0, "reader interaction invoked a Host exit");

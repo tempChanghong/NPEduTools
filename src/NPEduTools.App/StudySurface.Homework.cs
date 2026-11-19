@@ -39,11 +39,9 @@ public partial class StudySurface
         if (_paused || _timeline.State is not { } state || snapshot.Version != (state.Manual is null?state.Version:state.Homework?.Version) || snapshot.Date != state.SchoolNow?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ||
             !HomeworkAuthorized(state) || state.Homework is not { State: "READY" } homework || homework.SnapshotId != snapshotId) return;
         if (_latestHomework == snapshotId) return;
-        CancelOverviewPreparation();
+        DiscardPendingHomework();
         _latestHomework = snapshotId;
-        _preparedHomeworkPages = null;
-        _overviewPreparationFailed = false;
-        if (_loadedHomework == snapshotId) { _pendingHomework = null; Render(); return; }
+        if (_loadedHomework == snapshotId) { Render(); return; }
         _pendingHomework = snapshot;
         if (snapshot.Items.Count > 48 || snapshot.Items.Sum(item => item.Content.Length + item.Title.Length) > 8192)
         {
@@ -54,12 +52,14 @@ public partial class StudySurface
         else if (_loadedHomework is null || _pages.All(page => page.Items.Count == 0)) CommitHomework(snapshot);
         Render();
     }
-    private void CancelOverviewPreparation()
+    private void DiscardPendingHomework()
     {
-        if (_overviewPreparation is not { } pending) return;
+        var pending = _overviewPreparation;
         _overviewPreparation = null;
-        pending.Cancel();
+        pending?.Cancel();
         _pendingHomework = null;
+        _preparedHomeworkPages = null;
+        _overviewPreparationFailed = false;
         _latestHomework = _loadedHomework;
         _drawnPage = -1;
     }
@@ -121,11 +121,16 @@ public partial class StudySurface
             if (_homeworkScope.Display != scope.Display || _homeworkScope.ManualSession != scope.ManualSession)
                 _readingLayout = HomeworkReadingLayout.Fit;
             CloseReader(false);
-            CancelOverviewPreparation();
-            _preparedHomeworkPages = null; _overviewPreparationFailed = false;
-            _homeworkScope = scope; _loadedHomework = _latestHomework = null; _pendingHomework = null;
+            DiscardPendingHomework();
+            _homeworkScope = scope; _loadedHomework = _latestHomework = null;
             _overviewHomework = null;
             _pages = [new(false, [])]; _pager.Reset(1); _drawnPage = -1;
+        }
+        else if ((_pendingHomework is not null || _overviewPreparationFailed) && _latestHomework != state.Homework?.SnapshotId)
+        {
+            // The Host can announce another revision before its chunks arrive.
+            // Keep the page being read, but never offer or rotate to the superseded update.
+            DiscardPendingHomework();
         }
         string visibleStatus = !fresh && status is "READY" or "WAITING" ? "STALE" : status;
         if (_homeworkStatus != visibleStatus && _pages[_pager.Page].Items.Count == 0) _drawnPage = -1;

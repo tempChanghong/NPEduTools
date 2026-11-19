@@ -16,6 +16,32 @@ public sealed class NotificationTests
     private static NpepInboxState View(NpepInbox inbox) => inbox.Snapshot(true, new("poll"));
     private static NpepNotificationCommand Mark(string action, NpepNotice n, string? scope = null) => new(action, scope ?? Scope, n.PublicationId, n.Revision);
 
+    [Theory]
+    [InlineData("𠮷")]
+    [InlineData("👩‍🏫")]
+    [InlineData("A\u0301")]
+    public void InboxTitleEndsOnACompleteTextElement(string element)
+    {
+        using var directory = new TestDirectory();
+        var inbox = Inbox(directory);
+        string prefix = new('课', 63);
+        var notice = Notice() with { Title = prefix + element + "下节课" };
+        inbox.Apply(Scope, new(Now, 10, [notice]));
+        var page = View(inbox);
+        Assert.Equal(prefix + "…", Assert.Single(page.Items).Title);
+        Assert.Equal(notice.Title, inbox.Snapshot(true, Mark("get", notice)).Current!.Title);
+    }
+
+    [Fact]
+    public void InboxShowsAnUntitledNoticeAndPreservesShortTitles()
+    {
+        using var directory = new TestDirectory();
+        var inbox = Inbox(directory);
+        string shortTitle = new string('课', 62) + "𠮷";
+        inbox.Apply(Scope, new(Now, 10, [Notice("a") with { Title = "  " }, Notice("b") with { Title = shortTitle }]));
+        Assert.Equal(new[] { "学校通知", shortTitle }, View(inbox).Items.Select(row => row.Title));
+    }
+
     [Fact]
     public void ReceiptIdsAndManualDismissalSurviveRestartAndDoNotRepeat()
     {

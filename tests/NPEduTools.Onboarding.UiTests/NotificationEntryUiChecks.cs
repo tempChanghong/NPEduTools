@@ -7,7 +7,7 @@ using NPEduTools.Contracts;
 
 internal static partial class Program
 {
-    private static void RunNotificationEntryOrdering(bool previewFirst, bool stale)
+    private static void RunNotificationEntryOrdering(bool previewFirst, bool stale, bool leaveInbox = false)
     {
         string pipe = "NPEduTools.Test.notice-entry." + Guid.NewGuid().ToString("N");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -72,17 +72,24 @@ internal static partial class Program
 
                     NoticeRow(main, 0).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                     initial.Expect(ForNotice("get"));
-                    using var finalGet = Listen();
-                    initial.Reply(inbox);
-                    finalGet.Expect(ForNotice("get"));
-                    Assert(Opening() && VisibleNotices() == 0, "manual detail did not reserve presentation before final verification");
+                    if (leaveInbox)
+                    {
+                        Click(main, "GeneralSettingsTab");
+                        ShowNotificationSettings(main);
+                        initial.Reply(inbox);
+                        PumpUntil(() => !Opening(), "leaving the inbox did not release presentation");
+                        Assert(VisibleNotices() == 0 && Delivery() is null, "returning to settings revived a previously abandoned detail");
+                        Checks.Add("Leaving and reopening the inbox while checking a clicked notice discards the late reply and opens no window");
+                        return;
+                    }
+                    NoticeRow(main, 0).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                     Click(main, "NotificationPreviewButton");
-                    Assert(VisibleNotices() == 0 && Preview() is null && message.Text.Contains("正在打开学校通知"),
+                    Assert(Opening() && VisibleNotices() == 0 && Preview() is null && message.Text.Contains("正在打开学校通知"),
                         "preview took over presentation while the manual GET was held");
 
                     if (stale)
                     {
-                        finalGet.Reply(inbox with { Current = notice with { Revision = notice.Revision + 1 } });
+                        initial.Reply(inbox with { Current = notice with { Revision = notice.Revision + 1 } });
                         PumpUntil(() => !Opening(), "stale version did not release presentation");
                         Assert(VisibleNotices() == 0 && message.Text.Length == 0, "stale opened detail or retained its wait hint");
                         Click(main, "NotificationPreviewButton");
@@ -92,9 +99,11 @@ internal static partial class Program
                     }
 
                     using var receipt = Listen();
-                    finalGet.Reply(inbox);
+                    initial.Reply(inbox);
                     receipt.Expect(ForNotice("displayed"));
                     var shown = Delivery()!;
+                    typeof(MainWindow).GetMethod("InvalidateUnverifiedNotification", NoticeMembers)!.Invoke(main, null);
+                    Assert(!shown.Invalidated, "a newly verified manual notice inherited an expired freshness deadline");
                     Assert(shown.IsVisible && shown.Backdrops.Count == DesktopScreenCount() && VisibleNotices() == 1 &&
                         Preview() is null && message.Text.Length == 0, "manual verification did not show only the real detail");
                     Click(main, "NotificationPreviewButton");

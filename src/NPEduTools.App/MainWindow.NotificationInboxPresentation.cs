@@ -10,6 +10,7 @@ namespace NPEduTools.App;
 public partial class MainWindow
 {
     private const double CompactNotificationWidth = 680;
+    private Button? _notificationPagerFocus;
 
     private void ApplyNotificationInbox(NpepInboxState inbox)
     {
@@ -52,17 +53,20 @@ public partial class MainWindow
     private void SelectNotificationPage(int offset)
     {
         if (offset == _inboxOffset) return;
-        _inboxNavigationVersion++;
-        ClearNotificationInbox(offset, "正在读取通知列表…");
+        SetNotificationInboxPage(null, offset, null, null, "正在读取通知列表…", "", awaitingSelectedPage: true);
     }
 
     private void SetNotificationInboxPage(string? scope, int offset, int? next,
-        IReadOnlyList<NpepNoticeSummary>? rows, string status, string range)
+        IReadOnlyList<NpepNoticeSummary>? rows, string status, string range, bool awaitingSelectedPage = false)
     {
         var focused = Keyboard.FocusedElement;
+        var previousPagerFocus = _notificationPagerFocus;
+        _notificationPagerFocus = awaitingSelectedPage && (focused == NotificationPrevious || focused == NotificationNext)
+            ? (Button)focused : null;
         var focusedRow = (focused as Button)?.Tag as NpepNoticeSummary;
         int focusedIndex = focusedRow is null ? -1 : NotificationInboxItems.Items.IndexOf(focusedRow);
         bool sameScope = scope == _inboxScope;
+        if (!sameScope || offset != _inboxOffset) _inboxNavigationVersion++;
         bool replaceRows = !sameScope || !NotificationInboxItems.Items.Cast<NpepNoticeSummary>().SequenceEqual(rows ?? []);
         _inboxScope = scope;
         _inboxNext = next;
@@ -74,7 +78,15 @@ public partial class MainWindow
         NotificationNext.IsEnabled = next is not null;
         NotificationPager.Visibility = offset > 0 || next is not null || rows is { Count: > 0 } ? Visibility.Visible : Visibility.Collapsed;
 
-        if (focusedIndex >= 0 && replaceRows)
+        if (_notificationPagerFocus is not null)
+        {
+            NotificationInboxMessage.Focus();
+        }
+        else if (IsActive && focused == NotificationInboxMessage && previousPagerFocus is not null)
+        {
+            FocusNotificationPager(previousPagerFocus);
+        }
+        else if (focusedIndex >= 0 && replaceRows)
         {
             if (rows is { Count: > 0 })
             {
@@ -95,10 +107,16 @@ public partial class MainWindow
         else if ((focused == NotificationPrevious && !NotificationPrevious.IsEnabled) ||
                  (focused == NotificationNext && !NotificationNext.IsEnabled))
         {
-            if (NotificationPrevious.IsEnabled) NotificationPrevious.Focus();
-            else if (NotificationNext.IsEnabled) NotificationNext.Focus();
-            else NotificationInboxMessage.Focus();
+            FocusNotificationPager();
         }
+    }
+
+    private void FocusNotificationPager(Button? preferred = null)
+    {
+        if (preferred is { IsEnabled: true } && preferred.Focus()) return;
+        if (NotificationPrevious.IsEnabled && NotificationPrevious.Focus()) return;
+        if (NotificationNext.IsEnabled && NotificationNext.Focus()) return;
+        NotificationInboxMessage.Focus();
     }
 
     private void NotificationInboxSizeChanged(object sender, SizeChangedEventArgs e) =>

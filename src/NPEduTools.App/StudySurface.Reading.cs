@@ -26,7 +26,15 @@ public partial class StudySurface
     private bool PickerOpen => HomeworkPicker.Visibility == Visibility.Visible;
     private bool ReaderCovered => StageNotice.Visibility == Visibility.Visible || SeatingOverlay.Visibility == Visibility.Visible;
     private bool ReaderAcceptsInput => ReaderOpen && !ReaderCovered && !_paused;
-    private StudyHomeworkSnapshot? LatestReaderSnapshot => _pendingHomework ?? _overviewHomework;
+    private StudyHomeworkSnapshot? LatestReaderSnapshot
+    {
+        get
+        {
+            if (_timeline.State?.Homework?.SnapshotId is not { } id) return null;
+            if (_pendingHomework is not null && id == _latestHomework) return _pendingHomework;
+            return id == _loadedHomework ? _overviewHomework : null;
+        }
+    }
 
     private sealed record HomeworkChoice(string Id, string Subject, string Summary, string Sources);
 

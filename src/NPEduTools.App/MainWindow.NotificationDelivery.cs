@@ -45,7 +45,7 @@ public partial class MainWindow
                 _schoolNotification?.Shutdown();
                 _notificationPreview?.Shutdown();
             }
-            if (!_notificationReading && !_notificationOpening)
+            if (!_notificationReading)
             {
                 _notificationReading = true;
                 var navigationVersion = _inboxNavigationVersion;
@@ -63,14 +63,17 @@ public partial class MainWindow
                         // A page selected while this request was pending owns the list UI.
                         // Keep verifying any shown notice even when these page rows are obsolete.
                         if (navigationVersion == _inboxNavigationVersion)
+                        {
                             ApplyNotificationInbox(inbox);
+                            navigationVersion = _inboxNavigationVersion;
+                        }
                         bool bodyVerified = true;
                         if (_schoolNotification is { Invalidated: false } notification && _shownNotice is { } shown)
                         {
                             bodyVerified = await VerifySchoolNotificationAsync(notification, _shownScope, shown);
                         }
                         else if (_schoolNotification is null && inbox.CanPresent && inbox.Current is { } candidate && NotificationDesktopAvailable())
-                            await ShowSchoolNotificationAsync(inbox.Scope!, candidate);
+                            await ShowSchoolNotificationAsync(inbox.Scope!, candidate.PublicationId, candidate.Revision);
                         // A readable list alone does not verify the body of an already displayed notice.
                         if (bodyVerified) _lastNotificationRead = Stopwatch.GetTimestamp();
                     }
@@ -113,7 +116,7 @@ public partial class MainWindow
             _schoolNotification?.InvalidateNotice("无法核对通知的有效性，正文已暂时隐藏。请关闭窗口，连接恢复后会重新核对通知。");
     }
 
-    private async Task ShowSchoolNotificationAsync(string scope, NpepNotice notice, long? inboxVersion = null)
+    private async Task ShowSchoolNotificationAsync(string scope, string publicationId, long revision, long? inboxVersion = null)
     {
         if (NotificationPresentationActive || _lifetime.IsCancellationRequested) return;
         _notificationOpening = true;
@@ -123,19 +126,27 @@ public partial class MainWindow
             // Hold through the visible window, not merely through Show(). A switch defers
             // presentation only; inbox polling and delivery continue for every priority.
             reservation = NPEduTools.Core.RuntimeOperationFile.TryAcquire(false);
-            if (reservation is null) return;
-            // Check this exact version just before opening, including manual opens from an older list.
-            var check = await NotificationRequestAsync(new("get", scope, notice.PublicationId, notice.Revision));
+            if (reservation is null)
+            {
+                if (inboxVersion.HasValue) NotificationInboxMessage.Text = "正在切换运行环境，请稍后重新打开通知。";
+                return;
+            }
+            // The first click and automatic delivery share one reservation and one exact-version read.
+            var check = await NotificationRequestAsync(new("get", scope, publicationId, revision));
             if (_lifetime.IsCancellationRequested || NPEduTools.Core.RuntimeOperationFile.PriorityRequested ||
-                inboxVersion.HasValue && (inboxVersion != _inboxNavigationVersion || scope != _inboxScope) ||
-                VerifiedNotice(check, scope, notice.PublicationId, notice.Revision) is not { } verified ||
-                !NotificationDesktopAvailable()) return;
-            notice = verified;
+                inboxVersion.HasValue && (inboxVersion != _inboxNavigationVersion || scope != _inboxScope)) return;
+            if (VerifiedNotice(check, scope, publicationId, revision) is not { } notice)
+            {
+                if (inboxVersion.HasValue) NotificationInboxMessage.Text = "通知已变化或尚未完成在线核对，请等待刷新。";
+                return;
+            }
+            if (!NotificationDesktopAvailable()) return;
             var priority = Enum.Parse<SchoolNotificationPriority>(notice.Priority, true);
             var window = new SchoolNotificationWindow(new(string.IsNullOrWhiteSpace(notice.Title) ? "学校通知" : notice.Title,
                 string.IsNullOrWhiteSpace(notice.Content) ? "（此通知没有正文）" : notice.Content,
                 string.IsNullOrWhiteSpace(notice.Source) ? "学校通知" : notice.Source, notice.PublishAt, priority));
             _schoolNotification = window; _shownNotice = notice; _shownScope = scope;
+            _lastNotificationRead = Stopwatch.GetTimestamp();
             bool Current() => !_lifetime.IsCancellationRequested && ReferenceEquals(_schoolNotification, window) && !window.Invalidated;
             bool rendered = false;
             Task<bool>? displayReceipt = null;
@@ -203,19 +214,14 @@ public partial class MainWindow
         if (sender is not Button { Tag: NpepNoticeSummary summary } || _inboxScope is null) return;
         var scope = _inboxScope;
         var navigationVersion = _inboxNavigationVersion;
-        bool StillCurrent() => !_lifetime.IsCancellationRequested &&
-            navigationVersion == _inboxNavigationVersion && scope == _inboxScope;
         try
         {
-            var response = await NotificationRequestAsync(new("get", scope, summary.PublicationId, summary.Revision));
-            if (!StillCurrent()) return;
-            if (VerifiedNotice(response, scope, summary.PublicationId, summary.Revision) is { } current)
-                await ShowSchoolNotificationAsync(scope, current, navigationVersion);
-            else NotificationInboxMessage.Text = "通知已变化或尚未完成在线核对，请等待刷新。";
+            await ShowSchoolNotificationAsync(scope, summary.PublicationId, summary.Revision, navigationVersion);
         }
         catch (Exception error) when (IsManagementError(error))
         {
-            if (StillCurrent()) NotificationInboxMessage.Text = "无法打开通知，请稍后重试。";
+            if (!_lifetime.IsCancellationRequested && navigationVersion == _inboxNavigationVersion && scope == _inboxScope)
+                NotificationInboxMessage.Text = "无法打开通知，请稍后重试。";
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -108,11 +109,25 @@ internal sealed class NpepInbox
                 ? command.Scope == _data.Scope ? live.FirstOrDefault(n => n.PublicationId == command.PublicationId && n.Revision == command.Revision) : null
                 : fresh ? live.FirstOrDefault(n => n.PopupEnabled && !_data.Progress[Key(n.PublicationId, n.Revision)].Dismissed) : null;
             var list = live.Skip(command.Offset).Take(10).Select(n => new NpepNoticeSummary(n.PublicationId, n.Revision,
-                n.Title[..Math.Min(n.Title.Length, 64)], n.Priority, n.PopupEnabled, _data.Progress[Key(n.PublicationId, n.Revision)].Dismissed)).ToArray();
+                SummaryTitle(n.Title), n.Priority, n.PopupEnabled, _data.Progress[Key(n.PublicationId, n.Revision)].Dismissed)).ToArray();
             return new(_data.Scope, fresh ? "ONLINE" : _connection == "ONLINE" ? "STALE" : _connection,
                 _message + (_data.ReceiptWarning is null ? "" : " 回执提示：" + _data.ReceiptWarning), live.Count, list,
                 command.Offset + list.Length < live.Count ? command.Offset + list.Length : null, current, fresh);
         }
+    }
+    private static string SummaryTitle(string title)
+    {
+        const int limit = 64;
+        if (string.IsNullOrWhiteSpace(title)) return "学校通知";
+        if (title.Length <= limit) return title;
+        int end = 0;
+        while (end < limit - 1)
+        {
+            int next = end + StringInfo.GetNextTextElementLength(title.AsSpan(end));
+            if (next > limit - 1) break;
+            end = next;
+        }
+        return title[..end] + "…";
     }
     private static int Rank(string priority) => priority switch { "URGENT" => 3, "IMPORTANT" => 2, "NORMAL" => 1, _ => 0 };
     internal bool Mark(NpepNotificationCommand command)

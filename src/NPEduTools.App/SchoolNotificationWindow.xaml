@@ -72,9 +72,10 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
     <Grid MouseLeftButtonDown="HeaderDrag" Background="Transparent">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-      <TextBlock Text="NPEP / 学校通知" FontSize="19" FontWeight="Medium" VerticalAlignment="Center" TextWrapping="Wrap" />
+      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+      <TextBlock x:Name="NotificationBrand" Text="NPEP / 学校通知" FontSize="19" FontWeight="Medium" VerticalAlignment="Center" TextWrapping="Wrap" />
       <TextBlock x:Name="NotificationHeader" Grid.Column="1" Text="{Binding HeaderLabel}" FontSize="19" FontWeight="SemiBold"
-                 VerticalAlignment="Center" Margin="12,0,0,0" />
+                 VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" />
     </Grid>
     <Border x:Name="HeaderRule" Grid.Row="1" Height="2" Background="{DynamicResource NotificationInk}" Margin="0,20,0,24" />
     <Grid Grid.Row="2">

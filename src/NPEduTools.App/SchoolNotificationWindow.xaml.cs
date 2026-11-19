@@ -88,21 +88,34 @@ public partial class SchoolNotificationWindow : Window
     {
         if (ContentGrid is null) return;
         bool compact = Width < 850 || Height < 560;
-        bool stackFooter = Width < 490;
-        SignalColumn.Width = new GridLength(compact ? 64 : 96);
+        bool narrow = Width < 490;
+        bool shortWindow = Height < 330;
+        SignalColumn.Width = new GridLength(narrow ? 32 : compact ? 64 : 96);
         PriorityMark.Visibility = compact || Invalidated ? Visibility.Collapsed : Visibility.Visible;
-        ContentGrid.Margin = new Thickness(compact ? 20 : 40);
-        HeaderRule.Margin = compact ? new Thickness(0, 12, 0, 14) : new Thickness(0, 20, 0, 24);
+        double sideMargin = narrow ? 14 : compact ? 20 : 40;
+        double verticalMargin = shortWindow ? 8 : sideMargin;
+        ContentGrid.Margin = new Thickness(sideMargin, verticalMargin, sideMargin, verticalMargin);
+        Grid.SetColumnSpan(NotificationBrand, narrow ? 2 : 1);
+        Grid.SetColumnSpan(NotificationHeader, narrow ? 2 : 1);
+        Grid.SetColumn(NotificationHeader, narrow ? 0 : 1);
+        Grid.SetRow(NotificationHeader, narrow ? 1 : 0);
+        NotificationHeader.FontSize = narrow ? 16 : 19;
+        NotificationHeader.Margin = narrow ? new Thickness(0, 4, 0, 0) : new Thickness(12, 0, 0, 0);
+        HeaderRule.Margin = shortWindow ? new Thickness(0, 6, 0, 8) :
+            compact ? new Thickness(0, 12, 0, 14) : new Thickness(0, 20, 0, 24);
         NotificationTitle.FontSize = compact ? 32 : 44;
         NotificationTitle.LineHeight = compact ? 44 : 60;
         NotificationBody.FontSize = compact ? 24 : 28;
         NotificationBody.LineHeight = compact ? 36 : 44;
         NotificationBody.Margin = new Thickness(0, compact ? 14 : 22, 0, 0);
-        NotificationFooter.Margin = new Thickness(0, compact ? 12 : 24, 0, 0);
-        FooterRule.Margin = new Thickness(0, 0, 0, compact ? 12 : 20);
-        NotificationFooterMetadata.Margin = stackFooter ? new Thickness(0, 0, 0, 8) : new Thickness(0, 0, 20, 0);
-        Grid.SetColumnSpan(NotificationFooterMetadata, stackFooter ? 2 : 1);
-        Grid.SetRow(DismissButton, stackFooter ? 3 : 2);
+        NotificationFooter.Margin = new Thickness(0, shortWindow ? 6 : compact ? 12 : 24, 0, 0);
+        FooterRule.Margin = new Thickness(0, 0, 0, shortWindow ? 6 : compact ? 12 : 20);
+        NotificationSource.FontSize = shortWindow ? 14 : 17;
+        NotificationCloseStatus.FontSize = shortWindow ? 14 : 16;
+        NotificationCloseStatus.Margin = new Thickness(0, 0, 0, shortWindow ? 4 : 10);
+        NotificationFooterMetadata.Margin = narrow ? new Thickness(0, 0, 0, shortWindow ? 4 : 8) : new Thickness(0, 0, 20, 0);
+        Grid.SetColumnSpan(NotificationFooterMetadata, narrow ? 2 : 1);
+        Grid.SetRow(DismissButton, narrow ? 3 : 2);
         UpdateNotificationMetadata();
     }
 
@@ -123,7 +136,8 @@ public partial class SchoolNotificationWindow : Window
             NotificationSource.FlowDirection, font, NotificationSource.FontSize, Foreground, dpi.PixelsPerDip);
         var measured = Format(metadata);
         measured.MaxTextWidth = Math.Max(1, width);
-        bool sourceInBody = measured.Height > Format("通知").Height * 2 + 1;
+        int footerLines = Height < 330 ? 1 : 2;
+        bool sourceInBody = measured.Height > Format("通知").Height * footerLines + 1;
         NotificationSource.Text = sourceInBody ? TimeLabel : metadata;
         FullNotificationSource.Text = sourceInBody ? $"来源　{Notification.Source}" : "";
         FullNotificationSource.Visibility = sourceInBody ? Visibility.Visible : Visibility.Collapsed;
