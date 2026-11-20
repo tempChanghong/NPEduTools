@@ -97,7 +97,14 @@ public sealed record HostResponse(
 public sealed record SoftwareUpdateConsent(Guid EnrollmentId, bool Accepted);
 public sealed record SoftwareUpdateStatus(string Enrollment, Guid? EnrollmentId, bool LocalConsent, string RunningVersion,
     string? SchoolName = null, string? ClassName = null, string? DeviceName = null, string? State = null,
-    string? Reason = null, string? TargetVersion = null, Guid? PlanId = null);
+    string? Reason = null, string? TargetVersion = null, Guid? PlanId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PreviousVersion = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RollbackConfirmed = false)
+{
+    // Earlier classroom clients reject unknown fields on status and consent replies.
+    public SoftwareUpdateStatus ForStatusReply(string capability) => capability == "software.update.status.recovery"
+        ? this : this with { PreviousVersion = null, RollbackConfirmed = false };
+}
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -143,7 +150,7 @@ public static class Protocol
             return Validate(request with { Capability = "host.ping", SoftwareUpdateConsent = null });
         }
         if (request.SoftwareUpdateConsent is not null) return "InvalidSoftwareUpdateConsent";
-        if (request.Capability is "software.update.status" or "software.update.desktop-ready")
+        if (request.Capability is "software.update.status" or "software.update.status.recovery" or "software.update.desktop-ready")
             return Validate(request with { Capability = "host.ping" });
         if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
             return Validate(request with { Capability = calibrationBase });

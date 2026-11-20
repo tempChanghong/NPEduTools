@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
+using System.Globalization;
 using NPEduTools.Contracts;
 
 namespace NPEduTools.Integrations.Npep;
@@ -126,7 +127,13 @@ internal sealed class ManagedUpdateSession(ISchoolUpdateHost host, string direct
         if (enrollment is not ("UNMANAGED" or "INVITED" or "MANAGED") || invited == Guid.Empty ||
             (invited is null) != (enrollment == "UNMANAGED") || managed != (enrollment == "MANAGED"))
             throw new NpepException("INVALID_RESPONSE");
-        ManagedUpdatePlan? plan = snapshot["plan"] is JsonObject p ? ParsePlan(p) : null;
+        var planData = snapshot["plan"] as JsonObject;
+        ManagedUpdatePlan? plan = planData is null ? null : ParsePlan(planData);
+        string? reason = planData?["reason"]?.GetValue<string>();
+        bool rollbackConfirmed = plan?.State == "FAILED" && reason is ("ROLLED_BACK" or "ROLLBACK_SUCCEEDED") &&
+            new Version(plan.PreviousRelease.Version) < new Version(plan.TargetVersion) &&
+            planData?["rollbackConfirmedAt"] is JsonValue stamp && stamp.TryGetValue<string>(out var time) &&
+            DateTimeOffset.TryParseExact(time, "yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _);
         lock (_sync)
         {
             if (_scope != scope) throw new NpepException("SESSION_SUPERSEDED");
@@ -135,10 +142,18 @@ internal sealed class ManagedUpdateSession(ISchoolUpdateHost host, string direct
             if (saved.HasValue && saved != invited) File.Delete(_path);
             _online = true; _observedAt = Stopwatch.GetTimestamp();
             _status = _status with { Enrollment = enrollment, EnrollmentId = invited, LocalConsent = saved.HasValue && saved == invited,
-                State = plan?.State, Reason = (snapshot["plan"] as JsonObject)?["reason"]?.GetValue<string>(),
+                State = plan?.State, Reason = reason, PreviousVersion = plan?.PreviousRelease.Version, RollbackConfirmed = rollbackConfirmed,
                 TargetVersion = plan?.TargetVersion, PlanId = plan?.Id };
         }
         if (!managed || consent is null || consent != invited || plan is null) return;
+        // A local recovery may finish after KV has recorded the original failure. Only relay its result.
+        if (plan.State == "FAILED" && reason is ("RECOVERY_REQUIRED" or "ROLLBACK_FAILED" or "APP_START_FAILED") &&
+            planData?["canReportRollback"] is JsonValue flag && flag.TryGetValue<bool>(out var allowed) && allowed &&
+            host.Result(plan.Id) is { State: "FAILED", Reason: "ROLLED_BACK" or "ROLLBACK_SUCCEEDED" } recovered && recovered.PlanId == plan.Id)
+        {
+            await exchange(consent, recovered);
+            return;
+        }
         if (plan.State is "INSTALLING" or "AWAITING_RESTART")
         {
             if (host.Result(plan.Id) is { } result) await exchange(consent, result);

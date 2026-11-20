@@ -15,7 +15,8 @@ public sealed class ManagedUpdateSessionTests
         internal int Prepared, Applied;
         internal Func<CancellationToken, Task<IPreparedSchoolUpdate>>? OnPrepare;
         public string? Deferral() => Busy;
-        public ManagedUpdateReceipt? Result(Guid id) => null;
+        internal ManagedUpdateReceipt? LocalResult;
+        public ManagedUpdateReceipt? Result(Guid id) => LocalResult;
         public Task<IPreparedSchoolUpdate> PrepareAsync(ManagedUpdatePlan plan, CancellationToken token)
         { Prepared++; return OnPrepare?.Invoke(token) ?? Task.FromResult<IPreparedSchoolUpdate>(this); }
         public async Task<bool> HandoffAsync(IPreparedSchoolUpdate worker, Func<Task<bool>> authorize, CancellationToken token)
@@ -26,6 +27,69 @@ public sealed class ManagedUpdateSessionTests
         }
         public Task ApplyAsync(CancellationToken token) { Applied++; return Task.CompletedTask; }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+    [Fact]
+    public void RecoveryFieldsAreOnlySentOnTheOptInStatusReply()
+    {
+        var status = new SoftwareUpdateStatus("MANAGED", Guid.NewGuid(), true, "1.1.10.0",
+            State: "FAILED", Reason: "ROLLED_BACK", PreviousVersion: "1.1.10.0", RollbackConfirmed: true);
+        foreach (var capability in new[] { "software.update.status", "software.update.consent" })
+        {
+            var legacy = JsonSerializer.SerializeToElement(status.ForStatusReply(capability), Protocol.Json);
+            Assert.False(legacy.TryGetProperty("previousVersion", out _));
+            Assert.False(legacy.TryGetProperty("rollbackConfirmed", out _));
+            Assert.Equal("ROLLED_BACK", legacy.GetProperty("reason").GetString());
+        }
+        const string recovery = "software.update.status.recovery";
+        var read = new HostRequest(Protocol.Version, Guid.NewGuid(), recovery);
+        Assert.Null(Protocol.Validate(read));
+        Assert.NotNull(Protocol.Validate(read with { SoftwareUpdateConsent = new(Guid.NewGuid(), true) }));
+        var extended = JsonSerializer.SerializeToElement(status.ForStatusReply(recovery), Protocol.Json);
+        Assert.True(extended.GetProperty("rollbackConfirmed").GetBoolean());
+        Assert.Equal("1.1.10.0", extended.GetProperty("previousVersion").GetString());
+    }
+
+    [Fact]
+    public async Task LocalRecoveryRelaysOnlyThisFailedPlansRollbackAndNeverStartsAnotherInstall()
+    {
+        using var f = new Scenario();
+        await f.Consent();
+        f.Phase = "FAILED";
+        var reason = "APP_START_FAILED";
+        string? confirmedAt = null;
+        bool allow = false;
+        async Task<JsonObject> Exchange(Guid? consent, ManagedUpdateReceipt? receipt)
+        {
+            var reply = await f.Exchange(consent, receipt);
+            var plan = reply["plan"]!.AsObject();
+            plan["reason"] = reason;
+            if (allow) plan["canReportRollback"] = true;
+            plan["rollbackConfirmedAt"] = confirmedAt;
+            return reply;
+        }
+        Task Cycle() => f.Session.CycleAsync("current-scope", Exchange, default);
+        f.Host.LocalResult = new(f.PlanId, "FAILED", "ROLLED_BACK");
+        await Cycle();
+        Assert.Empty(f.Receipts);
+        Assert.False(f.Session.Status.RollbackConfirmed);
+        Assert.Equal("1.1.10.0", f.Session.Status.PreviousVersion);
+        allow = true;
+        f.Host.LocalResult = new(Guid.NewGuid(), "FAILED", "ROLLED_BACK");
+        await Cycle();
+        Assert.Empty(f.Receipts);
+        f.Host.LocalResult = new(f.PlanId, "FAILED", "ROLLED_BACK");
+        await Cycle();
+        Assert.Equal(f.Host.LocalResult, Assert.Single(f.Receipts));
+        reason = "ROLLED_BACK";
+        allow = false;
+        await Cycle();
+        Assert.False(f.Session.Status.RollbackConfirmed);
+        confirmedAt = "2026-11-20T09:00:00.000Z";
+        await Cycle();
+        Assert.True(f.Session.Status.RollbackConfirmed);
+        Assert.Single(f.Receipts);
+        Assert.Equal(0, f.Host.Prepared);
+        Assert.Equal(0, f.Host.Applied);
     }
     private sealed class Scenario : IDisposable
     {
