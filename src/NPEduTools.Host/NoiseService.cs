@@ -90,10 +90,12 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
 
     public HostResponse ManagementHandle(HostRequest r)
     {
-        if(r.NoiseManagement is {Action:"unlock"} unlock && Protocol.Validate(r) is null)
+        if (r.NoiseManagement is { Action: "unlock" or "replace-microphone" } change && Protocol.Validate(r) is null)
         {
-            string? error=EquipmentUnlock?.Invoke(unlock.Secret!) ?? "SCHOOL_MANAGEMENT_UNAVAILABLE";
-            lock(_sync) return ManagementReply(r,error=="UNLOCKED"?null:error);
+            // The school service takes the policy lock before the capture lock.
+            string? error = change.Action == "unlock" || ReplaceLocalMicrophone is not { } replace
+                ? "EQUIPMENT_LOCKED" : replace(change);
+            lock (_sync) return ManagementReply(r, error);
         }
         lock (_sync)
         {
@@ -180,17 +182,42 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             _selected = saved; _revision++;
         }
     }
-    private void Select(string id)
+    private bool Select(string id, Func<bool>? commitSchoolChoice = null)
     {
-        if (_selected != id) { InvalidateReference("DEVICE_CHANGED"); _lastSignature = null; _lastReferenceSignature = null; _referenceSignatureAt = null; }
+        string? file = null;
         if (directory is not null)
         {
             Directory.CreateDirectory(directory);
-            string file = Path.Combine(directory, "noise-microphone.json");
+            file = Path.Combine(directory, "noise-microphone.json");
             File.WriteAllText(file + ".tmp", System.Text.Json.JsonSerializer.Serialize(id));
-            File.Move(file + ".tmp", file, true);
         }
+        // The durable policy choice is also the recovery record if the process exits
+        // before the preference is promoted. A rejected choice never changes calibration.
+        if (commitSchoolChoice is not null && !commitSchoolChoice()) return false;
+        if (_selected == id)
+        {
+            if (file is not null) File.Move(file + ".tmp", file, true);
+            return true;
+        }
+        if (_referenceLoaded || ReferencePath is { } referencePath && File.Exists(referencePath)) LoadReference();
+        bool protectReference = _referenceProfile is not null && _referenceInvalidated is null;
+        bool previouslyArmed = _referenceMarkerArmed, previouslyRecoverable = _referenceMarkerRecoverable;
+        if (protectReference) EnsureReferenceUseMarker();
+        try
+        {
+            if (file is not null) File.Move(file + ".tmp", file, true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // The previous input still owns its reference. Restore its prior crash marker.
+            if (protectReference && previouslyRecoverable) ReplaceReferenceMarker(true);
+            else if (protectReference && !previouslyArmed) ClearReferenceUse();
+            throw;
+        }
+        InvalidateReference("DEVICE_CHANGED");
+        _lastSignature = null; _lastReferenceSignature = null; _referenceSignatureAt = null;
         _selected = id;
+        return true;
     }
 
     private sealed class Session(string device, long timestamp, DateTimeOffset started)
@@ -287,7 +314,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             if (_cleanupFailed)
                 return Reply(request, "Rejected", "NoiseCleanupRequired", "上次麦克风未能确认释放，请重启后台后再试。");
             if(EquipmentLocked && (cmd.Action == "select" || cmd.Action == "start" && cmd.DeviceId != _selected))
-                return Reply(request,"Rejected","EQUIPMENT_LOCKED","学校已锁定采集设备，请先通过学校管理口令解锁。");
+                return Reply(request,"Rejected","EQUIPMENT_LOCKED","学校已锁定采集设备。请在自习设备设置中查看本班更换权限。");
             if (_session is { Work.IsCompleted: false })
                 return Reply(request, "Rejected", "NoiseBusy", "已有监测或麦克风尚未释放，请先停止并等待完成。");
             try { Select(cmd.DeviceId!); }

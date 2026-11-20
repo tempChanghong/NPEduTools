@@ -5,6 +5,29 @@ namespace NPEduTools.Tests;
 public sealed partial class NoiseReferenceCalibrationTests
 {
     [Fact]
+    public async Task RejectedPreferencePromotionPreservesTheCurrentCalibration()
+    {
+        await using var f = new Fixture();
+        await f.PrepareAsync();
+        Assert.Equal("Succeeded", f.Command("confirm").Outcome);
+        string referencePath = Path.Combine(f.DirectoryPath, "noise-reference-calibration.json");
+        string referenceBefore = File.ReadAllText(referencePath);
+        var state = f.Noise.Snapshot();
+        using (File.Open(Path.Combine(f.DirectoryPath, "noise-microphone.json"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            var failed = f.Noise.Handle(new(1, Guid.NewGuid(), "noise.command",
+                Noise: new("select", state.InstanceId, state.Revision, "different-mic")));
+            Assert.Equal("NoiseConfigurationUnavailable", failed.ErrorCode);
+        }
+        Assert.Equal("mic", f.Noise.Snapshot().SelectedDeviceId);
+        Assert.Null(f.State.InvalidationReason);
+        Assert.Equal(referenceBefore, File.ReadAllText(referencePath));
+        await StartFormal(f); FormalFrames(f, 60);
+        Assert.Equal(60, f.Noise.Snapshot().Estimate!.CurrentDbA!.Value, 6);
+        await StopFormal(f);
+    }
+
+    [Fact]
     public async Task RefusedSchoolMicrophoneSelectionPreservesConfirmedReferenceAndFormalEstimate()
     {
         await using var f = new Fixture();

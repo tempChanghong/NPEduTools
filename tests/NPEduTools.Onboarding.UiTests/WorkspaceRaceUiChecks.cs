@@ -134,7 +134,8 @@ internal static partial class Program
             var disposal = noise.DisposeAsync().AsTask(); PumpUntil(() => disposal.IsCompleted,"noise fixture cleanup stalled"); disposal.GetAwaiter().GetResult();
         }
     }
-    private static async Task WorkspaceProxy(string pipe, Func<HostRequest, Task<HostResponse>> handle, CancellationToken token, bool supportsCalibrationStatus = false)
+    private static async Task WorkspaceProxy(string pipe, Func<HostRequest, Task<HostResponse>> handle, CancellationToken token,
+        bool supportsCalibrationStatus = false, bool supportsSchoolMicrophonePolicy = false)
     {
         async Task Loop()
         {
@@ -146,7 +147,8 @@ internal static partial class Program
                     await socket.WaitForConnectionAsync(token);
                     var request = await Protocol.ReadAsync<HostRequest>(socket, token);
                     // Existing fixtures emulate an older Host; new metadata is opt-in and must fall back.
-                    var response = !supportsCalibrationStatus && NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null
+                    var response = (!supportsCalibrationStatus && NoiseCalibrationStatusContract.BaseCapability(request.Capability) is not null ||
+                        !supportsSchoolMicrophonePolicy && request.Capability == "study.devices.refresh-microphone-policy")
                         ? new HostResponse(1, request.RequestId, "Rejected", "UnknownCapability", "old fixture Host")
                         : await handle(request);
                     await Protocol.WriteAsync(socket, response, token);

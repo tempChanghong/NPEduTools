@@ -1,9 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace NPEduTools.Contracts;
 
 public sealed record StudyCameraDevice(string Id, string Name);
 public sealed record StudyCameraCommand(string Action, Guid InstanceId, long Revision, string? DeviceId = null);
 public sealed record StudyDeviceState(Guid InstanceId, long Revision, string? CameraId, string? CameraName,
-    bool? CameraAvailable, IReadOnlyList<StudyCameraDevice> Cameras, string? Error = null, bool Locked = false);
+    bool? CameraAvailable, IReadOnlyList<StudyCameraDevice> Cameras, string? Error = null, bool Locked = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? MicrophoneChangeToken = null);
 public static class StudyDeviceContract
 {
     public static bool Valid(StudyCameraCommand c) => c.InstanceId != Guid.Empty && c.Revision >= 0 &&

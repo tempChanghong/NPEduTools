@@ -41,13 +41,7 @@ public sealed class SchoolInventoryBudgetTests(ITestOutputHelper output)
             var observed = new SchoolManagementService(noise, cameras, directory).ObserveSchool();
             var localMicrophones = noise.Handle(new(1, Guid.NewGuid(), "noise.devices")).NoiseDevices!;
             var localCameras = cameras.Snapshot().Cameras;
-            observed["requestId"] = Guid.NewGuid().ToString("D");
-            observed["context"] = new JsonObject {
-                ["identity"] = new JsonObject { ["serverInstanceId"] = Guid.NewGuid().ToString("D"),
-                    ["deploymentEpoch"] = Guid.NewGuid().ToString("D"), ["deviceId"] = Guid.NewGuid().ToString("D"),
-                    ["bindingRevision"] = NpepProtocol.MaxInteger, ["credentialGeneration"] = 1 },
-                ["sessionId"] = Guid.NewGuid().ToString("D"), ["runId"] = Guid.NewGuid().ToString("D"), ["statusEpoch"] = NpepProtocol.MaxInteger };
-            observed["sequence"] = NpepProtocol.MaxInteger;
+            AddRuntimeContext(observed);
             output.WriteLine($"SCHOOL_BUDGET mic={longMic} camera={longCamera} present={present} bytes={Encoding.UTF8.GetByteCount(observed.ToJsonString())}");
             // Compress the fixture evidence so detailed logs do not dump thousands
             // of repeated synthetic endpoint characters. The KV companion restores it.
@@ -87,4 +81,14 @@ public sealed class SchoolInventoryBudgetTests(ITestOutputHelper output)
         }
     }
 
+    internal static void AddRuntimeContext(JsonObject observed)
+    {
+        observed["requestId"] = Guid.NewGuid().ToString("D");
+        observed["context"] = new JsonObject {
+            ["identity"] = new JsonObject { ["serverInstanceId"] = Guid.NewGuid().ToString("D"),
+                ["deploymentEpoch"] = Guid.NewGuid().ToString("D"), ["deviceId"] = Guid.NewGuid().ToString("D"),
+                ["bindingRevision"] = NpepProtocol.MaxInteger, ["credentialGeneration"] = 1 },
+            ["sessionId"] = Guid.NewGuid().ToString("D"), ["runId"] = Guid.NewGuid().ToString("D"), ["statusEpoch"] = NpepProtocol.MaxInteger };
+        observed["sequence"] = NpepProtocol.MaxInteger;
+    }
 }

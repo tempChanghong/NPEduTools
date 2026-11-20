@@ -29,7 +29,7 @@ internal static partial class Program
         {
             RunStudyCameraConfigurationRemovalChecks();
             RunStudyDeviceSaveEvidenceChecks();
-            RunStudyDeviceUnlockFeedbackChecks();
+            RunSchoolMicrophoneChangeUiChecks();
             RunStudyDeviceProtocolChecks();
             RunDeviceVisibilityChecks();
             RunDeviceSelectionRefreshUiChecks();
@@ -191,61 +191,6 @@ internal static partial class Program
             }
         }
         if (errors.Count > 0) throw new AggregateException(errors);
-    }
-    private static void RunStudyDeviceUnlockFeedbackChecks()
-    {
-        var failures = new List<Exception>();
-        foreach (string scenario in new[] { "rejected", "succeeded", "protocol", "relocked", "refresh-failure" })
-        {
-            string pipe = "NPEduTools.Test.unlock-feedback." + Guid.NewGuid().ToString("N");
-            string directory = Path.Combine(_output, "unlock-feedback-" + scenario);
-            var noise = new NoiseService(_ => throw new Exception("Capture forbidden"), () => [new("mic", "Synthetic")], directory: directory);
-            var cameras = new StudyDeviceService(() => [], directory);
-            int locked = 1, readsAfterUnlock = 0, unlocks = 0;
-            using var stop = new CancellationTokenSource();
-            var server = Task.Run(() => WorkspaceProxy(pipe, request =>
-            {
-                if (request.Capability == "noise.management.command")
-                {
-                    Interlocked.Increment(ref unlocks);
-                    if (scenario is "succeeded" or "refresh-failure") Volatile.Write(ref locked, 0);
-                    return Task.FromResult(scenario == "protocol" ? new HostResponse(2, request.RequestId, "Succeeded", null, "bad protocol") :
-                        new HostResponse(1, request.RequestId, scenario is "succeeded" or "relocked" or "refresh-failure" ? "Succeeded" : "Rejected", "fixture", "学校管理口令不正确"));
-                }
-                if (Volatile.Read(ref unlocks) != 0) Interlocked.Increment(ref readsAfterUnlock);
-                if (scenario == "refresh-failure" && Volatile.Read(ref unlocks) != 0)
-                    return Task.FromResult(new HostResponse(2, request.RequestId, "Succeeded", null, "bad refresh protocol"));
-                return Task.FromResult(request.Capability == "noise.devices" ? noise.Handle(request) :
-                    cameras.Handle(request) with { StudyDevices = cameras.Snapshot() with { Locked = Volatile.Read(ref locked) != 0 } });
-            }, stop.Token));
-            var picker = new StudyDevicePicker(); picker.Bind(pipe);
-            var unhandled = new List<Exception>();
-            System.Windows.Threading.DispatcherUnhandledExceptionEventHandler observer = (_, e) => { unhandled.Add(e.Exception); e.Handled = true; };
-            Application.Current.Dispatcher.UnhandledException += observer;
-            try
-            {
-                var initial = picker.RefreshAsync(); PumpUntil(() => initial.IsCompleted, "unlock fixture failed to load"); initial.GetAwaiter().GetResult();
-                ((PasswordBox)picker.FindName("EquipmentSecret")).Password = "fixture-secret";
-                typeof(StudyDevicePicker).GetMethod("UnlockClicked", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(picker, [picker, new RoutedEventArgs()]);
-                PumpUntil(() => unhandled.Count > 0 || Volatile.Read(ref readsAfterUnlock) >= (scenario == "refresh-failure" ? 1 : 2) &&
-                    !(bool)typeof(StudyDevicePicker).GetField("_busy", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(picker)!, "unlock refresh did not finish");
-                Assert(unhandled.Count == 0, "unlock protocol exception escaped its UI handler");
-                string message = ((TextBlock)picker.FindName("DeviceMessage")).Text;
-                Assert(message.Contains(scenario == "rejected" ? "口令不正确" : scenario == "succeeded" ? "设备已解锁" : "未确认"), "read-only refresh erased the unlock outcome: " + scenario);
-                if (scenario == "refresh-failure") Assert(message.Contains("不可用") && picker.Summary.Contains("待刷新"), "failed refresh claimed a current unlocked state");
-                Assert(((PasswordBox)picker.FindName("EquipmentSecret")).Password.Length == 0 && unlocks == 1, "unlock kept credential or replayed the command");
-                Assert(((StackPanel)picker.FindName("EquipmentLockPanel")).Visibility == (scenario == "succeeded" ? Visibility.Collapsed : Visibility.Visible), "unlock receipt replaced the fresh lock state");
-                Checks.Add("Device unlock " + scenario + ": feedback survives read-only refresh, fresh lock state owns controls, password clears and command is sent once; private fixture only");
-            }
-            catch (Exception error) { failures.Add(new InvalidOperationException(scenario + ": " + error.Message, error)); }
-            finally
-            {
-                Application.Current.Dispatcher.UnhandledException -= observer;
-                picker.CancelPending(); stop.Cancel(); try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
-                noise.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            }
-        }
-        if (failures.Count > 0) throw new AggregateException(failures);
     }
     private static void RunStudyDeviceSaveEvidenceChecks()
     {

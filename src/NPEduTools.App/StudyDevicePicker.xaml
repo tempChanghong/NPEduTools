@@ -9,16 +9,22 @@
   </Grid>
   <TextBlock x:Name="MicrophoneStatus" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" FontSize="13" Margin="0,7,0,14"/>
   <TextBlock x:Name="CalibrationStatus" Text="校准状态待确认" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" FontSize="13" Margin="0,-7,0,14" AutomationProperties.AutomationId="DeviceCalibrationStatus"/>
+  <StackPanel x:Name="EquipmentLockPanel" Visibility="Collapsed" Margin="0,0,0,14">
+   <TextBlock x:Name="SchoolMicrophoneHint" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" AutomationProperties.AutomationId="StudySchoolMicrophoneHint"/>
+   <StackPanel x:Name="SchoolMicrophoneForm" Visibility="Collapsed" Margin="0,8,0,0">
+    <Label Content="班级管理口令" Target="{Binding ElementName=EquipmentSecret}" FontWeight="SemiBold" Padding="0,0,0,5"/>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <PasswordBox Style="{StaticResource TeacherInput}" x:Name="EquipmentSecret" MaxLength="128" MinHeight="44" AutomationProperties.Name="班级管理口令" AutomationProperties.AutomationId="StudySchoolMicrophoneSecret"/>
+     <Button x:Name="ConfirmSchoolMicrophone" Grid.Column="1" Style="{StaticResource TeacherPrimary}" Content="确认本次更换" Click="ConfirmSchoolMicrophoneClicked" Padding="12,7" Margin="12,0,0,0" AutomationProperties.AutomationId="StudyConfirmSchoolMicrophone"/>
+    </Grid>
+   </StackPanel>
+  </StackPanel>
   <TextBlock Text="预留捕获摄像头" FontWeight="SemiBold" Margin="0,0,0,7"/>
   <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <ComboBox x:Name="StudyCamera" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{DynamicResource SettingsChoice}" MinHeight="44" SelectionChanged="ChoiceChanged" AutomationProperties.AutomationId="StudyCamera" AutomationProperties.Name="自习摄像头"/>
    <Button Style="{StaticResource TeacherButton}" x:Name="SaveCamera" Grid.Column="1" Content="保存摄像头" Click="SaveCameraClicked" Margin="12,0,0,0" Padding="12,7" AutomationProperties.AutomationId="StudySaveCamera"/>
   </Grid>
   <TextBlock x:Name="CameraStatus" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" FontSize="13" Margin="0,7,0,9"/>
-  <StackPanel x:Name="EquipmentLockPanel" Visibility="Collapsed" Margin="0,4,0,12">
-   <TextBlock Text="学校已锁定采集设备。通过学校管理口令解锁后保持解锁，直到学校再次锁定。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}"/>
-   <DockPanel Margin="0,8,0,0"><Button Style="{StaticResource TeacherButton}" Content="验证并解锁设备" DockPanel.Dock="Right" Click="UnlockClicked" Padding="12,7" Margin="12,0,0,0"/><PasswordBox Style="{StaticResource TeacherInput}" x:Name="EquipmentSecret" MaxLength="128" MinHeight="44"/></DockPanel>
-  </StackPanel>
   <TextBlock Text="这里只枚举与保存固定设备，不开始监测或打开摄像头。拔掉所选设备后不会自动改用另一台；摄像头可以暂不选择。单张取图由学校配置决定，仅在有效自习监测中执行。" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,9"/>
   <TextBlock x:Name="DeviceMessage" Foreground="{DynamicResource TeacherWarningBrush}" TextWrapping="Wrap" AutomationProperties.AutomationId="StudyDeviceMessage"/>
  </StackPanel>

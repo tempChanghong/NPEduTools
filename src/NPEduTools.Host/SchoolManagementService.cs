@@ -7,7 +7,7 @@ using NPEduTools.Integrations.Npep;
 
 namespace NPEduTools.Host;
 
-/// <summary>Inventory never opens devices. School revisions fence lock/unlock and delayed selection.</summary>
+/// <summary>Inventory never opens devices. Each local microphone choice belongs to one school policy revision.</summary>
 public sealed class SchoolManagementService : INpepSchoolManagement
 {
     private readonly object _sync=new();
@@ -18,7 +18,10 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     private string? _error;
     private string? _credentialError;
     private bool _savePending;
-    private sealed record Saved(string? Scope,long Revision,bool Locked,long Applied,string? Microphone,string? Camera,bool Unlocked);
+    private bool _extendedReceipt;
+    private Guid? _microphoneChangeToken;
+    private sealed record Saved(string? Scope,long Revision,bool Locked,long Applied,string? Microphone,string? Camera,bool Unlocked,
+        bool AllowLocalMicrophoneChange = false, string? LocalMicrophoneOverride = null);
     public SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory)
     {
         _noise=noise;_cameras=cameras;_path=Path.Combine(directory,"school-equipment.json");
@@ -26,20 +29,39 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         {
             if(File.Exists(_path))
             {
-                if(new FileInfo(_path).Length>16384)throw new InvalidDataException();
+                // Three opaque endpoint IDs plus the school identity can each require JSON escaping.
+                if(new FileInfo(_path).Length>65536)throw new InvalidDataException();
                 var saved=JsonSerializer.Deserialize<Saved>(File.ReadAllText(_path))??throw new InvalidDataException();
                 if(saved.Revision<0||saved.Revision>NpepProtocol.MaxInteger||saved.Applied<0||saved.Applied>saved.Revision||saved.Scope is {Length:>4096}||
-                    saved.Microphone is not null && !NoiseContract.ValidDeviceId(saved.Microphone)||saved.Camera is not null && !NoiseContract.ValidDeviceId(saved.Camera))throw new InvalidDataException();
+                    saved.Microphone is not null && !NoiseContract.ValidDeviceId(saved.Microphone)||saved.Camera is not null && !NoiseContract.ValidDeviceId(saved.Camera) ||
+                    saved.LocalMicrophoneOverride is { } local && (!NoiseContract.ValidDeviceId(local) || !saved.AllowLocalMicrophoneChange ||
+                        !saved.Locked || saved.Scope is null || saved.Revision == 0))throw new InvalidDataException();
                 // Do not publish a partially parsed policy when validation fails.
                 _saved=saved;
+                if (saved.Unlocked)
+                {
+                    // Old clients could leave both devices unlocked across restarts.
+                    _saved = saved with { Unlocked = false, Applied = 0, LocalMicrophoneOverride = null };
+                    Save();
+                }
+                else if (saved.LocalMicrophoneOverride is { } target)
+                    _error = _noise.SelectSchoolMicrophone(target);
             }
         }
         catch(Exception e)when(e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         { _error="EQUIPMENT_STORE_UNAVAILABLE";_saved=_saved with{Locked=true,Unlocked=false}; }
-        SetLocks();_noise.EquipmentUnlock=Unlock;
+        SetLocks();_noise.ReplaceLocalMicrophone=ReplaceMicrophone;
     }
-    private void SetLocks(){_noise.EquipmentLocked=_cameras.EquipmentLocked=_saved.Locked&&!_saved.Unlocked;}
-    private static string InventoryCaption(string? value)
+    private void SetLocks(bool renewToken = false)
+    {
+        bool canChange = _saved.Locked && _saved.AllowLocalMicrophoneChange && _saved.Scope is not null &&
+            _saved.Revision > 0 && !_savePending && _credentialError is null;
+        if (!canChange) _microphoneChangeToken = null;
+        else if (renewToken || _microphoneChangeToken is null) _microphoneChangeToken = Guid.NewGuid();
+        _noise.EquipmentLocked = _saved.Locked;
+        _cameras.SetEquipmentPolicy(_saved.Locked, _microphoneChangeToken);
+    }
+    private static string InventoryCaption(string? value, int maxLength = 512)
     {
         // KV permits visible Unicode names, but rejects control/format characters.
         // Project a compatible caption; endpoint IDs and local preferences stay opaque.
@@ -47,10 +69,17 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         foreach (var rune in (value ?? "").EnumerateRunes())
         {
             if (Rune.GetUnicodeCategory(rune) is UnicodeCategory.Control or UnicodeCategory.Format) continue;
-            if (caption.Length + rune.Utf16SequenceLength > 512) break;
+            if (caption.Length + rune.Utf16SequenceLength > maxLength) break;
             caption.Append(rune.ToString());
         }
         return caption.Length == 0 || string.IsNullOrWhiteSpace(caption.ToString()) ? "未命名设备" : caption.ToString();
+    }
+    private static int ReserveCurrentDevice<T>(T[] catalog, T? selected, Func<T,T> shortenCaption) where T : class
+    {
+        if (selected is null) return 2; // Empty JSON array.
+        var compact = shortenCaption(selected);
+        catalog[Array.IndexOf(catalog, selected)] = compact;
+        return JsonSerializer.SerializeToUtf8Bytes(compact, Protocol.Json).Length + 4;
     }
     private bool Save()
     {
@@ -69,8 +98,9 @@ public sealed class SchoolManagementService : INpepSchoolManagement
         lock(_sync)
         {
             _noise.BindSchoolManagement(scope);
-            if(_saved.Scope==scope){if(_savePending)Save();return;}
+            if(_saved.Scope==scope){if(_savePending){Save();SetLocks();}return;}
             _credentialError=null;
+            _extendedReceipt=false;
             _saved=new(scope,0,scope is not null,0,null,null,false);
             Save();SetLocks();
         }
@@ -87,19 +117,35 @@ public sealed class SchoolManagementService : INpepSchoolManagement
                 _error=null;_credentialError=_noise.ApplySchoolManagement(_saved.Scope!,policy["credential"]?.AsObject());
                 var p=policy["equipment"]!.AsObject();long revision=p["revision"]!.Deserialize<long>();bool locked=p["locked"]!.GetValue<bool>();
                 string? mic=p["microphoneId"]?.GetValue<string>(),cam=p["cameraId"]?.GetValue<string>();
+                bool extended = p.ContainsKey("allowLocalMicrophoneChange");
+                bool allow = extended && p["allowLocalMicrophoneChange"]!.GetValue<bool>();
+                long micRevision = p.ContainsKey("microphonePolicyRevision") ? p["microphonePolicyRevision"]!.Deserialize<long>() : revision;
                 if(revision<0 || revision>NpepProtocol.MaxInteger || revision<_saved.Revision || mic is not null && !NoiseContract.ValidDeviceId(mic) || cam is not null && !NoiseContract.ValidDeviceId(cam))throw new NpepException("INVALID_RESPONSE");
-                if(revision!=_saved.Revision || revision==0 && (locked!=_saved.Locked || mic!=_saved.Microphone || cam!=_saved.Camera))
+                if (micRevision < 0 || micRevision > revision) throw new NpepException("INVALID_RESPONSE");
+                _extendedReceipt = extended;
+                bool legacyFallback = !extended && _saved.AllowLocalMicrophoneChange;
+                if (revision == _saved.Revision && revision != 0 && !legacyFallback &&
+                    (locked != _saved.Locked || mic != _saved.Microphone || cam != _saved.Camera || allow != _saved.AllowLocalMicrophoneChange))
+                    throw new NpepException("INVALID_RESPONSE");
+                bool changed = revision != _saved.Revision || legacyFallback ||
+                    revision == 0 && (locked != _saved.Locked || mic != _saved.Microphone || cam != _saved.Camera || allow != _saved.AllowLocalMicrophoneChange);
+                if(changed)
                 {
-                    _saved=new(_saved.Scope,revision,locked,_saved.Applied,mic,cam,false);
+                    // Camera edits can span several offline revisions. Only a microphone
+                    // decision (including reselecting the same school target) supersedes B.
+                    string? retained = locked && allow && mic == _saved.Microphone && micRevision <= _saved.Revision
+                        ? _saved.LocalMicrophoneOverride : null;
+                    _saved=new(_saved.Scope,revision,locked,legacyFallback ? 0 : _saved.Applied,mic,cam,false,allow,retained);
                     if(!Save()){SetLocks();return;}
                 }
                 // A matching revision does not prove the previous write succeeded.
                 // Retry the durable policy before switching devices or skipping as already applied.
                 if(_savePending && !Save()){SetLocks();return;}
-                SetLocks();
-                if(_saved.Applied==revision || revision==0 || _saved.Unlocked)return;
+                SetLocks(changed);
+                string? local = _saved.LocalMicrophoneOverride;
+                if(revision==0 || _saved.Applied==revision && (local is null || _noise.UsesMicrophone(local)))return;
                 if(_noise.CaptureBusy){_error="EQUIPMENT_PENDING";return;}
-                _error=_noise.SelectSchoolMicrophone(mic)??_cameras.SelectSchoolCamera(cam);
+                _error=_noise.SelectSchoolMicrophone(local ?? mic)??_cameras.SelectSchoolCamera(cam);
                 if(_error is null)
                 {
                     var old=_saved;_saved=_saved with{Applied=revision};
@@ -110,14 +156,30 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             {throw new NpepException("INVALID_RESPONSE");}
         }
     }
-    private string? Unlock(string secret)
+    private string? ReplaceMicrophone(NoiseManagementCommand change)
     {
         lock(_sync)
         {
-            if(_noise.VerifyEquipmentSecret(secret) is {} denied)return denied;
-            var old=_saved;_saved=_saved with{Unlocked=true};
-            if(!Save()){_saved=old;return _error;}
-            SetLocks();return "UNLOCKED";
+            if (_microphoneChangeToken is null || _saved.Scope is null) return "EQUIPMENT_LOCKED";
+            if (change.PolicyToken != _microphoneChangeToken) return "EQUIPMENT_POLICY_CHANGED";
+            bool committed = false;
+            bool SaveChoice()
+            {
+                var previous = _saved;
+                _saved = previous with { LocalMicrophoneOverride = change.DeviceId };
+                if (Save()) { committed = true; return true; }
+                _saved = previous;
+                return false;
+            }
+            var result = _noise.ChangeAuthorizedMicrophone(_saved.Scope, change.Secret!, change.DeviceId!, SaveChoice);
+            SetLocks(renewToken: committed);
+            if (committed && result is not null)
+            {
+                // The authorized target is durable. Startup or the next policy read retries promotion.
+                _error = result;
+                return "EQUIPMENT_CHANGE_UNCONFIRMED";
+            }
+            return result;
         }
     }
     public JsonObject ObserveSchool()
@@ -136,8 +198,13 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             var camCatalog=cameras.Cameras.Select(d=>d with{Name=InventoryCaption(d.Name)}).ToArray();
             var receipt=new JsonObject(){["microphones"]=JsonSerializer.SerializeToNode(micCatalog,Protocol.Json),
                 ["cameras"]=JsonSerializer.SerializeToNode(camCatalog,Protocol.Json),
-                ["unlocked"]=_saved.Unlocked,["appliedRevision"]=_saved.Applied,["credentialRevision"]=_noise.SchoolCredentialRevision,
+                ["unlocked"]=false,["appliedRevision"]=_saved.Applied,["credentialRevision"]=_noise.SchoolCredentialRevision,
                 ["selectedMicrophoneId"]=noise.SelectedDeviceId,["selectedCameraId"]=cameras.CameraId,["error"]=_error??_credentialError??_noise.Protection().ErrorCode??inventoryError};
+            if (_extendedReceipt)
+            {
+                receipt["supportsLocalMicrophoneChange"] = true;
+                receipt["localMicrophoneOverride"] = _saved.LocalMicrophoneOverride == _saved.Microphone ? null : _saved.LocalMicrophoneOverride;
+            }
             // Inventory budgets alone omit the selected IDs repeated in this receipt.
             // Keep the whole observation under 60,000 bytes, reserving >5 KiB for
             // the fixed-schema context, request ID and sequence added by the runtime.
@@ -147,8 +214,27 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             {
                 receipt["microphones"]=new JsonArray();receipt["cameras"]=new JsonArray();
                 int catalogBudget=(observationBudget-Encoding.UTF8.GetByteCount(receipt.ToJsonString())+4)/2;
-                receipt["microphones"]=JsonSerializer.SerializeToNode(DeviceInventory.Limit(micCatalog,noise.SelectedDeviceId,d=>d.Id,catalogBudget),Protocol.Json);
-                receipt["cameras"]=JsonSerializer.SerializeToNode(DeviceInventory.Limit(camCatalog,cameras.CameraId,d=>d.Id,catalogBudget),Protocol.Json);
+                var mics = DeviceInventory.Limit(micCatalog,noise.SelectedDeviceId,d=>d.Id,catalogBudget);
+                var cams = DeviceInventory.Limit(camCatalog,cameras.CameraId,d=>d.Id,catalogBudget);
+                if (receipt["localMicrophoneOverride"] is not null)
+                {
+                    var currentMic = micCatalog.FirstOrDefault(d => d.Id == noise.SelectedDeviceId);
+                    var currentCam = camCatalog.FirstOrDefault(d => d.Id == cameras.CameraId);
+                    if (currentMic is not null && !mics.Contains(currentMic) || currentCam is not null && !cams.Contains(currentCam))
+                    {
+                        // With three long escaped IDs already in the header, an equal split can
+                        // drop the actual device. Reserve its entry before spending bytes on alternatives.
+                        int micMinimum = ReserveCurrentDevice(micCatalog, currentMic, d => d with { Name = InventoryCaption(d.Name, 48) });
+                        int camMinimum = ReserveCurrentDevice(camCatalog, currentCam, d => d with { Name = InventoryCaption(d.Name, 48) });
+                        // Even five maximal escaped endpoint IDs plus the short captions fit
+                        // in 64,000 bytes, leaving over 1.5 KiB for the fixed NPEP context.
+                        int spare = (64000 - Encoding.UTF8.GetByteCount(receipt.ToJsonString()) - micMinimum - camMinimum) / 2;
+                        mics = DeviceInventory.Limit(micCatalog, noise.SelectedDeviceId, d => d.Id, micMinimum + spare);
+                        cams = DeviceInventory.Limit(camCatalog, cameras.CameraId, d => d.Id, camMinimum + spare);
+                    }
+                }
+                receipt["microphones"]=JsonSerializer.SerializeToNode(mics,Protocol.Json);
+                receipt["cameras"]=JsonSerializer.SerializeToNode(cams,Protocol.Json);
             }
             return receipt;
         }

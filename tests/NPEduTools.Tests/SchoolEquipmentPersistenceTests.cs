@@ -17,16 +17,18 @@ public sealed partial class SchoolEquipmentPersistenceTests
         public StudyDeviceService Cameras { get; }
         public SchoolManagementService Management { get; }
         public Action? CameraEnumerated { get; set; }
+        public NoiseDevice[] Microphones { get; set; } = [new("mic-one", "one"), new("mic-two", "two")];
+        public StudyCameraDevice[] CameraDevices { get; set; } = [new("cam-one", "one"), new("cam-two", "two")];
         private readonly JsonObject _credential;
-        public Fixture()
+        public Fixture(Func<string, INoiseCapture>? capture = null)
         {
             byte[] salt = RandomNumberGenerator.GetBytes(16);
             byte[] hash = Rfc2898DeriveBytes.Pbkdf2("school-password", salt, 210000, HashAlgorithmName.SHA256, 32);
             _credential = new() { ["revision"] = 1L, ["verifier"] = new JsonObject { ["iterations"] = 210000,
                 ["salt"] = Convert.ToBase64String(salt), ["hash"] = Convert.ToBase64String(hash) } };
-            Noise = new(_ => throw new InvalidOperationException("No real capture"),
-                () => [new("mic-one", "one"), new("mic-two", "two")], directory: DirectoryPath, management: new NoiseManagementStore(DirectoryPath));
-            Cameras = new(() => { CameraEnumerated?.Invoke(); return [new("cam-one", "one"), new("cam-two", "two")]; }, DirectoryPath);
+            Noise = new(capture ?? (_ => throw new InvalidOperationException("No real capture")),
+                () => Microphones, directory: DirectoryPath, management: new NoiseManagementStore(DirectoryPath));
+            Cameras = new(() => { CameraEnumerated?.Invoke(); return CameraDevices; }, DirectoryPath);
             Management = new(Noise, Cameras, DirectoryPath);
             Management.BindSchool(Identity.ToJsonString());
             Management.ApplySchool(Policy(1));
@@ -125,19 +127,25 @@ public sealed partial class SchoolEquipmentPersistenceTests
     }
 
     [Fact]
-    public async Task RefusedUnlockDoesNotBecomeDurableWhenPolicyPersistenceLaterRecovers()
+    public async Task FailedLocalMicrophoneWriteDoesNotBecomeDurableAfterStorageRecovers()
     {
         await using var f = new Fixture();
+        var policy = LocalChangePolicy(f, 2, true);
+        f.Management.ApplySchool(policy);
         f.BlockWrites();
-        var reply = f.Noise.ManagementHandle(new(1, Guid.NewGuid(), "noise.management.command",
-            NoiseManagement: new("unlock", Secret: "school-password")));
+        var reply = ChangeMicrophone(f.Noise, f.Cameras, "mic-two");
         Assert.Equal("EQUIPMENT_STORE_UNAVAILABLE", reply.ErrorCode);
-        Assert.True(f.Cameras.Snapshot().Locked);
+        Assert.Equal("mic-one", f.Noise.Snapshot().SelectedDeviceId);
+        AssertBothSelectorsLocked(f.Noise, f.Cameras);
         f.RestoreWrites();
-        f.Management.ApplySchool(f.Policy(1));
-        Assert.Null(f.Management.ObserveSchool()["error"]);
-        Assert.False(f.Saved()["Unlocked"]!.GetValue<bool>());
-        Assert.True(f.Cameras.Snapshot().Locked);
-        Assert.False(new SchoolManagementService(f.Noise, f.Cameras, f.DirectoryPath).ObserveSchool()["unlocked"]!.GetValue<bool>());
+        f.Management.ApplySchool(policy);
+        var reloaded = new SchoolManagementService(f.Noise, f.Cameras, f.DirectoryPath);
+        reloaded.ApplySchool(policy);
+        var observation = reloaded.ObserveSchool();
+        Assert.Null(observation["error"]);
+        Assert.True(observation.ContainsKey("localMicrophoneOverride"));
+        Assert.Null(observation["localMicrophoneOverride"]);
+        Assert.Equal("mic-one", observation["selectedMicrophoneId"]!.GetValue<string>());
+        AssertBothSelectorsLocked(f.Noise, f.Cameras);
     }
 }

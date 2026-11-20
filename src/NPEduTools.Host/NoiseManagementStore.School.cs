@@ -11,6 +11,7 @@ public sealed partial class NoiseManagementStore
     private sealed record SchoolCredential(int Version, string? Scope, long Revision, Credential? Credential);
     public string Source => _schoolScope is null ? "Local" : "School";
     public long SchoolRevision => _schoolRevision;
+    internal bool MatchesSchool(string scope) => _schoolScope == scope;
     private void LoadSchool()
     {
         if (!File.Exists(SchoolPath)) return;

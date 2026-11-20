@@ -43,28 +43,6 @@ public sealed class SchoolManagementTests
         }
         finally{if(Directory.Exists(path))Directory.Delete(path,true);}
     }
-    [Fact]
-    public async Task UnlockSurvivesRestartAndOldPolicyDoesNotReapplySelections()
-    {
-        string path=Path.Combine(Path.GetTempPath(),"school-equipment-"+Guid.NewGuid());
-        var identity=new JsonObject{["deviceId"]=Guid.NewGuid().ToString()};string scope=identity.ToJsonString();
-        try
-        {
-            var store=new NoiseManagementStore(path);
-            await using var noise=new NoiseService(_=>throw new InvalidOperationException("No real capture"),()=>[new("mic-one","one"),new("mic-two","two")],directory:path,management:store);
-            var camera=new StudyDeviceService(()=>[new("cam-one","one"),new("cam-two","two")],path);
-            var management=new SchoolManagementService(noise,camera,path);management.BindSchool(scope);
-            var policy=new JsonObject{["identity"]=identity.DeepClone(),["credential"]=Credential(),["equipment"]=new JsonObject{["revision"]=1,["locked"]=true,["microphoneId"]="mic-one",["cameraId"]="cam-one"}};
-            management.ApplySchool(policy);Assert.True(camera.Snapshot().Locked);Assert.Equal("mic-one",noise.Snapshot().SelectedDeviceId);
-            var s=noise.Snapshot();Assert.Equal("EQUIPMENT_LOCKED",noise.Handle(new(1,Guid.NewGuid(),"noise.command",Noise:new("select",s.InstanceId,s.Revision,"mic-two"))).ErrorCode);
-            Assert.Equal("Succeeded",noise.ManagementHandle(new(1,Guid.NewGuid(),"noise.management.command",NoiseManagement:new("unlock",Secret:School))).Outcome);
-            Assert.False(camera.Snapshot().Locked);s=noise.Snapshot();Assert.Equal("Succeeded",noise.Handle(new(1,Guid.NewGuid(),"noise.command",Noise:new("select",s.InstanceId,s.Revision,"mic-two"))).Outcome);
-            management.ApplySchool(policy);Assert.Equal("mic-two",noise.Snapshot().SelectedDeviceId);
-            management=new(noise,camera,path);management.BindSchool(scope);management.ApplySchool(policy);Assert.False(camera.Snapshot().Locked);Assert.Equal("mic-two",noise.Snapshot().SelectedDeviceId);
-            policy["equipment"]!["revision"]=2;management.ApplySchool(policy);Assert.True(camera.Snapshot().Locked);Assert.Equal("mic-one",noise.Snapshot().SelectedDeviceId);
-        }
-        finally{if(Directory.Exists(path))Directory.Delete(path,true);}
-    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
