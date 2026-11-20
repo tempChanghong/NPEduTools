@@ -128,6 +128,9 @@ internal static partial class Program
             var existingRows = items.ItemsSource;
             school = school with { State = "ACTIVE", Connection = "ONLINE" };
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(FlowElements<TextBlock>(items).Any(t => t.Text.Contains("等待学校回执")), "review claimed online before receiving the first receipt");
+            school = school with { LastReceivedAt = "2026-10-07T01:00:00.000Z" };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(FlowElements<TextBlock>(items).Any(t => t.Text.Contains("当前在线")), "live school status did not refresh in review");
             Assert(ReferenceEquals(items.ItemsSource, existingRows) && focusedAction.IsKeyboardFocused &&
                 ReferenceEquals(FlowElements<Button>(items).Single(b => b.Tag as string == "preferences"), focusedAction),

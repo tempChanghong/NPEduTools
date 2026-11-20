@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -45,10 +46,23 @@ internal static partial class Program
                 Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("自动重试"), "retry title binding missing");
                 Assert(((TextBlock)Find(view, "NpepNextAction")).Text.Contains("每次仍验证证书"), "TLS validation advice missing");
                 Assert(((TextBlock)Find(view, "NpepError")).Text.Contains("证书验证失败"), "Chinese cause binding missing");
+                Assert(((TextBlock)Find(view, "NpepReceipt")).Text.Contains("2026-10-07") &&
+                    !((TextBlock)Find(view, "NpepMessage")).IsVisible && !((TextBlock)Find(view, "NpepPairingStage")).IsVisible,
+                    "bound summary lost the last receipt or repeated normal polling/setup text");
+                Assert(!((Expander)Find(view, "NpepBindingManagement")).IsExpanded, "binding controls expanded before use");
                 var expander = (Expander)Find(view, "NpepTechnicalDetailsPanel");
                 Assert(!expander.IsExpanded, "technical details expanded by default");
             }
             Snapshot(window, "school-retry.png");
+            var bindingPanel = (Expander)Find(settings, "NpepBindingManagement");
+            bindingPanel.IsExpanded = true; window.UpdateLayout();
+            Assert(((TextBox)Find(bindingPanel, "NpepCurrentOrigin")).Text == state.Origin &&
+                ((Button)Find(bindingPanel, "NpepChangeProvider")).IsVisible && ((Button)Find(bindingPanel, "NpepUnpair")).IsVisible,
+                "bound provider and removal controls must be reachable together");
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(bindingPanel.IsExpanded && !((Expander)Find(onboarding, "NpepBindingManagement")).IsExpanded,
+                "polling or another view changed the teacher's disclosure");
+            bindingPanel.IsExpanded = false;
             var detailPanel = (Expander)Find(settings, "NpepTechnicalDetailsPanel");
             detailPanel.IsExpanded = true; window.UpdateLayout();
             var details = (TextBox)Find(settings, "NpepTechnicalDetails");
@@ -158,6 +172,8 @@ internal static partial class Program
             var school = (NpepConnectionControl)window.FindName("SchoolConnection");
             Assert(ReferenceEquals(school.DataContext, session), "actual OOBE uses another connection session");
             Assert(((TextBlock)Find(school, "NpepStatusTitle")).Text.Contains("自动重试"), "actual OOBE loses retry title");
+            Assert(!((TextBlock)window.FindName("StepSubtitle")).IsVisible, "bound wizard still directs teacher to enter a new service address");
+            CheckSchoolFirstScreen(school, (ScrollViewer)window.FindName("PageScroll"));
             Assert(Button(window, "NextButton").IsEnabled && Button(window, "NextButton").ActualHeight > 0,
                 "minimum OOBE layout or offline pairing blocks the existing next button");
             Snapshot(window, "oobe-school-minimum.png");
@@ -165,5 +181,64 @@ internal static partial class Program
         });
         Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "OOBE rendering mutated school state");
         Checks.Add("Actual OOBE school step uses the shared session at 720x600; existing next action remains available for a completed offline pairing");
+
+        var main = PrivateWorkspace("NPEduTools.Test.school-summary." + Guid.NewGuid().ToString("N"));
+        typeof(MainWindow).GetField("_schoolConnection", WorkspaceFlags)!.SetValue(main, session);
+        WorkspaceCall(main, "InitializeNpepConnection");
+        Exercise(main, window =>
+        {
+            Click(window, "HomeSchoolConnection", true);
+            window.Width = 900; window.Height = 650;
+            window.UpdateLayout();
+            var view = (NpepConnectionControl)window.FindName("SettingsSchoolConnection");
+            var scroll = (ScrollViewer)window.FindName("SettingsScroll");
+            CheckSchoolFirstScreen(view, scroll);
+            Snapshot(window, "school-settings-summary.png");
+            state = state with { Error = null };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            CheckSchoolFirstScreen(view, scroll, expectError: false);
+            Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text == "等待学校新回执" &&
+                ((TextBlock)Find(view, "NpepNextAction")).Text.Contains("无需操作"), "expiry without a network failure looked like a connection fault");
+            Snapshot(window, "school-settings-waiting.png");
+            state = state with { State = "UNPAIRED", Connection = "WAITING", Origin = null, Error = null, LastReceivedAt = null };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(((TextBox)Find(view, "NpepOrigin")).IsVisible && ((TextBlock)Find(view, "NpepPairingStage")).IsVisible &&
+                ((Button)Find(view, "NpepInspect")).IsVisible, "pairing form remained folded after leaving the binding");
+            state = state with { State = "APPROVED", Approval = new JsonObject {
+                ["approvalId"] = Guid.NewGuid().ToString(), ["schoolName"] = "测试学校", ["screenBindingName"] = "测试大屏" } };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            var consent = (CheckBox)Find(view, "NpepBindingConfirmed");
+            var confirm = (Button)Find(view, "NpepConfirm");
+            Assert(((TextBlock)Find(view, "NpepBinding")).Text.Contains("测试学校") && consent.IsVisible && !confirm.IsEnabled,
+                "approved pairing hid the ownership review or allowed unconfirmed binding");
+            consent.IsChecked = true;
+            Assert(confirm.IsEnabled, "reviewing the current binding did not enable the existing confirmation action");
+            state = state with { State = "ACTIVE", Connection = "WAITING" };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(!((Expander)Find(view, "NpepBindingManagement")).IsExpanded && ((TextBlock)Find(view, "NpepReceipt")).Text.Contains("暂无"),
+                "newly bound device exposed setup actions or fabricated a receipt");
+            window.Close();
+        });
+        Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "opening disclosures or changing pages issued a command");
+        Checks.Add("Settings home entry shows status, receipt and guidance before scrolling; pairing and ownership consent stay inline until bound");
+    }
+
+    private static void CheckSchoolFirstScreen(NpepConnectionControl view, ScrollViewer scroll, bool expectError = true)
+    {
+        Assert(scroll.VerticalOffset == 0, "school connection did not open at the top");
+        var viewport = (FrameworkElement)scroll.Template.FindName("PART_ScrollContentPresenter", scroll);
+        foreach (var id in new[] { "NpepStatusTitle", "NpepReceipt", "NpepError", "NpepNextAction" })
+        {
+            var element = (TextBlock)Find(view, id);
+            if (id == "NpepError" && !expectError)
+            {
+                Assert(!element.IsVisible, "the previous connection error remained visible");
+                continue;
+            }
+            var bounds = element.TransformToAncestor(viewport).TransformBounds(new Rect(element.RenderSize));
+            Assert(element.IsVisible && !string.IsNullOrWhiteSpace(element.Text) && bounds.Top >= -1 &&
+                bounds.Bottom <= viewport.ActualHeight + 1 && bounds.Left >= -1 && bounds.Right <= viewport.ActualWidth + 1,
+                id + " was not readable in the first viewport");
+        }
     }
 }

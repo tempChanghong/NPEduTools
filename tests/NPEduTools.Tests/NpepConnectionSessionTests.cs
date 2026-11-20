@@ -29,6 +29,7 @@ public sealed class NpepConnectionSessionTests
     private const string ServerId = "bf85f73d-de6a-4f71-8457-dd897eb97b35";
     private const string Epoch = "a340c0f2-e8cb-4198-a805-1e0d783886ea";
     private const string ApprovalId = "48d7c7f0-7d27-4b51-bf86-b79257516d75";
+    private const string LastReceipt = "2026-10-14T12:00:00.000Z";
     private static JsonObject Server() => new() { ["serverInstanceId"] = ServerId, ["deploymentEpoch"] = Epoch };
     private static JsonObject Approval(string school = "测试学校") => new()
     {
@@ -138,7 +139,11 @@ public sealed class NpepConnectionSessionTests
     [InlineData("ONLINE", true, "互联已暂停")]
     public async Task ExistingPairingCanFinishWithoutNetworkOrReRegistration(string connection, bool paused, string title)
     {
-        var host = new Host { Snapshot = State("ACTIVE") with { Connection = connection, ReportingPaused = paused, Approval = Approval() } };
+        var host = new Host { Snapshot = State("ACTIVE") with
+            {
+                Connection = connection, ReportingPaused = paused, Approval = Approval(), LastReceivedAt = LastReceipt,
+                Error = connection == "OFFLINE" ? "NETWORK_UNAVAILABLE" : null
+            } };
         var session = new NpepConnectionSession(host.Send); await session.RefreshAsync();
         Assert.True(session.CanFinish); Assert.False(session.ShowCreate); Assert.False(session.ShowConfirm);
         Assert.Contains(title, session.Title); Assert.False(await session.PairAsync());
@@ -192,11 +197,75 @@ public sealed class NpepConnectionSessionTests
         disconnected = true; await session.RefreshAsync();
         Assert.Contains("未确认", session.Title); Assert.False(session.CanPause);
         Assert.DoesNotContain("TLS_VALIDATION_FAILED", session.TechnicalDetails);
-        disconnected = false; host.Snapshot = host.Snapshot with { Connection = "ONLINE", Error = null };
+        disconnected = false; host.Snapshot = host.Snapshot with { Connection = "ONLINE", Error = null, LastReceivedAt = LastReceipt };
         await session.RefreshAsync();
         Assert.Contains("当前在线", session.Title); Assert.Equal("", session.Error);
         Assert.DoesNotContain("HOST_UNAVAILABLE", session.TechnicalDetails);
         Assert.DoesNotContain(host.Requests, r => r.Npep is not null);
+    }
+
+    [Theory]
+    [InlineData("ACTIVE", true)]
+    [InlineData("SUSPENDED", true)]
+    [InlineData("UNPAIRING", true)]
+    [InlineData("UNPAIRED", false)]
+    [InlineData("PENDING", false)]
+    [InlineData("APPROVED", false)]
+    public async Task Only_binding_states_use_the_summary_and_hide_routine_poll_messages(string state, bool hasSummary)
+    {
+        var host = new Host { Snapshot = State(state) };
+        var session = new NpepConnectionSession(host.Send);
+        Assert.True(await session.RefreshAsync());
+        Assert.Equal(hasSummary, session.ShowBindingManagement);
+        Assert.Equal(hasSummary ? "" : host.Snapshot.Message, session.Message);
+        Assert.Equal(hasSummary ? "最近有效回执：暂无" : "", session.Receipt);
+        Assert.Contains(host.Snapshot.Message, session.TechnicalDetails);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("invalid", false)]
+    [InlineData("12:00", false)]
+    [InlineData("2026-10-14T12:00:00", false)]
+    [InlineData("2026-10-14T12:00:00Z", true)]
+    [InlineData(LastReceipt, true)]
+    public async Task Online_title_requires_a_valid_receipt_time(string? receipt, bool confirmed)
+    {
+        var host = new Host { Snapshot = State("ACTIVE") with { Connection = "ONLINE", LastReceivedAt = receipt } };
+        var session = new NpepConnectionSession(host.Send);
+        Assert.True(await session.RefreshAsync());
+        if (confirmed)
+        {
+            Assert.Contains("当前在线", session.Title);
+            Assert.StartsWith("最近有效回执：", session.Receipt);
+            Assert.EndsWith("（本机时间）", session.Receipt);
+            Assert.StartsWith("无需操作", session.NextAction);
+        }
+        else
+        {
+            Assert.Contains("等待学校回执", session.Title);
+            Assert.Equal("最近有效回执：暂无", session.Receipt);
+            Assert.Contains("收到新的回执后会自动更新", session.NextAction);
+        }
+    }
+
+    [Fact]
+    public async Task Rejected_command_message_does_not_hide_the_current_TLS_cause_or_advice()
+    {
+        var host = new Host { Snapshot = State("ACTIVE") with { Connection = "OFFLINE", Error = "TLS_VALIDATION_FAILED" } };
+        const string feedback = "状态已变化，请刷新后再试。";
+        var session = new NpepConnectionSession((request, token) => request.Npep is null ? host.Send(request, token) :
+            Task.FromResult(Response(request, host.Snapshot, "Rejected") with { ErrorCode = "NpepStateChanged", Message = feedback }));
+        Assert.True(await session.RefreshAsync());
+        Assert.False(await session.PauseOrResumeAsync());
+        Assert.Equal(feedback, session.Message);
+        Assert.Contains("HTTPS 证书验证失败", session.Error);
+        Assert.Contains("学校地址、本机系统时间和服务器证书", session.NextAction);
+        Assert.Contains("持续自动重试", session.NextAction);
+        Assert.Contains("操作错误码：NpepStateChanged", session.TechnicalDetails);
+        Assert.True(await session.RefreshAsync());
+        Assert.Equal("", session.Message);
+        Assert.DoesNotContain("NpepStateChanged", session.TechnicalDetails);
     }
 
     [Fact]

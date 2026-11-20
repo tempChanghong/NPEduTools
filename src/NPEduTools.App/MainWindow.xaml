@@ -391,12 +391,15 @@
           <ScrollViewer x:Name="SettingsScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
           <StackPanel>
             <StackPanel x:Name="NpepSettingsPanel" Visibility="Collapsed">
-              <Border Style="{StaticResource Surface}" Background="#EAF6F2"><StackPanel>
-                <TextBlock Text="NPEP · 学校互联" FontSize="20" FontWeight="SemiBold" />
-                <TextBlock Text="连接 NPClassworks，让学校管理员了解这台大屏的课堂模式与软件连接状态。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,0" />
-                <TextBlock Text="配对后共享设备状态并接收学校通知，支持远程考试 / 日常模式（含登录自启动）、考试方案和噪音监测联动。监测仅上传统计，不上传原音频；不会上传屏幕、录课文件或完整课表。" TextWrapping="Wrap" Foreground="#526A60" FontSize="12" Margin="0,8,0,0" />
-              </StackPanel></Border>
-              <Border Style="{StaticResource Surface}"><local:NpepConnectionControl x:Name="SettingsSchoolConnection" /></Border>
+              <Border Style="{StaticResource Surface}" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}">
+                <StackPanel>
+                  <local:NpepConnectionControl x:Name="SettingsSchoolConnection" />
+                  <Expander Header="学校连接权限" Style="{DynamicResource TeacherExpander}" AutomationProperties.Name="学校连接权限" Margin="0,2,0,0">
+                    <TextBlock Text="配对后，NPClassworks 可接收设备状态、投递学校通知、管理考试与日常模式（含登录自启动）、考试方案和自习策略。噪音监测仅上传统计；学校启用照片策略时可上传单张捕获画面。屏幕、录课文件、原始录音和完整课表不会上传。"
+                               TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="12,6,0,8" />
+                  </Expander>
+                </StackPanel>
+              </Border>
               <Border Style="{StaticResource Surface}"><StackPanel>
                 <TextBlock Text="远程考试模式" FontSize="17" FontWeight="SemiBold" />
                 <TextBlock x:Name="RemoteExamBinding" Text="正在读取当前学校绑定…" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,12" />

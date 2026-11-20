@@ -1,3 +1,4 @@
+using System.Globalization;
 using NPEduTools.Contracts;
 
 namespace NPEduTools.App;
@@ -6,25 +7,38 @@ namespace NPEduTools.App;
 public static class NpepConnectionPresentation
 {
     private sealed record Reason(string Cause, string Advice);
+    private static readonly string[] ReceiptTimeFormats = ["yyyy-MM-dd'T'HH:mm:ss.fff'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'"];
+
+    internal static bool IsBindingState(NpepState? state) => state?.State is "ACTIVE" or "SUSPENDED" or "UNPAIRING";
+
+    private static bool TryReadReceipt(NpepState? state, out DateTimeOffset receivedAt) =>
+        DateTimeOffset.TryParseExact(state?.LastReceivedAt, ReceiptTimeFormats, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal, out receivedAt);
+
+    internal static string Receipt(NpepState? state) => TryReadReceipt(state, out var receivedAt)
+        ? "最近有效回执：" + receivedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "（本机时间）"
+        : IsBindingState(state) ? "最近有效回执：暂无" : "";
+
     private static bool AutomaticRetry(NpepState state) => !state.ReportingPaused && state.Connection == "OFFLINE" &&
         (state.State is "UNPAIRED" or "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING" or "ACTIVE") &&
         (state.Error == "TLS_VALIDATION_FAILED" || state.State is "ACTIVE" or "PENDING");
     private static bool Resampling(NpepState state) =>
         state is { State: "ACTIVE", Connection: "ONLINE" or "OFFLINE", Error: "SAMPLE_TOO_OLD", ReportingPaused: false };
     private static bool ReceiptExpired(NpepState state) =>
-        state is { State: "ACTIVE", Connection: "OFFLINE", Error: null, LastReceivedAt: not null };
+        state is { State: "ACTIVE", Connection: "OFFLINE", Error: null } && TryReadReceipt(state, out _);
 
     public static string Title(NpepState? state)
     {
         if (state is null) return "后台状态未确认";
         if (state.State == "STORE_UNAVAILABLE") return "学校互联凭据暂不可用";
         if (state.State == "SUSPENDED") return "学校连接已停用";
+        if (state.State == "UNPAIRING") return state.Busy ? "正在解除绑定" : "解绑结果待确认";
         if (state.Busy) return "学校互联操作正在处理";
         if (state.Error == "PAIRING_EXPIRED") return "配对码已过期";
         if (state.State == "ACTIVE" && state.ReportingPaused) return "已配对 · 互联已暂停";
         if (Resampling(state)) return "已配对 · 状态待重新上报";
-        if (ReceiptExpired(state)) return "已配对 · 上次回执已过期";
-        if (AutomaticRetry(state)) return state.State == "ACTIVE" ? "已配对 · 暂时离线，等待自动重试" : "学校服务暂不可用 · 等待自动重试";
+        if (ReceiptExpired(state)) return "等待学校新回执";
+        if (AutomaticRetry(state)) return state.State == "ACTIVE" ? "暂时离线 · 自动重试" : "学校服务暂不可用 · 等待自动重试";
         return state.State switch
         {
             "UNPAIRED" => state.Connection == "VERIFIED" ? "服务已检查 · 尚未配对" : "尚未配对",
@@ -34,10 +48,11 @@ public static class NpepConnectionPresentation
             "APPROVED" => "请在本机确认连接", "CONFIRMING" => "配对确认结果待恢复",
             "ACTIVE" => state.Connection switch
             {
-                "ONLINE" => "已配对 · 当前在线", "WAITING" or "CONNECTING" => "已配对 · 正在连接",
+                "ONLINE" => TryReadReceipt(state, out _) ? "已配对 · 当前在线" : "已配对 · 等待学校回执",
+                "WAITING" or "CONNECTING" => "已配对 · 正在连接",
                 "STOPPED" => "已配对 · 连接已停止", _ => "已配对 · 连接状态待核实"
             },
-            "UNPAIRING" => "解绑结果待核实", _ => "学校互联状态待核实"
+            _ => "学校互联状态待核实"
         };
     }
 
@@ -47,17 +62,23 @@ public static class NpepConnectionPresentation
     {
         if (state is null) return "确认 NPEduTools 后台正在运行后点击“刷新”；未读取当前状态前不要重复配对或解绑。";
         if (state.State == "STORE_UNAVAILABLE") return Explain("CREDENTIAL_STORE_UNAVAILABLE").Advice;
-        if (state.State == "SUSPENDED") return "联系学校管理员核实停用原因与归属；需要恢复时解除旧绑定，再按学校安排重新配对。不会自动抢回原连接。";
+        if (state.State == "SUSPENDED") return "请联系学校管理员核实授权与归属。停用后不会自动恢复。";
+        if (state.State == "UNPAIRING") return state.Busy
+            ? "请等待后台确认解绑结果。"
+            : "请刷新核实解绑结果，必要时联系管理员检查远端撤销。互联不会自动恢复。";
         if (state.Busy) return "等待后台更新；关闭此页面不会取消已受理的操作，不要重复提交。";
-        if (feedbackCode is not null) return Explain(feedbackCode).Advice;
+        if (feedbackCode is not null && !IsBindingState(state)) return Explain(feedbackCode).Advice;
         if (state.State == "ACTIVE" && state.ReportingPaused)
-            return "配对信息保留。需要继续连接时点击“恢复互联”，随后后台会重新核查学校授权；不会自行解除暂停。";
-        if (Resampling(state)) return Explain(state.Error!).Advice;
-        if (ReceiptExpired(state)) return "后台会继续上报，收到新的学校回执后会自动更新。";
+            return "需要继续时，请点击“恢复互联”。后台不会自行解除暂停。";
+        if (Resampling(state)) return "无需操作，后台会重新采样并自动重试。";
+        if (ReceiptExpired(state)) return "距上次收到回执已满 60 秒，后台会继续上报，无需操作。";
         if (AutomaticRetry(state)) return state.Error == "TLS_VALIDATION_FAILED"
-            ? "后台会持续自动重试。核对学校地址、本机系统时间和服务器证书；每次仍验证证书，不要关闭证书校验。"
-            : "等待后台自动重试，原配对或申请保留；若持续离线，核对网络与学校服务。无需重新配对。";
-        if (state.Error is { } code) return Explain(code).Advice;
+            ? "请核对学校地址、本机系统时间和服务器证书。后台会持续自动重试，每次仍验证证书。"
+            : state.State == "ACTIVE"
+                ? "无需立即操作，后台会自动重试。若持续离线，请核对网络与学校服务。无需重新配对。"
+                : "等待后台自动重试，原配对或申请保留；若持续离线，核对网络与学校服务。无需重新配对。";
+        if (state.Error is { } code) return Explain(code).Advice +
+            (state is { State: "ACTIVE", Connection: "STOPPED" } ? " 后台不会自动重试。" : "");
         return state.State switch
         {
             "UNPAIRED" => state.Connection == "VERIFIED" ? "核对学校服务后，输入网页配对码或创建配对申请。" : "填写学校提供的后端服务地址，再点击“检查学校服务”。",
@@ -67,12 +88,11 @@ public static class NpepConnectionPresentation
             "APPROVED" => "核对学校、班级和大屏归属，同意连接功能后点击“确认连接”。",
             "ACTIVE" => state.Connection switch
             {
-                "ONLINE" => "后台继续接收通知与上报状态，收起主窗口不影响连接。上次回执时间不保证此后一直在线。",
-                "CONNECTING" or "WAITING" => "等待后台核查授权并发送新状态；看到新的回执后才能确认当前在线。",
+                "ONLINE" when TryReadReceipt(state, out _) => "无需操作，后台会继续接收通知并上报状态。",
+                "ONLINE" or "CONNECTING" or "WAITING" => "无需操作，收到新的回执后会自动更新。",
                 "STOPPED" => "先核对原因，再点击“重新连接”；连接已停止，不会按离线状态自动重试。",
                 _ => "点击“刷新”核实后台状态；未知状态不能认定在线或正在自动重试。"
             },
-            "UNPAIRING" => "刷新并核实本机解绑结果，联系学校管理员检查远端撤销；不要直接创建另一份配对。",
             _ => "刷新并保留技术详情，核对 App 与 Host 版本；不能把未知状态当作在线。"
         };
     }

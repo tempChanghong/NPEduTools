@@ -36,9 +36,9 @@ public sealed class NpepConnectionPresentationTests
     public void Offline_snapshot_with_only_a_historical_receipt_identifies_its_expiry()
     {
         var expired = State() with { LastReceivedAt = "2026-10-14T12:00:00.000Z" };
-        Assert.Equal("已配对 · 上次回执已过期", NpepConnectionPresentation.Title(expired));
-        Assert.Contains("收到新的学校回执", NpepConnectionPresentation.NextAction(expired));
-        Assert.Equal("已配对 · 暂时离线，等待自动重试",
+        Assert.Equal("等待学校新回执", NpepConnectionPresentation.Title(expired));
+        Assert.Equal("距上次收到回执已满 60 秒，后台会继续上报，无需操作。", NpepConnectionPresentation.NextAction(expired));
+        Assert.Equal("暂时离线 · 自动重试",
             NpepConnectionPresentation.Title(expired with { Error = "NETWORK_UNAVAILABLE" }));
         Assert.Equal("已配对 · 互联已暂停",
             NpepConnectionPresentation.Title(expired with { ReportingPaused = true }));
@@ -147,13 +147,25 @@ public sealed class NpepConnectionPresentationTests
     }
 
     [Fact]
-    public void CommandRejectionKeepsItsOwnCauseSeparateFromOldStatusError()
+    public void Binding_summary_keeps_current_TLS_guidance_when_a_command_is_rejected()
     {
         var state = State(error: "TLS_VALIDATION_FAILED");
         string advice = NpepConnectionPresentation.NextAction(state, "NpepStateChanged");
-        Assert.Contains("刷新", advice);
-        Assert.DoesNotContain("持续自动重试", advice);
+        Assert.Contains("学校地址、本机系统时间和服务器证书", advice);
+        Assert.Contains("持续自动重试", advice);
         Assert.Contains("操作错误码：NpepStateChanged", NpepConnectionPresentation.Details(state, "NpepStateChanged", Guid.NewGuid(), "操作仍在进行"));
+        Assert.Contains("刷新", NpepConnectionPresentation.NextAction(state with { State = "PENDING" }, "NpepStateChanged"));
+    }
+
+    [Theory]
+    [InlineData(false, "解绑结果待确认", "请刷新")]
+    [InlineData(true, "正在解除绑定", "请等待")]
+    public void Unpairing_distinguishes_in_progress_from_an_unconfirmed_result(bool busy, string title, string nextAction)
+    {
+        var state = State("UNPAIRING", "STOPPED") with { Busy = busy };
+        Assert.Equal(title, NpepConnectionPresentation.Title(state));
+        Assert.StartsWith(nextAction, NpepConnectionPresentation.NextAction(state));
+        Assert.DoesNotContain("自动重试", NpepConnectionPresentation.NextAction(state));
     }
 
     [Fact]

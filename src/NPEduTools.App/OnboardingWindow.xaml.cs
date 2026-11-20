@@ -153,10 +153,11 @@ public partial class OnboardingWindow : Window
         StepSubtitle.Text = _state.Step switch {
             "welcome" => "选择这台电脑的用途，只准备你需要的功能。",
             "preferences" => "核对常用偏好，默认设置也可以直接保留。",
-            "school" => "填写学校服务地址，申请连接或使用预授权班级的管理口令。",
+            "school" => "",
             "noise" => "选择并保存麦克风。摄像头、实测与校准可以稍后准备。",
             "review" => "检查已保存的内容和待办项，完成后进入工作台。",
             _ => "先完成本页的主要操作，其他说明可按需查看。" };
+        StepSubtitle.Visibility = StepSubtitle.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         PageScroll.ScrollToTop();
         RefreshProgress(_state);
         BackButton.Visibility = _state.Step == "welcome" ? Visibility.Hidden : Visibility.Visible;

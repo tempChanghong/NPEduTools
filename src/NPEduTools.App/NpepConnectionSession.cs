@@ -50,6 +50,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public bool ShowBinding => _state?.Approval is not null;
     public bool ShowConfirm => _state?.State == "APPROVED";
     public bool ShowActive => HasPairing;
+    public bool ShowBindingManagement => NpepConnectionPresentation.IsBindingState(_state);
     // Read-only polling must not disable a focused input while the user is typing.
     public bool CanEdit => !_mutating && (_state is null || _state is { Busy: false, State: "UNPAIRED" });
     public bool CanReviewBinding => !_mutating && _state is { Busy: false } && ShowConfirm;
@@ -89,12 +90,12 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         _ => "连接学校 · 等待检查"
     };
     public string Title => NpepConnectionPresentation.Title(_state);
-    public string Message => _feedback ?? _state?.Message ?? "无法读取后台状态。恢复后重新检查；旧状态不代表当前连接。";
-    public string Error => NpepConnectionPresentation.Cause(_feedbackCode ?? _state?.Error);
+    public string Message => _feedback ?? (ShowBindingManagement ? "" :
+        _state?.Message ?? "无法读取后台状态。恢复后重新检查；旧状态不代表当前连接。");
+    public string Error => NpepConnectionPresentation.Cause(ShowBindingManagement ? _state?.Error : _feedbackCode ?? _state?.Error);
     public string NextAction => NpepConnectionPresentation.NextAction(_state, _feedbackCode);
     public string TechnicalDetails => NpepConnectionPresentation.Details(_state, _feedbackCode, _feedbackRequestId, _feedback);
-    public string Receipt => DateTimeOffset.TryParse(_state?.LastReceivedAt, out var value)
-        ? "学校服务最近接收：" + value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + "（本机时区）" : "";
+    public string Receipt => NpepConnectionPresentation.Receipt(_state);
     public string ServerIdentity => _state?.Server is null ? "" : $"地址：{_state.Origin}\n实例：{Text(_state.Server, "serverInstanceId")}\n部署标识：{Text(_state.Server, "deploymentEpoch")}";
     public string PairingCode => Text(_state?.Pairing, "userCode");
     public string Expiry => "配对截止（学校服务器 UTC）：" + Text(_state?.Pairing, "expiresAt");
