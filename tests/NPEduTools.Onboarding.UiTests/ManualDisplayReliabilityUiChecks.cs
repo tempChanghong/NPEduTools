@@ -36,9 +36,10 @@ internal static partial class Program
             if (cycles == 1 && report && scenario == "slow-report") await Task.Delay(1700, stop.Token);
             var supplied = scenario == "withdrawn-with-error" ? state with { Display = state.Display! with { Available = false } } :
                 scenario == "ended-with-error" ? state with { Phase = "Outside", Display = state.Display! with { Available = false }, Manual = manual with { State = "Ended" } } : state;
-            var schoolState = scenario == "takeover-with-error" ? StudyFixture() :
+            var schoolState = scenario is "takeover-with-error" or "paused-school-cache" ? StudyFixture() :
                 scenario == "projection-with-error" ? StudyFixture() with { Phase = "Outside", ProjectionPriority = true } : null;
             return new HostResponse(error ? 2 : 1, request.RequestId, "Succeeded", null, "isolated manual display fixture",
+                Npep: school && scenario == "paused-school-cache" ? new(1, "ACTIVE", "PAUSED", "fixture", ReportingPaused: true) : null,
                 Study: manualStatus ? supplied : school ? schoolState : null, ManualStudy: manualStatus ? supplied.Manual : null);
         }, stop.Token, supportsCalibrationStatus: true));
         var main = PrivateWorkspace(pipe);
@@ -57,7 +58,7 @@ internal static partial class Program
             polling = (Task)typeof(MainWindow).GetMethod("NoiseDisplayPollAsync", WorkspaceFlags)!.Invoke(main, null)!;
             PumpUntil(() => nextPoll.Task.IsCompleted || polling.IsCompleted, "manual next poll did not begin", 10);
             Assert(!polling.IsCompleted, "temporary error ended manual display polling");
-            bool retain = scenario is "healthy" or "slow-report" or "failed-report" or "failed-manual-status" or "failed-manual-response" or "failed-school-status";
+            bool retain = scenario is "healthy" or "slow-report" or "failed-report" or "failed-manual-status" or "failed-manual-response" or "failed-school-status" or "paused-school-cache";
             Assert(display.IsVisible == retain, retain ? "temporary read hid an existing manual display" : "manual display ignored withdrawal or priority");
             if (retain)
             {

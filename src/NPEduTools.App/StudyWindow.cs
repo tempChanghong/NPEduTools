@@ -62,6 +62,12 @@ public sealed partial class StudyWindow : Window
         NoiseCalibrationStatus? calibration = null)
     {
         _continuation.Observe(state, transportAge);
+        if (!_continuation.CanKeep)
+        {
+            _state = null;
+            HideDisplay();
+            return;
+        }
         ApplyState(state, noise, transportAge, photos, connection, calibration);
     }
     internal bool TryWaitForSchoolSync(HostResponse response, TimeSpan age)
@@ -95,6 +101,12 @@ public sealed partial class StudyWindow : Window
     public void HideDisplay() { DismissSeatingUpload(); Hide(); _surface.Suspend(); _homeworkRead?.Cancel(); _seatingRead?.Cancel(); }
     public void ShowDisplay()
     {
+        if (_shutdown) return;
+        if (!_continuation.CanKeep)
+        {
+            if (IsVisible) HideDisplay();
+            return;
+        }
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (!IsVisible)
         {

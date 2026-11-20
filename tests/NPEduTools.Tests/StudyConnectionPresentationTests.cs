@@ -33,7 +33,7 @@ public sealed class StudyConnectionPresentationTests
         Assert.Equal("Muted", StudyConnectionPresentation.Describe(Study(), state, false).Tone);
     }
     [Theory]
-    [InlineData("OFFLINE", "学校正在重连 · 本次继续")]
+    [InlineData("OFFLINE", "学校回执待确认 · 本次继续")]
     [InlineData("STOPPED", "学校连接已停止 · 本次继续")]
     [InlineData("ONLINE", "安排待同步 · 本次继续")]
     public void Continuing_window_is_distinguished_from_connection_and_policy_recovery(string connection, string text)

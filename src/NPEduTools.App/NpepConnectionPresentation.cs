@@ -11,6 +11,8 @@ public static class NpepConnectionPresentation
         (state.Error == "TLS_VALIDATION_FAILED" || state.State is "ACTIVE" or "PENDING");
     private static bool Resampling(NpepState state) =>
         state is { State: "ACTIVE", Connection: "ONLINE" or "OFFLINE", Error: "SAMPLE_TOO_OLD", ReportingPaused: false };
+    private static bool ReceiptExpired(NpepState state) =>
+        state is { State: "ACTIVE", Connection: "OFFLINE", Error: null, LastReceivedAt: not null };
 
     public static string Title(NpepState? state)
     {
@@ -21,6 +23,7 @@ public static class NpepConnectionPresentation
         if (state.Error == "PAIRING_EXPIRED") return "配对码已过期";
         if (state.State == "ACTIVE" && state.ReportingPaused) return "已配对 · 互联已暂停";
         if (Resampling(state)) return "已配对 · 状态待重新上报";
+        if (ReceiptExpired(state)) return "已配对 · 上次回执已过期";
         if (AutomaticRetry(state)) return state.State == "ACTIVE" ? "已配对 · 暂时离线，等待自动重试" : "学校服务暂不可用 · 等待自动重试";
         return state.State switch
         {
@@ -50,6 +53,7 @@ public static class NpepConnectionPresentation
         if (state.State == "ACTIVE" && state.ReportingPaused)
             return "配对信息保留。需要继续连接时点击“恢复互联”，随后后台会重新核查学校授权；不会自行解除暂停。";
         if (Resampling(state)) return Explain(state.Error!).Advice;
+        if (ReceiptExpired(state)) return "后台会继续上报，收到新的学校回执后会自动更新。";
         if (AutomaticRetry(state)) return state.Error == "TLS_VALIDATION_FAILED"
             ? "后台会持续自动重试。核对学校地址、本机系统时间和服务器证书；每次仍验证证书，不要关闭证书校验。"
             : "等待后台自动重试，原配对或申请保留；若持续离线，核对网络与学校服务。无需重新配对。";

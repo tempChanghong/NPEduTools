@@ -14,14 +14,15 @@ internal static partial class Program
         {
             var errors = new List<Exception>();
             foreach (string scenario in new[] { "manual-status-error", "school-report-error", "school-status-error", "withdrawn-with-error", "projection-with-error", "notification-with-error", "clock-with-error", "policy-with-error", "hidden-status-error", "expired-status-error",
-                "sync-offline", "sync-clock", "sync-timeout", "sync-revoked", "sync-hidden" })
+                "sync-offline", "sync-clock", "sync-timeout", "sync-revoked", "sync-hidden", "sync-paused-cache", "sync-suspended-cache", "sync-offline-active", "sync-transport-stopped" })
                 try { StudyTemporaryReadFailureCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
             foreach (string scenario in new[] { "healthy", "slow-report", "failed-report", "failed-manual-status", "failed-manual-response", "failed-school-status",
-                "withdrawn-with-error", "ended-with-error", "takeover-with-error", "projection-with-error", "hidden-with-error", "expired-with-error", "notification-with-error" })
+                "withdrawn-with-error", "ended-with-error", "takeover-with-error", "projection-with-error", "hidden-with-error", "expired-with-error", "notification-with-error", "paused-school-cache" })
                 try { ManualDisplayReadFailureCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException("manual/" + scenario + ": " + e.Message, e)); }
             try { StudyMediumHomeworkCheck(); } catch (Exception e) { errors.Add(e); }
             try { StudyContinuationExpiryCheck(); } catch (Exception e) { errors.Add(e); }
             try { StudyContinuationExpiryCheck(manual: true); } catch (Exception e) { errors.Add(e); }
+            try { StudyLateEndNoticeCheck(); } catch (Exception e) { errors.Add(e); }
             if (errors.Count > 0) throw new AggregateException(errors);
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
@@ -53,7 +54,8 @@ internal static partial class Program
                 scenario == "projection-with-error" ? state with { ProjectionPriority = true } :
                 scenario == "clock-with-error" ? state with { ClockReady = false } :
                 scenario == "policy-with-error" ? state with { PolicyState = "DISABLED" } : state;
-            if (syncCase && reads == 1)
+            bool continuing = scenario is "sync-offline-active" or "sync-transport-stopped";
+            if (syncCase && reads == 1 && !continuing && scenario is not ("sync-paused-cache" or "sync-suspended-cache"))
             {
                 bool clockLoss = scenario == "sync-clock";
                 supplied = state with { Phase = "Blocked", Window = null, SchoolNow = null, ClockReady = false, Execution = null,
@@ -63,7 +65,14 @@ internal static partial class Program
             }
             var link = syncCase && school ? new NpepState(1, "ACTIVE",
                 reads == 1 && scenario != "sync-clock" ? "OFFLINE" : "ONLINE", "fixture",
-                LastReceivedAt: "2026-10-12T19:00:00Z") : null;
+                LastReceivedAt: "2026-10-12T19:00:00Z", Error: reads == 1 && scenario != "sync-clock" ? "NETWORK_UNAVAILABLE" : null) : null;
+            if (link is not null && reads == 1)
+            {
+                if (scenario == "sync-paused-cache") link = link with { ReportingPaused = true, Connection = "PAUSED", Error = null };
+                if (scenario == "sync-suspended-cache") link = link with { State = "SUSPENDED", Connection = "STOPPED", Error = "AUTH_INVALID" };
+                if (scenario == "sync-transport-stopped") link = link with { Connection = "STOPPED", Error = null };
+                if (continuing) supplied = state with { Reason = "OFFLINE_CONTINUING" };
+            }
             return new HostResponse(fail ? 2 : 1, request.RequestId, "Succeeded", null, "isolated transient status failure",
                 Study: school ? supplied : null, Npep: link);
         }, stop.Token, supportsCalibrationStatus: true));
@@ -83,7 +92,7 @@ internal static partial class Program
             polling = (Task)typeof(MainWindow).GetMethod("NoiseDisplayPollAsync", WorkspaceFlags)!.Invoke(main, null)!;
             PumpUntil(() => nextPoll.Task.IsCompleted || polling.IsCompleted, "next display poll did not begin", 8);
             Assert(!polling.IsCompleted, "transient error terminated polling");
-            bool retain = scenario is "manual-status-error" or "school-report-error" or "school-status-error" or "sync-offline" or "sync-clock" or "sync-timeout";
+            bool retain = scenario is "manual-status-error" or "school-report-error" or "school-status-error" or "sync-offline" or "sync-clock" or "sync-timeout" or "sync-offline-active" or "sync-transport-stopped";
             Assert(display.IsVisible == retain, retain ? "one temporary read failure hid the confirmed school display" : "withdrawal/priority was ignored after a later read failed");
             if (retain) Assert(visibilityChanges == 0, "temporary read failure caused hide/show flicker");
             if (retain)
@@ -107,6 +116,13 @@ internal static partial class Program
                 Assert(!polling.IsCompleted && display.IsVisible && visibilityChanges == (scenario == "sync-timeout" ? 2 : 0),
                     "read recovery changed window visibility unexpectedly or stopped polling");
                 Assert(display.PresentationPulse()?.State == "Visible", "recovered fresh state stayed stale");
+            }
+            if (scenario is "sync-paused-cache" or "sync-suspended-cache")
+            {
+                Assert(visibilityChanges == 1, "cached school state reopened the display after withdrawal");
+                releaseNext.TrySetResult();
+                PumpUntil(() => recoveredPoll.Task.IsCompleted || polling.IsCompleted, "school polling did not resume", 8);
+                Assert(display.IsVisible && visibilityChanges == 2, "fresh authorization failed to restore school display");
             }
             Checks.Add(scenario + ": actual MainWindow/private pipe keeps only an already-confirmed display, respecting withdrawal and presentation priorities; no real Host or sensors");
         }
@@ -144,6 +160,29 @@ internal static partial class Program
             });
         }
         finally { surface.Stop(); window.Close(); }
+    }
+    private static void StudyLateEndNoticeCheck()
+    {
+        var clock = new StudyUiClock();
+        var state = StudyFixture("Ended");
+        state = state with { SchoolNow = state.Window!.End.AddMilliseconds(4800), Reason = "WINDOW_ENDED" };
+        var window = new StudyWindow("NPEduTools.Test.late-end", () => { }, muted: true, time: clock);
+        int shown = 0;
+        window.IsVisibleChanged += (_, _) => { if (window.IsVisible) shown++; };
+        try
+        {
+            window.Apply(state, null, TimeSpan.FromMilliseconds(300));
+            window.ShowDisplay();
+            Assert(!window.IsVisible && shown == 0, "an end notice that expired in transit flashed fullscreen");
+            window.Apply(state, null, TimeSpan.FromMilliseconds(100));
+            window.ShowDisplay();
+            Assert(window.IsVisible && shown == 1, "the remaining end notice was suppressed");
+            clock.Ms += 100;
+            window.ShowDisplay();
+            Assert(!window.IsVisible && shown == 1, "expired end notice remained visible until the next render tick");
+            Checks.Add("A school end notice appears only inside its original deadline, including pipe transport and time before ShowDisplay.");
+        }
+        finally { window.Shutdown(); }
     }
     private static void StudyContinuationExpiryCheck(bool manual = false)
     {

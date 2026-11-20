@@ -43,6 +43,7 @@ public sealed partial class RuntimeTests
     }
     [Theory]
     [InlineData("AUTH_INVALID", 401)]
+    [InlineData("CREDENTIAL_EXPIRED", 401)]
     [InlineData("BINDING_CHANGED", 409)]
     [InlineData("SESSION_SUPERSEDED", 409)]
     [InlineData("INSTANCE_MISMATCH", 503)]
@@ -249,16 +250,74 @@ public sealed partial class RuntimeTests
         var study = new StudyFixture();
         await runtime.StudyCycleAsync(study, CancellationToken.None);
         Assert.Equal(1, study.Applied);
-        time.Advance(TimeSpan.FromSeconds(35));
+        time.Advance(TimeSpan.FromSeconds(34));
+        Assert.Equal("ONLINE", runtime.Snapshot().Connection);
+        time.Advance(TimeSpan.FromSeconds(1));
         var expired = runtime.Snapshot();
         Assert.Equal("OFFLINE", expired.Connection);
         Assert.Equal(originalReceipt, expired.LastReceivedAt);
-        Assert.Equal("SAMPLE_TOO_OLD", expired.Error);
+        Assert.Null(expired.Error);
 
         await Until(() => runtime.Snapshot() is { Connection: "ONLINE", Error: null }, TimeSpan.FromSeconds(4));
         Assert.Contains(History().Events, item => item.Kind == "Recovered");
         Assert.Equal(2, Volatile.Read(ref statusRequests));
         Assert.Equal(1, Volatile.Read(ref sessions));
+    }
+
+    [Fact]
+    public async Task Unsent_sample_does_not_replace_a_real_network_failure_before_a_fresh_receipt()
+    {
+        using var directory = new TestDirectory();
+        var server = new FakeServer();
+        using (var device = new NpepDevice(directory.Path, server.Api)) await server.ActivateAsync(device);
+        var retryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRetry = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int samples = 0, sends = 0;
+        HostResponse ReadSample()
+        {
+            if (Interlocked.Increment(ref samples) == 3) Thread.Sleep(5300);
+            return Sample();
+        }
+        async Task<HttpResponseMessage> Send(HttpRequestMessage request)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/device/status", StringComparison.Ordinal))
+            {
+                int attempt = Interlocked.Increment(ref sends);
+                if (attempt == 2) throw new HttpRequestException("isolated network failure");
+                if (attempt == 3)
+                {
+                    retryStarted.TrySetResult();
+                    await releaseRetry.Task;
+                }
+            }
+            return await server.Send(request);
+        }
+        await using var runtime = new NpepRuntime(() => new(directory.Path, origin => new(origin, new Handler(Send))),
+            "network-before-sample", ReadSample);
+        NpepConnectionHistory History() => runtime.Handle(new(1, Guid.NewGuid(), "npep.diagnostics")).ConnectionHistory!;
+        try
+        {
+            await Until(() => runtime.Snapshot().Connection == "ONLINE");
+            string? receipt = runtime.Snapshot().LastReceivedAt;
+            Assert.NotNull(receipt);
+            await Until(() => runtime.Snapshot().Error == "NETWORK_UNAVAILABLE", TimeSpan.FromSeconds(25));
+            var networkFailure = runtime.Snapshot();
+            Assert.Equal("OFFLINE", networkFailure.Connection);
+            await retryStarted.Task.WaitAsync(TimeSpan.FromSeconds(28));
+            Assert.Equal(4, Volatile.Read(ref samples));
+            Assert.Contains(History().Events, item => item is { Kind: "Failure", Code: "SAMPLE_TOO_OLD", HttpStatus: null });
+            Assert.DoesNotContain(History().Events, item => item.Kind == "Recovered");
+            var waiting = runtime.Snapshot();
+            Assert.Equal("OFFLINE", waiting.Connection);
+            Assert.Equal("NETWORK_UNAVAILABLE", waiting.Error);
+            Assert.Equal(networkFailure.Message, waiting.Message);
+            Assert.Equal(receipt, waiting.LastReceivedAt);
+        }
+        finally { releaseRetry.TrySetResult(); }
+
+        await Until(() => runtime.Snapshot() is { Connection: "ONLINE", Error: null });
+        Assert.Contains(History().Events, item => item.Kind == "Recovered");
+        Assert.Equal(3, Volatile.Read(ref sends));
     }
 
     private sealed class ReceiptTime : TimeProvider

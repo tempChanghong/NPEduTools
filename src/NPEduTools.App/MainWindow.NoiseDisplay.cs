@@ -19,6 +19,13 @@ public partial class MainWindow
     private bool SchoolStudyPresentationBlocked => _exitBusy || _exitWarning is { IsVisible: true } || NotificationPresentationActive ||
         _onboardingWindow?.IsVisible == true || Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible) ||
         RuntimeOperationFile.PriorityRequested || !NotificationDesktopAvailable();
+    // The Host attaches its connection snapshot after reading the lesson. A pause or
+    // withdrawal can therefore arrive alongside the previous binding's active lesson.
+    private static bool SchoolLinkWithdrawn(HostResponse response) => response.Npep is
+        { ReportingPaused: true } or { Connection: "PAUSED" } or { State: "SUSPENDED" or "UNPAIRING" or "UNPAIRED" };
+    private static bool SchoolStudyTakesPriority(HostResponse response) =>
+        response.Outcome == "Succeeded" && !SchoolLinkWithdrawn(response) &&
+        response.Study is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active" };
     private void RetainConfirmedSchoolDisplay()
     {
         if (SchoolStudyPresentationBlocked || _studyWindow?.CanKeepAfterReadFailure != true) _studyWindow?.HideDisplay();
@@ -42,6 +49,7 @@ public partial class MainWindow
     {
         if (SchoolStudyPresentationBlocked) { _studyWindow?.HideDisplay(); return; }
         if (response.Outcome != "Succeeded" || age < TimeSpan.Zero || age >= TimeSpan.FromSeconds(1.5)) return;
+        if (SchoolLinkWithdrawn(response)) { _studyWindow?.HideDisplay(); return; }
         if (response.Study is not { Display: { Selected: true, Available: true }, PolicyState: "APPLIED", ClockReady: true, ProjectionPriority: false })
         {
             if (_studyWindow?.TryWaitForSchoolSync(response, age) != true) _studyWindow?.HideDisplay();
@@ -105,8 +113,7 @@ public partial class MainWindow
                 if (_quickProjectionAt is not null) UpdateQuickPresentationVisibility();
                 ReconcileExistingSchoolDisplay(studyResponse, studyRoundTrip);
                 if (studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(1.5) &&
-                    (studyResponse.Study?.ProjectionPriority == true ||
-                     studyResponse.Study is { PolicyState: "APPLIED", ClockReady: true, Phase: "Preparing" or "Active" }))
+                    (studyResponse.Study?.ProjectionPriority == true || SchoolStudyTakesPriority(studyResponse)))
                     _manualStudyWindow?.HideDisplay();
                 await PollStudyExitAsync(studyResponse.Study?.ProjectionPriority == true);
                 long manualAt=Stopwatch.GetTimestamp();
@@ -114,8 +121,7 @@ public partial class MainWindow
                 var manualAge=Stopwatch.GetElapsedTime(manualAt);
                 UpdateWorkspaceManual(manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(3.5) ? manual.ManualStudy : null);
                 ReconcileExistingManualDisplay(manual, manualAge, studyResponse.StudyPhotos);
-                bool schoolPriority=studyResponse.Outcome == "Succeeded" && studyResponse.Study is {PolicyState:"APPLIED",ClockReady:true,Phase:"Preparing" or "Active"};
-                if(schoolPriority)_manualStudyWindow?.HideDisplay();
+                if (SchoolStudyTakesPriority(studyResponse)) _manualStudyWindow?.HideDisplay();
                 else if(studyResponse.Study?.ProjectionPriority != true && !_exitBusy && _exitWarning is not {IsVisible:true} && !NotificationPresentationActive && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
                 {
                     using var manualProbe=RuntimeOperationFile.TryAcquire(false);if(manualProbe is null){_manualStudyWindow?.HideDisplay();continue;}
@@ -165,7 +171,7 @@ public partial class MainWindow
                     _scheduledNoiseWindow?.Hide();
                     // Ordinary App/settings windows use the same bounded hide lease. Only real
                     // priority operations may defer display after its expiry; an open noise page cannot renew it.
-                    bool studyBlocked = studyResponse.Study.ProjectionPriority || _exitBusy || _exitWarning is {IsVisible:true} || NotificationPresentationActive ||
+                    bool studyBlocked = SchoolLinkWithdrawn(studyResponse) || studyResponse.Study.ProjectionPriority || _exitBusy || _exitWarning is {IsVisible:true} || NotificationPresentationActive ||
                         _onboardingWindow?.IsVisible == true || Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible);
                     await UpdateStudyReportAsync(studyBlocked);
                     if (_studyReportWindow?.IsVisible == true) { _studyWindow?.HideDisplay(); continue; }
@@ -184,7 +190,7 @@ public partial class MainWindow
                     if (!studyBlocked && !_exitBusy && _exitWarning is not { IsVisible: true } &&
                         !NotificationPresentationActive &&
                         _onboardingWindow?.IsVisible != true && !Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible) &&
-                        studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(1.5) &&
+                        studyResponse.Outcome == "Succeeded" && !SchoolLinkWithdrawn(studyResponse) && studyRoundTrip < TimeSpan.FromSeconds(1.5) &&
                         studyResponse.Study is { Display: { Selected: true, Available: true }, PolicyState: "APPLIED", ClockReady: true, ProjectionPriority: false } &&
                         !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())
                     {

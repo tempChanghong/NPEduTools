@@ -73,8 +73,10 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         lock (_sync)
         {
             var result = _state;
-            if (result.Connection == "ONLINE" && !HasFreshStatusReceipt())
-                result = result with { Connection = "OFFLINE", Message = "最近 60 秒未收到新的上报回执；显示的是上次观测。" };
+            bool statusDependsOnReceipt = result.Connection == "ONLINE" ||
+                _receivedAt is not null && result is { Connection: "OFFLINE", Error: "SAMPLE_TOO_OLD" };
+            if (statusDependsOnReceipt && !HasFreshStatusReceipt())
+                result = result with { Connection = "OFFLINE", Error = null, Message = "最近 60 秒未收到新的上报回执；显示的是上次观测。" };
             return result with { Server = result.Server?.Copy(), Pairing = result.Pairing?.Copy(), Approval = result.Approval?.Copy(),Catalogue=_catalogue?.Copy() };
         }
     }
@@ -240,7 +242,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         }
     }
 
-    private void Publish(string connection, string message, string? error = null, string? receivedAt = null, bool preserveOnlineReceipt = false)
+    private void Publish(string connection, string message, string? error = null, string? receivedAt = null, bool statusSampleExpired = false)
     {
         long? receiptTimestamp = receivedAt is not null ? _receiptTime.GetTimestamp() : null;
         lock (_sync)
@@ -249,10 +251,17 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             bool paused = view["reportingPaused"]?.GetValue<bool>() == true;
             bool canReport = stage == "ACTIVE" && !paused && view["suspended"]?.GetValue<bool>() != true;
             // Discarding a local sample gives no new evidence about the school connection.
-            // Keep the prior ONLINE receipt only while the same connection remains active.
-            if (preserveOnlineReceipt && canReport &&
-                _state is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } && HasFreshStatusReceipt())
-                connection = "ONLINE";
+            if (statusSampleExpired && canReport && _state is { State: "ACTIVE", ReportingPaused: false, Busy: false })
+            {
+                if (_state.Connection == "ONLINE" && HasFreshStatusReceipt())
+                    connection = "ONLINE";
+                else if (_state.Connection == "OFFLINE" && _state.Error is not (null or "SAMPLE_TOO_OLD"))
+                {
+                    // Keep the known failure visible until the next real transport observation.
+                    error = _state.Error;
+                    message = _state.Message;
+                }
+            }
             bool receivedNewStatus = canReport && connection == "ONLINE" && receiptTimestamp is not null;
             if (receivedNewStatus) _receivedAt = receiptTimestamp;
             else if (!canReport) _receivedAt = null;
@@ -291,7 +300,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         if (localSampleExpired)
         {
             Publish("OFFLINE", "本机状态样本已过期，本次未上报；后台会重新采样。", code,
-                preserveOnlineReceipt: background);
+                statusSampleExpired: background);
             return;
         }
         string stopped = code switch

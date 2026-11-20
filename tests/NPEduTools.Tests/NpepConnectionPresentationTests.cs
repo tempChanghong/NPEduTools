@@ -33,6 +33,18 @@ public sealed class NpepConnectionPresentationTests
         new(1, stage, connection, "后台状态说明", Error: error);
 
     [Fact]
+    public void Offline_snapshot_with_only_a_historical_receipt_identifies_its_expiry()
+    {
+        var expired = State() with { LastReceivedAt = "2026-10-14T12:00:00.000Z" };
+        Assert.Equal("已配对 · 上次回执已过期", NpepConnectionPresentation.Title(expired));
+        Assert.Contains("收到新的学校回执", NpepConnectionPresentation.NextAction(expired));
+        Assert.Equal("已配对 · 暂时离线，等待自动重试",
+            NpepConnectionPresentation.Title(expired with { Error = "NETWORK_UNAVAILABLE" }));
+        Assert.Equal("已配对 · 互联已暂停",
+            NpepConnectionPresentation.Title(expired with { ReportingPaused = true }));
+    }
+
+    [Fact]
     public void TlsRetryRetainsValidationAndDoesNotClaimOnline()
     {
         var state = State(error: "TLS_VALIDATION_FAILED");

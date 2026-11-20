@@ -35,7 +35,7 @@ internal static partial class Program
             Field("_quick",quick);Field("_studyWindow",study);Field("_studyReportWindow",report);quick.Show();
             Refresh();Assert(quick.IsVisible,"ordinary main/editor state hid rail");
             Field("_quickProjectionAt",System.Diagnostics.Stopwatch.GetTimestamp());Refresh();Assert(!quick.IsVisible,"projector did not hide rail");
-            study.ShowDisplay();Field("_quickProjectionAt",null);Refresh();Assert(!quick.IsVisible,"projector-to-study transition restored rail");
+            study.Apply(StudyFixture(), null); study.ShowDisplay();Field("_quickProjectionAt",null);Refresh();Assert(!quick.IsVisible,"projector-to-study transition restored rail");
             study.HideDisplay();Refresh();Assert(quick.IsVisible,"temporary computer use did not restore rail");
             report.Show();Refresh();Assert(!quick.IsVisible,"study report failed to hide rail");report.HideDisplay();Refresh();Assert(quick.IsVisible && !quick.IsActive,"report exit activated or failed to restore rail");
             Click(main,"TeachingSettingsTab");((TextBox)main.FindName("ManualDisplayLead")).Text="1.5";Click(main,"SaveManualDisplayLeadButton");
