@@ -65,44 +65,6 @@
     </Style.Triggers>
   </Style>
 
-  <Style x:Key="StudyReportExpander" TargetType="Expander">
-    <Setter Property="Foreground" Value="{DynamicResource TeacherTextBrush}" />
-    <Setter Property="Template">
-      <Setter.Value>
-        <ControlTemplate TargetType="Expander">
-          <StackPanel>
-            <ToggleButton x:Name="HeaderSite" Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}"
-                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
-                          AutomationProperties.Name="{Binding (AutomationProperties.Name), RelativeSource={RelativeSource TemplatedParent}}"
-                          MinHeight="44" Cursor="Hand">
-              <ToggleButton.Template>
-                <ControlTemplate TargetType="ToggleButton">
-                  <Border x:Name="Frame" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="Transparent"
-                          BorderThickness="2" CornerRadius="6" Padding="10,6">
-                    <DockPanel>
-                      <Path x:Name="Chevron" Data="M 0,0 L 4,4 L 8,0" Stroke="{TemplateBinding Foreground}"
-                            StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                            VerticalAlignment="Center" Margin="0,0,12,0" />
-                      <ContentPresenter VerticalAlignment="Center" />
-                    </DockPanel>
-                  </Border>
-                  <ControlTemplate.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="Background" Value="{DynamicResource TeacherHoverBrush}" /></Trigger>
-                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chevron" Property="Data" Value="M 0,4 L 4,0 L 8,4" /></Trigger>
-                    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource TeacherTextBrush}" /></Trigger>
-                  </ControlTemplate.Triggers>
-                </ControlTemplate>
-              </ToggleButton.Template>
-            </ToggleButton>
-            <ContentPresenter x:Name="ExpandSite" Visibility="Collapsed" Margin="12,8,12,0" />
-          </StackPanel>
-          <ControlTemplate.Triggers>
-            <Trigger Property="IsExpanded" Value="True"><Setter TargetName="ExpandSite" Property="Visibility" Value="Visible" /></Trigger>
-          </ControlTemplate.Triggers>
-        </ControlTemplate>
-      </Setter.Value>
-    </Setter>
-  </Style>
 
   <DataTemplate x:Key="StudyWorkspaceReport">
     <Border Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
@@ -132,7 +94,7 @@
             </StackPanel>
           </WrapPanel>
           <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="0,2,0,2" />
-          <Expander Header="采样详情" Style="{StaticResource StudyReportExpander}"
+          <Expander Header="采样详情" Style="{DynamicResource TeacherExpander}"
                     AutomationProperties.AutomationId="StudyReportSamplingDetails"
                     AutomationProperties.Name="{Binding Title, StringFormat='{}{0}采样详情'}">
             <StackPanel>

@@ -104,10 +104,13 @@ internal static partial class Program
                 render.Invoke(manage,[active with {ProjectionPriority=true,ClockReady=false,Execution=null}]);
                 Assert(((TextBlock)manage.FindName("StudyPresentation")).Text.Contains("展示暂缓") && !((TextBlock)manage.FindName("StudyCapture")).Text.Contains("正在采集"),"projection priority falsely claims backend sampling");
                 render.Invoke(manage, [active]);
-                owner.Width = 660; owner.Height = 600; ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
+                owner.Width = 660; owner.Height = 600;
+                var pageScroll = (ScrollViewer)owner.FindName("PageScroll");
+                pageScroll.ScrollToTop(); owner.UpdateLayout();
                 var calibration = Button(owner, "OpenMeterCalibration");
                 var actionPoint = calibration.TranslatePoint(new Point(), owner);
-                Assert(actionPoint.X >= 0 && actionPoint.X + calibration.ActualWidth <= owner.ActualWidth && actionPoint.Y + calibration.ActualHeight < owner.ActualHeight - 30,
+                Assert(actionPoint.X >= 0 && actionPoint.X + calibration.ActualWidth <= owner.ActualWidth &&
+                    calibration.TranslatePoint(new(), pageScroll).Y + calibration.ActualHeight <= pageScroll.ActualHeight,
                     "common calibration action is clipped or below the first viewport in compact layout");
                 Snapshot(owner, "study-monitoring-compact-active.png");
                 devicesPanel.IsExpanded = true; owner.UpdateLayout();

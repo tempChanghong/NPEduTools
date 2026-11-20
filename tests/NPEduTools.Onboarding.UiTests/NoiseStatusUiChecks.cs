@@ -54,7 +54,9 @@ internal static partial class Program
                 Assert(Text("StateHintText") == "" && ((TextBlock)owner.FindName("StateHintText")).Visibility == Visibility.Collapsed, "state hint survives recovery");
                 Assert(Text("SummaryText").Contains("29.6") && Button(owner, "StopButton").IsEnabled, "fresh snapshot did not restore state and controls");
                 Assert(Text("SummaryTitle").Contains("累计"), "active summary lacks accumulation label");
-                Assert(Text("SummaryHint").Contains("不代表") && Text("SummaryHint").Contains("上传"), "local statistics claim upload completion");
+                string sourceHint = Text("SummaryHint");
+                Assert(sourceHint.Contains("本机采样统计") && sourceHint.Contains("上传状态") && sourceHint.Contains("NPClassworks") && !sourceHint.Contains("已上传"),
+                    "sampling summary lost the distinction between local statistics and a school receipt");
                 ((TextBlock)owner.FindName("MessageText")).Text = "本次操作被拒绝，请刷新后再试。";
                 Show(active);
                 Assert(Text("MessageText").Contains("被拒绝"), "rendering current state erases operation feedback");
@@ -66,7 +68,8 @@ internal static partial class Program
                 Show(active with { State = "Stopped", Message = "监测已停止，麦克风已释放。", CurrentDbfs = null });
                 Assert(Text("SummaryTitle").Contains("上次") && Text("SummaryText").Contains("29.6"), "ended summary not preserved as history");
                 Assert(Text("LevelText") == "—" && Button(owner, "StartButton").IsEnabled && !Button(owner, "StopButton").IsEnabled, "ended state controls or level changed");
-                var scroll = Descendants<ScrollViewer>(owner).First();
+                ((Expander)Find(owner, "ManualSignalDetails")).IsExpanded = true;
+                var scroll = (ScrollViewer)owner.FindName("ManualPageScroll");
                 scroll.ScrollToBottom(); owner.UpdateLayout();
                 Snapshot(owner, "noise-ended-summary.png");
                 Checks.Add("Stopped: preserve ended statistics with an explicit history heading; retain existing device/start controls");

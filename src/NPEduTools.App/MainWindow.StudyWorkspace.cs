@@ -86,25 +86,54 @@ public partial class MainWindow
         WorkspaceReports.Visibility = tab == "Reports" ? Visibility.Visible : Visibility.Collapsed;
         if (tab == "Manual" && _noiseWindow is null)
         {
-            _noiseWindow = new NoiseWindow(_pipe);
+            _noiseWindow = new NoiseWindow(_pipe)
+            {
+                OpenWorkspaceDevices = ShowWorkspaceDevices,
+                OpenWorkspaceCalibration = ShowWorkspaceCalibration,
+                OpenWorkspaceReport = ShowManualWorkspaceReport
+            };
             ManualWorkspaceHost.Content = new WorkspacePanel(_noiseWindow, this, _noiseWindow.WorkspaceVisibilityChanged);
         }
         if (tab == "School" && _studyMonitoringWindow is null)
         {
             _studyMonitoringWindow = new StudyMonitoringWindow(_pipe, () => ShowStudyWorkspace("Manual"))
-            { OpenCalibration = () => WorkspaceCalibrationClicked(this, new RoutedEventArgs()) };
+            { OpenCalibration = ShowWorkspaceCalibration };
             SchoolWorkspaceHost.Content = new WorkspacePanel(_studyMonitoringWindow, this, _studyMonitoringWindow.WorkspaceVisibilityChanged);
         }
         RestoreWindow();
-        if (tab == "Reports") _ = RefreshWorkspaceReportsAsync();
+        if (tab == "Reports")
+        {
+            WorkspaceReportScroll.ScrollToTop();
+            _ = RefreshWorkspaceReportsAsync();
+        }
     }
-    private void WorkspaceDevicesClicked(object sender, RoutedEventArgs e)
+    private void ShowManualWorkspaceReport()
+    {
+        ShowStudyWorkspace("Reports");
+        BringManualReportIntoView();
+        WorkspaceManualReport.Focus();
+    }
+    private void BringManualReportIntoView()
+    {
+        WorkspaceReportScroll.UpdateLayout();
+        WorkspaceManualReport.BringIntoView(new Rect(0, 0, 1, 1));
+    }
+    private bool IsManualReportHeadingInView()
+    {
+        double top = WorkspaceManualReport.TranslatePoint(new Point(), WorkspaceReportScroll).Y;
+        return top >= -1 && top < WorkspaceReportScroll.ActualHeight;
+    }
+    private void WorkspaceDevicesClicked(object sender, RoutedEventArgs e) => ShowWorkspaceDevices();
+    private void ShowWorkspaceDevices()
     {
         ShowStudyWorkspace("School");
-        if (_studyMonitoringWindow?.FindName("DeviceSettings") is Expander devices) devices.IsExpanded = true;
-        if (_studyMonitoringWindow?.FindName("Devices") is FrameworkElement picker) picker.BringIntoView();
+        if (_studyMonitoringWindow is not { } school) return;
+        school.DeviceSettings.IsExpanded = true;
+        SchoolWorkspaceHost.UpdateLayout();
+        school.Devices.BringIntoView(new Rect(0, 0, 1, 1));
     }
-    private void WorkspaceCalibrationClicked(object sender, RoutedEventArgs e)
+    private void WorkspaceCalibrationClicked(object sender, RoutedEventArgs e) => ShowWorkspaceCalibration();
+    private void ShowWorkspaceCalibration()
     {
         SelectPage(false); HomePage.Visibility = Visibility.Collapsed;
         HomeNav.Tag = null; StudyNav.Tag = "active"; PageBreadcrumb.Text = "自习 / 联机校准 (Beta)";
@@ -162,7 +191,13 @@ public partial class MainWindow
             catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
             { report = StudyWorkspaceReport.Failed(title); }
             if (!_lifetime.IsCancellationRequested && generation == _workspaceReportGeneration)
+            {
+                // A late school card can grow above the manual heading. Keep it in view
+                // only while the teacher is still reading there.
+                bool keepHeading = target == WorkspaceSchoolReport && WorkspaceManualReport.IsKeyboardFocused && IsManualReportHeadingInView();
                 target.Content = report;
+                if (keepHeading) BringManualReportIntoView();
+            }
         }
     }
 }

@@ -60,21 +60,44 @@ internal static partial class Program
                 Assert(!panel.IsVisible && Element<FrameworkElement>("StudyWorkspace").IsVisible, "manual opened another native window");
                 Assert(((FrameworkElement)panel.FindName("StartFields")).Visibility == Visibility.Collapsed &&
                     ((FrameworkElement)panel.FindName("EndFields")).Visibility == Visibility.Collapsed, "optional dates crowd immediate workflow");
+                Assert(!Element<FrameworkElement>("WorkspaceReportTools").IsVisible, "manual workspace has a second action bar");
+                var microphone = (ComboBox)panel.FindName("Microphone");
+                var devicesGroup = (Expander)panel.FindName("ManualDeviceSettings");
+                microphone.SelectedIndex = -1;
+                Assert(Button(panel, "ManualChooseDevice").IsVisible && !Button(panel, "StartButton").IsEnabled, "missing microphone has no inline action");
+                Click(panel, "ManualChooseDevice");
+                Assert(devicesGroup.IsExpanded && microphone.IsKeyboardFocusWithin, "choose microphone did not open and focus the picker");
+                microphone.SelectedIndex = 0;
+                devicesGroup.IsExpanded = false;
                 RunManualDateBoundaryChecks(panel, manual);
                 Assert(formalCapture == 0, "rejected date started capture");
-                Check(panel, "UseStart").IsChecked = Check(panel, "UseEnd").IsChecked = false;
+                SelectManualTimeOptions(panel, reserve: false, timedEnd: false);
+                Assert(((TextBlock)panel.FindName("MessageText")).Text == "", "immediate start retained the previous draft's invalid date error");
+                ((ScrollViewer)panel.FindName("ManualPageScroll")).ScrollToTop();
                 Snapshot(owner, "workspace-manual-immediate.png");
-                ((CheckBox)panel.FindName("UseStart")).IsChecked = true;
+                SelectManualTimeOptions(panel, reserve: true, timedEnd: true);
                 Assert(((FrameworkElement)panel.FindName("StartFields")).IsVisible && ((Button)panel.FindName("StartButton")).Content.ToString() == "保存预约", "future start did not unfold or change primary action");
                 var future = DateTime.Now.AddDays(1);
                 ((DatePicker)panel.FindName("ManualStartDate")).SelectedDate = future.Date;
-                ((TextBox)panel.FindName("ManualStartTime")).Text = "19:15";
+                ((TextBox)panel.FindName("ManualStartTime")).Text = "23:45";
+                ((DatePicker)panel.FindName("ManualEndDate")).SelectedDate = future.AddDays(1).Date;
+                ((TextBox)panel.FindName("ManualEndTime")).Text = "00:15";
                 ((Button)panel.FindName("StartButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
                 PumpUntil(() => manual.Status().State == "Waiting" && ((Button)panel.FindName("StopButton")).IsEnabled, "future manual reservation not accepted");
                 Assert(((FrameworkElement)panel.FindName("ManualConfiguration")).Visibility == Visibility.Collapsed &&
                     ((Button)panel.FindName("StopButton")).Content.ToString() == "取消预约", "waiting session still shows a duplicate start form");
+                string booking = ((TextBlock)panel.FindName("ManualStatus")).Text;
+                Assert(booking.Contains($"{future:yyyy-MM-dd} 23:45") && booking.Contains($"{future.AddDays(1):yyyy-MM-dd} 00:15") &&
+                    booking.Contains("计划结束") && booking.Contains("尚未开始采集"), "cross-day reservation mislabels the scheduled period or capture status");
                 Snapshot(owner, "workspace-manual-reservation.png");
-                Invoke("ShowStudyWorkspace", "School");
+                devicesGroup.IsExpanded = true;
+                Click(panel, "ManualDeviceLink");
+                var schoolPanel = Field<StudyMonitoringWindow>("_studyMonitoringWindow");
+                main.UpdateLayout();
+                Assert(((Expander)schoolPanel.FindName("DeviceSettings")).IsExpanded, "device link did not open school device settings");
+                Assert(Button(schoolPanel, "SchoolSeatingButton").IsVisible, "school seating action is missing");
+                Assert(!Button(schoolPanel, "SchoolManualLink").IsVisible && !Element<FrameworkElement>("WorkspaceReportTools").IsVisible,
+                    "school workspace still has duplicate navigation");
                 Assert(manual.Status().State == "Waiting" && formalCapture == 0, "switching tabs stopped/resumed capture");
                 Invoke("HomeNavClicked", main, new RoutedEventArgs());
                 Assert(!Element<FrameworkElement>("StudyWorkspace").IsVisible && Element<FrameworkElement>("HomePage").IsVisible, "home left a workspace overlay");
@@ -83,6 +106,9 @@ internal static partial class Program
                 PumpUntil(() => ((Button)panel.FindName("StopButton")).IsEnabled,"returned manual state was not freshly confirmed");
                 ((Button)panel.FindName("StopButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
                 PumpUntil(() => manual.Status().State == "Cancelled" && ((Button)panel.FindName("StartButton")).IsEnabled, "bound manual cancel did not restore idle form");
+                Assert(((TextBlock)panel.FindName("ManualHeading")).Text == "自习预约已取消" &&
+                    !((TextBlock)panel.FindName("ManualStatus")).Text.Contains("CancelledBeforeStart") && !Button(panel, "ManualReportButton").IsVisible,
+                    "cancelled reservation exposed an internal reason or suggested it generated a report");
                 Checks.Add("Actual WPF/private Host: one study entry, progressive manual form, real future reservation/cancel, tab switching preserves session and controller; zero formal capture");
 
                 foreach (var size in new[] { new Size(1040, 760), new Size(840, 580), new Size(760, 520) })
@@ -94,7 +120,8 @@ internal static partial class Program
                         point.Y + action.ActualHeight < main.ActualHeight - 4, "manual primary action clipped in compact layout");
                     Snapshot(owner, $"workspace-manual-{size.Width}-{size.Height}.png");
                 }
-                Invoke("WorkspaceCalibrationClicked", main, new RoutedEventArgs());
+                devicesGroup.IsExpanded = true;
+                Click(panel, "ManualCalibrationLink");
                 var connected = Field<SoundMeterWindow>("_workspaceCalibrationController");
                 PumpUntil(() => ((TextBlock)connected.FindName("ManagementLabel")).Text.Contains("本机"), "embedded access status not loaded");
                 Assert(backend.Opens == 0 && backend.Enumerations == 0, "opening embedded calibration touched hardware");

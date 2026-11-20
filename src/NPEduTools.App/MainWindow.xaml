@@ -135,7 +135,7 @@
                 <TextBlock Text="本机最近报告" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"
                            VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level1" />
               </DockPanel>
-              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+              <ScrollViewer x:Name="WorkspaceReportScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                             PanningMode="VerticalOnly" AutomationProperties.Name="本机自习报告">
                 <ScrollViewer.Resources>
                   <!-- Use the system scrollbar and its high-contrast colors. -->
@@ -144,7 +144,8 @@
                 <StackPanel>
                   <ContentControl x:Name="WorkspaceSchoolReport" ContentTemplate="{StaticResource StudyWorkspaceReport}"
                                   AutomationProperties.AutomationId="WorkspaceSchoolReport" />
-                  <ContentControl x:Name="WorkspaceManualReport" ContentTemplate="{StaticResource StudyWorkspaceReport}"
+                  <ContentControl x:Name="WorkspaceManualReport" ContentTemplate="{StaticResource StudyWorkspaceReport}" Focusable="True" IsTabStop="False"
+                                  AutomationProperties.Name="最近的手动自习报告"
                                   AutomationProperties.AutomationId="WorkspaceManualReport" />
                   <TextBlock Text="学校历史报告和上传状态请在 NPClassworks 后台查看。"
                              Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,10" />
@@ -152,7 +153,8 @@
               </ScrollViewer>
             </DockPanel>
           </Grid>
-          <Border Grid.Row="2" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0"><WrapPanel>
+          <Border x:Name="WorkspaceReportTools" Grid.Row="2" Visibility="{Binding Visibility, ElementName=WorkspaceReports}"
+                  BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0"><WrapPanel>
             <Button Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,0"/>
             <Button Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{DynamicResource TeacherQuiet}"/>
           </WrapPanel></Border>

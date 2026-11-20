@@ -80,6 +80,16 @@ internal static partial class Program
                 var p = button.TranslatePoint(new Point(), window);
                 Assert(p.X >= 0 && p.Y >= 0 && p.X + button.ActualWidth <= window.ActualWidth && p.Y + button.ActualHeight < window.ActualHeight - 4,
                     "return button clipped in compact layout");
+                if (!manual)
+                {
+                    var scroll = (ScrollViewer)window.FindName("PageScroll");
+                    scroll.ScrollToBottom();
+                    window.UpdateLayout();
+                    Assert(scroll.VerticalOffset > 0 && button.TranslatePoint(new(), window) == p &&
+                        Button(window, "SchoolSeatingButton").IsVisible && Button(window, "SchoolManualLink").IsVisible,
+                        "standalone school footer or return action scrolled away");
+                    scroll.ScrollToTop();
+                }
                 Snapshot(owner, manual ? "manual-return-study.png" : "school-return-study.png");
                 button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
                 PumpUntil(() => display.Snapshot().Display!.Available && button.Visibility == Visibility.Collapsed, "return did not clear Host hide state");

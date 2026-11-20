@@ -52,7 +52,9 @@ internal static partial class Program
     {
         string folder = Path.Combine(_output, "background-fixture"), pipe = "NPEduTools.Test.workspace-background." + Guid.NewGuid().ToString("N");
         var noise = new NoiseService(_ => new WorkspaceSyntheticCapture(), () => [new("synthetic", "隔离合成监测输入")], directory: folder);
-        var manual = new ManualStudyService(noise, () => (null, false, StudyFixture()), () => false, folder);
+        bool schoolPriority = false;
+        var manual = new ManualStudyService(noise, () => (null, false, StudyFixture()), () => Volatile.Read(ref schoolPriority),
+            folder, inactivity: () => TimeSpan.Zero);
         using var stop = new CancellationTokenSource();
         var server = Task.Run(() => new PipeServer(pipe, new DeviceReader(), _ => { }, noise: noise, manualStudy: manual).RunAsync(stop.Token));
         var main = PrivateWorkspace(pipe);
@@ -76,13 +78,52 @@ internal static partial class Program
                 Assert(noise.Snapshot().SessionId == session, "returning page replaced the monitoring session");
                 WorkspaceCall(main, "ShowStudyWorkspace", "School");
                 var school = WorkspaceField<StudyMonitoringWindow>(main, "_studyMonitoringWindow");
-                typeof(StudyMonitoringWindow).GetMethod("Render", WorkspaceFlags | BindingFlags.DeclaredOnly)!.Invoke(school,
-                    [StudyFixture() with { PolicyState = "APPLIED", ClockReady = true, Phase = "Active", Execution = new("Schedule", "Active", Guid.NewGuid(), "fixture", true, null, null, true) }]);
+                main.UpdateLayout();
+                var scheduled = StudyFixture();
+                school.Render(scheduled with { Display = scheduled.Display! with { Available = false, HiddenRemainingSeconds = 600 } });
+                Assert(Button(school, "ReturnStudyButton").IsVisible && !Button(school, "SchoolManualLink").IsVisible, "wrong school actions for an embedded, hidden display");
+                Snapshot(owner, "teacher-school-footer.png");
                 WorkspaceCall(main, "HomeNavClicked", main, new RoutedEventArgs());
                 WorkspaceCall(main, "ShowStudyWorkspace", "School"); main.UpdateLayout();
                 Assert(!((TextBlock)school.FindName("StudyCapture")).Text.Contains("正在采集"), "school page reuses a hidden fresh-signal claim");
                 Assert(noise.Snapshot().SessionId == session, "school page navigation stopped manual capture");
                 Checks.Add("Private Host + synthetic continuous samples: page navigation preserves session and growing frames; returning manual/school pages withdraw stale state before refresh");
+
+                Click(main, "ManualWorkspaceTab");
+                PumpUntil(() => Button(view, "StopButton").IsEnabled && manual.Status().State == "Active", "active session missing after tab switch");
+                Assert(((TextBlock)view.FindName("ManualStatus")).Text.Contains("最晚结束"), "three-hour cap displayed as a planned end");
+                var display = manual.Display.Snapshot();
+                var hidden = manual.Display.Handle(new(1, Guid.NewGuid(), "study.hide",
+                    StudyHide: new(display.Display!.InstanceId, display.Version!, display.Window!)));
+                Assert(hidden.Outcome == "Succeeded", "classroom hide fixture failed");
+                PumpUntil(() => Button(view, "ReturnStudyButton").IsEnabled, "manual footer lost its return action");
+                Snapshot(owner, "teacher-manual-active.png");
+                Click(view, "ReturnStudyButton");
+                PumpUntil(() => manual.Display.Snapshot().Display!.HiddenRemainingSeconds <= 0 && Button(view, "StopButton").IsEnabled,
+                    "returning from temporary computer use changed or stalled the manual session");
+                Assert(noise.Snapshot().SessionId == session, "return restarted capture");
+                Click(view, "StopButton");
+                Click(view, "StopButton");
+                PumpUntil(() => Button(view, "ManualReportButton").IsVisible && manual.Status().State == "Ended", "finished session did not offer the report");
+                Assert(((TextBlock)view.FindName("ManualStatus")).Text.Contains("实际结束") &&
+                    ((TextBlock)view.FindName("ManualStatus")).Text.Contains("主动结束"), "finished report lost its actual end or reason");
+                Click(view, "ManualReportButton");
+                var report = (ContentControl)main.FindName("WorkspaceManualReport");
+                PumpUntil(() => report.IsVisible && report.Content is StudyWorkspaceReport { HasData: true }, "manual report link did not load the Host report");
+                Assert(report.IsKeyboardFocused && Button(main, "ReportWorkspaceTab").Tag as string == "active",
+                    $"manual report link focus was {System.Windows.Input.Keyboard.FocusedElement} instead of the manual group");
+                Checks.Add("Immediate manual session, temporary hide and return, one end, actual end time and direct navigation to its local report");
+
+                Click(main, "ManualWorkspaceTab");
+                PumpUntil(() => Button(view, "StartButton").IsEnabled, "second synthetic session unavailable");
+                Click(view, "StartButton");
+                PumpUntil(() => manual.Status().State == "Active", "next synthetic session never became active");
+                Volatile.Write(ref schoolPriority, true);
+                PumpUntil(() => manual.Status() is { State: "Ended", Reason: "ScheduledTakeover" } &&
+                    ((TextBlock)view.FindName("ManualStatus")).Text.Contains("学校定时自习已接管"), "school takeover not identified in the manual management page");
+                Assert(!Button(view, "ReturnStudyButton").IsVisible && !Button(view, "StopButton").IsVisible,
+                    "old manual controls survived school takeover");
+                Checks.Add("School takeover ends the manual session and clears its return and end actions");
                 main.Close();
             });
         }

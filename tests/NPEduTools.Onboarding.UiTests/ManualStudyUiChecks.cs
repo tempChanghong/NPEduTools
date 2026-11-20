@@ -39,9 +39,15 @@ internal static partial class Program
         finally{surface.Stop();owner.Close();}
         var settings=new NoiseWindow("NPEduTools.Test.manual-ui."+Guid.NewGuid().ToString("N"));
         try{Exercise(settings,w=>{
-            Assert(((CheckBox)settings.FindName("UseStart")).IsChecked!=true && ((CheckBox)settings.FindName("UseEnd")).IsChecked!=true,"optional dates became mandatory defaults");
+            Assert(((RadioButton)Find(settings,"ManualStartNow")).IsChecked == true && ((RadioButton)Find(settings,"ManualEndManually")).IsChecked == true,
+                "manual defaults must be immediate start and manual end");
             Assert(((TextBox)settings.FindName("ManualHideMinutes")).Text=="10","manual hide default is not ten minutes");
             var date=(DatePicker)settings.FindName("ManualStartDate");date.ApplyTemplate();Assert(date.Template.FindName("InputSurface",date) is Border,"manual date lost common input style");
+            var interrupted = state.Manual! with { State = "Interrupted", Reason = "SESSION_CHANGED", StartUtc = state.Window!.Start, EndUtc = state.Window.End };
+            string details = ManualStudyPresentation.Details(interrupted);
+            Assert(ManualStudyPresentation.Heading(interrupted).Contains("已中断") && details.Contains("会话已变更") &&
+                !details.Contains("结束") && !details.Contains("SESSION_CHANGED"), "interruption reused a planned end as an actual end or displayed the protocol reason");
+            Checks.Add("Interrupted manual session shows a localized reason and suppresses its unconfirmed end time");
             Snapshot(w,"manual-settings.png");Checks.Add("Manual settings: optional date/time, ten-minute default and shared native styles; no Host/devices");settings.Shutdown();
         });}finally{settings.Shutdown();}
     }

@@ -19,6 +19,7 @@ public partial class StudyMonitoringWindow : Window
     internal void WorkspaceVisibilityChanged(bool visible)
     {
         if (_lifetime.IsCancellationRequested) return;
+        if (WorkspacePanel.Embedded(this)) SchoolManualLink.Visibility = Visibility.Collapsed;
         _viewGeneration++;
         Render(null);
         RenderCalibration(null, null);

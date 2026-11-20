@@ -1,6 +1,8 @@
 <Window x:Class="NPEduTools.App.StudyMonitoringWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:NPEduTools.App"
  Title="自习监测 · NPEduTools" Width="900" Height="660" MinWidth="640" MinHeight="460" Background="{DynamicResource TeacherPageBrush}" Foreground="{DynamicResource TeacherTextBrush}" FontFamily="{DynamicResource TeacherFont}" Icon="/Assets/npedutools.ico" WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
- <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+ <Grid>
+  <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
   <StackPanel Margin="24,20">
    <DockPanel Margin="0,0,0,16">
     <Button Style="{StaticResource TeacherButton}" DockPanel.Dock="Right" Content="刷新状态" Click="RefreshClicked" Padding="14,8" VerticalAlignment="Center"/>
@@ -21,11 +23,6 @@
      </Grid>
     </StackPanel>
    </Border>
-   <WrapPanel Margin="0,0,0,12">
-    <Button x:Name="ReturnStudyButton" Content="回到自习展示" Click="ReturnStudyClicked" Style="{StaticResource TeacherPrimary}" Visibility="Collapsed" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="ReturnSchoolStudy"/>
-    <Button Style="{StaticResource TeacherButton}" Content="实时监测 / 手动自习" Click="NoiseClicked" Padding="14,8" Margin="0,0,10,6"/>
-    <Button Style="{StaticResource TeacherButton}" Content="自习座位表" Click="SeatingClicked" Padding="14,8" Margin="0,0,10,6"/>
-   </WrapPanel>
    <Border Style="{StaticResource SettingsGroupSurface}" Padding="18" Margin="0,0,0,14">
     <StackPanel>
      <TextBlock Text="噪音校准" FontSize="17" FontWeight="SemiBold"/>
@@ -53,5 +50,15 @@
     </StackPanel>
    </Expander>
   </StackPanel>
- </ScrollViewer>
+  </ScrollViewer>
+  <Border Grid.Row="1" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="4,8,4,0">
+   <WrapPanel HorizontalAlignment="Right">
+    <Button x:Name="SchoolManualLink" Content="手动自习" Click="NoiseClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,4"/>
+    <Button x:Name="SchoolSeatingButton" Content="自习座位表" Click="SeatingClicked" Style="{DynamicResource TeacherButton}" Margin="0,0,0,4"
+            AutomationProperties.AutomationId="SchoolStudySeating"/>
+    <Button x:Name="ReturnStudyButton" Content="回到自习展示" Click="ReturnStudyClicked" Style="{DynamicResource TeacherPrimary}"
+            Visibility="Collapsed" Margin="8,0,0,4" AutomationProperties.AutomationId="ReturnSchoolStudy"/>
+   </WrapPanel>
+  </Border>
+ </Grid>
 </Window>

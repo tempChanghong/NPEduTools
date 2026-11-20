@@ -6,6 +6,13 @@ using NPEduTools.Host;
 
 internal static partial class Program
 {
+    private static void SelectManualTimeOptions(NoiseWindow window, bool reserve, bool timedEnd)
+    {
+        var view = WorkspacePanel.View(window)!;
+        ((RadioButton)Find(view, reserve ? "UseStart" : "ManualStartNow")).IsChecked = true;
+        ((RadioButton)Find(view, timedEnd ? "UseEnd" : "ManualEndManually")).IsChecked = true;
+    }
+
     private static void RunManualDateBoundaryChecks(NoiseWindow window, ManualStudyService manual)
     {
         var previous = SynchronizationContext.Current;
@@ -20,8 +27,7 @@ internal static partial class Program
             foreach (bool start in new[] { true, false })
             foreach (bool minimum in new[] { true, false })
             {
-                Check(window, "UseStart").IsChecked = start;
-                Check(window, "UseEnd").IsChecked = !start;
+                SelectManualTimeOptions(window, reserve: start, timedEnd: !start);
                 var date = (DatePicker)window.FindName(start ? "ManualStartDate" : "ManualEndDate");
                 var time = (TextBox)window.FindName(start ? "ManualStartTime" : "ManualEndTime");
                 date.SelectedDate = minimum ? DateTime.MinValue.Date : DateTime.MaxValue.Date;
