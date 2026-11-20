@@ -11,10 +11,19 @@ public sealed class GuardHostSession : IAsyncDisposable
     private readonly Func<Guid, GuardProcess, GuardWakePlan?>? _plan;
     private readonly Action? _ensureGuard;
     private bool _expected;
+    private bool _cancelExpected;
     private readonly object _writeSync = new();
     public GuardHostSession(GuardFiles files, Func<bool> armed, Func<Guid, GuardProcess, GuardWakePlan?>? plan = null, Action? ensureGuard = null)
     { _files = files; _armed = armed; _plan = plan; _ensureGuard = ensureGuard; _loop = LoopAsync(); }
     public bool ExpectedStop()=>ExpectedStop(true);
+    public void CancelExpectedStop()
+    {
+        lock (_writeSync)
+        {
+            _expected = false; _cancelExpected = true;
+            _files.CancelExpectedExit(_identity); _cancelExpected = false;
+        }
+    }
     public bool ExpectedStop(bool skipCurrentWindow)
     {
         try
@@ -31,7 +40,7 @@ public sealed class GuardHostSession : IAsyncDisposable
                     if (plan is not null) _files.Write("wake.json", plan);
                     _files.Write("lease.json", new GuardLease(r.Generation, _identity, ++_sequence, false));
                 }
-                _expected = true;
+                _expected = true; _cancelExpected = false;
             }
             return true;
         }
@@ -47,6 +56,7 @@ public sealed class GuardHostSession : IAsyncDisposable
                 {
                     lock (_writeSync)
                     {
+                        if (_cancelExpected) { _files.CancelExpectedExit(_identity); _cancelExpected = false; }
                         if (!_expected && _files.Read<GuardRegistration>("registration.json") is { } r && !_files.Stopped(r.Generation))
                         {
                             _files.Write("lease.json", new GuardLease(r.Generation, _identity, ++_sequence, _armed()));

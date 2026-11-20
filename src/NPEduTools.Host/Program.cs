@@ -221,16 +221,57 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; if (PrepareGuardStop()) s
 var remoteExamActions = new RemoteExamActions(launch, examAware, recording, classroom, new WindowsRemoteExamPlatform());
 var remoteExam = new RemoteExamExecutor(remoteExamStore, runtimeGate, remoteExamActions);
 string npepVersion = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "unknown";
+async Task<IDisposable?> ReserveUpdateAsync(CancellationToken token)
+{
+    var runtime = runtimeGate.TryReserveMaintenance();
+    if (runtime is null) return null;
+    IDisposable? recorder = null;
+    bool manual = false, audio = false, mode = false, owned = false;
+    void Release()
+    {
+        if (mode) classroom.AbortShutdown();
+        if (audio) noise.AbortShutdown();
+        if (manual) manualStudy.CancelUpdateReservation();
+        recorder?.Dispose(); runtime.Dispose();
+    }
+    try
+    {
+        recorder = await recording.ReserveIdleForRuntimeAsync(token);
+        if (!(manual = manualStudy.ReserveIdleForUpdate()) || !(audio = noise.ReserveIdleForUpdate()) ||
+            !(mode = classroom.BeginShutdown())) return null;
+        owned = true;
+        return new SchoolUpdateMaintenance.Reservation(Release);
+    }
+    catch (RemoteExamException) { return null; }
+    finally { if (!owned) Release(); }
+}
+string? UpdateDeferral()
+{
+    var calendar = schoolClock.Snapshot();
+    var studyState = studySettings.Snapshot();
+    if (calendar.SchoolNow is {} now && (studyState.Next is {} next && next.Start >= now && next.Start - now < TimeSpan.FromMinutes(10) ||
+        recording.Automatic.Next is {} upcoming && upcoming.Start >= now && upcoming.Start - now < TimeSpan.FromMinutes(10))) return "UPCOMING_ACTIVITY";
+    return SchoolUpdateMaintenance.Deferral(calendar, studyState, manualStudy.Status(), recording.State, noise.CaptureBusy,
+        classroom.Snapshot.Phase != "Idle" || studyClock.Mode == "Exam" || runtimeGate.Switching || runtimeGate.ExamRequested);
+}
+bool DesktopRunning()
+{
+    if (!Mutex.TryOpenExisting($@"Local\{pipeName}.App", out var app)) return false;
+    app.Dispose(); return true;
+}
+var updates = pipeName == PipeEndpoint.DefaultName && !options.ContainsKey("--data-dir")
+    ? new SchoolUpdateMaintenance(UpdateDeferral, ReserveUpdateAsync, DesktopRunning, () => guard.ExpectedStop(false), guard.CancelExpectedStop, shutdown.Cancel)
+    : null;
 await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npepVersion,
     () => new(Protocol.Version, Guid.Empty, "Succeeded", null, "已有本地缓存", SchoolClock: schoolClock.PeekSnapshot(),
         Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
-    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement);
+    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement, updates);
 var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync, npep.PublishSeatingAsync);
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads,updates).RunAsync(shutdown.Token);
     // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
     if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
     await serving;

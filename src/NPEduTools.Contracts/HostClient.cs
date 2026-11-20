@@ -8,10 +8,15 @@ public static class HostClient
     public static async Task<HostResponse> RequestAsync(string pipeName, string capability, CancellationToken token)
         => await RequestAsync(pipeName, new HostRequest(Protocol.Version, Guid.NewGuid(), capability), token);
 
-    public static async Task<HostResponse> RequestAsync(string pipeName, HostRequest request, CancellationToken token)
+    public static Task<HostResponse> RequestAsync(string pipeName, HostRequest request, CancellationToken token) =>
+        RequestAsync(pipeName, request, token, null);
+
+    public static async Task<HostResponse> RequestAsync(string pipeName, HostRequest request, CancellationToken token,
+        Action<NamedPipeClientStream>? verifyPeer)
     {
         await using var pipe = CreatePipe(pipeName);
         await pipe.ConnectAsync(1500, token);
+        verifyPeer?.Invoke(pipe);
         await Protocol.WriteAsync(pipe, request, token);
         var response = await Protocol.ReadAsync<HostResponse>(pipe, token);
         if (response.Version != Protocol.Version || response.RequestId != request.RequestId)

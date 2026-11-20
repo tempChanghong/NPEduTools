@@ -38,9 +38,18 @@ internal static class StartupElevation
         using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut,
             PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
         await pipe.ConnectAsync(deadline.Token);
+        VerifyHost(pipe);
+    }
+
+    internal static void VerifyMaintenanceHost(NamedPipeClientStream pipe) => VerifyHost(pipe, true);
+    private static void VerifyHost(NamedPipeClientStream pipe, bool requireInstalledHost = false)
+    {
         if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint pid)) throw new IOException("无法核实已有后台身份。");
         using var identity = WindowsIdentity.GetCurrent();
         using var server = Process.GetProcessById(checked((int)pid));
+        if (requireInstalledHost && !string.Equals(server.MainModule?.FileName,
+            Path.Combine(AppContext.BaseDirectory, "Host", "NPEduTools.Host.exe"), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("维护请求的来源与本机已安装的后台不匹配。");
         using var current = Process.GetCurrentProcess();
         if (server.SessionId != current.SessionId || ClassIslandProcess.UserSid(server.Id) != identity.User?.Value)
             throw new InvalidOperationException("已有后台不属于当前用户或会话，请先核实。");

@@ -143,6 +143,15 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         }
     }
     internal void AbortShutdown() { lock (_sync) _shuttingDown = false; }
+    internal bool ReserveIdleForUpdate()
+    {
+        lock (_sync)
+        {
+            if (_disposed || _shuttingDown || _cleanupFailed || ExitPending || CaptureBusy) return false;
+            _shuttingDown = true;
+            return true;
+        }
+    }
     internal bool MeterUnavailable { get { lock (_sync) return _disposed || _shuttingDown || ExitPending; } }
     private static string? LoadSelection(string? path)
     {

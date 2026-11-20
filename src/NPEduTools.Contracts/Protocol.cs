@@ -38,7 +38,8 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseReferenceCommand? NoiseReference = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoundMeterCommand? SoundMeter = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyCommand? ManualStudy = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadCommand? SeatingUpload = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadCommand? SeatingUpload = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoftwareUpdateConsent? SoftwareUpdateConsent = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -90,7 +91,13 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadState? SeatingUpload = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepConnectionHistory? ConnectionHistory = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationStatus? NoiseCalibrationStatus = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyPresentationEpoch? PresentationEpoch = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyPresentationEpoch? PresentationEpoch = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoftwareUpdateStatus? SoftwareUpdate = null);
+
+public sealed record SoftwareUpdateConsent(Guid EnrollmentId, bool Accepted);
+public sealed record SoftwareUpdateStatus(string Enrollment, Guid? EnrollmentId, bool LocalConsent, string RunningVersion,
+    string? SchoolName = null, string? ClassName = null, string? DeviceName = null, string? State = null,
+    string? Reason = null, string? TargetVersion = null, Guid? PlanId = null);
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
 
@@ -129,6 +136,15 @@ public static class Protocol
 
     public static string? Validate(HostRequest request)
     {
+        if (request.Capability == "software.update.consent")
+        {
+            if (request.SoftwareUpdateConsent is not { Accepted: true } consent || consent.EnrollmentId == Guid.Empty)
+                return "InvalidSoftwareUpdateConsent";
+            return Validate(request with { Capability = "host.ping", SoftwareUpdateConsent = null });
+        }
+        if (request.SoftwareUpdateConsent is not null) return "InvalidSoftwareUpdateConsent";
+        if (request.Capability is "software.update.status" or "software.update.desktop-ready")
+            return Validate(request with { Capability = "host.ping" });
         if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
             return Validate(request with { Capability = calibrationBase });
         if (request.Version != Version) return "ProtocolVersionMismatch";

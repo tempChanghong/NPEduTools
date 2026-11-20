@@ -33,9 +33,9 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private readonly NpepConnectionJournal _history;
     private bool _connectionFailed;
 
-    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null)
-        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study, schoolManagement) { }
-    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null, TimeProvider? receiptTime = null)
+    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null, ISchoolUpdateHost? updates = null)
+        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study, schoolManagement, updates: updates) { }
+    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null, TimeProvider? receiptTime = null, ISchoolUpdateHost? updates = null)
     {
         _sample = sample; _appVersion = appVersion; _schoolManagement = schoolManagement;
         _receiptTime = receiptTime ?? TimeProvider.System;
@@ -66,6 +66,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         InitializeNoiseSchedules(schedules);
         InitializeNoiseDisplay(noise as INpepNoiseDisplay);
         InitializeStudy(study);
+        InitializeUpdates(updates);
     }
 
     public NpepState Snapshot()
@@ -177,6 +178,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             case "resume": await _device!.SetReportingPausedAsync(false, token); Publish("CONNECTING", "正在恢复通知接收与状态上报。"); break;
             case "unpair":
                 string outcome = await _device!.UnpairAsync(token);
+                _updates?.Unpair();
                 _schoolManagement?.BindSchool(null);
                 _verified = null; _verifiedOrigin = null;
                 Publish("DISABLED", outcome == "LOCAL_ONLY" ? "本机已解绑，但无法确认远端撤销。请学校管理员检查并撤销该设备。" : "已解除绑定并停止上报。", outcome == "LOCAL_ONLY" ? "LOCAL_ONLY" : null); break;
@@ -327,8 +329,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         Task command;
         lock (_sync) { _disposed = true; _lifetime.Cancel(); _network?.Cancel(); command = _command; }
         await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop, _noiseDisplayLoop, _studyLoop, _studySeatingLoop, _studyHomeworkLoop, _studyPresentationLoop, _studyPhotosLoop, _studyExitLoop);
-        await _controlLoop;
+        await Task.WhenAll(_controlLoop, _softwareUpdateLoop);
         await _history.DisposeAsync();
-        _device?.Dispose(); _work.Dispose(); _lifetime.Dispose();
+        _device?.Dispose(); _work.Dispose(); _updateWake.Dispose(); _lifetime.Dispose();
     }
 }

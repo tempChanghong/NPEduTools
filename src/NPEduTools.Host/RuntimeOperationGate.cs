@@ -9,14 +9,15 @@ public sealed class RuntimeOperationGate(bool coordinateDesktop = false)
 {
     private readonly object _sync = new();
     private int _mutations;
-    private bool _switching;
+    private enum ExclusiveOperation { None, Switch, Maintenance }
+    private ExclusiveOperation _exclusive;
     private bool _priorityPending;
 
     public async Task<IDisposable> ReservePrioritySwitchAsync(CancellationToken token)
     {
         lock (_sync)
         {
-            if (_priorityPending || _switching) throw new RemoteExamException("OPERATION_BUSY");
+            if (_priorityPending || _exclusive != ExclusiveOperation.None) throw new RemoteExamException("OPERATION_BUSY");
             _priorityPending = true;
         }
         IDisposable? priority = null;
@@ -28,7 +29,7 @@ public sealed class RuntimeOperationGate(bool coordinateDesktop = false)
             while (deadline.Elapsed < TimeSpan.FromSeconds(30))
             {
                 token.ThrowIfCancellationRequested();
-                var lease = TryReserveSwitch(priorityOwner: true);
+                var lease = TryReserveExclusive(ExclusiveOperation.Switch, priorityOwner: true);
                 if (lease is not null)
                 {
                     var ownedPriority = priority; priority = null;
@@ -41,7 +42,7 @@ public sealed class RuntimeOperationGate(bool coordinateDesktop = false)
         catch { priority?.Dispose(); lock (_sync) _priorityPending = false; throw; }
     }
 
-    public bool Switching { get { lock (_sync) return _switching; } }
+    public bool Switching { get { lock (_sync) return _exclusive == ExclusiveOperation.Switch; } }
     public bool ExamRequested { get { lock (_sync) return _priorityPending; } }
 
     // IPC acceptance is not completion: retain a mutation lease through its background work.
@@ -53,7 +54,7 @@ public sealed class RuntimeOperationGate(bool coordinateDesktop = false)
     {
         lock (_sync)
         {
-            if (_switching || _priorityPending) return null;
+            if (_exclusive != ExclusiveOperation.None || _priorityPending) return null;
             var desktop = coordinateDesktop ? NPEduTools.Core.RuntimeOperationFile.TryAcquire(false) : null;
             if (coordinateDesktop && desktop is null) return null;
             _mutations++;
@@ -61,17 +62,18 @@ public sealed class RuntimeOperationGate(bool coordinateDesktop = false)
         }
     }
 
-    public IDisposable? TryReserveSwitch() => TryReserveSwitch(priorityOwner: false);
+    public IDisposable? TryReserveSwitch() => TryReserveExclusive(ExclusiveOperation.Switch, priorityOwner: false);
+    internal IDisposable? TryReserveMaintenance() => TryReserveExclusive(ExclusiveOperation.Maintenance, priorityOwner: false);
 
-    private IDisposable? TryReserveSwitch(bool priorityOwner)
+    private IDisposable? TryReserveExclusive(ExclusiveOperation operation, bool priorityOwner)
     {
         lock (_sync)
         {
-            if (_switching || _mutations != 0 || (_priorityPending && !priorityOwner)) return null;
+            if (_exclusive != ExclusiveOperation.None || _mutations != 0 || (_priorityPending && !priorityOwner)) return null;
             var desktop = coordinateDesktop ? NPEduTools.Core.RuntimeOperationFile.TryAcquire(true) : null;
             if (coordinateDesktop && desktop is null) return null;
-            _switching = true;
-            return new Lease(() => { lock (_sync) { _switching = false; desktop?.Dispose(); } });
+            _exclusive = operation;
+            return new Lease(() => { lock (_sync) { _exclusive = ExclusiveOperation.None; desktop?.Dispose(); } });
         }
     }
 

@@ -16,7 +16,8 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     SchoolClockMonitor? schoolClock = null, RecordingService? recording = null, ExamAwareService? examAware = null, ClassroomModeService? classroom = null, NpepRuntime? npep = null,
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
     Func<bool>? prepareStop = null, StudySettingsService? study = null, StudyDisplayService? studyDisplay = null, StudyDeviceService? studyDevices = null,
-    SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null, ManualStudyService? manualStudy=null, StudyRecoveryService? studyRecovery=null, StudySeatingUploadService? seatingUploads=null)
+    SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null, ManualStudyService? manualStudy=null, StudyRecoveryService? studyRecovery=null, StudySeatingUploadService? seatingUploads=null,
+    SchoolUpdateMaintenance? updates = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -63,6 +64,23 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 {
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                     if(error=="InvalidNoiseManagementCommand")studyExit?.ObserveAuthorization(request,response);
+                }
+                else if (request.Capability is "software.update.status" or "software.update.consent" or "software.update.desktop-ready")
+                {
+                    if (npep?.UpdateStatus() is not { } status || updates is null)
+                        response = new(1, request.RequestId, "Rejected", "UPDATE_UNAVAILABLE", "本机暂未支持学校软件维护。");
+                    else if (request.Capability == "software.update.consent" &&
+                        (!IsClientExecutable(pipe, SchoolUpdateWorker.ProductPath("NPDownloader.exe")) ||
+                         !npep.AcceptUpdateInvitation(request.SoftwareUpdateConsent!.EnrollmentId)))
+                        response = new(1, request.RequestId, "Rejected", "INVITATION_CHANGED", "请在已安装的 NPDownloader 中重新核对当前学校邀请。");
+                    else if (request.Capability == "software.update.desktop-ready")
+                    {
+                        string app = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "NPEduTools.App.exe"));
+                        bool close = IsClientExecutable(pipe, app) && await updates.DesktopReadyAsync(token);
+                        response = new(1, request.RequestId, "Succeeded", null, close ? "CLOSE" : "CONTINUE");
+                    }
+                    else response = new(1, request.RequestId, "Succeeded", null, "本机学校软件维护状态。",
+                        SoftwareUpdate: updates.CheckingDesktop ? status with { State = "WAITING_DESKTOP" } : npep.UpdateStatus());
                 }
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
@@ -378,6 +396,17 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
         { return false; }
+    }
+
+    private static bool IsClientExecutable(NamedPipeServerStream pipe, string expectedPath)
+    {
+        if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint id)) return false;
+        try
+        {
+            using var client = Process.GetProcessById(checked((int)id));
+            return string.Equals(client.MainModule?.FileName, expectedPath, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or ArgumentException) { return false; }
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]

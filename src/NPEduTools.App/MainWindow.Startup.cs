@@ -61,6 +61,7 @@ public partial class MainWindow
         RefreshQuick();
         if (!guardRecovery && (!atLogin || !_startupPreferences.EdgeOnlyAtLogin)) Show();
         _watch = WatchAsync(_lifetime.Token);
+        _ = WatchSchoolMaintenanceAsync();
         _management = ManagementLoopAsync(_lifetime.Token);
         _ = NpepPollAsync();
         _ = NotificationPollAsync();

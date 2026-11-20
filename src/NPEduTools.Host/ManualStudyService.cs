@@ -42,6 +42,17 @@ public sealed class ManualStudyService : IAsyncDisposable
         noise.Completed+=Completed;
         _loop=background?Task.Run(async()=>{try{while(!_stop.IsCancellationRequested){Tick();await Task.Delay(TimeSpan.FromMilliseconds(200),_time,_stop.Token);}}catch(OperationCanceledException)when(_stop.IsCancellationRequested){} }):Task.CompletedTask;
     }
+    private bool _updateReserved;
+    internal bool ReserveIdleForUpdate()
+    {
+        lock (_sync)
+        {
+            if (_updateReserved || _phase is not ("Idle" or "Ended" or "Cancelled")) return false;
+            _updateReserved = true;
+            return true;
+        }
+    }
+    internal void CancelUpdateReservation() { lock (_sync) _updateReserved = false; }
     public ManualStudyState Status() {lock(_sync)return new(_instance,_revision,_session,_phase,_reportError??_reason,_start,_end,_hasEnd,_hide,_displayLeadSeconds);}
     // Date-only homework selection follows Windows time, independently of the
     // ClassIsland clock. No manual lock may be taken from StudySettingsService.
@@ -75,7 +86,7 @@ public sealed class ManualStudyService : IAsyncDisposable
                 if(!NoiseContract.ValidDeviceId(c.DeviceId) || end<=start || end-start>TimeSpan.FromHours(3) ||
                     c.HideSeconds is <1 or >10800 || end.Offset!=TimeSpan.Zero)
                     return Reply(r,"Rejected","MANUAL_TIME_INVALID",timeError);
-                if(_phase is "Waiting" or "Preparing" or "Active" or "Starting" or "Stopping" || _noise.CaptureBusy || _blocked())
+                if(_updateReserved || _phase is "Waiting" or "Preparing" or "Active" or "Starting" or "Stopping" || _noise.CaptureBusy || _blocked())
                     return Reply(r,"Rejected","MANUAL_BUSY","当前设备忙碌或学校定时自习优先；没有创建手动会话。");
                 int lead;
                 try { lead = _lead(); }

@@ -25,6 +25,13 @@ public sealed class GuardFiles(string directory)
     [SupportedOSPlatform("windows")]
     public static GuardFiles ForPipe(string pipe) => new(Path.Combine(DataDirectory(pipe), "guard"));
     public bool Exists(string name) => File.Exists(Path.Combine(directory, name));
+    internal void CancelExpectedExit(GuardProcess host)
+    {
+        var expected = Read<GuardExpectedExit>("expected-exit.json");
+        if (expected is null && Exists("expected-exit.json")) throw new IOException("Expected-exit record is unavailable.");
+        if (expected?.Host == host)
+            File.Delete(Path.Combine(directory, "expected-exit.json"));
+    }
     public T? Read<T>(string name) where T : class
     {
         try
