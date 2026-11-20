@@ -100,6 +100,12 @@ internal static partial class Program
                 Click(owner, "OpenOnboarding", true);
                 var opened = Application.Current.Windows.OfType<OnboardingWindow>().Single();
                 Assert(opened.IsVisible, "configuration action did not open onboarding");
+                Click(opened, "NextButton");
+                Click(owner, "TeachingSettingsTab");
+                Click(opened, "OobePreferences", true);
+                owner.UpdateLayout();
+                Assert(((FrameworkElement)owner.FindName("GeneralSettingsPanel")).IsVisible,
+                    "wizard preferences reopened the previously selected settings category");
                 opened.Close();
                 owner.Close();
             });

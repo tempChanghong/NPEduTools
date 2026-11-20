@@ -43,9 +43,9 @@ public partial class MainWindow
         if (_onboardingWindow is null)
         {
             _onboardingWindow = new OnboardingWindow(_pipe, _onboarding, SaveOnboarding, SchoolConnectionSession,
-                new(ShowSettings, ShowClassIslandPathSettings, ShowRecording, ShowShortcutManager,
+                new(() => ShowSettingsCategory("General"), ShowClassIslandPathSettings, ShowRecordingSettings, ShowShortcutManager,
                     ShowClassroomMode, ShowExamAware,
-                    () => { ShowSettings(); SelectSettingsCategory("Npep"); },
+                    () => ShowSettingsCategory("Npep"),
                     () => OpenNoiseClicked(this, new RoutedEventArgs()), ShowSecRandom),
                 automatic => { if (automatic) ShowRecordingPlan(); else { SelectPage(false); RestoreWindow(); } },
                 _onboardingError);

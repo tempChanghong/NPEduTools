@@ -69,6 +69,7 @@
               <TextBlock Text="学校已预授权？输入本班管理口令直接连接。正式服务须使用 HTTPS。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13"/>
               <PasswordBox Style="{StaticResource TeacherInput}" x:Name="ClassManagementSecret" MaxLength="128" MinHeight="44" Margin="0,8,0,8" IsEnabled="{Binding CanEdit}"/>
               <Button Style="{StaticResource TeacherButton}" Content="验证口令并连接" Click="PasswordClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left"/>
+              <TextBlock x:Name="ClassInputMessage" Style="{StaticResource OptionalText}" TextWrapping="Wrap" Foreground="{DynamicResource TeacherErrorBrush}" />
             </StackPanel>
             <Expander x:Name="WebPairingOptions" Header="其他连接方式：网页配对码或管理员逐次批准" IsExpanded="True" Margin="0,12,0,0"><StackPanel>
             <TextBlock Text="学校预先开放后，可在对应班级大屏的 NPClassworks → 课堂工具 → 连接 NPEduTools 生成配对码。没有班级列表时，也可以使用下方方式。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,8,0,8" />

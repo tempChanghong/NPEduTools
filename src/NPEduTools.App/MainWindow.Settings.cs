@@ -66,11 +66,12 @@ public partial class MainWindow
         if (category == "Npep") _ = RefreshNpepAsync();
     }
 
-    private void ShowConnectionSettings()
+    private void ShowSettingsCategory(string category)
     {
         ShowSettings();
-        SelectSettingsCategory("Connections");
+        SelectSettingsCategory(category);
     }
+    private void ShowConnectionSettings() => ShowSettingsCategory("Connections");
 
     private void ShowClassIslandPathSettings()
     {

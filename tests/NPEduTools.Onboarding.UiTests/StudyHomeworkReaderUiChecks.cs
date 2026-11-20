@@ -75,7 +75,7 @@ internal static partial class Program
             }
         }
         void Target(FrameworkElement control) => AssertStudyReaderTarget(surface, control);
-        void Blocked()
+        void Blocked(bool escapeClosesSeating = false)
         {
             var input = Element<Grid>("ReadingInput");
             Assert(!input.IsEnabled && !input.IsHitTestVisible && Element<Border>("ReaderInputShield").IsVisible,
@@ -86,6 +86,8 @@ internal static partial class Program
             Activate(back);
             Press(surface, Key.Escape);
             Assert(reader.IsVisible, "covered reader accepted Return or Escape");
+            if (escapeClosesSeating)
+                Assert(!Element<Border>("SeatingOverlay").IsVisible, "Escape did not close only the visible seat map");
         }
 
         try
@@ -125,8 +127,7 @@ internal static partial class Program
                 var image = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[] { 255, 255, 255, 255 }, 4);
                 surface.ApplySeating("cover", 1, image);
                 Assert(Element<Border>("SeatingOverlay").IsVisible, "automatic seating did not cover the reader");
-                Blocked();
-                Activate(Element<Button>("CloseSeating"));
+                Blocked(escapeClosesSeating: true);
                 Assert(back.IsKeyboardFocused && body.Position?.ItemId == "lab", "seating did not restore reader focus and item");
             }
 

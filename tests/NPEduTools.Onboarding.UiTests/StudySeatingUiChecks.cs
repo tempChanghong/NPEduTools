@@ -2,6 +2,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using NPEduTools.App;
@@ -50,6 +51,65 @@ internal static partial class Program
             surface.ClearSeating();Assert(surface.SeatingHash is null && button.IsEnabled && overlay.Visibility==Visibility.Collapsed && ((Image)surface.FindName("SeatingImage")).Source is null,"withdraw did not clear rendered image or retain explicit upload entry");
             surface.Stop();Checks.Add("Seating WPF: button-only open, old image held until close, no rotation/return auto-open, withdrawal clears");window.Close();
         }); } finally {surface.Stop();window.Close();}
+        RunSeatingInputFocusChecks();
+    }
+    private static void RunSeatingInputFocusChecks()
+    {
+        var clock = new StudyUiClock();
+        var state = StudyFixture();
+        var surface = new StudySurface(() => Task.CompletedTask, () => { }, true, clock);
+        var window = new Window { Content = surface, Width = 1100, Height = 700 };
+        T Element<T>(string name) where T : FrameworkElement => (T)surface.FindName(name);
+        void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        try
+        {
+            Exercise(window, _ =>
+            {
+                PumpUntil(() => window.IsActive, "seating focus fixture did not activate");
+                surface.Apply(state, null);
+                clock.Ms = 6000;
+                state = state with { SchoolNow = state.SchoolNow!.Value.AddSeconds(6) };
+                surface.Apply(state, null);
+                surface.ApplySeating("focus", 1, SeatFrame(SeatImage(Colors.White)));
+                var overview = Element<Canvas>("StudyOverview");
+                var overlay = Element<Border>("SeatingOverlay");
+                var open = Element<Button>("SeatingButton");
+                var close = Element<Button>("CloseSeating");
+                Assert(open.Focus(), "fixture could not focus the seat-map entry");
+                Click(open);
+                Assert(overlay.IsVisible, "fixture did not open the seat map");
+                bool closeFocused = close.IsKeyboardFocused;
+                bool overviewEnabled = overview.IsEnabled;
+                bool overviewHitTest = overview.IsHitTestVisible;
+                bool tabStayedInMap = true;
+                for (int i = 0; i < 6; i++)
+                {
+                    if (Keyboard.FocusedElement is UIElement focused)
+                        focused.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+                    tabStayedInMap &= overlay.IsKeyboardFocusWithin;
+                }
+                Snapshot(window, "study-seat-focus-open.png");
+                var target = Keyboard.FocusedElement as UIElement ?? surface;
+                var escape = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, Environment.TickCount, Key.Escape)
+                    { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                target.RaiseEvent(escape);
+                bool escapeClosed = escape.Handled && !overlay.IsVisible;
+                bool originalFocusRestored = escapeClosed && open.IsKeyboardFocused && overview.IsEnabled && overview.IsHitTestVisible;
+                if (overlay.IsVisible) Click(close);
+
+                Click(open);
+                surface.Apply(state with { Phase = "Ended", SchoolNow = state.Window!.End }, null);
+                bool closedAtEnd = !overlay.IsVisible && Element<Image>("SeatingImage").Source is null;
+                Snapshot(window, "study-seat-focus-ended.png");
+                Assert(closeFocused && !overviewEnabled && !overviewHitTest && tabStayedInMap && escapeClosed &&
+                    originalFocusRestored && closedAtEnd,
+                    $"seat-map interaction: closeFocused={closeFocused}, overviewEnabled={overviewEnabled}, overviewHitTest={overviewHitTest}, " +
+                    $"tabStayedInMap={tabStayedInMap}, escapeClosed={escapeClosed}, originalFocusRestored={originalFocusRestored}, closedAtEnd={closedAtEnd}");
+                Checks.Add("Seat map: close receives keyboard focus, Tab stays inside, Escape restores the overview entry, and the session end removes the open map.");
+                window.Close();
+            });
+        }
+        finally { surface.Stop(); window.Close(); }
     }
     private static void RunSeatingPipeChecks()
     {

@@ -5,6 +5,8 @@ using System.IO.Pipes;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using NPEduTools.App;
@@ -101,6 +103,28 @@ internal static partial class Program
                 Assert(probes == 1 && !manual.IsVisible && ((FrameworkElement)main.FindName("RecordingWorkspace")).IsVisible,
                     "recording opened another window or did not load embedded controller");
                 Snapshot(main, "recording-workspace-immediate.png");
+                Click(main, "SettingsNav");
+                Click(main, "TeachingSettingsTab"); main.UpdateLayout();
+                var teaching = (FrameworkElement)main.FindName("TeachingSettingsPanel");
+                var settingsAction = FlowElements<Button>(teaching).Single(button => Equals(button.Content, "录制设置"));
+                settingsAction.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); main.UpdateLayout();
+                Assert(((FrameworkElement)manual.FindName("RecordingSettings")).IsVisible,
+                    "recording settings shortcut did not open the editor");
+                Click(manual, "ReturnRecordingSettings");
+                Invoke("InitializeOnboarding");
+                typeof(MainWindow).GetField("_onboarding", flags)!.SetValue(main,
+                    new OnboardingState(Features: OnboardingFeatures.Recording, Step: "recording"));
+                Invoke("ShowOnboarding");
+                var wizard = Application.Current.Windows.OfType<OnboardingWindow>().Single();
+                try
+                {
+                    Click(wizard, "OobeRecordingSettings", true); main.UpdateLayout();
+                    Assert(((FrameworkElement)manual.FindName("RecordingSettings")).IsVisible,
+                        "wizard recording settings shortcut did not open the editor");
+                }
+                finally { wizard.Close(); }
+                Click(manual, "ReturnRecordingSettings");
+                Checks.Add("Teaching settings and onboarding both open the embedded recording editor");
                 string originalDirectory = ((TextBox)manual.FindName("OutputDirectory")).Text;
                 ((TextBox)manual.FindName("OutputDirectory")).Text = "   ";
                 Click(manual, "OpenFolder");
@@ -116,6 +140,7 @@ internal static partial class Program
                 Click(main, "RecordingPlanTab");
                 var plan = Field<AutoRecordingWindow>("_autoRecordingWindow");
                 PumpUntil(() => ((DataGrid)plan.FindName("Plans")).Items.Count == 2, "embedded automatic page did not load school schedule");
+                CheckRecordingPlanScroll((DataGrid)plan.FindName("Plans"));
                 Assert(state.Active && requests.Count(r => r.Recording is not null || r.Automatic?.Action is not (null or "lease")) == mutations,
                     "switching to schedule mutated recording state");
                 Click(main, "RecordingRecordsTab");
@@ -221,6 +246,7 @@ internal static partial class Program
         {
             main.Close(); client.GetType().GetMethod("Detach")!.Invoke(client, null);
             stop.Cancel(); server.GetAwaiter().GetResult();
+            File.Delete(OnboardingStore.PathFor(pipe));
             foreach (string suffix in new[] { ".recording.json", ".recording-preview.json", ".recording-plans.json" })
             {
                 string path = preferences.Replace(".startup.json", suffix, StringComparison.Ordinal);
@@ -228,6 +254,26 @@ internal static partial class Program
             }
             SynchronizationContext.SetSynchronizationContext(previous);
         }
+    }
+    private static void CheckRecordingPlanScroll(DataGrid plans)
+    {
+        var subjectMinimum = plans.Columns[0].MinWidth;
+        plans.Columns[0].MinWidth = 1600;
+        plans.BringIntoView();
+        plans.UpdateLayout();
+        var viewport = FlowElements<ScrollViewer>(plans).First();
+        PumpUntil(() => viewport.ScrollableWidth >= 600, "the plan columns did not overflow");
+        var bar = FlowElements<ScrollBar>(plans).Single(control => control.Orientation == Orientation.Horizontal && control.IsVisible);
+        var track = (Track)bar.Template.FindName("PART_Track", bar);
+        Assert(track.Orientation == Orientation.Horizontal && bar.ActualWidth > bar.ActualHeight,
+            "widening a recording plan column produced a vertical track in the horizontal scrollbar");
+        ((RoutedCommand)track.IncreaseRepeatButton.Command).Execute(null, track.IncreaseRepeatButton);
+        PumpUntil(() => viewport.HorizontalOffset > 0, "the right-hand track did not reveal the remaining columns");
+        ((RoutedCommand)track.DecreaseRepeatButton.Command).Execute(null, track.DecreaseRepeatButton);
+        PumpUntil(() => viewport.HorizontalOffset == 0, "the left-hand track did not return to the first column");
+        plans.Columns[0].MinWidth = subjectMinimum;
+        plans.UpdateLayout();
+        Checks.Add("Wide recording plan columns can be paged horizontally in both directions");
     }
     private static DependencyObject planContent(Window controller) => (DependencyObject)controller.GetType().Assembly
         .GetType("NPEduTools.App.WorkspacePanel")!.GetMethod("View", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [controller])!;

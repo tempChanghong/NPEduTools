@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using NPEduTools.Contracts;
 
 namespace NPEduTools.App;
 
@@ -9,6 +10,8 @@ public partial class NpepConnectionControl : UserControl
 {
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private NpepConnectionSession? _session;
+    private int _providerRevision;
+    private int _classInputRevision;
     private bool _diagnosticBusy;
     private int _diagnosticViewRevision;
     private CancellationTokenSource? _comparisonCancellation;
@@ -17,6 +20,9 @@ public partial class NpepConnectionControl : UserControl
     {
         InitializeComponent();
         DataContext = null;
+        RequestedClass.SelectionChanged += (_, _) => ClearClassInput();
+        ClassManagementSecret.PasswordChanged += (_, _) => ClearClassMessage();
+        ClassManagementSecret.IsVisibleChanged += (_, _) => { if (!ClassManagementSecret.IsVisible) ClearClassInput(); };
         _timer.Tick += async (_, _) => { if (IsVisible && _session is { } session) await session.RefreshAsync(); };
         Loaded += (_, _) => { ObserveSession(); _timer.Start(); };
         Unloaded += (_, _) => { _timer.Stop(); if (_session is { } session) session.PropertyChanged -= SessionChanged; ClearComparison(); };
@@ -25,7 +31,8 @@ public partial class NpepConnectionControl : UserControl
     public void Bind(NpepConnectionSession session)
     {
         if (_session is { } previous) previous.PropertyChanged -= SessionChanged;
-        ClearComparison(); _session = session; DataContext = session;
+        ClearComparison(); ClearClassInput();
+        _session = session; _providerRevision = session.ProviderRevision; DataContext = session;
         if (IsLoaded) ObserveSession();
     }
     internal void UseGuidedSetup()
@@ -42,7 +49,22 @@ public partial class NpepConnectionControl : UserControl
     private string ConnectionContext() => (_session?.BoundOrigin ?? "") + "\n" + (_session?.BindingIdentity ?? "");
     private void SessionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (_session is { } session && session.ProviderRevision != _providerRevision)
+        {
+            _providerRevision = session.ProviderRevision;
+            ClearClassInput();
+        }
         if (_comparisonBindingContext is { } context && context != ConnectionContext()) ClearComparison();
+    }
+    private void ClearClassInput()
+    {
+        ClassManagementSecret.Clear();
+        ClearClassMessage();
+    }
+    private void ClearClassMessage()
+    {
+        _classInputRevision++;
+        ClassInputMessage.Text = "";
     }
     private void ClearComparison()
     {
@@ -58,12 +80,24 @@ public partial class NpepConnectionControl : UserControl
     private async void InspectClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.InspectAsync(); }
     private async void PairClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.PairAsync(); }
     private async void ClaimClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.ClaimAsync(); }
-    private async void ApplyClassClicked(object sender,RoutedEventArgs e)
-    {if(_session is {} session && !await session.ConnectClassAsync(RequestedClass.SelectedValue as string,null))LocalMessage.Text="请选择申请连接的班级并核对学校服务。";}
-    private async void PasswordClassClicked(object sender,RoutedEventArgs e)
+    private async void ApplyClassClicked(object sender, RoutedEventArgs e) => await ConnectSelectedClassAsync(null);
+    private async void PasswordClassClicked(object sender, RoutedEventArgs e)
     {
-        string secret=ClassManagementSecret.Password;ClassManagementSecret.Clear();
-        if(_session is {} session && !await session.ConnectClassAsync(RequestedClass.SelectedValue as string,secret))LocalMessage.Text="请选择预授权班级，输入8至128位管理口令并核对学校服务。";
+        string secret = ClassManagementSecret.Password;
+        ClearClassInput();
+        await ConnectSelectedClassAsync(secret);
+    }
+    private async Task ConnectSelectedClassAsync(string? secret)
+    {
+        if (_session is not { } session) return;
+        ClearClassMessage();
+        int revision = _classInputRevision;
+        if (RequestedClass.SelectedValue is not string binding)
+            ClassInputMessage.Text = "请先选择要连接的班级与大屏。";
+        else if (secret is not null && !NoiseManagementContract.SecretValid(secret))
+            ClassInputMessage.Text = "请输入 8 至 128 位管理口令。";
+        else if (!await session.ConnectClassAsync(binding, secret) && revision == _classInputRevision)
+            ClassInputMessage.Text = session.Message;
     }
     private async void ConfirmClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.ConfirmAsync(); }
     private async void RecoverClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RecoverAsync(); }

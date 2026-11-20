@@ -23,6 +23,8 @@ internal static partial class Program
             if (unavailable) throw new IOException("isolated Host unavailable");
             if (invalidProtocol) throw new InvalidDataException("isolated invalid Host receipt");
             if (accessDenied) throw new UnauthorizedAccessException("isolated Host access denied");
+            if (request.Npep?.Action == "apply-class")
+                return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Rejected", "FIXTURE", "学校暂未开放申请", Npep: state));
             return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "隔离状态", Npep: state));
         });
         session.RefreshAsync().GetAwaiter().GetResult();
@@ -204,6 +206,42 @@ internal static partial class Program
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(((TextBox)Find(view, "NpepOrigin")).IsVisible && ((TextBlock)Find(view, "NpepPairingStage")).IsVisible &&
                 ((Button)Find(view, "NpepInspect")).IsVisible, "pairing form remained folded after leaving the binding");
+            state = state with { Origin = "https://school.example", Server = new JsonObject {
+                ["serverInstanceId"] = Guid.NewGuid().ToString(), ["deploymentEpoch"] = Guid.NewGuid().ToString() },
+                Catalogue = new JsonObject { ["items"] = new JsonArray(
+                    new JsonObject { ["screenBindingId"] = "room-a", ["className"] = "一班" },
+                    new JsonObject { ["screenBindingId"] = "room-b", ["className"] = "二班" }) } };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            var target = (ComboBox)view.FindName("RequestedClass");
+            var secret = (PasswordBox)view.FindName("ClassManagementSecret");
+            var code = (TextBox)Find(view, "NpepWebPairingCode");
+            Assert(target.IsVisible && secret.IsVisible && target.Items.Count == 2, "class pairing inputs missing");
+            session.ServerConfirmed = true;
+            var apply = FlowElements<Button>(view).Single(button => Equals(button.Content, "向学校申请连接（尚无管理口令）"));
+            Assert(apply.IsEnabled, "class pairing fixture did not reach confirmed provider");
+            target.SelectedIndex = 0;
+            apply.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Assert(((TextBlock)view.FindName("ClassInputMessage")).Text == "学校暂未开放申请",
+                "class pairing replaced the school's rejection with an input error");
+            secret.Password = "fixture-only"; code.Text = "ABCD1234";
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(secret.Password == "fixture-only" && code.Text == "ABCD1234", "status poll erased pairing drafts");
+            target.SelectedIndex = 1;
+            Assert(secret.Password.Length == 0 && code.Text == "ABCD1234", "switching classes retained the previous class password");
+            secret.Password = "fixture-only";
+            state.Server!["deploymentEpoch"] = Guid.NewGuid().ToString();
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(secret.Password.Length == 0 && code.Text.Length == 0 && !session.ServerConfirmed,
+                "a new deployment at the same address inherited pairing drafts or consent");
+            code.Text = "ABCD2345";
+            secret.Password = "fixture-only";
+            ((TextBox)Find(view, "NpepOrigin")).Text = "https://other-school.example";
+            Assert(secret.Password.Length == 0 && code.Text.Length == 0, "changing school service retained pairing inputs");
+            secret.Password = "fixture-only";
+            Click(window, "GeneralSettingsTab"); window.UpdateLayout();
+            Click(window, "NpepSettingsTab"); window.UpdateLayout();
+            Assert(secret.Password.Length == 0, "a password survived leaving the pairing form");
+            Checks.Add("Periodic reads preserve pairing drafts; switching classes, changing provider and leaving the form clear scoped inputs");
             state = state with { State = "APPROVED", Approval = new JsonObject {
                 ["approvalId"] = Guid.NewGuid().ToString(), ["schoolName"] = "测试学校", ["screenBindingName"] = "测试大屏" } };
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
@@ -219,7 +257,9 @@ internal static partial class Program
                 "newly bound device exposed setup actions or fabricated a receipt");
             window.Close();
         });
-        Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "opening disclosures or changing pages issued a command");
+        Assert(requests.Count(r => r.Npep?.Action == "apply-class" && r.Npep.ScreenBindingId == "room-a") == 1 &&
+            requests.All(r => r.Npep?.Action == "apply-class" || (r.Capability == "npep.status" && r.Npep is null)),
+            "opening disclosures, editing inputs or changing pages issued an unexpected command");
         Checks.Add("Settings home entry shows status, receipt and guidance before scrolling; pairing and ownership consent stay inline until bound");
     }
 

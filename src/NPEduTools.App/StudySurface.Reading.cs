@@ -24,7 +24,7 @@ public partial class StudySurface
     private IInputElement? _readerFocusBeforeCoverage;
     private bool ReaderOpen => _readingSnapshot is not null;
     private bool PickerOpen => HomeworkPicker.Visibility == Visibility.Visible;
-    private bool ReaderCovered => StageNotice.Visibility == Visibility.Visible || SeatingOverlay.Visibility == Visibility.Visible;
+    private bool ReaderCovered => StageNotice.Visibility == Visibility.Visible || SeatingOpen;
     private bool ReaderAcceptsInput => ReaderOpen && !ReaderCovered && !_paused;
     private StudyHomeworkSnapshot? LatestReaderSnapshot
     {
@@ -53,8 +53,7 @@ public partial class StudySurface
         CancelHold();
         _pager.Advance(false);
         _readingSnapshot = snapshot;
-        StudyOverview.IsEnabled = false;
-        StudyOverview.IsHitTestVisible = false;
+        UpdateOverviewInput();
         HomeworkReader.Visibility = Visibility.Visible;
         SelectReaderMode(_readingLayout);
         ReaderBody.Show(snapshot, _readingLayout, new HomeworkReadingPosition(first.Item.Id, first.StartOffset));
@@ -79,14 +78,17 @@ public partial class StudySurface
         ReaderBody.Clear();
         ReaderInputShield.Visibility = Visibility.Collapsed;
         ReadingInput.IsEnabled = ReadingInput.IsHitTestVisible = true;
-        StudyOverview.IsEnabled = StudyOverview.IsHitTestVisible = true;
+        UpdateOverviewInput();
         _pager.Advance(false);
         if (restoreFocus) OpenHomeworkReader.Focus();
     }
 
+    private void UpdateOverviewInput() =>
+        StudyOverview.IsEnabled = StudyOverview.IsHitTestVisible = !ReaderOpen && !SeatingOpen;
+
     private void ReaderCoverageChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (!ReaderOpen) return;
+        if (!ReaderOpen) { FocusOpenSeating(); return; }
         bool covered = ReaderCovered;
         bool changed = covered == ReadingInput.IsEnabled;
         if (changed)
@@ -98,8 +100,7 @@ public partial class StudySurface
         }
         if (covered)
         {
-            if (SeatingOverlay.IsVisible && StageNotice.Visibility != Visibility.Visible && !SeatingOverlay.IsKeyboardFocusWithin)
-                CloseSeating.Focus();
+            FocusOpenSeating();
             return;
         }
         if (!changed) return;
@@ -242,8 +243,14 @@ public partial class StudySurface
         ClosePicker(true);
     }
 
-    private void StudyReaderKeyDown(object sender, KeyEventArgs e)
+    private void StudyOverlayKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && !_paused && SeatingOpen && StageNotice.Visibility != Visibility.Visible)
+        {
+            e.Handled = true;
+            if (!e.IsRepeat) CloseSeatingClicked(sender, e);
+            return;
+        }
         if (!ReaderAcceptsInput) return;
         if (e.Key == Key.Escape)
         {

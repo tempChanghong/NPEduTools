@@ -24,9 +24,5 @@ public partial class MainWindow
         }
     }
 
-    private void HomeSchoolConnectionClicked(object sender, RoutedEventArgs e)
-    {
-        ShowSettings();
-        SelectSettingsCategory("Npep");
-    }
+    private void HomeSchoolConnectionClicked(object sender, RoutedEventArgs e) => ShowSettingsCategory("Npep");
 }

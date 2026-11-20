@@ -59,7 +59,7 @@ public partial class MainWindow
         RefreshHomeRecordingNext(_recording.Automatic);
         RefreshRecording(_recording.State);
     }
-    private void OpenRecordingClicked(object sender, RoutedEventArgs e) => ShowRecording();
+    private void OpenRecordingClicked(object sender, RoutedEventArgs e) => ShowRecordingSettings();
     private void ShowRecording() => ShowRecordingWorkspace("Manual");
     private void ShowRecordingSettings() { ShowRecording(); _recordingWindow?.ShowSettingsPanel(); }
     private void RefreshRecording(RecordingState state)

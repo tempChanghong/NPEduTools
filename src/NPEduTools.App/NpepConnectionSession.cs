@@ -17,7 +17,9 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private string? _catalogueSeen;
     private IReadOnlyList<ClassChoice> _classes=[];
     public string UserCode { get => _userCode; set { _userCode = value; Changed(); } }
+    private (string? Origin, string Instance, string Epoch)? _providerSeen;
     private string? _serverSeen, _approvalSeen, _feedback;
+    internal int ProviderRevision { get; private set; }
     private string? _feedbackCode;
     private Guid? _feedbackRequestId;
     private bool _working, _mutating, _originEdited, _serverConfirmed, _bindingConfirmed;
@@ -28,7 +30,20 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public string Origin
     {
         get => _origin;
-        set { _originEdited = true; if (_origin == value) return; _origin = value; _serverConfirmed = false; Changed(); }
+        set
+        {
+            _originEdited = true;
+            if (_origin == value) return;
+            _origin = value;
+            ResetProviderDrafts();
+            Changed();
+        }
+    }
+    private void ResetProviderDrafts()
+    {
+        ProviderRevision++;
+        _serverConfirmed = false;
+        _userCode = "";
     }
     public string DeviceName { get => _deviceName; set { _deviceName = value; Changed(); } }
     public bool ServerConfirmed { get => _serverConfirmed; set { _serverConfirmed = value; Changed(); } }
@@ -114,8 +129,15 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
                 .Select(x=>new ClassChoice(Text(x,"screenBindingId"),$"{Text(x,"schoolName")} · {Text(x,"gradeName")} {Text(x,"className")} · {Text(x,"screenName")}")).ToArray():[];
         }
         if (_state?.State is "APPROVED" or "ACTIVE") _userCode = "";
+        (string?, string, string)? provider = _state?.Server is { } identity
+            ? (_state.Origin, Text(identity, "serverInstanceId"), Text(identity, "deploymentEpoch")) : null;
         string? server = _state?.Server?.ToJsonString();
         string? approval = _state?.Approval?.ToJsonString();
+        if (provider != _providerSeen)
+        {
+            if (_providerSeen is not null) ResetProviderDrafts();
+            _providerSeen = provider;
+        }
         if (server != _serverSeen) { _serverSeen = server; _serverConfirmed = false; }
         if (approval != _approvalSeen) { _approvalSeen = approval; _bindingConfirmed = false; }
         if (!_originEdited && _state?.Origin is { } saved) _origin = saved;

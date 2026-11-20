@@ -38,7 +38,10 @@ internal static partial class Program
         ((FrameworkElement)main.FindName("GeneralSettingsPanel")).Visibility = Visibility.Collapsed;
         var panel = (StackPanel)main.FindName("NpepSettingsPanel");
         panel.Visibility = Visibility.Visible;
-        foreach (FrameworkElement child in panel.Children.Cast<FrameworkElement>().Take(3)) child.Visibility = Visibility.Collapsed;
+        var inbox = (FrameworkElement)main.FindName("NotificationInboxCard");
+        var preview = (FrameworkElement)main.FindName("NotificationPreviewActions");
+        foreach (FrameworkElement child in panel.Children)
+            child.Visibility = child == inbox || child.IsAncestorOf(preview) ? Visibility.Visible : Visibility.Collapsed;
         main.UpdateLayout();
     }
 

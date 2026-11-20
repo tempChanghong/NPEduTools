@@ -12,20 +12,36 @@
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style TargetType="ScrollBar">
-      <Setter Property="Width" Value="14" />
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
-        <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True">
-          <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource ScrollPage}" /></Track.DecreaseRepeatButton>
-          <Track.Thumb><Thumb MinHeight="28"><Thumb.Template><ControlTemplate TargetType="Thumb">
-            <Border x:Name="Grip" Background="#B7C6BE" CornerRadius="3" Margin="4,0" />
+        <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}">
+          <Track.DecreaseRepeatButton><RepeatButton x:Name="Decrease" Command="ScrollBar.PageLeftCommand" Style="{StaticResource ScrollPage}" /></Track.DecreaseRepeatButton>
+          <Track.Thumb><Thumb x:Name="Handle"><Thumb.Template><ControlTemplate TargetType="Thumb">
+            <Border x:Name="Grip" Background="#B7C6BE" CornerRadius="3" Margin="{TemplateBinding Padding}" />
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Grip" Property="Background" Value="#718C7E" /></Trigger>
               <Trigger Property="IsDragging" Value="True"><Setter TargetName="Grip" Property="Background" Value="#147D68" /></Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
-          <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource ScrollPage}" /></Track.IncreaseRepeatButton>
+          <Track.IncreaseRepeatButton><RepeatButton x:Name="Increase" Command="ScrollBar.PageRightCommand" Style="{StaticResource ScrollPage}" /></Track.IncreaseRepeatButton>
         </Track>
+        <ControlTemplate.Triggers>
+          <Trigger Property="Orientation" Value="Vertical">
+            <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="True" />
+            <Setter TargetName="Decrease" Property="Command" Value="{x:Static ScrollBar.PageUpCommand}" />
+            <Setter TargetName="Increase" Property="Command" Value="{x:Static ScrollBar.PageDownCommand}" />
+            <Setter TargetName="Handle" Property="MinHeight" Value="28" />
+            <Setter TargetName="Handle" Property="Padding" Value="4,0" />
+          </Trigger>
+          <Trigger Property="Orientation" Value="Horizontal">
+            <Setter TargetName="Handle" Property="MinWidth" Value="28" />
+            <Setter TargetName="Handle" Property="Padding" Value="0,4" />
+          </Trigger>
+        </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
+      <Style.Triggers>
+        <Trigger Property="Orientation" Value="Vertical"><Setter Property="Width" Value="14" /></Trigger>
+        <Trigger Property="Orientation" Value="Horizontal"><Setter Property="Height" Value="14" /></Trigger>
+      </Style.Triggers>
     </Style>
     <Style x:Key="Surface" TargetType="Border">
       <Setter Property="Background" Value="White" /><Setter Property="CornerRadius" Value="16" />

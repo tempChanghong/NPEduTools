@@ -2,7 +2,7 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:local="clr-namespace:NPEduTools.App"
- PreviewKeyDown="StudyReaderKeyDown"
+ PreviewKeyDown="StudyOverlayKeyDown"
  FontFamily="MiSans, Microsoft YaHei UI" FontWeight="330" Foreground="White" Background="#02080D">
  <UserControl.Resources>
   <SolidColorBrush x:Key="Muted" Color="#BBC0C4"/>
@@ -318,7 +318,7 @@
      </Grid>
     </Border>
      <Border x:Name="SeatingOverlay" Canvas.Left="0" Canvas.Top="0" Width="1920" Height="1080" Background="#050C11" Visibility="Collapsed"
-      IsVisibleChanged="ReaderCoverageChanged">
+      IsVisibleChanged="ReaderCoverageChanged" KeyboardNavigation.TabNavigation="Cycle">
      <Grid Margin="40">
       <Grid.RowDefinitions><RowDefinition Height="92"/><RowDefinition/></Grid.RowDefinitions>
       <Grid><StackPanel VerticalAlignment="Center" HorizontalAlignment="Left">
