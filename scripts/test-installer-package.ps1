@@ -72,6 +72,31 @@ try {
     Save-Manifest
     $parameters = @{PackageRoot=$payload;InstallerVersion='0.2026.1003.0';OutputRoot=$output;IsccPath=$IsccPath}
     Case 'verified complete fixture accepted' { & "$PSScriptRoot/package-installer.ps1" @parameters -ValidateOnly }
+    $appRuntime = 'app/NPEduTools.App.runtimeconfig.json'
+    Put $appRuntime '{"runtimeOptions":{"includedFrameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.11"},{"name":"Microsoft.WindowsDesktop.App","version":"10.0.14"}]}}'
+    $netCore = 'microsoft.netcore.app.runtime.win-x64'
+    $desktop = 'microsoft.windowsdesktop.app.runtime.win-x64'
+    $manifest.runtimePacks = @("$netCore/10.0.11", "$desktop/10.0.14")
+    Put "third-party/$netCore-10.0.11/LICENSE.TXT" 'fixture runtime license'
+    Put "third-party/$netCore-10.0.11/$netCore.nuspec" "<package><metadata><id>$netCore</id><version>10.0.11</version></metadata></package>"
+    Put "third-party/$desktop-10.0.14/LICENSE" 'fixture desktop runtime license'
+    $desktopNuspec = "third-party/$desktop-10.0.14/$desktop.nuspec"
+    Put $desktopNuspec "<package><metadata><id>$desktop</id><version>10.0.11</version></metadata></package>"
+    Save-Manifest
+    Case 'mismatched runtime notice rejected even with matching file hashes' { & "$PSScriptRoot/verify-portable-package.ps1" -PackageRoot $payload } 'Runtime notice metadata mismatch'
+    Put $desktopNuspec "<package><metadata><id>$desktop</id><version>10.0.14</version></metadata></package>"
+    $manifest.runtimePacks = @("$netCore/10.0.11", "$desktop/10.0.11")
+    Save-Manifest
+    Case 'runtime pack declaration checked against published frameworks' { & "$PSScriptRoot/verify-portable-package.ps1" -PackageRoot $payload } 'Declared runtime packs'
+    $manifest.runtimePacks = @("$netCore/10.0.11", "$desktop/10.0.14")
+    Put 'app/Optional/Fixture.runtimeconfig.json' '{"runtimeOptions":{"includedFrameworks":[{"name":"Microsoft.NETCore.App","version":"10.0.12"}]}}'
+    Save-Manifest
+    Case 'additional component runtime requires its own declaration and notices' { & "$PSScriptRoot/verify-portable-package.ps1" -PackageRoot $payload } 'Declared runtime packs'
+    $manifest.runtimePacks += "$netCore/10.0.12"
+    Put "third-party/$netCore-10.0.12/LICENSE.TXT" 'fixture additional runtime license'
+    Put "third-party/$netCore-10.0.12/$netCore.nuspec" "<package><metadata><id>$netCore</id><version>10.0.12</version></metadata></package>"
+    Save-Manifest
+    Case 'exact runtime notices accepted across different versions' { & "$PSScriptRoot/verify-portable-package.ps1" -PackageRoot $payload }
     $manifest.recordingToolsBundled = $false; Save-Manifest
     Case 'external FFmpeg package rejected' { & "$PSScriptRoot/package-installer.ps1" @parameters -ValidateOnly } 'bundled recording tools'
     $manifest.recordingToolsBundled = $true

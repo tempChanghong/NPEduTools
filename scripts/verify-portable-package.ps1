@@ -35,6 +35,36 @@ foreach ($component in @(@('app','NPEduTools.App'),@('app/Host','NPEduTools.Host
     $runtime = Get-Content -LiteralPath (Join-Path $directory ($component[1]+'.runtimeconfig.json')) -Raw | ConvertFrom-Json
     if ($runtime.runtimeOptions.framework -or $runtime.runtimeOptions.frameworks -or -not $runtime.runtimeOptions.includedFrameworks) { throw "Framework-dependent component: $directory" }
 }
+# Older packages do not declare exact runtime notice coverage.
+if ($manifest.PSObject.Properties.Name -contains 'runtimePacks') {
+    $runtimePacks = @{}
+    foreach ($config in Get-ChildItem -LiteralPath (Join-Path $root 'app') -Filter '*.runtimeconfig.json' -Recurse -File) {
+        $runtime = Get-Content -LiteralPath $config.FullName -Raw | ConvertFrom-Json
+        foreach ($framework in $runtime.runtimeOptions.includedFrameworks) {
+            if ($framework.name -notmatch '^Microsoft\.[A-Za-z0-9.]+$' -or $framework.version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') {
+                throw "Invalid bundled runtime identity: $($config.FullName)"
+            }
+            $id = "$($framework.name.ToLowerInvariant()).runtime.win-x64"
+            $version = $framework.version.ToLowerInvariant()
+            $runtimePacks["$id/$version"] = @($id, $version)
+        }
+    }
+    if (@($manifest.runtimePacks).Count -ne $runtimePacks.Count) { throw 'Declared runtime packs do not match the published components.' }
+    foreach ($pack in $runtimePacks.Keys) {
+        if ($pack -notin $manifest.runtimePacks) { throw "Declared runtime packs do not include $pack." }
+        $id, $version = $runtimePacks[$pack]
+        $directory = Join-Path $root "third-party/$id-$version"
+        $nuspec = Join-Path $directory "$id.nuspec"
+        if (-not $seen.ContainsKey($nuspec) -or
+            -not @(Get-ChildItem -LiteralPath $directory -File | Where-Object Name -match '^LICENSE(\.|$)').Count) {
+            throw "Runtime license or package metadata missing: $pack"
+        }
+        [xml]$metadata = Get-Content -LiteralPath $nuspec -Raw
+        if ($metadata.package.metadata.id -ne $id -or $metadata.package.metadata.version -ne $version) {
+            throw "Runtime notice metadata mismatch: $pack"
+        }
+    }
+}
 if ($manifest.recordingToolsBundled -ne $false) {
     $mediaLock = Get-Content -LiteralPath (Join-Path $root 'recording-bundle.lock.json') -Raw | ConvertFrom-Json
     if ($mediaLock.profile -ne 'npedutools-recording-v1') { throw 'Unknown bundled recording profile.' }

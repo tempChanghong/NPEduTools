@@ -327,6 +327,26 @@ internal static partial class Program
         body.SelectItem("physics");
         SnapshotStudyReaderViewport(surface, 1920, 1080, 1, "classroom-1920x1080-100-each.png");
 
+        // The classroom runs its 2560×1440 panel at 200%. Keep the same assignment
+        // selected so the three captures can be compared at its actual pixel size.
+        SizeTo(2560, 1440, 2);
+        foreach (var (control, label) in new[] { ("ReaderOnePage", "one"), ("ReaderFit", "fit"), ("ReaderEachItem", "each") })
+        {
+            var mode = Element<RadioButton>(control);
+            ClickControl(mode);
+            Ready();
+            body.SelectItem("physics");
+            window.UpdateLayout();
+            Assert(mode.IsChecked == true && body.Position?.ItemId == "physics",
+                $"classroom 200% reader did not show the selected physics assignment in {label}");
+            if (control == "ReaderOnePage") Assert(body.PageCount == 1, "classroom one-page mode paginated");
+            if (control == "ReaderEachItem") Assert(body.PageCount == work.Length, "classroom per-item mode lost an assignment");
+            foreach (string action in new[] { "ReaderOnePage", "ReaderFit", "ReaderEachItem", "ReturnFromReader", "PickHomework" })
+                AssertStudyReaderTarget(surface, Element<FrameworkElement>(action));
+            SnapshotStudyReaderViewport(surface, 2560, 1440, 2, $"classroom-2560x1440-200-{label}.png");
+        }
+        Checks.Add("Classroom 2560×1440 at 200%: three layouts, selected physics assignment, reachable layout controls and return.");
+
         foreach (var (width, height, captureScale) in new[] { (1920, 1080, 1.0), (1366, 768, 1.25), (1280, 720, 1.5) })
             foreach (double scale in new[] { 1.0, 1.25, 1.5 })
             {

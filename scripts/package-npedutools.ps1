@@ -110,12 +110,23 @@ start "" "%~dp0app\NPEduTools.App.exe"
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/FFMPEG-BUNDLED-BUILD.md') -Destination $package
     & (Join-Path $PSScriptRoot 'collect-third-party-sources.ps1') -OutputDirectory (Join-Path $notices 'sources')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/THIRD-PARTY-MATERIALS.md') -Destination $package
-    foreach ($runtimeId in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64')) {
-        $runtimeCache = Join-Path $env:NUGET_PACKAGES "$runtimeId/10.0.11"
-        $runtimeNotices = Join-Path $notices "$runtimeId-10.0.11"
+    $runtimePacks = @(Get-ChildItem -LiteralPath $app -Filter '*.runtimeconfig.json' -Recurse -File | ForEach-Object {
+        $runtime = Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json
+        foreach ($framework in $runtime.runtimeOptions.includedFrameworks) {
+            if ($framework.name -notmatch '^Microsoft\.[A-Za-z0-9.]+$' -or $framework.version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') {
+                throw "Invalid bundled runtime identity: $($framework.name) $($framework.version)"
+            }
+            "$($framework.name.ToLowerInvariant()).runtime.win-x64/$($framework.version.ToLowerInvariant())"
+        }
+    } | Sort-Object -Unique)
+    if (-not $runtimePacks.Count) { throw 'No bundled runtime packs found in the published application.' }
+    foreach ($runtimePack in $runtimePacks) {
+        $runtimeId, $runtimeVersion = $runtimePack -split '/', 2
+        $runtimeCache = Join-Path $env:NUGET_PACKAGES $runtimePack
+        $runtimeNotices = Join-Path $notices "$runtimeId-$runtimeVersion"
         New-Item -ItemType Directory -Path $runtimeNotices -Force | Out-Null
         $runtimeFiles = @(Get-ChildItem -LiteralPath $runtimeCache -File | Where-Object { $_.Name -match '^(LICENSE|THIRD.PARTY.NOTICES)(\.|$)|\.nuspec$' })
-        if (-not @($runtimeFiles | Where-Object Name -match '^LICENSE').Count) { throw "Runtime license missing: $runtimeId" }
+        if (-not @($runtimeFiles | Where-Object Name -match '^LICENSE').Count) { throw "Runtime license missing: $runtimePack" }
         $runtimeFiles | Copy-Item -Destination $runtimeNotices
     }
     $dependencies = @{}
@@ -154,7 +165,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
     Copy-Item -LiteralPath $locks -Destination (Join-Path $package 'build-locks') -Recurse
     $manifest = @{packageId=$id;buildId=$buildId;version=$ReleaseVersion;channel= $(if ($ReleaseVersion -match '^v\d+\.\d+\.\d+$') { 'stable' } elseif ($ReleaseVersion.StartsWith('Pre-')) { 'pre' } else { 'indev' });rid='win-x64';selfContained=$true;recordingToolsBundled=$true;createdAt=[DateTimeOffset]::Now;
         sourceCommit=(git rev-parse HEAD);workingTreeDirty=([bool](git status --porcelain));sourceArchiveSha256=(Get-FileHash $sourceZip).Hash;
-        sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';examAwareValidated='1.5.2 local build';examAwareBridgeVersion=$examManifest.version;files=@()}
+        sdk=(& $env:NPEEDUTOOLS_DOTNET_HOST --version);runtimePacks=$runtimePacks;classIslandValidated='2.1.0.1 local build';bridgeVersion='0.2.0.0';examAwareValidated='1.5.2 local build';examAwareBridgeVersion=$examManifest.version;files=@()}
     $manifest.files = @(Get-ChildItem -LiteralPath $package -File -Recurse | Sort-Object FullName | ForEach-Object {
         @{path=[IO.Path]::GetRelativePath($package,$_.FullName).Replace('\','/');length=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
     })
