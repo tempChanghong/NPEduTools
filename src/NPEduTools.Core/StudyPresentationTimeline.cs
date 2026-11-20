@@ -13,8 +13,8 @@ public sealed class StudyPresentationTimeline(TimeProvider? time = null)
     private readonly HashSet<string> _seen = [];
     private readonly Queue<string> _order = new();
     public StudyHostState? State => _state;
-    public bool Fresh => _state is { PolicyState: "APPLIED", ClockReady: true, SchoolNow: not null } &&
-        _received is { } at && _time.GetElapsedTime(at) < TimeSpan.FromSeconds(1.5);
+    public bool HasFreshStatus => _received is { } at && _time.GetElapsedTime(at) < TimeSpan.FromSeconds(1.5);
+    public bool Fresh => HasFreshStatus && _state is { PolicyState: "APPLIED", ClockReady: true, SchoolNow: not null };
     public string? Notice => Fresh && (_noticeUntil is { } until && _time.GetTimestamp() < until) ? _notice : null;
     public double Progress => Fresh && _state?.Window is { } w && _state.SchoolNow is { } now
         ? Math.Clamp((now - w.Start).TotalSeconds / (w.End - w.Start).TotalSeconds, 0, 1) : 0;

@@ -13,7 +13,8 @@ internal static partial class Program
         try
         {
             var errors = new List<Exception>();
-            foreach (string scenario in new[] { "manual-status-error", "school-report-error", "school-status-error", "withdrawn-with-error", "projection-with-error", "notification-with-error", "clock-with-error", "policy-with-error", "hidden-status-error", "expired-status-error" })
+            foreach (string scenario in new[] { "manual-status-error", "school-report-error", "school-status-error", "withdrawn-with-error", "projection-with-error", "notification-with-error", "clock-with-error", "policy-with-error", "hidden-status-error", "expired-status-error",
+                "sync-offline", "sync-clock", "sync-timeout", "sync-revoked", "sync-hidden" })
                 try { StudyTemporaryReadFailureCheck(scenario); } catch (Exception e) { errors.Add(new InvalidOperationException(scenario + ": " + e.Message, e)); }
             foreach (string scenario in new[] { "healthy", "slow-report", "failed-report", "failed-manual-status", "failed-manual-response", "failed-school-status",
                 "withdrawn-with-error", "ended-with-error", "takeover-with-error", "projection-with-error", "hidden-with-error", "expired-with-error", "notification-with-error" })
@@ -45,19 +46,32 @@ internal static partial class Program
                 if (cycle == 3) { recoveredPoll.TrySetResult(); await Task.Delay(Timeout.Infinite, stop.Token); }
             }
             bool primaryFailure = scenario is "school-status-error" or "hidden-status-error" or "expired-status-error";
-            bool fail = reads == 1 && (primaryFailure && school || scenario == "school-report-error" && capability == "study.report.status" ||
+            bool syncCase = scenario.StartsWith("sync-", StringComparison.Ordinal);
+            bool fail = !syncCase && reads == 1 && (primaryFailure && school || scenario == "school-report-error" && capability == "study.report.status" ||
                 !primaryFailure && scenario != "school-report-error" && capability == "manual.study.status");
             var supplied = scenario == "withdrawn-with-error" ? state with { Display = state.Display! with { Available = false } } :
                 scenario == "projection-with-error" ? state with { ProjectionPriority = true } :
                 scenario == "clock-with-error" ? state with { ClockReady = false } :
                 scenario == "policy-with-error" ? state with { PolicyState = "DISABLED" } : state;
-            return new HostResponse(fail ? 2 : 1, request.RequestId, "Succeeded", null, "isolated transient status failure", Study: school ? supplied : null);
+            if (syncCase && reads == 1)
+            {
+                bool clockLoss = scenario == "sync-clock";
+                supplied = state with { Phase = "Blocked", Window = null, SchoolNow = null, ClockReady = false, Execution = null,
+                    PolicyState = clockLoss ? "APPLIED" : "UNAVAILABLE", Version = clockLoss ? state.Version : null,
+                    Reason = clockLoss ? "SCHOOL_CLOCK_UNAVAILABLE" : scenario == "sync-revoked" ? "AUTH_INVALID" : "STUDY_OFFLINE",
+                    Display = state.Display! with { Available = false } };
+            }
+            var link = syncCase && school ? new NpepState(1, "ACTIVE",
+                reads == 1 && scenario != "sync-clock" ? "OFFLINE" : "ONLINE", "fixture",
+                LastReceivedAt: "2026-10-12T19:00:00Z") : null;
+            return new HostResponse(fail ? 2 : 1, request.RequestId, "Succeeded", null, "isolated transient status failure",
+                Study: school ? supplied : null, Npep: link);
         }, stop.Token, supportsCalibrationStatus: true));
         var main = PrivateWorkspace(pipe);
         var clock = new StudyUiClock();
         var display = new StudyWindow(pipe, () => { }, muted: true, time: clock);
         display.Apply(state, null); display.ShowDisplay();
-        if (scenario == "hidden-status-error") display.HideDisplay();
+        if (scenario is "hidden-status-error" or "sync-hidden") display.HideDisplay();
         if (scenario == "expired-status-error") clock.Ms += (long)(state.Window!.End - state.SchoolNow!.Value).TotalMilliseconds + 5000;
         typeof(MainWindow).GetField("_studyWindow", WorkspaceFlags)!.SetValue(main, display);
         if (scenario == "notification-with-error") typeof(MainWindow).GetField("_notificationOpening", WorkspaceFlags)!.SetValue(main, true);
@@ -69,14 +83,29 @@ internal static partial class Program
             polling = (Task)typeof(MainWindow).GetMethod("NoiseDisplayPollAsync", WorkspaceFlags)!.Invoke(main, null)!;
             PumpUntil(() => nextPoll.Task.IsCompleted || polling.IsCompleted, "next display poll did not begin", 8);
             Assert(!polling.IsCompleted, "transient error terminated polling");
-            bool retain = scenario is "manual-status-error" or "school-report-error" or "school-status-error";
+            bool retain = scenario is "manual-status-error" or "school-report-error" or "school-status-error" or "sync-offline" or "sync-clock" or "sync-timeout";
             Assert(display.IsVisible == retain, retain ? "one temporary read failure hid the confirmed school display" : "withdrawal/priority was ignored after a later read failed");
             if (retain) Assert(visibilityChanges == 0, "temporary read failure caused hide/show flicker");
             if (retain)
             {
+                if (scenario is "sync-offline" or "sync-clock" or "sync-timeout")
+                {
+                    var surface = (StudySurface)display.Content;
+                    Assert(display.PresentationPulse() is null && ((TextBlock)surface.FindName("Remaining")).Text == "—" &&
+                        ((TextBlock)surface.FindName("PhaseText")).Text == (scenario == "sync-clock" ? "学校时间待同步" : "自习安排待同步") &&
+                        ((TextBlock)surface.FindName("SyncText")).Text == (scenario == "sync-clock" ? "学校互联正常" : "学校正在重连") &&
+                        !((Button)surface.FindName("HoldButton")).IsEnabled && !((Button)surface.FindName("SeatingButton")).IsEnabled,
+                        "the waiting window still advertised a confirmed class or enabled classroom actions");
+                    if (scenario == "sync-timeout")
+                    {
+                        clock.Ms += 8000;
+                        PumpUntil(() => !display.IsVisible, "long outage kept the waiting window on the desktop");
+                    }
+                }
                 releaseNext.TrySetResult();
                 PumpUntil(() => recoveredPoll.Task.IsCompleted || polling.IsCompleted, "display did not recover after transient read failure", 8);
-                Assert(!polling.IsCompleted && display.IsVisible && visibilityChanges == 0, "read recovery caused hide/show flicker or stopped polling");
+                Assert(!polling.IsCompleted && display.IsVisible && visibilityChanges == (scenario == "sync-timeout" ? 2 : 0),
+                    "read recovery changed window visibility unexpectedly or stopped polling");
                 Assert(display.PresentationPulse()?.State == "Visible", "recovered fresh state stayed stale");
             }
             Checks.Add(scenario + ": actual MainWindow/private pipe keeps only an already-confirmed display, respecting withdrawal and presentation priorities; no real Host or sensors");

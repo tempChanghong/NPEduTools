@@ -16,12 +16,18 @@ public sealed class NpepConnectionPresentationTests
         Assert.Contains("无需重新配对", NpepConnectionPresentation.NextAction(state));
     }
 
-    [Fact]
-    public void Expired_status_sample_has_clear_cause_and_automatic_retry_advice()
+    [Theory]
+    [InlineData("ONLINE")]
+    [InlineData("OFFLINE")]
+    public void Expired_status_sample_has_clear_cause_and_automatic_retry_advice(string connection)
     {
-        var state = State("ACTIVE", "OFFLINE", "SAMPLE_TOO_OLD");
-        Assert.Contains("样本", NpepConnectionPresentation.Cause(state.Error));
-        Assert.Contains("自动重试", NpepConnectionPresentation.NextAction(state));
+        var state = State("ACTIVE", connection, "SAMPLE_TOO_OLD");
+        Assert.Equal("已配对 · 状态待重新上报", NpepConnectionPresentation.Title(state));
+        var cause = NpepConnectionPresentation.Cause(state.Error);
+        Assert.Contains("样本已过期", cause);
+        Assert.Contains("等待新的有效回执", cause);
+        Assert.DoesNotContain("未发送", cause);
+        Assert.Contains("重新采样并自动重试", NpepConnectionPresentation.NextAction(state));
     }
     private static NpepState State(string stage = "ACTIVE", string connection = "OFFLINE", string? error = null) =>
         new(1, stage, connection, "后台状态说明", Error: error);

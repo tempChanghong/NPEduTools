@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using NPEduTools.Contracts;
 using NPEduTools.Integrations.Npep;
 
@@ -8,6 +9,7 @@ public sealed partial class RuntimeTests
     [Theory]
     [InlineData("request-id")]
     [InlineData("unknown-error")]
+    [InlineData("sample-too-old")]
     public async Task Invalid_503_envelope_recovers_automatically_with_same_pairing_and_session(string defect)
     {
         using var directory = new TestDirectory(); var server = new FakeServer(); int broken = 1;
@@ -15,13 +17,20 @@ public sealed partial class RuntimeTests
         await using var runtime = new NpepRuntime(() => new(directory.Path, origin => new NpepApi(origin,
             new Handler(async request => {
                 if (!request.RequestUri!.AbsolutePath.EndsWith("/device/status", StringComparison.Ordinal) || Volatile.Read(ref broken) == 0) return await server.Send(request);
-                var response = Fixtures.Reply(request, new(), defect == "unknown-error" ? "UPSTREAM_UNKNOWN" : "TEMPORARILY_UNAVAILABLE", 503);
+                string code = defect switch
+                {
+                    "unknown-error" => "UPSTREAM_UNKNOWN",
+                    "sample-too-old" => "SAMPLE_TOO_OLD",
+                    _ => "TEMPORARILY_UNAVAILABLE"
+                };
+                var response = Fixtures.Reply(request, new(), code, 503);
                 if (defect == "request-id") { var envelope = System.Text.Json.Nodes.JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject(); envelope["requestId"] = NpepProtocol.Id(); response.Content = new StringContent(envelope.ToJsonString()); }
                 return response;
             }))), "structured-503-recovery", Sample);
         await Until(() => runtime.Snapshot().Error is not null);
         Assert.Equal("TEMPORARILY_UNAVAILABLE", runtime.Snapshot().Error); Assert.Equal("ACTIVE", runtime.Snapshot().State);
         Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
+        Assert.DoesNotContain("未上报", runtime.Snapshot().Message);
         Interlocked.Exchange(ref broken, 0);
         await UntilTlsRecovery(runtime, () => runtime.Snapshot().Connection == "ONLINE");
         Assert.Single(server.Requests, r => r.Path == "device/sessions"); Assert.Single(server.Requests, r => r.Path == "pairings");
@@ -169,13 +178,94 @@ public sealed partial class RuntimeTests
         await Command(runtime, "inspect"); await Command(runtime, "pair", server);
         await Command(runtime, "poll"); await Command(runtime, "confirm", server);
         await Until(() => runtime.Snapshot().Error == "SAMPLE_TOO_OLD", TimeSpan.FromSeconds(12));
-        Assert.Equal("ACTIVE", runtime.Snapshot().State);
-        Assert.Equal("OFFLINE", runtime.Snapshot().Connection);
+        var missedSample = runtime.Snapshot();
+        Assert.Equal("ACTIVE", missedSample.State);
+        Assert.Equal("OFFLINE", missedSample.Connection);
+        Assert.Null(missedSample.LastReceivedAt);
+        Assert.Contains("本机状态样本已过期", missedSample.Message);
+        Assert.Contains("未上报", missedSample.Message);
         Assert.DoesNotContain(server.Requests, request => request.Path == "device/status");
-        await Until(() => runtime.Snapshot().Connection == "ONLINE", TimeSpan.FromSeconds(15));
+        await Until(() => runtime.Snapshot().Connection == "ONLINE", TimeSpan.FromSeconds(4));
         Assert.True(Volatile.Read(ref samples) >= 2);
         Assert.Null(runtime.Snapshot().Error);
         Assert.Single(server.Requests, request => request.Path == "device/sessions");
         Assert.Single(server.Requests, request => request.Path == "device/status");
+    }
+
+    [Fact]
+    public async Task Unsent_status_sample_preserves_only_the_original_online_receipt_and_allows_the_study_cycle()
+    {
+        using var directory = new TestDirectory();
+        var server = new FakeServer();
+        using (var device = new NpepDevice(directory.Path, server.Api)) await server.ActivateAsync(device);
+        var time = new ReceiptTime();
+        int samples = 0, statusRequests = 0, sessions = 0;
+        HostResponse ReadSample()
+        {
+            if (Interlocked.Increment(ref samples) == 2) Thread.Sleep(5300);
+            return Sample();
+        }
+        async Task<HttpResponseMessage> Send(HttpRequestMessage request)
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/device/status", StringComparison.Ordinal)) Interlocked.Increment(ref statusRequests);
+            if (path.EndsWith("/device/sessions", StringComparison.Ordinal)) Interlocked.Increment(ref sessions);
+            if (!path.Contains("/device/study-settings", StringComparison.Ordinal)) return await server.Send(request);
+            var data = StudyProtocolTests.Configuration;
+            if (path.EndsWith("/receipt", StringComparison.Ordinal))
+                data = new() { ["confirmed"] = true, ["version"] = data["version"]!.DeepClone() };
+            else
+            {
+                var registration = server.Registration();
+                var identity = new JsonObject();
+                foreach (string field in new[] { "serverInstanceId", "deploymentEpoch", "deviceId", "bindingRevision", "credentialGeneration" })
+                    identity[field] = registration[field]!.DeepClone();
+                data["identity"] = identity;
+            }
+            var response = Fixtures.Reply(request, data);
+            var envelope = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+            envelope["protocolVersion"] = "0.10";
+            response.Content = new StringContent(envelope.ToJsonString());
+            return response;
+        }
+
+        await using var runtime = new NpepRuntime(() => new(directory.Path, origin => new(origin, new Handler(Send))),
+            "existing-receipt", ReadSample, receiptTime: time);
+        NpepConnectionHistory History() => runtime.Handle(new(1, Guid.NewGuid(), "npep.diagnostics")).ConnectionHistory!;
+        await Until(() => runtime.Snapshot().Connection == "ONLINE");
+        string? originalReceipt = runtime.Snapshot().LastReceivedAt;
+        Assert.NotNull(originalReceipt);
+        time.Advance(TimeSpan.FromSeconds(25));
+
+        await Until(() => runtime.Snapshot().Error == "SAMPLE_TOO_OLD", TimeSpan.FromSeconds(32));
+        var awaitingSample = runtime.Snapshot();
+        Assert.Equal("ONLINE", awaitingSample.Connection);
+        Assert.Equal(originalReceipt, awaitingSample.LastReceivedAt);
+        Assert.Contains("未上报", awaitingSample.Message);
+        Assert.Equal(1, Volatile.Read(ref statusRequests));
+        Assert.Contains(History().Events, item => item is { Kind: "Failure", Code: "SAMPLE_TOO_OLD", HttpStatus: null });
+        Assert.DoesNotContain(History().Events, item => item.Kind == "Recovered");
+
+        var study = new StudyFixture();
+        await runtime.StudyCycleAsync(study, CancellationToken.None);
+        Assert.Equal(1, study.Applied);
+        time.Advance(TimeSpan.FromSeconds(35));
+        var expired = runtime.Snapshot();
+        Assert.Equal("OFFLINE", expired.Connection);
+        Assert.Equal(originalReceipt, expired.LastReceivedAt);
+        Assert.Equal("SAMPLE_TOO_OLD", expired.Error);
+
+        await Until(() => runtime.Snapshot() is { Connection: "ONLINE", Error: null }, TimeSpan.FromSeconds(4));
+        Assert.Contains(History().Events, item => item.Kind == "Recovered");
+        Assert.Equal(2, Volatile.Read(ref statusRequests));
+        Assert.Equal(1, Volatile.Read(ref sessions));
+    }
+
+    private sealed class ReceiptTime : TimeProvider
+    {
+        private long _ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref _ticks);
+        public void Advance(TimeSpan elapsed) => Interlocked.Add(ref _ticks, elapsed.Ticks);
     }
 }

@@ -9,7 +9,23 @@ public sealed partial class NpepApi : IDisposable
 {
     private readonly HttpClient _http;
     public string Origin { get; }
-    public NpepApi(string origin) : this(origin, new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { }
+    public NpepApi(string origin) : this(origin, new SchoolTransport()) { }
+
+    // Each API client owns its observations and headers. Connections to the same origin
+    // can outlive one poll; periodic renewal picks up changes to the school's DNS.
+    private sealed class SchoolTransport : HttpMessageHandler
+    {
+        private static readonly HttpMessageInvoker Pool = new(new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+        });
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
+            Pool.SendAsync(request, token);
+    }
+
     internal NpepApi(string origin, HttpMessageHandler handler)
     {
         Origin = ValidateOrigin(origin);

@@ -109,7 +109,7 @@ public partial class StudySurface : UserControl
     {
         if (_paused || _timeline.State is not { } state) return;
         bool fresh = _timeline.Fresh;
-        RenderConnection(state, fresh);
+        RenderConnection(state, _timeline.HasFreshStatus);
         bool manual=state.Manual is not null;
         ClassTitle.Text=manual?"手动自习":"学校自习";
         EndButton.Visibility=manual?Visibility.Visible:Visibility.Collapsed;EndButton.IsEnabled=fresh && state.Phase=="Active" && !_busy;
@@ -124,7 +124,9 @@ public partial class StudySurface : UserControl
         Clock.Foreground = fresh ? Brushes.White : Muted;
         string clockSource = manual || state.ClockSource == "Windows" ? "Windows 本机时间" : "ClassIsland 学校时间";
         DateSource.Text = state.SchoolNow is { } date ? $"{date.ToString("M月d日 dddd", CultureInfo.GetCultureInfo("zh-CN"))} · {clockSource}" : "等待" + clockSource;
-        PhaseText.Text = !fresh ? (manual?"本机状态待同步":"学校时间待同步") : state.Phase switch { "Preparing" => "准备开始", "Active" => "自习进行中", "Ended" => "本次自习结束", _ => "自习暂停" };
+        PhaseText.Text = !fresh
+            ? (manual ? "本机状态待同步" : state.PolicyState == "UNAVAILABLE" ? "自习安排待同步" : "学校时间待同步")
+            : state.Phase switch { "Preparing" => "准备开始", "Active" => "自习进行中", "Ended" => "本次自习结束", _ => "自习暂停" };
         WindowText.Text = state.Window is { } w ? $"{w.Start:HH:mm} – {w.End:HH:mm}" : "—";
         RemainingLabel.Text = "剩余时间";
         Remaining.Text = fresh && state.Phase == "Active" && state.Window is { } window && state.SchoolNow is { } now

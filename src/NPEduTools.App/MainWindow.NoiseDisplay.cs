@@ -43,7 +43,10 @@ public partial class MainWindow
         if (SchoolStudyPresentationBlocked) { _studyWindow?.HideDisplay(); return; }
         if (response.Outcome != "Succeeded" || age < TimeSpan.Zero || age >= TimeSpan.FromSeconds(1.5)) return;
         if (response.Study is not { Display: { Selected: true, Available: true }, PolicyState: "APPLIED", ClockReady: true, ProjectionPriority: false })
-        { _studyWindow?.HideDisplay(); return; }
+        {
+            if (_studyWindow?.TryWaitForSchoolSync(response, age) != true) _studyWindow?.HideDisplay();
+            return;
+        }
         // Apply authoritative withdrawal/priority before any auxiliary await can fail.
         // Positive observations refresh an existing window only; normal presentation still requires a fresh read.
         if (_studyWindow?.IsVisible == true)
@@ -182,7 +185,7 @@ public partial class MainWindow
                         !NotificationPresentationActive &&
                         _onboardingWindow?.IsVisible != true && !Application.Current.Windows.OfType<NoiseManagementDialog>().Any(w => w.IsVisible) &&
                         studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(1.5) &&
-                        studyResponse.Study is { Display: { Selected: true, Available: true }, ProjectionPriority: false } &&
+                        studyResponse.Study is { Display: { Selected: true, Available: true }, PolicyState: "APPLIED", ClockReady: true, ProjectionPriority: false } &&
                         !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable())
                     {
                         using var studyProbe = RuntimeOperationFile.TryAcquire(false);
@@ -194,7 +197,11 @@ public partial class MainWindow
                             _studyWindow.ShowDisplay();
                         }
                     }
-                    else if (studyResponse.Outcome == "Succeeded" && studyRoundTrip >= TimeSpan.FromSeconds(1.5)) RetainConfirmedSchoolDisplay();
+                    else if (!studyBlocked && studyResponse.Outcome == "Succeeded")
+                    {
+                        if (studyRoundTrip >= TimeSpan.FromSeconds(1.5)) RetainConfirmedSchoolDisplay();
+                        else ReconcileExistingSchoolDisplay(studyResponse, studyRoundTrip);
+                    }
                     else _studyWindow?.HideDisplay();
                     continue;
                 }

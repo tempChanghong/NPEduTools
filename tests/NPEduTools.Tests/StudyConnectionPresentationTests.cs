@@ -54,6 +54,25 @@ public sealed class StudyConnectionPresentationTests
         Assert.Equal(continuing, label.Text.Contains("本次继续"));
         Assert.DoesNotContain("本次继续", StudyConnectionPresentation.Describe(Study(true) with { PolicyState = "UNAVAILABLE" }, Online, true).Text);
     }
+    [Theory]
+    [InlineData("ONLINE")]
+    [InlineData("OFFLINE")]
+    public void Expired_sample_is_distinct_from_lost_school_transport_without_claiming_send_outcome(string connection)
+    {
+        var missedSample = Online with { Connection = connection, Error = "SAMPLE_TOO_OLD" };
+        var label = StudyConnectionPresentation.Describe(Study(true), missedSample, true);
+        Assert.Equal("学校状态待上报 · 本次继续", label.Text);
+        Assert.Equal("Warning", label.Tone);
+        Assert.Contains("样本已过期", label.Detail);
+        Assert.Contains("等待新的有效回执", label.Detail);
+        Assert.DoesNotContain("未发送", label.Detail);
+        Assert.Contains("重新采样", label.Detail);
+        Assert.Equal("学校正在重连 · 本次继续",
+            StudyConnectionPresentation.Describe(Study(true), missedSample with { Connection = "OFFLINE", Error = "NETWORK_UNAVAILABLE" }, true).Text);
+        Assert.Equal("后台状态待确认", StudyConnectionPresentation.Describe(Study(), missedSample, false).Text);
+        Assert.Equal("学校连接已停用", StudyConnectionPresentation.Describe(Study(), missedSample with { State = "SUSPENDED" }, true).Text);
+        Assert.Equal("学校互联已暂停", StudyConnectionPresentation.Describe(Study(), missedSample with { ReportingPaused = true }, true).Text);
+    }
     [Fact]
     public void Explicit_pause_suspension_and_unknown_state_never_claim_automatic_retry()
     {

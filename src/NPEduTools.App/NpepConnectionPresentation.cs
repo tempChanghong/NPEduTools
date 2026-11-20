@@ -9,6 +9,8 @@ public static class NpepConnectionPresentation
     private static bool AutomaticRetry(NpepState state) => !state.ReportingPaused && state.Connection == "OFFLINE" &&
         (state.State is "UNPAIRED" or "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING" or "ACTIVE") &&
         (state.Error == "TLS_VALIDATION_FAILED" || state.State is "ACTIVE" or "PENDING");
+    private static bool Resampling(NpepState state) =>
+        state is { State: "ACTIVE", Connection: "ONLINE" or "OFFLINE", Error: "SAMPLE_TOO_OLD", ReportingPaused: false };
 
     public static string Title(NpepState? state)
     {
@@ -18,6 +20,7 @@ public static class NpepConnectionPresentation
         if (state.Busy) return "学校互联操作正在处理";
         if (state.Error == "PAIRING_EXPIRED") return "配对码已过期";
         if (state.State == "ACTIVE" && state.ReportingPaused) return "已配对 · 互联已暂停";
+        if (Resampling(state)) return "已配对 · 状态待重新上报";
         if (AutomaticRetry(state)) return state.State == "ACTIVE" ? "已配对 · 暂时离线，等待自动重试" : "学校服务暂不可用 · 等待自动重试";
         return state.State switch
         {
@@ -46,6 +49,7 @@ public static class NpepConnectionPresentation
         if (feedbackCode is not null) return Explain(feedbackCode).Advice;
         if (state.State == "ACTIVE" && state.ReportingPaused)
             return "配对信息保留。需要继续连接时点击“恢复互联”，随后后台会重新核查学校授权；不会自行解除暂停。";
+        if (Resampling(state)) return Explain(state.Error!).Advice;
         if (AutomaticRetry(state)) return state.Error == "TLS_VALIDATION_FAILED"
             ? "后台会持续自动重试。核对学校地址、本机系统时间和服务器证书；每次仍验证证书，不要关闭证书校验。"
             : "等待后台自动重试，原配对或申请保留；若持续离线，核对网络与学校服务。无需重新配对。";
@@ -82,7 +86,7 @@ public static class NpepConnectionPresentation
         "NETWORK_UNAVAILABLE" => new("暂时无法连接学校服务。", "核对网络与学校服务；未完成的手动操作需要刷新后核查或恢复原操作，不要重复创建申请。"),
         "TEMPORARILY_UNAVAILABLE" => new("学校服务暂时不可用。", "按当前连接状态等待自动重试或恢复原操作；核对学校服务与网关，不要重复创建配对。"),
         "RATE_LIMITED" => new("学校服务暂时限制了请求频率。", "等待后台按服务给出的间隔重试；未完成的手动操作先核查原结果，不要反复提交。"),
-        "SAMPLE_TOO_OLD" => new("本次状态样本因处理或排队耗时已过期，未发送。", "后台将重新采样并自动重试；若持续发生，请保留技术详情，核对电脑负载和连接耗时。"),
+        "SAMPLE_TOO_OLD" => new("本次状态样本已过期，等待新的有效回执。", "后台将重新采样并自动重试；若持续发生，请保留技术详情，核对电脑负载和连接耗时。"),
         "PAIRING_EXPIRED" => new("配对码已过期。", "取消原申请后重新获取配对码；原申请不会自动延长有效期。"),
         "PAIRING_CODE_UNAVAILABLE" => new("网页配对码已使用、过期或失效。", "取消原申请，再从对应班级的大屏网页获取新码。"),
         "SCREEN_PAIRING_DISABLED" or "PREAUTHORIZATION_CHANGED" => new("学校预授权已关闭或变更。", "联系管理员核对班级预授权；处理后取消原申请并重新获取配对码。"),

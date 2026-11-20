@@ -13,6 +13,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private readonly Func<HostResponse> _sample;
     private readonly string _appVersion;
     private readonly NpepDevice? _device;
+    private readonly TimeProvider _receiptTime;
     private readonly Queue<Guid> _requests = new();
     private NpepState _state = new(0, "UNPAIRED", "DISABLED", "尚未连接学校服务。只有完成配对后才会上报设备状态。");
     private Task _command = Task.CompletedTask;
@@ -21,7 +22,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private JsonObject? _verified;
     private string? _verifiedOrigin;
     private JsonObject? _catalogue;
-    private long _attemptAt, _receivedAt;
+    private long _attemptAt;
+    private long? _receivedAt;
     private double _delay;
     private int _failures;
     private bool _blocked, _disposed;
@@ -33,9 +35,10 @@ public sealed partial class NpepRuntime : IAsyncDisposable
 
     public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null)
         : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study, schoolManagement) { }
-    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null)
+    internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null, TimeProvider? receiptTime = null)
     {
         _sample = sample; _appVersion = appVersion; _schoolManagement = schoolManagement;
+        _receiptTime = receiptTime ?? TimeProvider.System;
         try
         {
             _device = factory();
@@ -70,11 +73,15 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         lock (_sync)
         {
             var result = _state;
-            if (result.Connection == "ONLINE" && Stopwatch.GetElapsedTime(_receivedAt) >= TimeSpan.FromSeconds(60))
+            if (result.Connection == "ONLINE" && !HasFreshStatusReceipt())
                 result = result with { Connection = "OFFLINE", Message = "最近 60 秒未收到新的上报回执；显示的是上次观测。" };
             return result with { Server = result.Server?.Copy(), Pairing = result.Pairing?.Copy(), Approval = result.Approval?.Copy(),Catalogue=_catalogue?.Copy() };
         }
     }
+
+    // Used under _sync. The display time from the server is independent of monotonic age.
+    private bool HasFreshStatusReceipt() => _state.LastReceivedAt is not null && _receivedAt is { } timestamp &&
+        _receiptTime.GetElapsedTime(timestamp) < TimeSpan.FromSeconds(60);
 
     public HostResponse Handle(HostRequest request)
     {
@@ -169,7 +176,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             case "unpair":
                 string outcome = await _device!.UnpairAsync(token);
                 _schoolManagement?.BindSchool(null);
-                _verified = null; _verifiedOrigin = null; _receivedAt = 0;
+                _verified = null; _verifiedOrigin = null;
                 Publish("DISABLED", outcome == "LOCAL_ONLY" ? "本机已解绑，但无法确认远端撤销。请学校管理员检查并撤销该设备。" : "已解除绑定并停止上报。", outcome == "LOCAL_ONLY" ? "LOCAL_ONLY" : null); break;
         }
         _failures = 0; _delay = c.Action is "pair" or "poll" or "resume-create" ? 5 : 0;
@@ -218,7 +225,6 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                         long sampledAt = Stopwatch.GetTimestamp();
                         return new NpepSample(NpepStatusReader.Map(_sample(), _appVersion), sampledAt);
                     }, _network.Token);
-                    _receivedAt = Stopwatch.GetTimestamp();
                     Publish("ONLINE", "学校服务已收到最新状态。连接随后台运行，主窗口收起不影响上报。", receivedAt: receipt.Text("receivedAt"));
                     _delay = 20; _failures = 0;
                 }
@@ -234,12 +240,23 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         }
     }
 
-    private void Publish(string connection, string message, string? error = null, string? receivedAt = null)
+    private void Publish(string connection, string message, string? error = null, string? receivedAt = null, bool preserveOnlineReceipt = false)
     {
-        var view = _device!.View(); string stage = view.Text("state");
-        bool paused = view["reportingPaused"]?.GetValue<bool>() == true;
+        long? receiptTimestamp = receivedAt is not null ? _receiptTime.GetTimestamp() : null;
         lock (_sync)
         {
+            var view = _device!.View(); string stage = view.Text("state");
+            bool paused = view["reportingPaused"]?.GetValue<bool>() == true;
+            bool canReport = stage == "ACTIVE" && !paused && view["suspended"]?.GetValue<bool>() != true;
+            // Discarding a local sample gives no new evidence about the school connection.
+            // Keep the prior ONLINE receipt only while the same connection remains active.
+            if (preserveOnlineReceipt && canReport &&
+                _state is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } && HasFreshStatusReceipt())
+                connection = "ONLINE";
+            bool receivedNewStatus = canReport && connection == "ONLINE" && receiptTimestamp is not null;
+            if (receivedNewStatus) _receivedAt = receiptTimestamp;
+            else if (!canReport) _receivedAt = null;
+            string? lastReceivedAt = receivedNewStatus ? receivedAt : _state.LastReceivedAt;
             SynchronizeControlScope(view, connection);
             bool changed = _state.State != stage || _state.ReportingPaused != paused;
             _state = _state with
@@ -249,10 +266,10 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 Message = paused ? "已暂停互联（通知与状态），配对保留。恢复后会重新检查授权。" : message,
                 Origin = view["origin"]?.GetValue<string>() ?? _verifiedOrigin, Server = _verified?.Copy(),
                 Pairing = view["pairing"] as JsonObject, Approval = view["approval"] as JsonObject,
-                ReportingPaused = paused, LastReceivedAt = stage == "UNPAIRED" ? null : receivedAt ?? _state.LastReceivedAt, Error = error,
+                ReportingPaused = paused, LastReceivedAt = stage == "UNPAIRED" ? null : lastReceivedAt, Error = error,
                 PairingSource = view["pairingSource"]?.GetValue<string>()
             };
-            if (connection == "ONLINE" && _connectionFailed) { _history.Add("Recovered", "Status"); _connectionFailed = false; }
+            if (receivedNewStatus && _connectionFailed) { _history.Add("Recovered", "Status"); _connectionFailed = false; }
             if (connection is "DISABLED" or "PAUSED") _connectionFailed = false;
         }
     }
@@ -260,15 +277,23 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     {
         bool tls = IsTlsFailure(e);
         string code = tls ? "TLS_VALIDATION_FAILED" : e is NpepException n ? n.Code : e is HttpRequestException or OperationCanceledException ? "NETWORK_UNAVAILABLE" : "CREDENTIAL_STORE_UNAVAILABLE";
-        // A locally expired status sample is discarded before sending. Re-sample on
-        // the next attempt; it is not a credential/binding rejection and must not latch STOPPED.
-        bool retry = tls || e is HttpRequestException or OperationCanceledException || e is NpepException problem && !NpepDevice.TerminalConnectionError(problem) &&
-            (problem.Status == 429 || problem.Status >= 500 || problem is { Code: "SAMPLE_TOO_OLD", Status: 0 });
+        bool localSampleExpired = e is NpepException { Code: "SAMPLE_TOO_OLD", Status: 0 };
+        bool retry = localSampleExpired || tls || e is HttpRequestException or OperationCanceledException ||
+            e is NpepException problem && !NpepDevice.TerminalConnectionError(problem) && (problem.Status == 429 || problem.Status >= 500);
         _blocked = !retry;
         _connectionFailed = true;
         _history.Add("Failure", background ? "Status" : "Command", code, (e as NpepException)?.Status is > 0 and <= 599 ? ((NpepException)e).Status : null, retrying: retry);
-        int backoff = Math.Min(60, 5 * (1 << Math.Min(_failures++, 4)));
+        // A sample discarded before sending can be replaced promptly. Repeated
+        // failures still back off. Only a new receipt can renew status freshness.
+        int failures = _failures++;
+        int backoff = localSampleExpired && failures == 0 ? 1 : Math.Min(60, 5 * (1 << Math.Min(failures, 4)));
         _delay = Math.Max(backoff, (e as NpepException)?.RetryAfterSeconds ?? 0) * (1 + Random.Shared.NextDouble() * .2);
+        if (localSampleExpired)
+        {
+            Publish("OFFLINE", "本机状态样本已过期，本次未上报；后台会重新采样。", code,
+                preserveOnlineReceipt: background);
+            return;
+        }
         string stopped = code switch
         {
             "PAIRING_EXPIRED" => "配对码已过期。请取消本次配对后重新创建；不会自动延长期限。",

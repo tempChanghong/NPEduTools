@@ -23,6 +23,8 @@ public static class StudyConnectionPresentation
             return new("学校互联已暂停", "Muted", "互联被主动暂停，不会自行解除暂停。");
         if (connection.State == "UNPAIRED") return new(study.Manual is not null ? "仅本机自习" : "学校尚未连接", "Muted", "尚未完成学校配对，不能确认服务器收到本次数据。");
         if (connection.Connection == "STOPPED") return Warning("学校连接已停止", "请在学校互联页查看原因并重新连接；当前未在自动重连。");
+        if (connection is { State: "ACTIVE", Connection: "ONLINE" or "OFFLINE", Error: "SAMPLE_TOO_OLD", Busy: false })
+            return Warning("学校状态待上报", "本次状态样本已过期，后台会重新采样，等待新的有效回执。");
         if (connection.State == "ACTIVE" && connection.Connection == "OFFLINE")
             return Warning("学校正在重连", "暂未收到新的学校服务回执，后台会自动重试。");
         if (connection.Busy) return new("学校互联处理中", "Muted", "学校互联操作尚在处理，等待新的状态确认。");

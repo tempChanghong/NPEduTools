@@ -30,6 +30,33 @@ public sealed class StudyDisplayContinuationTests
         Assert.Equal(state.Window.Start.AddMinutes(10), state.SchoolNow);
         clock.Ms += 60_000; Assert.False(continuation.CanKeep);
     }
+
+    [Theory]
+    [InlineData("STUDY_OFFLINE", 60, 7800)]
+    [InlineData("SCHOOL_CLOCK_UNAVAILABLE", 2, 1800)]
+    public void Sync_wait_is_bounded_by_last_confirmation_and_class_end(string reason, int secondsLeft, int limitMs)
+    {
+        var clock = new Clock();
+        var continuation = new StudyDisplayContinuation(clock);
+        var state = State();
+        state = state with { SchoolNow = state.Window!.End.AddSeconds(-secondsLeft) };
+        bool clockLost = reason == "SCHOOL_CLOCK_UNAVAILABLE";
+        var waiting = state with { Phase = "Blocked", ClockReady = false, Window = null,
+            PolicyState = clockLost ? "APPLIED" : "UNAVAILABLE", Version = clockLost ? state.Version : null,
+            Reason = reason, Display = state.Display! with { Available = false } };
+        Assert.False(continuation.TryWaitForSchoolSync(waiting));
+        continuation.Observe(state, TimeSpan.FromMilliseconds(200));
+        Assert.False(continuation.TryWaitForSchoolSync(waiting with { Reason = "BINDING_CHANGED" }));
+        Assert.False(continuation.TryWaitForSchoolSync(waiting with { ProjectionPriority = true }));
+        Assert.False(continuation.TryWaitForSchoolSync(waiting with { Mode = "Exam" }));
+        Assert.False(continuation.TryWaitForSchoolSync(waiting with { Display = waiting.Display! with { HiddenRemainingSeconds = 60 } }));
+        for (clock.Ms = 0; clock.Ms < limitMs; clock.Ms += 100)
+            Assert.True(continuation.TryWaitForSchoolSync(waiting));
+        Assert.False(continuation.CanKeep);
+        Assert.False(continuation.TryWaitForSchoolSync(waiting));
+        continuation.Observe(state);
+        Assert.True(continuation.CanKeep);
+    }
     [Theory]
     [InlineData("withdrawn")][InlineData("unselected")][InlineData("clock")][InlineData("policy")]
     [InlineData("phase")][InlineData("projection")][InlineData("expired")][InlineData("early")]

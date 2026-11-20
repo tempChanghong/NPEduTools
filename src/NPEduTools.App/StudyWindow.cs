@@ -62,6 +62,20 @@ public sealed partial class StudyWindow : Window
         NoiseCalibrationStatus? calibration = null)
     {
         _continuation.Observe(state, transportAge);
+        ApplyState(state, noise, transportAge, photos, connection, calibration);
+    }
+    internal bool TryWaitForSchoolSync(HostResponse response, TimeSpan age)
+    {
+        if (_manual || _shutdown || !IsVisible || response.Study is not { } state ||
+            response.Npep is { } link && link is not { State: "ACTIVE", ReportingPaused: false, Busy: false, Connection: "ONLINE" or "OFFLINE" } ||
+            !_continuation.TryWaitForSchoolSync(state)) return false;
+        // Only the window stays up. Withdraw the old lesson content, readings and actions immediately.
+        ApplyState(state with { SchoolNow = null, Homework = null, Seating = null }, null, age, null, response.Npep, null);
+        return true;
+    }
+    private void ApplyState(StudyHostState state, NoiseState? noise, TimeSpan transportAge, StudyPhotoState? photos,
+        NpepState? connection, NoiseCalibrationStatus? calibration)
+    {
         if (_state?.Display?.InstanceId != state.Display?.InstanceId || _state?.Window != state.Window || _state?.Version != state.Version)
         { DismissSeatingUpload(); _hideRequest = null; _surface.ReturnError(null); }
         if (!state.ClockReady || state.PolicyState != "APPLIED" || state.Phase is not ("Preparing" or "Active")) DismissSeatingUpload();
