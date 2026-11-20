@@ -127,6 +127,66 @@ public sealed class ManagedUpdateSessionTests
         Assert.Equal(2, attempts); Assert.False(f.Session.Status.LocalConsent);
         Assert.False(f.Session.Accept(f.Invitation)); Assert.True(f.Session.Accept(newInvitation));
     }
+
+    [Fact]
+    public async Task AnOpenConsentPageCannotCarryApprovalAcrossWithdrawalAndReinvitation()
+    {
+        using var f = new Scenario();
+        await f.Cycle();
+        var oldPageId = f.Session.Status.EnrollmentId!.Value;
+        var withdrawal = new TaskCompletionSource<JsonObject>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var poll = f.Session.CycleAsync("current-scope", (consent, receipt) =>
+        {
+            Assert.Null(consent);
+            Assert.Null(receipt);
+            return withdrawal.Task;
+        }, default);
+
+        // The school has withdrawn the invitation, but the open page still shows its previous reply.
+        f.Session.Accept(oldPageId);
+        withdrawal.SetResult(new JsonObject { ["enrollment"] = "UNMANAGED", ["enrollmentId"] = null, ["managed"] = false });
+        await poll;
+        Assert.Equal("UNMANAGED", f.Session.Status.Enrollment);
+        Assert.Null(f.Session.Status.EnrollmentId);
+        Assert.False(f.Session.Status.LocalConsent);
+        Assert.False(f.Session.Accept(oldPageId));
+
+        var newPageId = Guid.NewGuid();
+        f.Session = new(f.Host, f.DirectoryPath);
+        f.Session.Bind("current-scope", "school", "class", "screen");
+        await f.Session.CycleAsync("current-scope", (consent, receipt) =>
+        {
+            Assert.Null(consent);
+            Assert.Null(receipt);
+            return Task.FromResult(new JsonObject { ["enrollment"] = "INVITED",
+                ["enrollmentId"] = newPageId.ToString("D"), ["managed"] = false });
+        }, default);
+        Assert.Equal("INVITED", f.Session.Status.Enrollment);
+        Assert.Equal(newPageId, f.Session.Status.EnrollmentId);
+        Assert.False(f.Session.Accept(oldPageId));
+        Assert.False(f.Session.Status.LocalConsent);
+        Assert.Equal(0, f.Host.Prepared);
+        Assert.True(f.Session.Accept(newPageId));
+    }
+
+    [Fact]
+    public async Task ConsentGivenDuringAPollIsKeptWhenTheInvitationIsStillCurrent()
+    {
+        using var f = new Scenario();
+        await f.Cycle();
+        await f.Session.CycleAsync("current-scope", (consent, receipt) =>
+        {
+            Assert.Null(consent);
+            Assert.True(f.Session.Accept(f.Invitation));
+            return f.Exchange(consent, receipt);
+        }, default);
+
+        Assert.Equal("INVITED", f.Session.Status.Enrollment);
+        Assert.True(f.Session.Status.LocalConsent);
+        await f.Cycle();
+        Assert.Equal("MANAGED", f.Session.Status.Enrollment);
+    }
+
     [Fact]
     public async Task DisconnectRejectsAnOpenInvitationAndReturningAfterRebindingNeedsNewConsent()
     {

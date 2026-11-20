@@ -130,8 +130,11 @@ internal sealed class ManagedUpdateSession(ISchoolUpdateHost host, string direct
         lock (_sync)
         {
             if (_scope != scope) throw new NpepException("SESSION_SUPERSEDED");
+            // A consent click may have been saved while the exchange was in flight.
+            var saved = ConsentId(scope);
+            if (saved.HasValue && saved != invited) File.Delete(_path);
             _online = true; _observedAt = Stopwatch.GetTimestamp();
-            _status = _status with { Enrollment = enrollment, EnrollmentId = invited, LocalConsent = consent.HasValue && consent == invited,
+            _status = _status with { Enrollment = enrollment, EnrollmentId = invited, LocalConsent = saved.HasValue && saved == invited,
                 State = plan?.State, Reason = (snapshot["plan"] as JsonObject)?["reason"]?.GetValue<string>(),
                 TargetVersion = plan?.TargetVersion, PlanId = plan?.Id };
         }
