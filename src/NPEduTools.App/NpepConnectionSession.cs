@@ -15,7 +15,16 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private string _origin = "", _deviceName = "教室大屏";
     private string _userCode = "";
     private string? _catalogueSeen;
-    private IReadOnlyList<ClassChoice> _classes=[];
+    private IReadOnlyList<ClassChoice> _classes = [];
+    private enum CatalogueView { Quick, Editing, Lookup }
+    private sealed record LookupPage(string School, string Class, string? After);
+    private CatalogueView _catalogueView;
+    private LookupPage? _lookupPage;
+    private string _schoolQuery = "", _classQuery = "";
+    private string? _lookupFailure;
+    private bool _lookupReady;
+    private Guid? _lookupInHost;
+    internal int ClassSelectionRevision { get; private set; }
     public string UserCode { get => _userCode; set { _userCode = value; Changed(); } }
     private (string? Origin, string Instance, string Epoch)? _providerSeen;
     private string? _serverSeen, _approvalSeen, _feedback;
@@ -44,9 +53,24 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         ProviderRevision++;
         _serverConfirmed = false;
         _userCode = "";
+        ResetClassSelection();
     }
     public string DeviceName { get => _deviceName; set { _deviceName = value; Changed(); } }
-    public bool ServerConfirmed { get => _serverConfirmed; set { _serverConfirmed = value; Changed(); } }
+    public bool ServerConfirmed
+    {
+        get => _serverConfirmed;
+        set
+        {
+            if (_serverConfirmed == value) return;
+            _serverConfirmed = value;
+            if (!value)
+            {
+                ResetClassSelection();
+                UpdateCatalogue();
+            }
+            Changed();
+        }
+    }
     public bool BindingConfirmed { get => _bindingConfirmed; set { _bindingConfirmed = value; Changed(); } }
     public bool IsWorking => _working || _state?.Busy == true;
     private bool Available => !_working && _state is { Busy: false };
@@ -67,20 +91,154 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public bool ShowActive => HasPairing;
     public bool ShowBindingManagement => NpepConnectionPresentation.IsBindingState(_state);
     // Read-only polling must not disable a focused input while the user is typing.
-    public bool CanEdit => !_mutating && (_state is null || _state is { Busy: false, State: "UNPAIRED" });
+    public bool CanEdit => !_mutating && (_state is null || _state.State == "UNPAIRED" && (!_state.Busy ||
+        _lookupInHost is { } lookup && _state.OperationId == lookup));
     public bool CanReviewBinding => !_mutating && _state is { Busy: false } && ShowConfirm;
     public bool CanInspect => Available && CanEdit && NpepContract.Valid(new("inspect", 0, Origin.Trim()));
-    public bool CanPair => Available && CanEdit && ServerConfirmed && _state!.Server is { } server &&
-        Uri.TryCreate(Origin.Trim(), UriKind.Absolute, out var origin) && origin.GetLeftPart(UriPartial.Authority) == _state.Origin &&
+    private bool HasCatalogueProvider => ShowServer && Uri.TryCreate(Origin.Trim(), UriKind.Absolute, out var origin) &&
+        origin.GetLeftPart(UriPartial.Authority) == _state!.Origin;
+    public bool CanPair => Available && CanEdit && ServerConfirmed && HasCatalogueProvider && _state!.Server is { } server &&
         NpepContract.Valid(new("pair", _state.Revision, Origin.Trim(), DeviceName.Trim(), Text(server, "serverInstanceId"), Text(server, "deploymentEpoch")));
     public bool CanConfirm => Available && ShowConfirm && BindingConfirmed &&
         NpepContract.Valid(new("confirm", _state!.Revision, ApprovalId: Text(_state.Approval, "approvalId")));
     private string NormalizedCode => UserCode.Replace("-", "").Replace(" ", "").ToUpperInvariant();
     public bool CanClaim => CanPair && NpepContract.Valid(new("claim", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
         Text(_state.Server, "serverInstanceId"), Text(_state.Server, "deploymentEpoch"), UserCode: NormalizedCode));
-    public sealed record ClassChoice(string Id,string Name);
+    public sealed record ClassChoice(string Id, string Name);
     public IReadOnlyList<ClassChoice> Classes => _classes;
-    public bool HasClasses => Classes.Count>0;
+    public bool HasClasses => Classes.Count > 0;
+    private JsonObject? ProviderCatalogue => HasCatalogueProvider ? _state?.Catalogue : null;
+    public bool ShowClassLookup => Flag(ProviderCatalogue, "supportsLookup");
+    public bool CanEditClassCatalogue => HasCatalogueProvider && CanEdit && ServerConfirmed;
+    public bool ShowQuickCatalogueAction => HasCatalogueProvider && (_catalogueView != CatalogueView.Quick || HasLookupScope(ProviderCatalogue));
+    public bool CanRestoreQuickCatalogue => CanInspect && CanEditClassCatalogue;
+    public bool CanFindClass => Available && CanEditClassCatalogue && ShowClassLookup &&
+        NpepContract.Valid(LookupCommand(new(SchoolQuery.Trim(), ClassQuery.Trim(), null)));
+    public bool ShowNextClassPage => NextClassCursor is not null;
+    public bool CanFindNextClassPage => Available && CanEditClassCatalogue && ShowClassLookup && NextClassCursor is not null;
+    public bool ShowRetryClassPage => _lookupFailure is not null && _lookupPage is not null;
+    public bool CanRetryClassPage => Available && CanEditClassCatalogue && ShowClassLookup && ShowRetryClassPage;
+    public string SchoolQuery { get => _schoolQuery; set => EditLookup(ref _schoolQuery, value); }
+    public string ClassQuery { get => _classQuery; set => EditLookup(ref _classQuery, value); }
+    private string? NextClassCursor => _lookupReady && _lookupPage == ReadLookupPage(ProviderCatalogue) &&
+        Text(ProviderCatalogue, "nextCursor") is { Length: > 0 } next && next != _lookupPage?.After ? next : null;
+    public string ClassCatalogueHint
+    {
+        get
+        {
+            if (!HasCatalogueProvider) return "";
+            if (_catalogueView == CatalogueView.Editing) return "填写学校与班级的完整名称或代码，再查找并选择大屏。";
+            if (_catalogueView == CatalogueView.Lookup)
+            {
+                if (_lookupFailure is { } failure) return failure;
+                if ((_working || _lookupInHost is not null) && !_lookupReady) return "正在查找班级大屏…";
+                if (!_lookupReady) return "请查找班级大屏。";
+                return HasClasses ? $"本页找到 {Classes.Count} 台大屏，请核对后手动选择。" : "本页没有符合条件的大屏，请核对学校和班级的全称或代码。";
+            }
+            if (HasLookupScope(ProviderCatalogue)) return "可重新查找，或返回快速列表。";
+            if (!Flag(ProviderCatalogue, "truncated")) return "";
+            return ShowClassLookup ? "快速列表只显示部分大屏。请用下方精确查找定位其他班级。"
+                : "快速列表只显示部分大屏。若找不到本班，请联系学校管理员升级学校服务。";
+        }
+    }
+
+    internal void LeaveClassSelection()
+    {
+        ResetClassSelection();
+        Changed();
+    }
+
+    private void ResetClassSelection()
+    {
+        _catalogueView = CatalogueView.Quick;
+        _schoolQuery = _classQuery = "";
+        _lookupPage = null;
+        _lookupReady = false;
+        _lookupFailure = null;
+        ClearClassCatalogue();
+    }
+
+    private void EditLookup(ref string field, string value)
+    {
+        if (field == value) return;
+        field = value;
+        _catalogueView = CatalogueView.Editing;
+        _lookupPage = null;
+        _lookupReady = false;
+        _lookupFailure = null;
+        ClearClassCatalogue();
+        Changed();
+    }
+
+    private void ClearClassCatalogue()
+    {
+        ClassSelectionRevision++;
+        _catalogueSeen = null;
+        _classes = [];
+    }
+
+    public Task<bool> FindClassAsync() => CanFindClass ? ReadClassPageAsync(new(SchoolQuery.Trim(), ClassQuery.Trim(), null)) : Task.FromResult(false);
+
+    public Task<bool> FindNextClassPageAsync() => CanFindNextClassPage && _lookupPage is { } page && NextClassCursor is { } cursor
+        ? ReadClassPageAsync(page with { After = cursor }) : Task.FromResult(false);
+
+    public Task<bool> RetryClassPageAsync() => CanRetryClassPage && _lookupPage is { } page ? ReadClassPageAsync(page) : Task.FromResult(false);
+
+    private Task<bool> ReadClassPageAsync(LookupPage page)
+    {
+        var command = LookupCommand(page);
+        if (!NpepContract.Valid(command)) return Task.FromResult(false);
+        _catalogueView = CatalogueView.Lookup;
+        _lookupPage = page;
+        _lookupReady = false;
+        _lookupFailure = null;
+        ClearClassCatalogue();
+        return RunAsync(command, ClassSelectionRevision);
+    }
+
+    private NpepCommand LookupCommand(LookupPage page) => new("find-class", _state!.Revision, Origin.Trim(),
+        ServerInstanceId: Text(_state.Server, "serverInstanceId"), DeploymentEpoch: Text(_state.Server, "deploymentEpoch"),
+        SchoolQuery: page.School, ClassQuery: page.Class, CatalogueAfter: page.After);
+
+    private static bool Flag(JsonObject? value, string key) => value?[key] is JsonValue flag && flag.TryGetValue<bool>(out var enabled) && enabled;
+
+    private static bool HasLookupScope(JsonObject? value) => value?["schoolQuery"] is not null || value?["classQuery"] is not null || value?["after"] is not null;
+
+    private static LookupPage? ReadLookupPage(JsonObject? value) =>
+        Text(value, "schoolQuery") is { Length: > 0 } school && Text(value, "classQuery") is { Length: > 0 } @class
+            ? new(school, @class, Text(value, "after") is { Length: > 0 } after ? after : null) : null;
+
+    private void UpdateCatalogue()
+    {
+        var catalogue = ProviderCatalogue;
+        var page = ReadLookupPage(catalogue);
+        if (_catalogueView == CatalogueView.Lookup && _lookupReady && _lookupPage != page)
+        {
+            _lookupReady = false;
+            _lookupFailure = "后台目录已变化，请重新查找。";
+        }
+        bool matches = _catalogueView == CatalogueView.Quick && !HasLookupScope(catalogue) ||
+            _catalogueView == CatalogueView.Lookup && _lookupReady && _lookupPage == page;
+        string? serialized = matches ? catalogue?.ToJsonString() : null;
+        if (serialized == _catalogueSeen) return;
+        ClassSelectionRevision++;
+        _catalogueSeen = serialized;
+        if (!matches || catalogue?["items"] is not JsonArray items) { _classes = []; return; }
+
+        var choices = items.OfType<JsonObject>().Where(row => Text(row, "screenBindingId").Length > 0)
+            .Select(row => new ClassChoice(Text(row, "screenBindingId"), CatalogueLabel(row))).DistinctBy(row => row.Id).ToArray();
+        var duplicateLabels = choices.GroupBy(row => row.Name).Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
+        _classes = choices.Select(row => duplicateLabels.Contains(row.Name) ? row with { Name = $"{row.Name}（大屏编号 {row.Id}）" } : row).ToArray();
+    }
+
+    private static string CatalogueLabel(JsonObject row)
+    {
+        string WithCode(string key, string codeKey) => Text(row, codeKey) is { Length: > 0 } code ? $"{Text(row, key)}（{code}）" : Text(row, key);
+        var grade = Text(row, "gradeName");
+        var classLabel = WithCode("className", "classCode");
+        if (grade.Length > 0 && !classLabel.StartsWith(grade, StringComparison.Ordinal)) classLabel = $"{grade} / {classLabel}";
+        return string.Join(" · ", new[] { WithCode("schoolName", "schoolCode"), classLabel, Text(row, "screenName") }.Where(value => value.Length > 0));
+    }
     public Task<bool> ConnectClassAsync(string? binding,string? secret)
     {
         if(!CanPair || binding is null || !Classes.Any(x=>x.Id==binding))return Task.FromResult(false);
@@ -118,16 +276,9 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public string BoundOrigin => _state?.Origin ?? "";
     public string BindingIdentity => $"学校：{Text(_state?.Approval, "schoolId")}\n班级：{Text(_state?.Approval, "administrativeClassId")}\n大屏：{Text(_state?.Approval, "screenBindingId")}\n批准编号：{Text(_state?.Approval, "approvalId")}";
 
-    private void Apply(HostResponse response)
+    private void Apply(HostResponse response, NpepCommand? command)
     {
         _state = response.Npep;
-        string? catalogue=_state?.Catalogue?.ToJsonString();
-        if(catalogue!=_catalogueSeen)
-        {
-            _catalogueSeen=catalogue;
-            _classes=_state?.Catalogue?["items"] is JsonArray items ? items.OfType<JsonObject>().Where(x=>Text(x,"screenBindingId").Length>0)
-                .Select(x=>new ClassChoice(Text(x,"screenBindingId"),$"{Text(x,"schoolName")} · {Text(x,"gradeName")} {Text(x,"className")} · {Text(x,"screenName")}")).ToArray():[];
-        }
         if (_state?.State is "APPROVED" or "ACTIVE") _userCode = "";
         (string?, string, string)? provider = _state?.Server is { } identity
             ? (_state.Origin, Text(identity, "serverInstanceId"), Text(identity, "deploymentEpoch")) : null;
@@ -138,13 +289,46 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             if (_providerSeen is not null) ResetProviderDrafts();
             _providerSeen = provider;
         }
-        if (server != _serverSeen) { _serverSeen = server; _serverConfirmed = false; }
+        if (server != _serverSeen)
+        {
+            _serverSeen = server;
+            if (_serverConfirmed) ResetProviderDrafts();
+        }
         if (approval != _approvalSeen) { _approvalSeen = approval; _bindingConfirmed = false; }
         if (!_originEdited && _state?.Origin is { } saved) _origin = saved;
         _feedback = response.Outcome == "Rejected" || response.Npep is null ? response.Message : null;
         _feedbackCode = _feedback is null ? null : response.ErrorCode;
         _feedbackRequestId = _feedbackCode is null ? null : response.RequestId;
+        ObserveLookup(response, command);
+        UpdateCatalogue();
         Changed();
+    }
+
+    private void ObserveLookup(HostResponse response, NpepCommand? command)
+    {
+        if (command?.Action == "find-class" && _catalogueView == CatalogueView.Lookup)
+        {
+            if (response.Outcome == "Accepted" && _state is { Busy: true } && _state.OperationId == response.RequestId &&
+                _lookupPage == ReadLookupPage(ProviderCatalogue))
+            {
+                _lookupInHost = response.RequestId;
+                return;
+            }
+            CompleteLookup(response.Outcome is "Succeeded" or "Accepted", _feedback);
+            return;
+        }
+
+        if (_lookupInHost is not { } operation || _state is { Busy: true } && _state.OperationId == operation) return;
+        _lookupInHost = null;
+        if (_catalogueView == CatalogueView.Lookup)
+            CompleteLookup(_state?.OperationId == operation, _state?.OperationId == operation && _state.Error is not null ? _state.Message : null);
+    }
+
+    private void CompleteLookup(bool matchingOperation, string? failure)
+    {
+        _lookupReady = matchingOperation && _state is { Busy: false, Error: null } && _lookupPage == ReadLookupPage(ProviderCatalogue) &&
+            ProviderCatalogue?["items"] is JsonArray;
+        _lookupFailure = _lookupReady ? null : failure ?? "暂未取得本次查找结果，请重试。";
     }
 
     public Task<bool> RefreshAsync() => RunAsync(null);
@@ -176,7 +360,12 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         }
         finally { _working = false; _gate.Release(); Changed(); }
     }
-    public Task<bool> InspectAsync() => CanInspect ? RunAsync(new("inspect", _state!.Revision, Origin.Trim())) : Task.FromResult(false);
+    public Task<bool> InspectAsync()
+    {
+        if (!CanInspect) return Task.FromResult(false);
+        ResetClassSelection();
+        return RunAsync(new("inspect", _state!.Revision, Origin.Trim()), ClassSelectionRevision);
+    }
     public Task<bool> PairAsync() => CanPair ? RunAsync(new("pair", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
         Text(_state.Server, "serverInstanceId"), Text(_state.Server, "deploymentEpoch"))) : Task.FromResult(false);
     public Task<bool> ClaimAsync() => CanClaim ? RunAsync(new("claim", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
@@ -196,10 +385,10 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         return RunAsync(new("unpair", confirmedRevision));
     }
 
-    private async Task<bool> RunAsync(NpepCommand? command)
+    private async Task<bool> RunAsync(NpepCommand? command, int? selectionRevision = null)
     {
         if (lifetime.IsCancellationRequested || !await _gate.WaitAsync(0)) return false;
-        _working = true; _mutating = command is not null; Changed();
+        _working = true; _mutating = command is not null && command.Action != "find-class"; Changed();
         try
         {
             var pending = new HostRequest(Protocol.Version, Guid.NewGuid(), command is null ? "npep.status" : "npep.command", Npep: command);
@@ -213,14 +402,21 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
             deadline.CancelAfter(TimeSpan.FromSeconds(5));
             var response = await request(pending, deadline.Token);
-            Apply(response);
-            return response.Outcome is "Succeeded" or "Accepted";
+            if (lifetime.IsCancellationRequested || selectionRevision is int revision && revision != ClassSelectionRevision) return false;
+            Apply(response, command);
+            return response.Outcome is "Succeeded" or "Accepted" && (command?.Action != "find-class" || _lookupReady || _lookupInHost is not null);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
+            if (lifetime.IsCancellationRequested || selectionRevision is int revision && revision != ClassSelectionRevision) return false;
             // A lost mutation response is ambiguous. Disable mutations until a fresh Host snapshot resolves it.
             _state = null; _serverConfirmed = _bindingConfirmed = false;
-            _feedback = command is null ? "后台暂不可用，请重新检查。" : "未收到后台确认。操作可能已受理，请刷新状态后继续，勿重复创建申请。";
+            ClearClassCatalogue();
+            _lookupReady = false;
+            _lookupInHost = null;
+            _feedback = command?.Action is null or "inspect" or "find-class" ? "后台暂不可用，请重新检查。"
+                : "未收到后台确认。操作可能已受理，请刷新状态后继续，勿重复创建申请。";
+            if (command?.Action == "find-class") _lookupFailure = _feedback;
             _feedbackCode = "HOST_UNAVAILABLE"; _feedbackRequestId = null;
             Changed(); return false;
         }

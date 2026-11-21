@@ -6,6 +6,109 @@ namespace NPEduTools.Tests;
 
 public sealed class NpepConnectionSessionTests
 {
+    [Theory]
+    [InlineData(null, "查找完成")]
+    [InlineData("NETWORK_UNAVAILABLE", "班级查找失败，请重试或重新检查服务。")]
+    [InlineData("RATE_LIMIT", "查找过于频繁，请稍后重试。")]
+    public async Task AcceptedLookupWaitsForItsOwnHostCompletion(string? error, string message)
+    {
+        var state = State() with { Server = Server(), Catalogue = new JsonObject { ["supportsLookup"] = true, ["items"] = new JsonArray() } };
+        var session = new NpepConnectionSession((request, _) =>
+        {
+            if (request.Npep is not { } command) return Task.FromResult(Response(request, state));
+            var pending = LookupResult(command.SchoolQuery!, command.ClassQuery!, null);
+            pending["items"] = new JsonArray();
+            state = state with { Busy = true, OperationId = request.RequestId, Catalogue = pending };
+            return Task.FromResult(Response(request, state, "Accepted"));
+        });
+        await session.RefreshAsync(); session.ServerConfirmed = true;
+        session.SchoolQuery = "SCHOOL"; session.ClassQuery = "三班";
+        Assert.True(await session.FindClassAsync());
+        Assert.Empty(session.Classes);
+        Assert.Contains("正在查找", session.ClassCatalogueHint);
+        Assert.False(session.ShowRetryClassPage);
+        await session.RefreshAsync(); // The Host is still busy.
+        Assert.Contains("正在查找", session.ClassCatalogueHint);
+        var completed = error is null ? LookupResult("SCHOOL", "三班", null) : (JsonObject)state.Catalogue!.DeepClone();
+        state = state with { Busy = false, Catalogue = completed, Error = error, Message = message };
+        await session.RefreshAsync();
+        if (error is null) Assert.Equal("result-screen", Assert.Single(session.Classes).Id);
+        else
+        {
+            Assert.Empty(session.Classes);
+            Assert.Equal(message, session.ClassCatalogueHint);
+            Assert.True(session.CanRetryClassPage);
+        }
+    }
+
+    [Fact]
+    public async Task ExactLookupRejectsTheWrongPageAndDoesNotRestoreFailedRowsFromPolling()
+    {
+        var state = State() with { Server = Server(), Catalogue = new JsonObject { ["supportsLookup"] = true, ["items"] = new JsonArray() } };
+        string? afterReturned = "wrong-page";
+        var commands = new List<NpepCommand>();
+        var session = new NpepConnectionSession((request, _) =>
+        {
+            if (request.Npep is { } command)
+            {
+                commands.Add(command);
+                state = state with { Catalogue = LookupResult(command.SchoolQuery!, command.ClassQuery!, afterReturned) };
+            }
+            return Task.FromResult(Response(request, state));
+        });
+        await session.RefreshAsync();
+        session.SchoolQuery = "  SCHOOL  "; session.ClassQuery = " 高二（3）班 ";
+        Assert.False(await session.FindClassAsync());
+        session.ServerConfirmed = true;
+        Assert.False(await session.FindClassAsync());
+        Assert.True(session.CanRetryClassPage);
+        var command = Assert.Single(commands);
+        Assert.Equal("SCHOOL", command.SchoolQuery);
+        Assert.Equal("高二（3）班", command.ClassQuery);
+        Assert.Null(command.ManagementSecret);
+        Assert.Empty(session.Classes);
+        state = state with { Catalogue = LookupResult(command.SchoolQuery!, command.ClassQuery!, null) };
+        await session.RefreshAsync();
+        Assert.Empty(session.Classes);
+        afterReturned = null;
+        Assert.True(await session.RetryClassPageAsync());
+        Assert.Equal("result-screen", Assert.Single(session.Classes).Id);
+        Assert.Equal(command, commands.Last());
+    }
+
+    [Fact]
+    public async Task ChangingServiceInvalidatesAnInFlightLookupAndCachedRows()
+    {
+        var state = State() with { Server = Server(), Catalogue = new JsonObject { ["supportsLookup"] = true, ["items"] = new JsonArray() } };
+        var paused = new TaskCompletionSource<HostResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        HostRequest? sent = null;
+        var session = new NpepConnectionSession((request, _) =>
+        {
+            if (request.Npep is null) return Task.FromResult(Response(request, state));
+            sent = request;
+            return paused.Task;
+        });
+        await session.RefreshAsync(); session.ServerConfirmed = true;
+        session.SchoolQuery = "学校"; session.ClassQuery = "三班";
+        var oldLookup = session.FindClassAsync();
+        Assert.NotNull(sent);
+        session.Origin = "https://other.example";
+        state = state with { Catalogue = LookupResult("学校", "三班", null) };
+        paused.SetResult(Response(sent!, state));
+        Assert.False(await oldLookup);
+        await session.RefreshAsync();
+        Assert.Empty(session.Classes);
+        Assert.False(session.ShowClassLookup);
+        Assert.False(await session.ConnectClassAsync("result-screen", null));
+        Assert.False(session.ServerConfirmed);
+    }
+
+    private static JsonObject LookupResult(string school, string classroom, string? after) => new()
+    {
+        ["supportsLookup"] = true, ["schoolQuery"] = school, ["classQuery"] = classroom, ["after"] = after,
+        ["nextCursor"] = null, ["items"] = new JsonArray(new JsonObject { ["screenBindingId"] = "result-screen", ["className"] = "三班" })
+    };
+
     [Fact]
     public async Task WebCodeRequiresInspectedProviderAndConsentThenUsesNormalizedCode()
     {

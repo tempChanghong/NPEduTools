@@ -11,6 +11,7 @@ public partial class NpepConnectionControl : UserControl
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private NpepConnectionSession? _session;
     private int _providerRevision;
+    private int _classSelectionRevision;
     private int _classInputRevision;
     private bool _diagnosticBusy;
     private int _diagnosticViewRevision;
@@ -25,14 +26,30 @@ public partial class NpepConnectionControl : UserControl
         ClassManagementSecret.IsVisibleChanged += (_, _) => { if (!ClassManagementSecret.IsVisible) ClearClassInput(); };
         _timer.Tick += async (_, _) => { if (IsVisible && _session is { } session) await session.RefreshAsync(); };
         Loaded += (_, _) => { ObserveSession(); _timer.Start(); };
-        Unloaded += (_, _) => { _timer.Stop(); if (_session is { } session) session.PropertyChanged -= SessionChanged; ClearComparison(); };
-        IsVisibleChanged += async (_, _) => { if (IsLoaded && IsVisible && _session is { } session) await session.RefreshAsync(); };
+        Unloaded += (_, _) =>
+        {
+            _timer.Stop();
+            if (_session is { } session) session.PropertyChanged -= SessionChanged;
+            LeaveClassSelection();
+            ClearComparison();
+        };
+        IsVisibleChanged += async (_, _) =>
+        {
+            if (!IsLoaded) return;
+            if (!IsVisible) LeaveClassSelection();
+            else if (_session is { } session) await session.RefreshAsync();
+        };
     }
     public void Bind(NpepConnectionSession session)
     {
-        if (_session is { } previous) previous.PropertyChanged -= SessionChanged;
-        ClearComparison(); ClearClassInput();
-        _session = session; _providerRevision = session.ProviderRevision; DataContext = session;
+        if (_session is { } previous)
+        {
+            previous.PropertyChanged -= SessionChanged;
+            previous.LeaveClassSelection();
+        }
+        ClearComparison(); ClearClassSelection();
+        _session = session; _providerRevision = session.ProviderRevision;
+        _classSelectionRevision = session.ClassSelectionRevision; DataContext = session;
         if (IsLoaded) ObserveSession();
     }
     internal void UseGuidedSetup()
@@ -49,12 +66,24 @@ public partial class NpepConnectionControl : UserControl
     private string ConnectionContext() => (_session?.BoundOrigin ?? "") + "\n" + (_session?.BindingIdentity ?? "");
     private void SessionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (_session is { } session && session.ProviderRevision != _providerRevision)
+        if (_session is { } session && (session.ProviderRevision != _providerRevision || session.ClassSelectionRevision != _classSelectionRevision))
         {
             _providerRevision = session.ProviderRevision;
-            ClearClassInput();
+            _classSelectionRevision = session.ClassSelectionRevision;
+            ClearClassSelection();
         }
         if (_comparisonBindingContext is { } context && context != ConnectionContext()) ClearComparison();
+    }
+    private void ClearClassSelection()
+    {
+        RequestedClass.SelectedIndex = -1;
+        ClearClassInput();
+    }
+    private void LeaveClassSelection()
+    {
+        ClearClassSelection();
+        ClassLookupPanel.IsExpanded = false;
+        _session?.LeaveClassSelection();
     }
     private void ClearClassInput()
     {
@@ -78,6 +107,9 @@ public partial class NpepConnectionControl : UserControl
         .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "";
     private async void RefreshClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RefreshAsync(); }
     private async void InspectClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.InspectAsync(); }
+    private async void FindClassClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindClassAsync(); }
+    private async void NextClassPageClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindNextClassPageAsync(); }
+    private async void RetryClassPageClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RetryClassPageAsync(); }
     private async void PairClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.PairAsync(); }
     private async void ClaimClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.ClaimAsync(); }
     private async void ApplyClassClicked(object sender, RoutedEventArgs e) => await ConnectSelectedClassAsync(null);

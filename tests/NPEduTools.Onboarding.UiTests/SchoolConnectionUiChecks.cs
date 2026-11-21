@@ -261,6 +261,7 @@ internal static partial class Program
             requests.All(r => r.Npep?.Action == "apply-class" || (r.Capability == "npep.status" && r.Npep is null)),
             "opening disclosures, editing inputs or changing pages issued an unexpected command");
         Checks.Add("Settings home entry shows status, receipt and guidance before scrolling; pairing and ownership consent stay inline until bound");
+        RunClassCatalogueUiChecks();
     }
 
     private static void CheckSchoolFirstScreen(NpepConnectionControl view, ScrollViewer scroll, bool expectError = true)

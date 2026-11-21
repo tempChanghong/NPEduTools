@@ -62,12 +62,48 @@
           <StackPanel Visibility="{Binding ShowServer, Converter={StaticResource VisibleWhenTrue}}" Margin="0,14,0,0">
             <Expander x:Name="ServerIdentityDetails" Header="学校服务识别信息" IsExpanded="True"><TextBlock Text="{Binding ServerIdentity}" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" AutomationProperties.AutomationId="NpepServerIdentity" /></Expander>
             <CheckBox IsChecked="{Binding ServerConfirmed}" IsEnabled="{Binding CanEdit}" Style="{StaticResource Switch}" Margin="0,8,0,8" AutomationProperties.AutomationId="NpepServerConfirmed"><TextBlock Text="我已与管理员核对这是学校的服务" TextWrapping="Wrap" /></CheckBox>
+            <TextBlock x:Name="ClassCatalogueHint" Text="{Binding ClassCatalogueHint}" Style="{StaticResource OptionalText}"
+                       TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" AutomationProperties.LiveSetting="Polite" />
+            <Expander x:Name="ClassLookupPanel" Header="精确查找班级" Margin="0,8,0,4"
+                      Visibility="{Binding ShowClassLookup,Converter={StaticResource VisibleWhenTrue}}" AutomationProperties.AutomationId="NpepClassLookup">
+              <StackPanel Margin="0,8,0,0" IsEnabled="{Binding CanEditClassCatalogue}">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock Text="学校全称或代码" Margin="0,0,0,5" />
+                    <TextBox x:Name="SchoolLookupQuery" Text="{Binding SchoolQuery, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource TeacherInput}" MaxLength="382"
+                             AutomationProperties.Name="学校全称或代码" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="2">
+                    <TextBlock Text="班级全称或代码" Margin="0,0,0,5" />
+                    <TextBox x:Name="ClassLookupQuery" Text="{Binding ClassQuery, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource TeacherInput}" MaxLength="382"
+                             AutomationProperties.Name="班级全称或代码" />
+                  </StackPanel>
+                </Grid>
+                <Button x:Name="FindClassButton" Content="查找班级大屏" Click="FindClassClicked" IsEnabled="{Binding CanFindClass}"
+                        Style="{StaticResource TeacherButton}" HorizontalAlignment="Left" Margin="0,8,0,0" />
+              </StackPanel>
+            </Expander>
+            <WrapPanel>
+              <Button x:Name="NextClassPageButton" Content="下一页" Click="NextClassPageClicked" IsEnabled="{Binding CanFindNextClassPage}"
+                      Visibility="{Binding ShowNextClassPage,Converter={StaticResource VisibleWhenTrue}}" Style="{StaticResource TeacherQuiet}" Margin="0,4,8,4" />
+              <Button x:Name="RetryClassPageButton" Content="重试本页" Click="RetryClassPageClicked" IsEnabled="{Binding CanRetryClassPage}"
+                      Visibility="{Binding ShowRetryClassPage,Converter={StaticResource VisibleWhenTrue}}" Style="{StaticResource TeacherQuiet}" Margin="0,4,8,4" />
+              <Button x:Name="RestoreQuickCatalogueButton" Content="返回快速列表" Click="InspectClicked" IsEnabled="{Binding CanRestoreQuickCatalogue}"
+                      Visibility="{Binding ShowQuickCatalogueAction,Converter={StaticResource VisibleWhenTrue}}" Style="{StaticResource TeacherQuiet}" Margin="0,4,8,4" />
+            </WrapPanel>
             <StackPanel Visibility="{Binding HasClasses,Converter={StaticResource VisibleWhenTrue}}">
               <TextBlock Text="选择学校、班级与大屏" Margin="0,8,0,6"/>
-              <ComboBox Style="{DynamicResource SettingsChoice}" x:Name="RequestedClass" ItemsSource="{Binding Classes}" DisplayMemberPath="Name" SelectedValuePath="Id" IsEnabled="{Binding CanEdit}" MinHeight="44"/>
+              <ComboBox Style="{DynamicResource SettingsChoice}" x:Name="RequestedClass" ItemsSource="{Binding Classes}" SelectedValuePath="Id"
+                        IsSynchronizedWithCurrentItem="False" IsEnabled="{Binding CanEditClassCatalogue}" MinHeight="44"
+                        AutomationProperties.Name="选择学校、班级与大屏">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate><TextBlock Text="{Binding Name}" TextWrapping="Wrap" MaxWidth="480" ToolTip="{Binding Name}" /></DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
               <Button Style="{StaticResource TeacherButton}" Content="向学校申请连接（尚无管理口令）" Click="ApplyClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left" Margin="0,10,0,12"/>
               <TextBlock Text="学校已预授权？输入本班管理口令直接连接。正式服务须使用 HTTPS。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13"/>
-              <PasswordBox Style="{StaticResource TeacherInput}" x:Name="ClassManagementSecret" MaxLength="128" MinHeight="44" Margin="0,8,0,8" IsEnabled="{Binding CanEdit}"/>
+              <PasswordBox Style="{StaticResource TeacherInput}" x:Name="ClassManagementSecret" MaxLength="128" MinHeight="44" Margin="0,8,0,8" IsEnabled="{Binding CanEditClassCatalogue}"/>
               <Button Style="{StaticResource TeacherButton}" Content="验证口令并连接" Click="PasswordClassClicked" IsEnabled="{Binding CanPair}" HorizontalAlignment="Left"/>
               <TextBlock x:Name="ClassInputMessage" Style="{StaticResource OptionalText}" TextWrapping="Wrap" Foreground="{DynamicResource TeacherErrorBrush}" />
             </StackPanel>
