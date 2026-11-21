@@ -78,7 +78,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 _receivedAt is not null && result is { Connection: "OFFLINE", Error: "SAMPLE_TOO_OLD" };
             if (statusDependsOnReceipt && !HasFreshStatusReceipt())
                 result = result with { Connection = "OFFLINE", Error = null, Message = "最近 60 秒未收到新的上报回执；显示的是上次观测。" };
-            return result with { Server = result.Server?.Copy(), Pairing = result.Pairing?.Copy(), Approval = result.Approval?.Copy(),Catalogue=_catalogue?.Copy() };
+            return result with { Server = result.Server?.Copy(), Pairing = result.Pairing?.Copy(), Approval = result.Approval?.Copy(),
+                Catalogue = result.State == "UNPAIRED" ? _catalogue?.Copy() : null };
         }
     }
 
@@ -100,16 +101,29 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             var c = request.Npep;
             if (c is null || !NpepContract.Valid(c)) return Reply("Rejected", "InvalidNpepCommand", "互联操作参数不正确。");
             if (_state.Busy || c.Revision != _state.Revision) return Reply("Rejected", "NpepStateChanged", "状态已更新或操作仍在进行，请刷新后重试。");
-            _controlPolicy?.Rotate(); // Invalidate queued control intents before pause/resume/unpair work starts.
-            _planPolicy?.Rotate();
-            _continuingStudyResume = c.Action == "resume" && _state.State == "ACTIVE" && !_state.ReportingPaused;
-            if (!_continuingStudyResume) _study?.BindStudy(null); // Explicit pause/unpair still withdraws local authority.
-            _controlCancellation?.Cancel();
+            if (c.Action == "find-class")
+            {
+                if (_state is not { State: "UNPAIRED", Connection: "VERIFIED" } || !MatchesVerified(c) ||
+                    _catalogue?["supportsLookup"]?.GetValue<bool>() != true)
+                    return Reply("Rejected", "NpepStateChanged", "请重新检查学校服务后再查找班级。");
+                _catalogue = new() { ["supportsLookup"] = true, ["schoolQuery"] = c.SchoolQuery!.Trim(),
+                    ["classQuery"] = c.ClassQuery!.Trim(), ["after"] = c.CatalogueAfter, ["nextCursor"] = null,
+                    ["serverInstanceId"] = c.ServerInstanceId, ["deploymentEpoch"] = c.DeploymentEpoch,
+                    ["items"] = new JsonArray(), ["truncated"] = false };
+            }
+            else
+            {
+                _controlPolicy?.Rotate(); // Invalidate queued control intents before pause/resume/unpair work starts.
+                _planPolicy?.Rotate();
+                _continuingStudyResume = c.Action == "resume" && _state.State == "ACTIVE" && !_state.ReportingPaused;
+                if (!_continuingStudyResume) _study?.BindStudy(null);
+                _controlCancellation?.Cancel();
+                _network?.Cancel();
+                _inbox?.Status("WAITING", "正在更新互联状态，完成后重新核对通知。");
+                Interlocked.Exchange(ref _notificationWake, 1);
+            }
             _requests.Enqueue(request.RequestId); if (_requests.Count > 128) _requests.Dequeue();
             _state = _state with { Revision = _state.Revision + 1, Busy = true, OperationId = request.RequestId, Error = null, Message = "正在处理，请稍候…" };
-            _network?.Cancel();
-            _inbox?.Status("WAITING", "正在更新互联状态，完成后重新核对通知。");
-            Interlocked.Exchange(ref _notificationWake, 1);
             _command = Task.Run(() => CommandAsync(c));
             return Reply("Accepted", null, "已受理；网络操作在后台完成，关闭此页面不会取消操作。");
         }
@@ -120,6 +134,11 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         await _work.WaitAsync();
         try
         {
+            if (c.Action == "find-class")
+            {
+                await FindClassAsync(c, _lifetime.Token);
+                return;
+            }
             _blocked = false;
             _tlsRetryCommand = null; // An explicit user action supersedes the previous retry.
             await PerformCommandAsync(c, _lifetime.Token);
@@ -137,6 +156,29 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         }
     }
 
+    private bool MatchesVerified(NpepCommand c) => _verified is not null && NpepApi.ValidateOrigin(c.Origin!) == _verifiedOrigin &&
+        c.ServerInstanceId == _verified.Text("serverInstanceId") && c.DeploymentEpoch == _verified.Text("deploymentEpoch");
+
+    private async Task FindClassAsync(NpepCommand c, CancellationToken token)
+    {
+        try
+        {
+            var page = await _device!.FindClassScreensAsync(c.Origin!, _verified!, c.SchoolQuery!, c.ClassQuery!, c.CatalogueAfter, token);
+            lock (_sync) _catalogue = page;
+            Publish("VERIFIED", page["items"]!.AsArray().Count == 0 ? "该学校和班级下没有可选大屏。" : "请选择本教室的大屏。");
+        }
+        catch (NpepException e) when (e.Code == "INSTANCE_MISMATCH")
+        {
+            lock (_sync) { _verified = null; _verifiedOrigin = null; _catalogue = null; }
+            Publish("DISABLED", "服务实例已变更，请重新检查学校服务。", e.Code);
+        }
+        catch (Exception e) when (Handled(e))
+        {
+            string code = IsTlsFailure(e) ? "TLS_VALIDATION_FAILED" : (e as NpepException)?.Code ?? "NETWORK_UNAVAILABLE";
+            Publish("VERIFIED", (e as NpepException)?.Status == 429 ? "查找过于频繁，请稍后重试。" : "班级查找失败，请重试或重新检查服务。", code);
+        }
+    }
+
     private async Task PerformCommandAsync(NpepCommand c, CancellationToken token)
     {
         switch (c.Action)
@@ -145,13 +187,23 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 if (_device!.View().Text("state") != "UNPAIRED") throw new NpepException("PAIRING_ALREADY_EXISTS");
                 _verified = null; _verifiedOrigin = null; _catalogue=null;
                 var info = await _device.InspectServerAsync(c.Origin!, token);
-                _verified = info; _verifiedOrigin = NpepApi.ValidateOrigin(c.Origin!);
-                try{_catalogue=await _device.ClassCatalogueAsync(c.Origin!,token);}catch(NpepException e)when(e.Status is 404 or 426){_catalogue=null;}
+                JsonObject? preview = null;
+                try
+                {
+                    preview = await _device.ClassCatalogueAsync(c.Origin!, token);
+                    NpepDevice.RequireCatalogueIdentity(preview, info);
+                }
+                catch (NpepException e) when (e.Status is 404 or 426) { }
+                lock (_sync) { _verified = info; _verifiedOrigin = NpepApi.ValidateOrigin(c.Origin!); _catalogue = preview; }
                 Publish("VERIFIED", "服务可连接。请核对服务地址与实例标识，再输入网页配对码或创建配对申请。"); break;
             case "apply-class":
             case "password-class":
-                if(_verified is null || NpepApi.ValidateOrigin(c.Origin!)!=_verifiedOrigin || c.ServerInstanceId!=_verified.Text("serverInstanceId") || c.DeploymentEpoch!=_verified.Text("deploymentEpoch"))throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
-                await _device!.BeginClassAsync(c.Origin!,_verified,c.DeviceName!,_appVersion,c.ScreenBindingId!,c.ManagementSecret,token);
+                if (!MatchesVerified(c)) throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
+                var selected = (_catalogue?["items"] as JsonArray)?.OfType<JsonObject>()
+                    .FirstOrDefault(row => row.Text("screenBindingId") == c.ScreenBindingId);
+                if (_catalogue is not null && selected is null) throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
+                await _device!.BeginClassAsync(c.Origin!, _verified!, c.DeviceName!, _appVersion, c.ScreenBindingId!, c.ManagementSecret,
+                    token, selected?.Text("schoolId"), selected?.Text("classId"));
                 await _device.PollApprovalAsync(token);await _device.ConfirmRequestedClassAsync(token);
                 Publish("WAITING",c.Action=="apply-class"?"已申请指定班级；等待学校管理员批准并设置口令。":"已核对预授权口令，正在连接。");break;
             case "pair":
@@ -180,7 +232,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 string outcome = await _device!.UnpairAsync(token);
                 _updates?.Unpair();
                 _schoolManagement?.BindSchool(null);
-                _verified = null; _verifiedOrigin = null;
+                _verified = null; _verifiedOrigin = null; _catalogue = null;
                 Publish("DISABLED", outcome == "LOCAL_ONLY" ? "本机已解绑，但无法确认远端撤销。请学校管理员检查并撤销该设备。" : "已解除绑定并停止上报。", outcome == "LOCAL_ONLY" ? "LOCAL_ONLY" : null); break;
         }
         _failures = 0; _delay = c.Action is "pair" or "poll" or "resume-create" ? 5 : 0;

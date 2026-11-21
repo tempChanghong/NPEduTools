@@ -36,7 +36,7 @@ public sealed partial class NpepApi
         if (path == "device/me") return "Registration";
         if (path == "device/sessions") return "Session";
         if (path == "device/status") return "Status";
-        if (path.Contains("school-management", StringComparison.Ordinal) || path == "admission/catalog") return "SchoolManagement";
+        if (path.Contains("school-management", StringComparison.Ordinal) || path is "admission/catalog" or "admission/catalog/lookup") return "SchoolManagement";
         if (path.Contains("study-settings/photos", StringComparison.Ordinal)) return "StudyPhotos";
         if (path.Contains("study-settings/seating", StringComparison.Ordinal)) return "StudySeating";
         if (path.EndsWith("study-settings/homework", StringComparison.Ordinal)) return "StudyHomework";

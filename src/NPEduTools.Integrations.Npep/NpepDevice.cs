@@ -65,7 +65,8 @@ public sealed partial class NpepDevice : IDisposable
     public async Task<JsonObject> ClaimScreenPairingAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string userCode, CancellationToken token = default)
         => await BeginCoreAsync(origin, confirmedInfo, deviceName, appVersion, userCode, token);
 
-    private async Task<JsonObject> BeginCoreAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string? userCode, CancellationToken token, string? classBinding = null, string? managementSecret = null)
+    private async Task<JsonObject> BeginCoreAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string? userCode, CancellationToken token,
+        string? classBinding = null, string? managementSecret = null, string? expectedSchool = null, string? expectedClass = null)
     {
         await _gate.WaitAsync(token);
         try
@@ -93,7 +94,9 @@ public sealed partial class NpepDevice : IDisposable
             }
             NpepProtocol.Validate(classBinding is not null ? managementSecret is null ? "applyClassPairing" : "passwordClassPairing" : userCode is null ? "createPairing" : "claimScreenPairing", request);
             Save(new() { ["stage"] = "CREATING", ["origin"] = api.Origin, ["info"] = actual.Copy(),
-                ["create"] = request, ["pairingSecret"] = secret, ["requestedBindingId"]=classBinding,["source"] = classBinding is not null ? managementSecret is null ? "CLASS_APPLY" : "CLASS_PASSWORD" : userCode is null ? "ADMIN" : "SCREEN" });
+                ["create"] = request, ["pairingSecret"] = secret, ["requestedBindingId"]=classBinding,
+                ["requestedSchoolId"] = expectedSchool, ["requestedClassId"] = expectedClass,
+                ["source"] = classBinding is not null ? managementSecret is null ? "CLASS_APPLY" : "CLASS_PASSWORD" : userCode is null ? "ADMIN" : "SCREEN" });
             return await ResumeCreateCoreAsync(token);
         }
         finally { _gate.Release(); }
@@ -142,6 +145,11 @@ public sealed partial class NpepDevice : IDisposable
         {
             if (Required().Text("stage") != "APPROVED" || ((JsonObject)Required()["approval"]!).Text("approvalId") != locallyConfirmedApprovalId)
                 throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
+            var approval = Required()["approval"]!.AsObject();
+            if ((Required()["requestedBindingId"] is JsonNode binding && !JsonNode.DeepEquals(binding, approval["screenBindingId"])) ||
+                (Required()["requestedSchoolId"] is JsonNode school && !JsonNode.DeepEquals(school, approval["schoolId"])) ||
+                (Required()["requestedClassId"] is JsonNode room && !JsonNode.DeepEquals(room, approval["administrativeClassId"])))
+                throw new NpepException("BINDING_CHANGED");
             var body = IdentityBody(); body["approvalId"] = locallyConfirmedApprovalId;
             body["credentialId"] = NpepProtocol.Id(); body["deviceSecret"] = Secret();
             var next = Required().Copy(); next["confirm"] = body; next["credentialId"] = body["credentialId"]!.DeepClone();
