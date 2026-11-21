@@ -10,6 +10,7 @@ internal static partial class Program
     {
         const string origin = "https://school.example", school = "明德中学", room = "高二（3）班", screen = "教室前屏";
         const string binding = "screen-g2-03-front";
+        const string screenLabel = school + " · " + room + " · " + screen;
         const string secret = "fixture-password";
         var server = new JsonObject { ["serverInstanceId"] = "0a38695a-4df3-4755-976e-92181e7928ad", ["deploymentEpoch"] = "fa9cbadd-64b2-48c2-95b4-dd5bed698226" };
         var catalogue = new JsonObject { ["items"] = new JsonArray(new JsonObject { ["screenBindingId"] = binding, ["schoolName"] = school,
@@ -18,7 +19,7 @@ internal static partial class Program
             ["schoolId"] = "school-01", ["administrativeClassId"] = "g2-03", ["screenBindingId"] = binding, ["approvalId"] = "1bd589e9-2a63-4fa3-8b67-faf8ae4796b2" };
         var state = new NpepState(1, "UNPAIRED", "DISABLED", "尚未连接学校服务。");
         var commands = new List<string>();
-        var session = new NpepConnectionSession((request, _) =>
+        Task<HostResponse> Send(HostRequest request, CancellationToken _)
         {
             var outcome = "Succeeded";
             if (request.Npep is { } command)
@@ -29,6 +30,18 @@ internal static partial class Program
                 {
                     Assert(command.Origin == origin, "inspection sent a different address");
                     state = state with { Revision = 2, Connection = "VERIFIED", Origin = origin, Server = server, Catalogue = catalogue };
+                }
+                else if (command.Action == "replacement-class")
+                {
+                    Assert(command.ScreenBindingId == binding && command.Origin == origin && command.ManagementSecret == secret &&
+                        command.DeviceName == state.RequestedDeviceName, "replacement did not use the original target and freshly entered class password");
+                    state = state with { Revision = 5, State = "PENDING", Connection = "WAITING", PairingSource = "REPLACEMENT",
+                        Error = null, Pairing = new() { ["expiresAt"] = "2026-11-22T01:15:00Z", ["userCode"] = "TEST2345" } };
+                }
+                else if (command.Action == "confirm")
+                {
+                    Assert(state.State == "APPROVED" && command.ApprovalId == (string?)approval["approvalId"], "unexpected replacement confirmation");
+                    state = state with { Revision = 7, State = "ACTIVE", Connection = "ONLINE", LastReceivedAt = "2026-11-21T01:20:00Z" };
                 }
                 else
                 {
@@ -42,12 +55,14 @@ internal static partial class Program
             {
                 state = occupied
                     ? state with { Revision = 4, Busy = false, State = "CREATING", Connection = "STOPPED", Error = "BINDING_OCCUPIED",
-                        PairingSource = "CLASS_PASSWORD", Message = "指定绑定已被占用。", Catalogue = null }
+                        PairingSource = "CLASS_PASSWORD", Message = "指定绑定已被占用。", Catalogue = new() { ["replacementTarget"] = new JsonObject
+                            { ["screenBindingId"] = binding, ["screenName"] = screenLabel, ["deviceName"] = "新讲台电脑" } } }
                     : state with { Revision = 4, Busy = false, State = "ACTIVE", Connection = "ONLINE", Error = null,
                         Approval = approval, PairingSource = "CLASS_PASSWORD", Catalogue = null, LastReceivedAt = "2026-11-21T01:15:00Z" };
             }
             return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, outcome, null, "学校互联状态", Npep: state));
-        });
+        }
+        var session = new NpepConnectionSession(Send);
         session.RefreshAsync().GetAwaiter().GetResult();
         var main = PrivateWorkspace("NPEduTools.Test.school-journey." + Guid.NewGuid().ToString("N"));
         typeof(MainWindow).GetField("_schoolConnection", WorkspaceFlags)!.SetValue(main, session);
@@ -108,15 +123,57 @@ internal static partial class Program
             {
                 var advice = (TextBlock)Find(view, "NpepNextAction");
                 Assert(!session.CanFinish && status.Text.Contains("大屏") && advice.IsVisible &&
-                    advice.Text.Contains("管理员") && advice.Text.Contains("旧") && advice.Text.Contains("恢复"),
-                    "occupied screen did not explain how to review the old terminal and resume");
+                    advice.Text.Contains("管理员") && advice.Text.Contains("旧") && advice.Text.Contains("换机"),
+                    "occupied screen did not explain the replacement and approval choices");
                 Snapshot(window, "school-journey-occupied.png");
+                var replacement = (Button)Find(view, "NpepRequestReplacement");
+                var newSecret = (PasswordBox)view.FindName("ReplacementSecret");
+                Assert(newSecret.IsVisible && newSecret.Password.Length == 0 && replacement.IsEnabled &&
+                    ((TextBlock)Find(view, "NpepReplacementTarget")).Text == screenLabel, "missing or pre-filled replacement form");
+                ClickVisible(replacement);
+                Assert(commands.SequenceEqual(["inspect", "password-class"]), "empty password submitted a replacement request");
+                newSecret.Password = secret;
+                ClickVisible(replacement);
+                window.UpdateLayout();
+                Assert(!newSecret.IsVisible && newSecret.Password.Length == 0 && !session.ShowCode && session.Title.Contains("审核"),
+                    "pending replacement retained the secret or prompted for a legacy pairing code");
             }
-            Assert(commands.SequenceEqual(["inspect", "password-class"]), "admission sent a duplicate or unsolicited command");
+            Assert(commands.SequenceEqual(occupied ? ["inspect", "password-class", "replacement-class"] : new[] { "inspect", "password-class" }),
+                "admission sent a duplicate or unsolicited command");
             window.Close();
         });
-        Checks.Add(occupied ? "Occupied screen returns a stopped candidate without sending any revoke or replacement command"
-            : "Home to school service, explicit confirmation, manual screen selection, preauthorized admission and first receipt");
+        if (!occupied)
+        {
+            Checks.Add("Home to school service, explicit confirmation, manual screen selection, preauthorized admission and first receipt");
+            return;
+        }
+
+        var restored = new NpepConnectionSession(Send);
+        var actionsType = typeof(OnboardingWindow).Assembly.GetType("NPEduTools.App.OnboardingActions")!;
+        Action nothing = () => { };
+        var actions = Activator.CreateInstance(actionsType, Enumerable.Repeat<object>(nothing, 9).ToArray())!;
+        var constructor = typeof(OnboardingWindow).GetConstructors(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Single();
+        var wizard = (OnboardingWindow)constructor.Invoke(["NPEduTools.Test.replacement-oobe." + Guid.NewGuid().ToString("N"),
+            new OnboardingState(Features: OnboardingFeatures.School, Step: "school"), (Action<OnboardingState>)(_ => { }),
+            restored, actions, (Action<bool>)(_ => { }), null]);
+        wizard.Width = 720; wizard.Height = 600;
+        Exercise(wizard, window =>
+        {
+            var view = (NpepConnectionControl)window.FindName("SchoolConnection");
+            state = state with { Revision = 6, State = "APPROVED", Approval = approval };
+            restored.RefreshAsync().GetAwaiter().GetResult();
+            window.UpdateLayout();
+            var confirmButton = (Button)Find(view, "NpepConfirm");
+            Assert(!confirmButton.IsEnabled && !restored.CanFinish && !commands.Contains("confirm") &&
+                ((TextBlock)Find(view, "NpepBinding")).Text.Contains(room) && Equals(confirmButton.Content, "确认交接并启用本机"),
+                "opening the wizard implicitly confirmed or failed to present replacement approval");
+            ((CheckBox)Find(view, "NpepBindingConfirmed")).IsChecked = true;
+            ClickVisible(confirmButton);
+            Assert(restored.CanFinish && commands.SequenceEqual(["inspect", "password-class", "replacement-class", "confirm"]),
+                "explicit local handover did not complete in the wizard");
+            window.Close();
+        });
+        Checks.Add("Settings submits a replacement only with a fresh class password; restored minimum-size OOBE waits for explicit local confirmation of the approved target");
 
         static void ClickVisible(Button button)
         {

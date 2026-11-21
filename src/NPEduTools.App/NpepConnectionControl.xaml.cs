@@ -14,6 +14,7 @@ public partial class NpepConnectionControl : UserControl
     private int _classSelectionRevision;
     private int _classInputRevision;
     private bool _wasBound, _wasOccupied;
+    private (string? Origin, string Instance, string Epoch, string? Binding, string? Device)? _replacementTarget;
     private bool _diagnosticBusy;
     private int _diagnosticViewRevision;
     private CancellationTokenSource? _comparisonCancellation;
@@ -25,6 +26,8 @@ public partial class NpepConnectionControl : UserControl
         RequestedClass.SelectionChanged += (_, _) => ClearClassInput();
         ClassManagementSecret.PasswordChanged += (_, _) => ClearClassMessage();
         ClassManagementSecret.IsVisibleChanged += (_, _) => { if (!ClassManagementSecret.IsVisible) ClearClassInput(); };
+        ReplacementSecret.PasswordChanged += (_, _) => ReplacementMessage.Text = "";
+        ReplacementSecret.IsVisibleChanged += (_, _) => { if (!ReplacementSecret.IsVisible) ClearReplacementInput(); };
         _timer.Tick += async (_, _) => { if (IsVisible && _session is { } session) await session.RefreshAsync(); };
         Loaded += (_, _) => { ObserveSession(); _timer.Start(); };
         Unloaded += (_, _) =>
@@ -49,10 +52,12 @@ public partial class NpepConnectionControl : UserControl
             previous.LeaveClassSelection();
         }
         ClearComparison(); ClearClassSelection();
+        ClearReplacementInput();
         _session = session; _providerRevision = session.ProviderRevision;
         _classSelectionRevision = session.ClassSelectionRevision; DataContext = session;
         _wasBound = session.ShowBindingManagement;
         _wasOccupied = session.ScreenOccupied;
+        _replacementTarget = session.ReplacementTarget;
         if (IsLoaded) ObserveSession();
     }
     private void ObserveSession()
@@ -73,6 +78,11 @@ public partial class NpepConnectionControl : UserControl
         if (_comparisonBindingContext is { } context && context != ConnectionContext()) ClearComparison();
         if (_session is { } current)
         {
+            if (_replacementTarget != current.ReplacementTarget)
+            {
+                _replacementTarget = current.ReplacementTarget;
+                ClearReplacementInput();
+            }
             bool showResult = (!_wasBound && current.ShowBindingManagement) || (!_wasOccupied && current.ScreenOccupied);
             _wasBound = current.ShowBindingManagement;
             _wasOccupied = current.ScreenOccupied;
@@ -92,8 +102,14 @@ public partial class NpepConnectionControl : UserControl
     private void LeaveClassSelection()
     {
         ClearClassSelection();
+        ClearReplacementInput();
         ClassLookupPanel.IsExpanded = false;
         _session?.LeaveClassSelection();
+    }
+    private void ClearReplacementInput()
+    {
+        ReplacementSecret.Clear();
+        ReplacementMessage.Text = "";
     }
     private void ClearClassInput()
     {
@@ -159,6 +175,19 @@ public partial class NpepConnectionControl : UserControl
             ClassInputMessage.Text = session.Message;
     }
     private async void ConfirmClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.ConfirmAsync(); }
+    private async void RequestReplacementClicked(object sender, RoutedEventArgs e)
+    {
+        if (_session is not { CanRequestReplacement: true } session) return;
+        string secret = ReplacementSecret.Password;
+        ClearReplacementInput();
+        if (!NoiseManagementContract.SecretValid(secret))
+        {
+            ReplacementMessage.Text = "请输入 8 至 128 位班级管理口令。";
+            ReplacementSecret.Focus();
+            return;
+        }
+        await session.RequestReplacementAsync(secret);
+    }
     private async void RecoverClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RecoverAsync(); }
     private async void PauseClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.PauseOrResumeAsync(); }
     private async void UnpairClicked(object sender, RoutedEventArgs e) => await ConfirmUnpairAsync(false);
@@ -167,8 +196,12 @@ public partial class NpepConnectionControl : UserControl
     {
         if (_session is not { CanUnpair: true, Revision: { } revision } session) return;
         string introduction = changeProvider ? "更换服务提供商需要先取消当前申请或解除绑定，之后填写新地址并重新配对。\n\n" : "";
-        if (MessageBox.Show(Window.GetWindow(this), introduction + "将停止学校通知、远程操作和状态上报，并删除本机配对凭据。若远端无法连接，还需要学校管理员撤销登记。\n继续取消申请或解除绑定吗？",
-            changeProvider ? "更换服务提供商" : "解除学校互联", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+        bool cancellingReplacement = session.CancellingReplacement;
+        string message = cancellingReplacement
+            ? "将取消这台新机的换机申请，并清除本机保存的候选凭据。继续取消吗？"
+            : "将停止学校通知、远程操作和状态上报，并删除本机配对凭据。若远端无法连接，还需要学校管理员撤销登记。\n继续取消申请或解除绑定吗？";
+        if (MessageBox.Show(Window.GetWindow(this), introduction + message,
+            changeProvider ? "更换服务提供商" : cancellingReplacement ? "取消换机申请" : "解除学校互联", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
         {
             ClearComparison();
             await session.UnpairAsync(revision);

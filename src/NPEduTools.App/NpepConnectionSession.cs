@@ -93,9 +93,20 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public bool UseAlternatePairing => SchoolVerified && !ShowClassLookup && !HasClasses;
     public bool ShowApprovalReview => ShowBinding && !ShowBindingManagement;
     public bool ScreenOccupied => _state?.Error == "BINDING_OCCUPIED";
+    public bool ShowReplacementRequest => NpepConnectionPresentation.CanOfferReplacement(_state);
+    public bool CanRequestReplacement => Available && ShowReplacementRequest;
+    internal (string? Origin, string Instance, string Epoch, string? Binding, string? Device)? ReplacementTarget =>
+        ShowReplacementRequest ? (_state!.Origin, Text(_state.Server, "serverInstanceId"), Text(_state.Server, "deploymentEpoch"),
+            _state.RequestedScreenBindingId, _state.RequestedDeviceName) : null;
+    public string RequestedScreenLabel => string.IsNullOrWhiteSpace(_state?.RequestedScreenName)
+        ? _state?.RequestedScreenBindingId ?? "" : _state.RequestedScreenName;
+    public string RequestedDeviceName => _state?.RequestedDeviceName ?? "";
+    public bool ReplacementCandidate => _state is { PairingSource: "REPLACEMENT", State: "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING" };
+    public bool ShowReplacementDeadline => ReplacementCandidate && Text(_state?.Pairing, "expiresAt").Length > 0;
+    public string ConfirmLabel => ReplacementCandidate ? "确认交接并启用本机" : "确认连接";
     public bool ShowConnectionAdvice => _state is null || _feedback is not null || _state.Error is not null ||
         _state.ReportingPaused || (!ShowCreate && _state.Connection != "ONLINE") || _state.State == "STORE_UNAVAILABLE";
-    public bool ShowCode => _state?.State == "PENDING" && _state.PairingSource != "SCREEN";
+    public bool ShowCode => _state?.State == "PENDING" && _state.PairingSource is not ("SCREEN" or "REPLACEMENT");
     public bool ShowBinding => _state?.Approval is not null;
     public bool ShowConfirm => _state?.State == "APPROVED";
     public bool ShowActive => HasPairing;
@@ -103,13 +114,14 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     // Read-only polling must not disable a focused input while the user is typing.
     public bool CanEdit => !_mutating && (_state is null || _state.State == "UNPAIRED" && (!_state.Busy ||
         _lookupInHost is { } lookup && _state.OperationId == lookup));
-    public bool CanReviewBinding => !_mutating && _state is { Busy: false } && ShowConfirm;
+    public bool CanReviewBinding => !_mutating && _state is { Busy: false } && ShowConfirm &&
+        !(ReplacementCandidate && _state.Error is "PAIRING_CANCELLED" or "PAIRING_EXPIRED" or "APPROVER_NO_LONGER_AUTHORIZED" or "PREAUTHORIZATION_CHANGED" or "BINDING_CHANGED");
     public bool CanInspect => Available && CanEdit && NpepContract.Valid(new("inspect", 0, Origin.Trim()));
     private bool HasCatalogueProvider => ShowServer && NpepContract.Valid(new("inspect", 0, Origin.Trim())) && Uri.TryCreate(Origin.Trim(), UriKind.Absolute, out var origin) &&
         origin.GetLeftPart(UriPartial.Authority) == _state!.Origin;
     public bool CanPair => Available && CanEdit && ServerConfirmed && HasCatalogueProvider && _state!.Server is { } server &&
         NpepContract.Valid(new("pair", _state.Revision, Origin.Trim(), DeviceName.Trim(), Text(server, "serverInstanceId"), Text(server, "deploymentEpoch")));
-    public bool CanConfirm => Available && ShowConfirm && BindingConfirmed &&
+    public bool CanConfirm => Available && CanReviewBinding && BindingConfirmed &&
         NpepContract.Valid(new("confirm", _state!.Revision, ApprovalId: Text(_state.Approval, "approvalId")));
     private string NormalizedCode => UserCode.Replace("-", "").Replace(" ", "").ToUpperInvariant();
     public bool CanClaim => CanPair && NpepContract.Valid(new("claim", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
@@ -275,26 +287,39 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             Text(_state.Server,"serverInstanceId"),Text(_state.Server,"deploymentEpoch"),ScreenBindingId:binding,ManagementSecret:secret);
         return NpepContract.Valid(c)?RunAsync(c):Task.FromResult(false);
     }
-    public bool ShowRecover => _state?.State is "CREATING" or "CONFIRMING" ||
-        _state?.State is "PENDING" or "ACTIVE" && _state.Connection == "STOPPED";
+    public Task<bool> RequestReplacementAsync(string secret)
+    {
+        if (!CanRequestReplacement || ReplacementTarget is not { } target) return Task.FromResult(false);
+        var command = new NpepCommand("replacement-class", _state!.Revision, target.Origin, target.Device,
+            target.Instance, target.Epoch, ScreenBindingId: target.Binding, ManagementSecret: secret);
+        return NpepContract.Valid(command) ? RunAsync(command) : Task.FromResult(false);
+    }
+    public bool ShowRecover => !(_state is { State: "CREATING", PairingSource: "REPLACEMENT", Error: "MANAGEMENT_SECRET_INVALID" }) &&
+        !(_state is { PairingSource: "REPLACEMENT", State: "PENDING", Error: "PAIRING_CANCELLED" or "PAIRING_EXPIRED" }) &&
+        (_state?.State is "CREATING" or "CONFIRMING" || _state?.State is "PENDING" or "ACTIVE" && _state.Connection == "STOPPED");
     public bool CanRecover => Available && ShowRecover;
     public bool CanPause => Available && ShowActive;
     public bool ShowUnpair => _state is not null && _state.State is not ("UNPAIRED" or "STORE_UNAVAILABLE");
     public bool CanUnpair => Available && ShowUnpair;
     public bool ShowChangeProvider => ShowUnpair && !string.IsNullOrEmpty(BoundOrigin);
-    public string RecoverLabel => HasPairing ? "重新连接" : "恢复未完成操作";
+    public string RecoverLabel => ScreenOccupied ? "重试原接入申请" :
+        _state is { PairingSource: "REPLACEMENT", State: "CONFIRMING" } ? "核实交接结果" :
+        HasPairing ? "重新连接" : "恢复未完成操作";
     public string PauseLabel => _state?.ReportingPaused == true ? "恢复互联" : "暂停互联";
-    public string UnpairLabel => _state?.State is "PENDING" or "APPROVED" or "CREATING" ? "取消配对申请" : "解除绑定";
+    public bool CancellingReplacement => ReplacementCandidate && _state?.State != "CONFIRMING";
+    public string UnpairLabel => CancellingReplacement ? "取消本次换机申请" :
+        _state?.State is "PENDING" or "APPROVED" or "CREATING" ? "取消配对申请" : "解除绑定";
     public string Stage => _state?.State switch
     {
+        "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING" when ReplacementCandidate => "教室大屏换机",
         "UNPAIRED" => "接入教室 · 核对学校服务", "CREATING" or "PENDING" => _state.PairingSource == "SCREEN" ? "接入教室 · 读取学校预授权" : "接入教室 · 配对申请",
         "APPROVED" or "CONFIRMING" => "接入教室 · 确认归属", "ACTIVE" => "已完成配对",
         _ => "连接学校 · 等待检查"
     };
     public string Title => NpepConnectionPresentation.Title(_state);
-    public string Message => _feedback ?? (ShowBindingManagement || ScreenOccupied ? "" :
+    public string Message => _feedback ?? (ShowBindingManagement || ScreenOccupied || ReplacementCandidate ? "" :
         _state?.Message ?? "无法读取后台状态。恢复后重新检查；旧状态不代表当前连接。");
-    public string Error => NpepConnectionPresentation.Cause(ShowBindingManagement ? _state?.Error : _feedbackCode ?? _state?.Error);
+    public string Error => NpepConnectionPresentation.Cause(ShowBindingManagement ? _state?.Error : _feedbackCode ?? _state?.Error, _state);
     public string NextAction => NpepConnectionPresentation.NextAction(_state, _feedbackCode);
     public string TechnicalDetails => NpepConnectionPresentation.Details(_state, _feedbackCode, _feedbackRequestId, _feedback);
     public string Receipt => NpepConnectionPresentation.Receipt(_state);
@@ -304,7 +329,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private string BindingField(string field) => Text(_state?.Approval, field) is { Length: > 0 } value ? value : "暂无记录";
     public string ServerIdentity => _state?.Server is null ? "" : $"地址：{_state.Origin}\n实例：{Text(_state.Server, "serverInstanceId")}\n部署标识：{Text(_state.Server, "deploymentEpoch")}";
     public string PairingCode => Text(_state?.Pairing, "userCode");
-    public string Expiry => "配对截止（学校服务器 UTC）：" + Text(_state?.Pairing, "expiresAt");
+    public string Expiry => (ReplacementCandidate ? "换机申请截止（学校服务器 UTC）：" : "配对截止（学校服务器 UTC）：") + Text(_state?.Pairing, "expiresAt");
     public string Binding => $"学校：{Text(_state?.Approval, "schoolName")}\n班级：{Text(_state?.Approval, "administrativeClassName")}\n大屏：{Text(_state?.Approval, "screenBindingName")}";
     public string BoundOrigin => _state?.Origin ?? "";
     public string BindingIdentity => $"学校：{Text(_state?.Approval, "schoolId")}\n班级：{Text(_state?.Approval, "administrativeClassId")}\n大屏：{Text(_state?.Approval, "screenBindingId")}\n批准编号：{Text(_state?.Approval, "approvalId")}";

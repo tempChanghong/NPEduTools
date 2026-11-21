@@ -160,6 +160,64 @@ public sealed class NpepConnectionSessionTests
         }
     }
 
+    [Theory]
+    [InlineData("CLASS_PASSWORD", "BINDING_OCCUPIED", true)]
+    [InlineData("CLASS_APPLY", "BINDING_OCCUPIED", true)]
+    [InlineData("REPLACEMENT", "MANAGEMENT_SECRET_INVALID", true)]
+    [InlineData("CLASS_PASSWORD", "NETWORK_UNAVAILABLE", false)]
+    [InlineData("REPLACEMENT", "NETWORK_UNAVAILABLE", false)]
+    [InlineData("REPLACEMENT", "REPLACEMENT_UNSUPPORTED", false)]
+    [InlineData("SCREEN", "BINDING_OCCUPIED", false)]
+    public async Task ReplacementUsesTheStoppedCandidateAndFreshPassword(string source, string error, bool offered)
+    {
+        var host = new Host { Snapshot = State("CREATING", 7) with { PairingSource = source, Error = error, Server = Server(),
+            Catalogue = new() { ["replacementTarget"] = new JsonObject
+            { ["screenBindingId"] = "screen-01", ["screenName"] = "一班前屏", ["deviceName"] = "新讲台机" } } } };
+        var session = new NpepConnectionSession(host.Send) { Origin = "https://draft.example", DeviceName = "另一设备" };
+        await session.RefreshAsync();
+        Assert.Equal(offered, session.CanRequestReplacement);
+        Assert.False(await session.RequestReplacementAsync("short"));
+        Assert.Equal(offered, await session.RequestReplacementAsync("fixture-class-password"));
+        var mutations = host.Requests.Where(x => x.Npep is not null).ToArray();
+        if (!offered) { Assert.Empty(mutations); return; }
+        Assert.Equal(new NpepCommand("replacement-class", 7, Origin, "新讲台机", ServerId, Epoch,
+            ScreenBindingId: "screen-01", ManagementSecret: "fixture-class-password"), Assert.Single(mutations).Npep);
+        host.Snapshot = host.Snapshot with { Catalogue = null };
+        await session.RefreshAsync();
+        Assert.False(session.ShowReplacementRequest);
+        Assert.False(await session.RequestReplacementAsync("fixture-class-password"));
+    }
+
+    [Theory]
+    [InlineData("PAIRING_CANCELLED", "已取消")]
+    [InlineData("PAIRING_EXPIRED", "已过期")]
+    public async Task ClosedReplacementShowsCleanupWithoutReplayingOrDisplayingPairingCode(string error, string title)
+    {
+        var host = new Host { Snapshot = State("PENDING", 8) with { PairingSource = "REPLACEMENT", Error = error,
+            Pairing = new JsonObject { ["userCode"] = "TEST2345", ["expiresAt"] = "2026-11-22T01:15:00Z" } } };
+        var session = new NpepConnectionSession(host.Send);
+        await session.RefreshAsync();
+        Assert.Contains(title, session.Title);
+        Assert.True(session.CanUnpair);
+        Assert.False(session.CanFinish);
+        Assert.False(session.ShowCode);
+        Assert.False(session.ShowRecover);
+        Assert.False(await session.RecoverAsync());
+        Assert.All(host.Requests, request => Assert.Null(request.Npep));
+    }
+
+    [Fact]
+    public async Task UnsupportedReplacementRequiresSchoolUpgradeAndAllowsOriginalRequestRecovery()
+    {
+        var host = new Host { Snapshot = State("CREATING", 8) with { PairingSource = "REPLACEMENT", Error = "REPLACEMENT_UNSUPPORTED" } };
+        var session = new NpepConnectionSession(host.Send);
+        await session.RefreshAsync();
+        Assert.Contains("升级 KV", session.NextAction);
+        Assert.False(session.ShowReplacementRequest);
+        Assert.True(await session.RecoverAsync());
+        Assert.Equal("resume-create", host.Requests.Last().Npep?.Action);
+    }
+
     [Fact]
     public async Task ReadingAndSharingSessionNeverCreatesOrConfirmsPairing()
     {

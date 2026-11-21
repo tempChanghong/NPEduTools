@@ -117,6 +117,26 @@
       </StackPanel>
     </Border>
 
+    <Border Style="{StaticResource Section}" Padding="16,12" Visibility="{Binding ShowReplacementRequest, Converter={StaticResource VisibleWhenTrue}}">
+      <StackPanel>
+        <TextBlock Text="申请接替这块大屏" Style="{StaticResource GroupTitle}"/>
+        <TextBlock Text="{Binding RequestedScreenLabel}" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.AutomationId="NpepReplacementTarget"/>
+        <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,10">
+          <Run Text="申请设备　"/><Run Text="{Binding RequestedDeviceName, Mode=OneWay}"/>
+        </TextBlock>
+        <TextBlock Text="重新输入原班级管理口令" FontWeight="SemiBold" Margin="0,0,0,6"/>
+        <PasswordBox x:Name="ReplacementSecret" Style="{StaticResource TeacherInput}" MaxLength="128"
+                     AutomationProperties.Name="换机申请的班级管理口令"/>
+        <Button Style="{StaticResource TeacherPrimary}" Content="提交换机申请" Click="RequestReplacementClicked" HorizontalAlignment="Left"
+                Margin="0,10,0,0" IsEnabled="{Binding CanRequestReplacement}" AutomationProperties.AutomationId="NpepRequestReplacement"/>
+        <TextBlock x:Name="ReplacementMessage" Style="{StaticResource OptionalText}" AutomationProperties.LiveSetting="Polite"
+                   Foreground="{DynamicResource TeacherErrorBrush}"/>
+      </StackPanel>
+    </Border>
+    <StackPanel Margin="0,0,0,12" Visibility="{Binding ShowReplacementDeadline, Converter={StaticResource VisibleWhenTrue}}">
+      <TextBlock Text="{Binding RequestedScreenLabel, StringFormat=申请接替　{0}}" Style="{StaticResource Caption}" />
+      <TextBlock Text="{Binding Expiry}" Style="{StaticResource Caption}"/>
+    </StackPanel>
     <Border Style="{StaticResource Section}" Visibility="{Binding ShowServiceEntry, Converter={StaticResource VisibleWhenTrue}}">
       <StackPanel>
         <TextBlock Text="学校服务" Style="{StaticResource GroupTitle}" Margin="16,12"/>
@@ -267,7 +287,7 @@
           <StackPanel Visibility="{Binding ShowConfirm, Converter={StaticResource VisibleWhenTrue}}">
             <TextBlock Text="确认后，学校可接收设备状态、投递通知、管理日常 / 考试环境与放映，并下发自习排程和设备策略。噪音监测只上传统计，不上传原音频，学校开启照片策略时按规则上传单张捕获画面。请先核对归属与隐私告知。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,12,0,8" />
             <CheckBox IsChecked="{Binding BindingConfirmed}" IsEnabled="{Binding CanReviewBinding}" Style="{StaticResource Switch}" Margin="0,4,0,10" AutomationProperties.AutomationId="NpepBindingConfirmed"><TextBlock Text="学校、班级和大屏归属正确，同意上述连接功能" TextWrapping="Wrap" /></CheckBox>
-            <Button Content="确认连接" Click="ConfirmClicked" HorizontalAlignment="Left" Style="{StaticResource TeacherPrimary}" IsEnabled="{Binding CanConfirm}" AutomationProperties.AutomationId="NpepConfirm" />
+            <Button Content="{Binding ConfirmLabel}" Click="ConfirmClicked" HorizontalAlignment="Left" Style="{StaticResource TeacherPrimary}" IsEnabled="{Binding CanConfirm}" AutomationProperties.AutomationId="NpepConfirm" />
           </StackPanel>
         </StackPanel>
     <WrapPanel Margin="0,0,0,4">

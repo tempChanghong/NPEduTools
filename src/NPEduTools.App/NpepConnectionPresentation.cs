@@ -10,6 +10,13 @@ public static class NpepConnectionPresentation
     private static readonly string[] ReceiptTimeFormats = ["yyyy-MM-dd'T'HH:mm:ss.fff'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'"];
 
     internal static bool IsBindingState(NpepState? state) => state?.State is "ACTIVE" or "SUSPENDED" or "UNPAIRING";
+    internal static bool CanOfferReplacement(NpepState? state) =>
+        state is { State: "CREATING", Connection: "STOPPED" } &&
+        ((state.PairingSource is "CLASS_APPLY" or "CLASS_PASSWORD" && state.Error == "BINDING_OCCUPIED") ||
+         (state.PairingSource == "REPLACEMENT" && state.Error == "MANAGEMENT_SECRET_INVALID")) &&
+        NpepContract.CatalogueId(state.RequestedScreenBindingId) &&
+        NpepContract.Valid(new("pair", state.Revision, state.Origin, state.RequestedDeviceName,
+            state.Server?["serverInstanceId"]?.ToString(), state.Server?["deploymentEpoch"]?.ToString()));
 
     private static bool TryReadReceipt(NpepState? state, out DateTimeOffset receivedAt) =>
         DateTimeOffset.TryParseExact(state?.LastReceivedAt, ReceiptTimeFormats, CultureInfo.InvariantCulture,
@@ -34,6 +41,16 @@ public static class NpepConnectionPresentation
         if (state.State == "SUSPENDED") return "学校连接已停用";
         if (state.State == "UNPAIRING") return state.Busy ? "正在解除绑定" : "解绑结果待确认";
         if (state.Busy) return "学校互联操作正在处理";
+        if (state.PairingSource == "REPLACEMENT" && !IsBindingState(state))
+        {
+            if (state.Error == "PAIRING_CANCELLED") return "换机申请已取消";
+            if (state.Error == "PAIRING_EXPIRED" && state.State != "CONFIRMING") return "换机申请已过期";
+            if (state.Error == "REPLACEMENT_UNSUPPORTED") return "学校服务尚未支持换机";
+            if (state.State == "CREATING" && state.Error == "MANAGEMENT_SECRET_INVALID") return "换机申请未通过口令验证";
+            if (state.State == "PENDING" && state.Connection == "WAITING") return "换机申请已提交 · 等待学校审核";
+            if (state.State == "APPROVED") return "学校已批准 · 请在本机确认交接";
+            if (state.State == "CONFIRMING") return "换机交接结果待核实";
+        }
         if (state.Error == "BINDING_OCCUPIED") return "所选大屏已有设备接入";
         if (state.Error == "PAIRING_EXPIRED") return "配对码已过期";
         if (state.State == "ACTIVE" && state.ReportingPaused) return "已配对 · 互联已暂停";
@@ -57,7 +74,20 @@ public static class NpepConnectionPresentation
         };
     }
 
-    public static string Cause(string? code) => code is null ? "" : Explain(code).Cause;
+    public static string Cause(string? code, NpepState? state = null) =>
+        code is null ? "" : (ReplacementReason(state, code) ?? Explain(code)).Cause;
+
+    private static Reason? ReplacementReason(NpepState? state, string code) => state?.PairingSource != "REPLACEMENT" ||
+        IsBindingState(state) ? null : code switch
+        {
+            "PAIRING_CANCELLED" => new("本次申请已由学校关闭。", "可取消本机保留的申请，核对大屏后重新申请。"),
+            "PAIRING_EXPIRED" => new("换机申请的有效期已结束。", "取消本机保留的申请，核对大屏后重新申请。"),
+            "MANAGEMENT_SECRET_INVALID" => new("班级管理口令无效，或学校尚未开放口令接入。", "核对班级与大屏后重新输入原班级管理口令。"),
+            "REPLACEMENT_UNSUPPORTED" => new("当前学校服务未提供换机接口。", "请学校管理员升级 KV。升级后可在这里恢复原申请。"),
+            "APPROVER_NO_LONGER_AUTHORIZED" => new("本次批准所用的学校管理会话已失效。", "请联系学校管理员重新审批新的换机申请。"),
+            "BINDING_CHANGED" or "PREAUTHORIZATION_CHANGED" => new("目标大屏、原设备或班级预授权已变化。", "请与学校管理员重新核对此屏的设备和接入权限，然后取消原申请，按当前归属重新办理。"),
+            _ => null
+        };
 
     public static string NextAction(NpepState? state, string? feedbackCode = null)
     {
@@ -68,7 +98,7 @@ public static class NpepConnectionPresentation
             ? "请等待后台确认解绑结果。"
             : "请刷新核实解绑结果，必要时联系管理员检查远端撤销。互联不会自动恢复。";
         if (state.Busy) return "等待后台更新；关闭此页面不会取消已受理的操作，不要重复提交。";
-        if (feedbackCode is not null && !IsBindingState(state)) return Explain(feedbackCode).Advice;
+        if (feedbackCode is not null && !IsBindingState(state)) return (ReplacementReason(state, feedbackCode) ?? Explain(feedbackCode)).Advice;
         if (state.State == "ACTIVE" && state.ReportingPaused)
             return "需要继续时，展开“绑定管理”并点击“恢复互联”。后台不会自行解除暂停。";
         if (Resampling(state)) return "无需操作，后台会重新采样并自动重试。";
@@ -78,8 +108,19 @@ public static class NpepConnectionPresentation
             : state.State == "ACTIVE"
                 ? "无需立即操作，后台会自动重试。若持续离线，请核对网络与学校服务。无需重新配对。"
                 : "等待后台自动重试，原配对或申请保留；若持续离线，核对网络与学校服务。无需重新配对。";
-        if (state.Error is { } code) return Explain(code).Advice +
+        if (state.Error == "BINDING_OCCUPIED" && CanOfferReplacement(state))
+            return "若这台电脑要接替旧设备，请核对下方大屏并提交换机申请。学校管理员批准后，还需在本机确认交接。";
+        if (state is { PairingSource: "REPLACEMENT", State: "CONFIRMING", Error: null or "NETWORK_UNAVAILABLE" or "PAIRING_EXPIRED" })
+            return "点击“核实交接结果”，后台将查询本机的登记并恢复原确认。";
+        if (state.Error is { } code) return (ReplacementReason(state, code) ?? Explain(code)).Advice +
             (state is { State: "ACTIVE", Connection: "STOPPED" } ? " 后台不会自动重试。" : "");
+        if (state.PairingSource == "REPLACEMENT")
+        {
+            if (state.State == "PENDING" && state.Connection != "STOPPED")
+                return "学校管理员可在 NPEduConsole 审核这台新机。旧机继续工作，批准后请回到这里核对归属并确认。";
+            if (state.State == "APPROVED")
+                return "核对下方学校、班级和大屏。现场确认成功时，本机接管该屏，旧机的学校连接同时停用。";
+        }
         return state.State switch
         {
             "UNPAIRED" => state.Connection == "VERIFIED" ? "核对学校服务，选择本班大屏后继续连接。" : "填写学校提供的服务地址，再点击“检查服务”。",
@@ -107,7 +148,7 @@ public static class NpepConnectionPresentation
 
     private static Reason Explain(string code) => code switch
     {
-        "BINDING_OCCUPIED" => new("这块大屏仍绑定着另一台有效终端。", "请学校管理员核对旧设备。若确认换机，管理员可在现有学校管理网页撤销旧终端的互联授权，再在这里恢复原申请。"),
+        "BINDING_OCCUPIED" => new("这块大屏已有一台有效终端。", "请学校管理员核对旧设备。可取消本机申请并重新选择正确的大屏。"),
         "TLS_VALIDATION_FAILED" => new("学校服务的 HTTPS 证书验证失败。", "核对学校地址、系统时间及服务器证书；按当前连接状态等待重试或恢复原操作，保留证书校验。"),
         "NETWORK_UNAVAILABLE" => new("暂时无法连接学校服务。", "核对网络与学校服务；未完成的手动操作需要刷新后核查或恢复原操作，不要重复创建申请。"),
         "TEMPORARILY_UNAVAILABLE" => new("学校服务暂时不可用。", "按当前连接状态等待自动重试或恢复原操作；核对学校服务与网关，不要重复创建配对。"),
