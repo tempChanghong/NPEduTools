@@ -13,7 +13,15 @@ public sealed record NpepCommand(string Action, long Revision, string? Origin = 
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CatalogueAfter = null);
 public sealed record NpepState(long Revision, string State, string Connection, string Message, bool Busy = false,
     string? Origin = null, JsonObject? Server = null, JsonObject? Pairing = null, JsonObject? Approval = null,
-    bool ReportingPaused = false, string? LastReceivedAt = null, string? Error = null, Guid? OperationId = null, string? PairingSource = null,JsonObject? Catalogue = null);
+    bool ReportingPaused = false, string? LastReceivedAt = null, string? Error = null, Guid? OperationId = null, string? PairingSource = null,JsonObject? Catalogue = null)
+{
+    // Optional data inside the existing JSON object keeps the strict local IPC envelope readable by older clients.
+    private string? Target(string field) => Catalogue?["replacementTarget"] is JsonObject target &&
+        target[field] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+    [JsonIgnore] public string? RequestedScreenBindingId => Target("screenBindingId");
+    [JsonIgnore] public string? RequestedScreenName => Target("screenName");
+    [JsonIgnore] public string? RequestedDeviceName => Target("deviceName");
+}
 
 public static class NpepContract
 {
@@ -32,7 +40,7 @@ public static class NpepContract
             Uuid(c.ServerInstanceId) && Uuid(c.DeploymentEpoch) && c.DeviceName is null && c.ApprovalId is null &&
             c.UserCode is null && c.ScreenBindingId is null && c.ManagementSecret is null;
         if (c.SchoolQuery is not null || c.ClassQuery is not null || c.CatalogueAfter is not null) return false;
-        if(c.Action is "apply-class" or "password-class")return CatalogueId(c.ScreenBindingId) &&
+        if(c.Action is "apply-class" or "password-class" or "replacement-class")return CatalogueId(c.ScreenBindingId) &&
             (c.Action=="apply-class"?c.ManagementSecret is null:NoiseManagementContract.SecretValid(c.ManagementSecret)) &&
             Valid(c with{Action="pair",ScreenBindingId=null,ManagementSecret=null});
         if(c.ScreenBindingId is not null || c.ManagementSecret is not null)return false;

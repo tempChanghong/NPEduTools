@@ -76,7 +76,7 @@ public sealed partial class NpepApi : IDisposable
         if (responseDefinition == "pairing")
         {
             string state = envelope["data"] is JsonObject data ? data.Text("state") : throw new NpepException("INVALID_RESPONSE");
-            responseDefinition = state switch { "PENDING" => "pendingPairingResponse", "APPROVED" => "approvedPairingResponse", "ACTIVATED" => "activatedPairingResponse", _ => throw new NpepException("INVALID_RESPONSE") };
+            responseDefinition = state switch { "PENDING" => "pendingPairingResponse", "APPROVED" => "approvedPairingResponse", "ACTIVATED" => "activatedPairingResponse", "CANCELLED" => "cancelledPairingResponse", _ => throw new NpepException("INVALID_RESPONSE") };
         }
         NpepProtocol.Validate(responseDefinition, envelope);
         return (JsonObject)envelope["data"]!.DeepClone();

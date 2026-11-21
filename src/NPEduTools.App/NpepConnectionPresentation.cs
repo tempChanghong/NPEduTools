@@ -166,6 +166,7 @@ public static class NpepConnectionPresentation
         "NpepStateChanged" => new("连接状态已变化或仍有操作在进行。", "刷新并等待原操作结束，再核对当前状态；不要重复创建申请。"),
         "LOCAL_CONFIRMATION_REQUIRED" => new("学校服务尚未完成本机核对。", "重新检查学校服务，核对地址与实例后再确认并使用配对码。"),
         "LOCAL_ONLY" => new("本机已解绑，但尚未确认学校端撤销。", "请学校管理员检查并撤销原设备登记，再按需要重新配对。"),
+        "REPLACEMENT_CANCEL_UNCONFIRMED" => new("本机已清除换机申请，学校端尚未确认取消。", "可在 Console 查看这台大屏的换机审核记录，核对原申请是否仍待处理。"),
         "HOST_UNAVAILABLE" => new("无法读取 NPEduTools 后台确认。", "恢复后台连接后先刷新核实结果；原操作可能已受理，不要重复提交。"),
         _ => new("出现尚未识别的互联问题。", "保留技术详情并联系学校管理员核对；未知错误不等于可以重新配对。")
     };

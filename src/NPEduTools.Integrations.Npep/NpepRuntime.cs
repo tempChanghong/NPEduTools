@@ -44,6 +44,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             _device = factory();
             _controlPolicy = new(_device.DataDirectory);
             _planPolicy = new(_device.DataDirectory, "exam-plan-policy.json");
+            _blocked = _device.View()["pairingError"] is not null;
             Publish("WAITING", _device.View().Text("state") switch
             {
                 "UNPAIRED" => "尚未连接学校服务。只有完成配对后才会上报设备状态。",
@@ -79,7 +80,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             if (statusDependsOnReceipt && !HasFreshStatusReceipt())
                 result = result with { Connection = "OFFLINE", Error = null, Message = "最近 60 秒未收到新的上报回执；显示的是上次观测。" };
             return result with { Server = result.Server?.Copy(), Pairing = result.Pairing?.Copy(), Approval = result.Approval?.Copy(),
-                Catalogue = result.State == "UNPAIRED" ? _catalogue?.Copy() : null };
+                Catalogue = result.State == "UNPAIRED" ? _catalogue?.Copy() : result.Catalogue?.Copy() };
         }
     }
 
@@ -101,6 +102,13 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             var c = request.Npep;
             if (c is null || !NpepContract.Valid(c)) return Reply("Rejected", "InvalidNpepCommand", "互联操作参数不正确。");
             if (_state.Busy || c.Revision != _state.Revision) return Reply("Rejected", "NpepStateChanged", "状态已更新或操作仍在进行，请刷新后重试。");
+            if (c.Action == "replacement-class" && (_state.State != "CREATING" ||
+                _state.Error is not ("BINDING_OCCUPIED" or "MANAGEMENT_SECRET_INVALID") ||
+                c.ScreenBindingId != _state.RequestedScreenBindingId || c.DeviceName != _state.RequestedDeviceName ||
+                NpepApi.ValidateOrigin(c.Origin!) != _state.Origin ||
+                c.ServerInstanceId != _state.Server?["serverInstanceId"]?.GetValue<string>() ||
+                c.DeploymentEpoch != _state.Server?["deploymentEpoch"]?.GetValue<string>()))
+                return Reply("Rejected", "NpepStateChanged", "请先核对被占用的大屏，再提交该大屏的换机申请。");
             if (c.Action == "find-class")
             {
                 if (_state is not { State: "UNPAIRED", Connection: "VERIFIED" } || !MatchesVerified(c) ||
@@ -203,9 +211,13 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                     .FirstOrDefault(row => row.Text("screenBindingId") == c.ScreenBindingId);
                 if (_catalogue is not null && selected is null) throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
                 await _device!.BeginClassAsync(c.Origin!, _verified!, c.DeviceName!, _appVersion, c.ScreenBindingId!, c.ManagementSecret,
-                    token, selected?.Text("schoolId"), selected?.Text("classId"));
+                    token, selected?.Text("schoolId"), selected?.Text("classId"), selected is null ? null :
+                        string.Join(" · ", new[] { "schoolName", "className", "screenName" }.Select(key => selected[key]?.GetValue<string>()).Where(name => !string.IsNullOrWhiteSpace(name))));
                 await _device.PollApprovalAsync(token);await _device.ConfirmRequestedClassAsync(token);
                 Publish("WAITING",c.Action=="apply-class"?"已申请指定班级；等待学校管理员批准并设置口令。":"已核对预授权口令，正在连接。");break;
+            case "replacement-class":
+                await _device!.RequestReplacementAsync(c, token);
+                Publish("WAITING", "已提交换机申请，等待学校管理员审核。旧设备继续运行。"); break;
             case "pair":
             case "claim":
                 if (_verified is null || NpepApi.ValidateOrigin(c.Origin!) != _verifiedOrigin ||
@@ -229,11 +241,21 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             case "pause": await _device!.SetReportingPausedAsync(true, token); Publish("PAUSED", "已暂停互联（通知与状态）。学校端会在在线窗口结束后显示离线；配对保留。"); break;
             case "resume": await _device!.SetReportingPausedAsync(false, token); Publish("CONNECTING", "正在恢复通知接收与状态上报。"); break;
             case "unpair":
+                var leaving = _device!.View();
+                bool cancellingCandidate = leaving["pairingSource"]?.GetValue<string>() == "REPLACEMENT" &&
+                    leaving.Text("state") is "CREATING" or "PENDING" or "APPROVED";
                 string outcome = await _device!.UnpairAsync(token);
                 _updates?.Unpair();
                 _schoolManagement?.BindSchool(null);
                 _verified = null; _verifiedOrigin = null; _catalogue = null;
-                Publish("DISABLED", outcome == "LOCAL_ONLY" ? "本机已解绑，但无法确认远端撤销。请学校管理员检查并撤销该设备。" : "已解除绑定并停止上报。", outcome == "LOCAL_ONLY" ? "LOCAL_ONLY" : null); break;
+                string result = outcome switch {
+                    "CANCELLED" => "本机配对申请已清除。",
+                    "LOCAL_ONLY" when cancellingCandidate => "本机换机申请已清除。若学校仍显示待审，请在 Console 核对此申请。",
+                    "LOCAL_ONLY" => "本机已解绑，但无法确认远端撤销。请学校管理员检查这台设备的登记。",
+                    _ => "已解除绑定并停止上报。"
+                };
+                string? cleanupError = outcome == "LOCAL_ONLY" ? (cancellingCandidate ? "REPLACEMENT_CANCEL_UNCONFIRMED" : "LOCAL_ONLY") : null;
+                Publish("DISABLED", result, cleanupError); break;
         }
         _failures = 0; _delay = c.Action is "pair" or "poll" or "resume-create" ? 5 : 0;
     }
@@ -262,7 +284,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                     await PerformCommandAsync(pending with { Action = action }, _network.Token);
                     _tlsRetryCommand = null;
                 }
-                else if (stage == "PENDING")
+                else if (stage == "PENDING" || stage == "APPROVED" && view["pairingSource"]?.GetValue<string>() == "REPLACEMENT")
                 {
                     attempted = true;
                     await _device.PollApprovalAsync(_network.Token);
@@ -327,11 +349,14 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 Revision = _state.Revision + (changed ? 1 : 0), State = stage,
                 Connection = paused ? "PAUSED" : stage is "SUSPENDED" or "UNPAIRING" ? "STOPPED" : connection,
                 Message = paused ? "已暂停互联（通知与状态），配对保留。恢复后会重新检查授权。" : message,
-                Origin = view["origin"]?.GetValue<string>() ?? _verifiedOrigin, Server = _verified?.Copy(),
+                Origin = view["origin"]?.GetValue<string>() ?? _verifiedOrigin, Server = view["requestedServer"] as JsonObject ?? _verified?.Copy(),
                 Pairing = view["pairing"] as JsonObject, Approval = view["approval"] as JsonObject,
                 ReportingPaused = paused, LastReceivedAt = stage == "UNPAIRED" ? null : lastReceivedAt, Error = error,
-                PairingSource = view["pairingSource"]?.GetValue<string>()
+                PairingSource = view["pairingSource"]?.GetValue<string>(),
+                Catalogue = view["replacementTarget"] is JsonObject target ? new JsonObject { ["replacementTarget"] = target.Copy() } : null
             };
+            if (error is null && view["pairingError"] is JsonValue rejection)
+                _state = _state with { Connection = "STOPPED", Error = rejection.GetValue<string>() };
             if (receivedNewStatus && _connectionFailed) { _history.Add("Recovered", "Status"); _connectionFailed = false; }
             if (connection is "DISABLED" or "PAUSED") _connectionFailed = false;
         }
@@ -359,6 +384,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         }
         string stopped = code switch
         {
+            "PAIRING_CANCELLED" => "原申请已取消或被学校拒绝。可以清除本机申请后重新接入。",
+            "REPLACEMENT_UNSUPPORTED" => "学校服务暂不支持换机，请联系学校管理员升级 KV。",
             "PAIRING_EXPIRED" => "配对码已过期。请取消本次配对后重新创建；不会自动延长期限。",
             "PAIRING_CODE_UNAVAILABLE" => "网页配对码已使用、过期或失效。请取消本次申请，再在班级大屏网页生成新码。",
             "SCREEN_PAIRING_DISABLED" or "PREAUTHORIZATION_CHANGED" => "学校预授权已关闭或变更。请取消本次申请，联系管理员核对后重新生成配对码。",

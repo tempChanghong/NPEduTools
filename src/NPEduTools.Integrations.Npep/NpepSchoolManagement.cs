@@ -13,7 +13,8 @@ public sealed partial class NpepApi
 {
     internal async Task<JsonObject> SchoolManagementAsync(string? bearer, string path, JsonObject? body, CancellationToken token)
     {
-        if(path is not ("admission/catalog" or "admission/catalog/lookup" or "device/school-management" or "device/school-management/receipt")) throw new NpepException("INVALID_REQUEST");
+        bool replacement = path == "pairings/replacement";
+        if(!replacement && path is not ("admission/catalog" or "admission/catalog/lookup" or "device/school-management" or "device/school-management/receipt")) throw new NpepException("INVALID_REQUEST");
         string requestId = body?.Text("requestId") ?? NpepProtocol.Id();
         using var request = new HttpRequestMessage(body is null ? HttpMethod.Get : HttpMethod.Post, path);
         request.Headers.Add("X-NPEP-Version", "0.16"); request.Headers.Add("X-Request-Id", requestId);
@@ -28,9 +29,13 @@ public sealed partial class NpepApi
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
         int code = (int)response.StatusCode;
         if(code is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
-        if(code is 404 or 426)throw new NpepException("SCHOOL_MANAGEMENT_UNSUPPORTED",code);
+        if(replacement && code == 426) throw new NpepException("REPLACEMENT_UNSUPPORTED", code);
+        if(!replacement && code is (404 or 426))throw new NpepException("SCHOOL_MANAGEMENT_UNSUPPORTED",code);
         // Older servers return up to 200 full rows. Trim that preview before sending it to the UI.
-        var envelope = await ReadEnvelopeAsync(response, path == "admission/catalog" ? 2 * 1024 * 1024 : 65536, deadline.Token, request);
+        JsonObject envelope;
+        try { envelope = await ReadEnvelopeAsync(response, path == "admission/catalog" ? 2 * 1024 * 1024 : 65536, deadline.Token, request); }
+        catch (NpepException e) when (replacement && code == 404 && e.Code == "INVALID_RESPONSE")
+        { throw new NpepException("REPLACEMENT_UNSUPPORTED", code); }
         if(envelope.Text("protocolVersion") != "0.16" || envelope.Text("requestId") != requestId) throw new NpepException("INVALID_RESPONSE");
         if(!response.IsSuccessStatusCode)
         {
@@ -47,8 +52,8 @@ public sealed partial class NpepDevice
     public Task<JsonObject> BeginClassAsync(string origin,JsonObject info,string name,string version,string binding,string? secret,CancellationToken token=default)
         => BeginCoreAsync(origin,info,name,version,null,token,binding,secret);
     internal Task<JsonObject> BeginClassAsync(string origin, JsonObject info, string name, string version, string binding,
-        string? secret, CancellationToken token, string? school, string? room) =>
-        BeginCoreAsync(origin, info, name, version, null, token, binding, secret, school, room);
+        string? secret, CancellationToken token, string? school, string? room, string? screenName = null) =>
+        BeginCoreAsync(origin, info, name, version, null, token, binding, secret, school, room, screenName);
     internal async Task ConfirmRequestedClassAsync(CancellationToken token)
     {
         if(_saved?.Text("stage")!="APPROVED" || _saved["source"]?.GetValue<string>() is not ("CLASS_APPLY" or "CLASS_PASSWORD"))return;

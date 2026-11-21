@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
+using NPEduTools.Contracts;
 
 namespace NPEduTools.Integrations.Npep;
 
@@ -26,17 +27,32 @@ public sealed partial class NpepDevice : IDisposable
     }
 
     // Only this explicitly redacted view can be printed by a caller.
-    public JsonObject View() => new()
+    public JsonObject View()
     {
-        ["state"] = _saved?["stage"]?.DeepClone() ?? JsonValue.Create("UNPAIRED"),
-        ["origin"] = _saved?["origin"]?.DeepClone(),
-        ["pairing"] = _saved?["pairing"]?.DeepClone(),
-        ["approval"] = _saved?["approval"]?.DeepClone(),
-        ["registration"] = _saved?["registration"]?.DeepClone(),
-        ["pairingSource"] = _saved?["source"]?.DeepClone(),
-        ["reportingPaused"] = _saved?["reportingPaused"]?.DeepClone() ?? JsonValue.Create(false),
-        ["suspended"] = _suspended
-    };
+        var saved = _saved;
+        var stage = saved?["stage"]?.GetValue<string>();
+        bool showTarget = stage == "CREATING" || saved?["source"]?.GetValue<string>() == "REPLACEMENT" &&
+            stage is "PENDING" or "APPROVED" or "CONFIRMING";
+        var view = new JsonObject
+        {
+            ["state"] = stage ?? "UNPAIRED",
+            ["origin"] = saved?["origin"]?.DeepClone(),
+            ["pairing"] = saved?["pairing"]?.DeepClone(),
+            ["approval"] = saved?["approval"]?.DeepClone(),
+            ["registration"] = saved?["registration"]?.DeepClone(),
+            ["pairingSource"] = saved?["source"]?.DeepClone(),
+            ["reportingPaused"] = saved?["reportingPaused"]?.DeepClone() ?? JsonValue.Create(false),
+            ["suspended"] = _suspended
+        };
+        if (showTarget && saved?["requestedBindingId"] is JsonNode binding)
+        {
+            view["replacementTarget"] = new JsonObject { ["screenBindingId"] = binding.DeepClone(),
+                ["screenName"] = saved["requestedScreenName"]?.DeepClone(), ["deviceName"] = saved["create"]?["deviceName"]?.DeepClone() };
+            view["requestedServer"] = saved["info"]?.DeepClone();
+        }
+        if (saved?["pairingError"] is JsonNode error) view["pairingError"] = error.DeepClone();
+        return view;
+    }
     private void Save(JsonObject next) { _vault.Save(next); _saved = next; }
     private JsonObject Required() => _saved ?? throw new NpepException("NOT_PAIRED");
     private string PairBearer => "npepp1." + ((JsonObject)Required()["pairing"]!).Text("pairingId") + "." + Required().Text("pairingSecret");
@@ -66,7 +82,8 @@ public sealed partial class NpepDevice : IDisposable
         => await BeginCoreAsync(origin, confirmedInfo, deviceName, appVersion, userCode, token);
 
     private async Task<JsonObject> BeginCoreAsync(string origin, JsonObject confirmedInfo, string deviceName, string appVersion, string? userCode, CancellationToken token,
-        string? classBinding = null, string? managementSecret = null, string? expectedSchool = null, string? expectedClass = null)
+        string? classBinding = null, string? managementSecret = null, string? expectedSchool = null, string? expectedClass = null,
+        string? screenName = null)
     {
         await _gate.WaitAsync(token);
         try
@@ -95,9 +112,43 @@ public sealed partial class NpepDevice : IDisposable
             NpepProtocol.Validate(classBinding is not null ? managementSecret is null ? "applyClassPairing" : "passwordClassPairing" : userCode is null ? "createPairing" : "claimScreenPairing", request);
             Save(new() { ["stage"] = "CREATING", ["origin"] = api.Origin, ["info"] = actual.Copy(),
                 ["create"] = request, ["pairingSecret"] = secret, ["requestedBindingId"]=classBinding,
-                ["requestedSchoolId"] = expectedSchool, ["requestedClassId"] = expectedClass,
+                ["requestedSchoolId"] = expectedSchool, ["requestedClassId"] = expectedClass, ["requestedScreenName"] = screenName,
                 ["source"] = classBinding is not null ? managementSecret is null ? "CLASS_APPLY" : "CLASS_PASSWORD" : userCode is null ? "ADMIN" : "SCREEN" });
             return await ResumeCreateCoreAsync(token);
+        }
+        finally { _gate.Release(); }
+    }
+    internal async Task RequestReplacementAsync(NpepCommand command, CancellationToken token)
+    {
+        await _gate.WaitAsync(token);
+        try
+        {
+            var saved = Required();
+            string? error = saved["pairingError"]?.GetValue<string>();
+            string? source = saved["source"]?.GetValue<string>();
+            bool matchedRejection = (source is "CLASS_PASSWORD" or "CLASS_APPLY" && error == "BINDING_OCCUPIED") ||
+                (source == "REPLACEMENT" && error == "MANAGEMENT_SECRET_INVALID");
+            if (saved.Text("stage") != "CREATING" || !matchedRejection || command.Action != "replacement-class" || !NpepContract.Valid(command) ||
+                NpepApi.ValidateOrigin(command.Origin!) != saved.Text("origin") || command.DeviceName != saved["create"]!.AsObject().Text("deviceName") ||
+                command.ScreenBindingId != saved["requestedBindingId"]?.GetValue<string>() ||
+                command.ServerInstanceId != saved["info"]!.AsObject().Text("serverInstanceId") ||
+                command.DeploymentEpoch != saved["info"]!.AsObject().Text("deploymentEpoch"))
+                throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
+            var origin = new Uri(saved.Text("origin"));
+            if (origin.Scheme != "https" && !origin.IsLoopback) throw new NpepException("HTTPS_REQUIRED");
+            // Replace only a definitively rejected candidate. A lost reply must replay the original operation.
+            var next = saved.Copy();
+            var body = next["create"]!.AsObject();
+            body["requestId"] = NpepProtocol.Id();
+            body["secret"] = command.ManagementSecret;
+            string secret = Secret();
+            body["pairingSecret"] = secret;
+            next["pairingSecret"] = secret;
+            next["source"] = "REPLACEMENT";
+            next.Remove("pairingError");
+            NpepProtocol.Validate("passwordClassPairing", body);
+            Save(next);
+            await ResumeCreateCoreAsync(token);
         }
         finally { _gate.Release(); }
     }
@@ -112,9 +163,40 @@ public sealed partial class NpepDevice : IDisposable
         if (Required().Text("stage") != "CREATING") throw new NpepException("PAIRING_STATE_CONFLICT");
         using var api = Api();
         string source=Required()["source"]?.GetValue<string>()??"ADMIN";
-        string path=source switch{"SCREEN"=>"pairings/claim","CLASS_APPLY"=>"pairings/apply","CLASS_PASSWORD"=>"pairings/password",_=>"pairings"};
-        string definition=source switch{"SCREEN"=>"claimScreenPairing","CLASS_APPLY"=>"applyClassPairing","CLASS_PASSWORD"=>"passwordClassPairing",_=>"createPairing"};
-        var pairing = await api.SendAsync(path,"createdPairingResponse",(JsonObject)Required()["create"]!,definition,token:token);
+        if (source == "REPLACEMENT" && Required()["pairingError"]?.GetValue<string>() == "MANAGEMENT_SECRET_INVALID")
+            throw new NpepException("MANAGEMENT_SECRET_INVALID", 403);
+        if (Required().ContainsKey("pairingError"))
+        {
+            var retry = Required().Copy();
+            retry.Remove("pairingError");
+            Save(retry);
+        }
+        var body = Required()["create"]!.AsObject();
+        JsonObject pairing;
+        try
+        {
+            if (source == "REPLACEMENT")
+            {
+                NpepProtocol.Validate("passwordClassPairing", body);
+                pairing = await api.SchoolManagementAsync(null, "pairings/replacement", body, token);
+                NpepProtocol.Validate("createdPairing", pairing);
+            }
+            else
+            {
+                string path=source switch{"SCREEN"=>"pairings/claim","CLASS_APPLY"=>"pairings/apply","CLASS_PASSWORD"=>"pairings/password",_=>"pairings"};
+                string definition=source switch{"SCREEN"=>"claimScreenPairing","CLASS_APPLY"=>"applyClassPairing","CLASS_PASSWORD"=>"passwordClassPairing",_=>"createPairing"};
+                pairing = await api.SendAsync(path,"createdPairingResponse",body,definition,token:token);
+            }
+        }
+        catch (NpepException e) when ((source is "CLASS_APPLY" or "CLASS_PASSWORD" && e is { Code: "BINDING_OCCUPIED", Status: 409 }) ||
+            (source == "REPLACEMENT" && (e is {Code: "MANAGEMENT_SECRET_INVALID", Status: 403} || e.Code == "REPLACEMENT_UNSUPPORTED")))
+        {
+            var rejected = Required().Copy();
+            rejected["pairingError"] = e.Code;
+            if (e.Code == "MANAGEMENT_SECRET_INVALID") rejected["create"]!.AsObject().Remove("secret");
+            Save(rejected);
+            throw;
+        }
         var next = Required().Copy(); next["pairing"] = pairing; next["stage"] = "PENDING"; next["create"]!.AsObject().Remove("secret"); Save(next);
         return View();
     }
@@ -129,9 +211,23 @@ public sealed partial class NpepDevice : IDisposable
             var response = await api.SendAsync("pairings/" + pairingId, "pairing", bearer: PairBearer, token: token);
             if (response.Text("pairingId") != pairingId) throw new NpepException("INVALID_RESPONSE");
             if (response.Text("state") == "ACTIVATED") throw new NpepException("PAIRING_STATE_CONFLICT");
+            if (response.Text("state") == "CANCELLED")
+            {
+                var stopped = Required().Copy();
+                stopped.Remove("approval");
+                stopped["stage"] = "PENDING";
+                stopped["pairingError"] = "PAIRING_CANCELLED";
+                Save(stopped);
+                throw new NpepException("PAIRING_CANCELLED");
+            }
             if (response.Text("state") == "APPROVED")
             {
-                if (_saved?["approval"] is JsonObject approved && !NpepProtocol.Equal(approved, response)) throw new NpepException("BINDING_CHANGED");
+                if (Required()["source"]?.GetValue<string>() == "REPLACEMENT") CheckRequestedTarget(response);
+                if (_saved?["approval"] is JsonObject approved)
+                {
+                    if (!NpepProtocol.Equal(approved, response)) throw new NpepException("BINDING_CHANGED");
+                    return View();
+                }
                 var next = Required().Copy(); next["approval"] = response; next["stage"] = "APPROVED"; Save(next);
             }
             return View();
@@ -146,10 +242,7 @@ public sealed partial class NpepDevice : IDisposable
             if (Required().Text("stage") != "APPROVED" || ((JsonObject)Required()["approval"]!).Text("approvalId") != locallyConfirmedApprovalId)
                 throw new NpepException("LOCAL_CONFIRMATION_REQUIRED");
             var approval = Required()["approval"]!.AsObject();
-            if ((Required()["requestedBindingId"] is JsonNode binding && !JsonNode.DeepEquals(binding, approval["screenBindingId"])) ||
-                (Required()["requestedSchoolId"] is JsonNode school && !JsonNode.DeepEquals(school, approval["schoolId"])) ||
-                (Required()["requestedClassId"] is JsonNode room && !JsonNode.DeepEquals(room, approval["administrativeClassId"])))
-                throw new NpepException("BINDING_CHANGED");
+            CheckRequestedTarget(approval);
             var body = IdentityBody(); body["approvalId"] = locallyConfirmedApprovalId;
             body["credentialId"] = NpepProtocol.Id(); body["deviceSecret"] = Secret();
             var next = Required().Copy(); next["confirm"] = body; next["credentialId"] = body["credentialId"]!.DeepClone();
@@ -158,6 +251,14 @@ public sealed partial class NpepDevice : IDisposable
             return await SubmitConfirmCoreAsync(token);
         }
         finally { _gate.Release(); }
+    }
+    private void CheckRequestedTarget(JsonObject approval)
+    {
+        var saved = Required();
+        if ((saved["requestedBindingId"] is JsonNode binding && !JsonNode.DeepEquals(binding, approval["screenBindingId"])) ||
+            (saved["requestedSchoolId"] is JsonNode school && !JsonNode.DeepEquals(school, approval["schoolId"])) ||
+            (saved["requestedClassId"] is JsonNode room && !JsonNode.DeepEquals(room, approval["administrativeClassId"])))
+            throw new NpepException("BINDING_CHANGED");
     }
     private async Task<JsonObject> SubmitConfirmCoreAsync(CancellationToken token)
     {
@@ -291,6 +392,11 @@ public sealed partial class NpepDevice : IDisposable
             string outcome = "LOCAL_ONLY";
             if (_saved is not null)
             {
+                if (_saved["pairingError"]?.GetValue<string>() is "BINDING_OCCUPIED" or "MANAGEMENT_SECRET_INVALID" or "REPLACEMENT_UNSUPPORTED" or "PAIRING_CANCELLED")
+                {
+                    _vault.Clear(); _saved = null;
+                    return "CANCELLED";
+                }
                 // A crash during remote cleanup must not resume reporting on the next launch.
                 var stopping = Required().Copy(); stopping["stage"] = "UNPAIRING"; Save(stopping);
                 try
