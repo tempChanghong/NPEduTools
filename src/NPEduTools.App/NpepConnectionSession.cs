@@ -20,6 +20,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private sealed record LookupPage(string School, string Class, string? After);
     private CatalogueView _catalogueView;
     private LookupPage? _lookupPage;
+    private readonly List<string?> _lookupCursors = [];
     private string _schoolQuery = "", _classQuery = "";
     private string? _lookupFailure;
     private bool _lookupReady;
@@ -114,6 +115,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public bool CanRestoreQuickCatalogue => CanInspect && CanEditClassCatalogue;
     public bool CanFindClass => Available && CanEditClassCatalogue && ShowClassLookup &&
         NpepContract.Valid(LookupCommand(new(SchoolQuery.Trim(), ClassQuery.Trim(), null)));
+    public bool ShowPreviousClassPage => _lookupCursors.Count > 1;
+    public bool CanFindPreviousClassPage => Available && CanEditClassCatalogue && ShowClassLookup && ShowPreviousClassPage;
     public bool ShowNextClassPage => NextClassCursor is not null;
     public bool CanFindNextClassPage => Available && CanEditClassCatalogue && ShowClassLookup && NextClassCursor is not null;
     public bool ShowRetryClassPage => _lookupFailure is not null && _lookupPage is not null;
@@ -121,7 +124,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public string SchoolQuery { get => _schoolQuery; set => EditLookup(ref _schoolQuery, value); }
     public string ClassQuery { get => _classQuery; set => EditLookup(ref _classQuery, value); }
     private string? NextClassCursor => _lookupReady && _lookupPage == ReadLookupPage(ProviderCatalogue) &&
-        Text(ProviderCatalogue, "nextCursor") is { Length: > 0 } next && next != _lookupPage?.After ? next : null;
+        Text(ProviderCatalogue, "nextCursor") is { Length: > 0 } next && !_lookupCursors.Contains(next) ? next : null;
     public string ClassCatalogueHint
     {
         get
@@ -152,10 +155,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     {
         _catalogueView = CatalogueView.Quick;
         _schoolQuery = _classQuery = "";
-        _lookupPage = null;
-        _lookupReady = false;
-        _lookupFailure = null;
-        ClearClassCatalogue();
+        ResetLookupPages();
     }
 
     private void EditLookup(ref string field, string value)
@@ -163,11 +163,17 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         if (field == value) return;
         field = value;
         _catalogueView = CatalogueView.Editing;
+        ResetLookupPages();
+        Changed();
+    }
+
+    private void ResetLookupPages()
+    {
+        _lookupCursors.Clear();
         _lookupPage = null;
         _lookupReady = false;
         _lookupFailure = null;
         ClearClassCatalogue();
-        Changed();
     }
 
     private void ClearClassCatalogue()
@@ -179,6 +185,9 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
 
     public Task<bool> FindClassAsync() => CanFindClass ? ReadClassPageAsync(new(SchoolQuery.Trim(), ClassQuery.Trim(), null)) : Task.FromResult(false);
 
+    public Task<bool> FindPreviousClassPageAsync() => CanFindPreviousClassPage && _lookupPage is { } page
+        ? ReadClassPageAsync(page with { After = _lookupCursors[^2] }) : Task.FromResult(false);
+
     public Task<bool> FindNextClassPageAsync() => CanFindNextClassPage && _lookupPage is { } page && NextClassCursor is { } cursor
         ? ReadClassPageAsync(page with { After = cursor }) : Task.FromResult(false);
 
@@ -188,6 +197,9 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     {
         var command = LookupCommand(page);
         if (!NpepContract.Valid(command)) return Task.FromResult(false);
+        int savedPage = _lookupCursors.IndexOf(page.After);
+        if (savedPage < 0) _lookupCursors.Add(page.After);
+        else _lookupCursors.RemoveRange(savedPage + 1, _lookupCursors.Count - savedPage - 1);
         _catalogueView = CatalogueView.Lookup;
         _lookupPage = page;
         _lookupReady = false;

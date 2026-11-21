@@ -85,6 +85,8 @@
               </StackPanel>
             </Expander>
             <WrapPanel>
+              <Button x:Name="PreviousClassPageButton" Content="上一页" Click="PreviousClassPageClicked" IsEnabled="{Binding CanFindPreviousClassPage}"
+                      Visibility="{Binding ShowPreviousClassPage,Converter={StaticResource VisibleWhenTrue}}" Style="{StaticResource TeacherQuiet}" Margin="0,4,8,4" />
               <Button x:Name="NextClassPageButton" Content="下一页" Click="NextClassPageClicked" IsEnabled="{Binding CanFindNextClassPage}"
                       Visibility="{Binding ShowNextClassPage,Converter={StaticResource VisibleWhenTrue}}" Style="{StaticResource TeacherQuiet}" Margin="0,4,8,4" />
               <Button x:Name="RetryClassPageButton" Content="重试本页" Click="RetryClassPageClicked" IsEnabled="{Binding CanRetryClassPage}"

@@ -108,6 +108,7 @@ public partial class NpepConnectionControl : UserControl
     private async void RefreshClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RefreshAsync(); }
     private async void InspectClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.InspectAsync(); }
     private async void FindClassClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindClassAsync(); }
+    private async void PreviousClassPageClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindPreviousClassPageAsync(); }
     private async void NextClassPageClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindNextClassPageAsync(); }
     private async void RetryClassPageClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RetryClassPageAsync(); }
     private async void PairClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.PairAsync(); }

@@ -66,6 +66,8 @@ internal static partial class Program
             var classroom = Control<TextBox>("ClassLookupQuery");
             var hint = Control<TextBlock>("ClassCatalogueHint");
             var find = Control<Button>("FindClassButton");
+            var previous = Control<Button>("PreviousClassPageButton");
+            var next = Control<Button>("NextClassPageButton");
             ((CheckBox)Find(view, "NpepServerConfirmed")).IsChecked = true;
             Assert(selection.IsVisible && selection.Items.Count == 1 && selection.SelectedIndex == -1 && !lookup.IsVisible,
                 "legacy small catalogue is no longer directly selectable");
@@ -83,7 +85,8 @@ internal static partial class Program
             Assert(selection.SelectedIndex == -1 && password.Password.Length == 0 && find.IsEnabled, "editing lookup retained quick-list selection or password");
             Raise(find);
             window.UpdateLayout();
-            Assert(selection.Items.Count == 2 && selection.SelectedIndex == -1, "lookup selected a matching class automatically or dropped a same-name screen");
+            Assert(selection.Items.Count == 2 && selection.SelectedIndex == -1 && !previous.IsVisible && next.IsEnabled,
+                "first page should preserve same-name screens, require manual selection and only allow forward paging");
             var choices = selection.Items.Cast<NpepConnectionSession.ClassChoice>().ToArray();
             Assert(choices[0].Id != choices[1].Id && choices[0].Name != choices[1].Name && choices.All(row =>
                 row.Name.Contains("SCHOOL-01") && row.Name.Contains("G2-C03") && row.Name.Contains(row.Id)),
@@ -95,10 +98,10 @@ internal static partial class Program
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(selection.SelectedValue is "room-202" && password.Password == "fixture-only", "identical polling cleared the current result or password");
             failPage = true;
-            Raise(Control<Button>("NextClassPageButton"));
+            Raise(next);
             window.UpdateLayout();
             Assert(selection.Items.Count == 0 && password.Password.Length == 0 && hint.Text.Contains("正在查找") &&
-                !Control<Button>("RetryClassPageButton").IsVisible, "Host acceptance was displayed as an empty/error result");
+                !previous.IsEnabled && !Control<Button>("RetryClassPageButton").IsVisible, "Host acceptance allowed overlapping paging or appeared as an empty/error result");
             state = state with { Busy = false, Error = "RATE_LIMIT", Message = "查找过于频繁，请稍后重试。" };
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(selection.Items.Count == 0 && selection.SelectedIndex == -1 && password.Password.Length == 0 &&
@@ -111,10 +114,24 @@ internal static partial class Program
             Assert(selection.Items.Count == 1 && selection.SelectedIndex == -1 && commands[^1].CatalogueAfter == "room-202", "retry did not fetch the same page without selection");
             selection.SelectedIndex = 0;
             password.Password = "fixture-only";
+            Raise(previous);
+            window.UpdateLayout();
+            Assert(commands[^1] is { Action: "find-class", CatalogueAfter: null, SchoolQuery: "SCHOOL-01", ClassQuery: "高二（3）班" } &&
+                selection.Items.Count == 2 && selection.SelectedIndex == -1 && password.Password.Length == 0 && !previous.IsVisible && next.IsEnabled,
+                "returning to the first page did not reread its cursor or clear selection and password");
+            selection.SelectedIndex = 1;
+            password.Password = "fixture-only";
+            Raise(next);
+            window.UpdateLayout();
+            Assert(commands[^1].CatalogueAfter == "room-202" && selection.Items.Count == 1 && selection.SelectedIndex == -1 &&
+                password.Password.Length == 0 && previous.IsEnabled && !next.IsVisible, "forward paging after going back did not restore the second page and clear inputs");
+            selection.SelectedIndex = 0;
+            password.Password = "fixture-only";
             Raise(FlowElements<Button>(view).Single(button => Equals(button.Content, "验证口令并连接")));
             Assert(commands[^1].Action == "password-class" && commands[^1].ScreenBindingId == "room-203", "pairing did not use the manually selected ID");
 
             classroom.Text = "延迟班";
+            Assert(!previous.IsVisible, "changing query conditions retained the previous search's cursors");
             Raise(find);
             Assert(delayedRequest?.Npep?.ClassQuery == "延迟班" && classroom.IsEnabled, "query input cannot change while an old lookup is pending");
             classroom.Text = "另一班";
@@ -138,7 +155,7 @@ internal static partial class Program
                 "restoring quick catalogue should inspect the same confirmed service");
             window.Close();
         });
-        Checks.Add("Class catalogue settings preserve small legacy lists, explain truncation, distinguish duplicate names, clear passwords across pages, reject stale results, and restore the quick list");
+        Checks.Add("Class catalogue settings preserve small legacy lists, explain truncation, distinguish duplicate names, clear selection and password when paging both ways, reject stale results, and restore the quick list");
 
         session.RefreshAsync().GetAwaiter().GetResult();
         var actionsType = typeof(OnboardingWindow).Assembly.GetType("NPEduTools.App.OnboardingActions")!;
