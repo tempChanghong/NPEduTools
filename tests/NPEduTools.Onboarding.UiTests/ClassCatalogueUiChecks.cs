@@ -71,6 +71,15 @@ internal static partial class Program
             ((CheckBox)Find(view, "NpepServerConfirmed")).IsChecked = true;
             Assert(selection.IsVisible && selection.Items.Count == 1 && selection.SelectedIndex == -1 && !lookup.IsVisible,
                 "legacy small catalogue is no longer directly selectable");
+            var alternate = Control<Expander>("WebPairingOptions");
+            Assert(!alternate.IsExpanded, "a usable legacy catalogue should keep alternate pairing folded");
+            state = state with { Catalogue = null };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(alternate.IsVisible && alternate.IsExpanded && ((TextBox)Find(view, "NpepWebPairingCode")).IsVisible,
+                "a legacy KV without a catalogue must expose web code pairing after service confirmation");
+            state = state with { Catalogue = new JsonObject { ["items"] = new JsonArray(), ["truncated"] = false } };
+            session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
+            Assert(alternate.IsExpanded, "a legacy KV with no available screens hid the alternate pairing route");
             state = state with { Catalogue = Quick(truncated: true, lookup: false) };
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(!lookup.IsVisible && hint.Text.Contains("升级学校服务") && selection.Items.Count == 1,
@@ -143,11 +152,11 @@ internal static partial class Program
 
             classroom.Text = "延迟班";
             Raise(find);
-            Click(window, "GeneralSettingsTab"); window.UpdateLayout();
+            Click(window, "HomeNav"); window.UpdateLayout();
             state = state with { Catalogue = Page(delayedRequest!.Npep!, false) };
             delayed!.SetResult(Reply(delayedRequest));
             PumpUntil(() => !session.IsWorking, "lookup after leaving settings did not finish");
-            Click(window, "NpepSettingsTab"); window.UpdateLayout();
+            Click(window, "HomeSchoolConnection", true); window.UpdateLayout();
             Assert(selection.Items.Count == 0 && selection.SelectedIndex == -1 && password.Password.Length == 0 &&
                 Control<Button>("RestoreQuickCatalogueButton").IsVisible, "leaving and resuming showed results from the previous page visit");
             Raise(Control<Button>("RestoreQuickCatalogueButton")); window.UpdateLayout();
@@ -169,10 +178,21 @@ internal static partial class Program
         Exercise(wizard, window =>
         {
             var view = (NpepConnectionControl)window.FindName("SchoolConnection");
-            ((Expander)view.FindName("ClassLookupPanel")).IsExpanded = true;
+            var lookup = (Expander)view.FindName("ClassLookupPanel");
+            if (!session.ServerConfirmed)
+            {
+                var confirm = (CheckBox)Find(view, "NpepServerConfirmed");
+                Assert(confirm.IsVisible && confirm.IsEnabled, "wizard lost the inspected service and cannot verify its identity");
+                confirm.IsChecked = true;
+            }
+            PumpUntil(() => lookup.IsVisible && lookup.IsEnabled, "verified wizard cannot reach exact lookup");
+            lookup.IsExpanded = true;
+            var find = (Button)view.FindName("FindClassButton");
+            window.UpdateLayout();
+            PumpUntil(() => find.IsVisible, "opening exact lookup in the wizard did not reveal its action");
             ((TextBox)view.FindName("SchoolLookupQuery")).Text = "学校全称";
             ((TextBox)view.FindName("ClassLookupQuery")).Text = "G2-C03";
-            Raise((Button)view.FindName("FindClassButton"));
+            Raise(find);
             window.UpdateLayout();
             var selection = (ComboBox)view.FindName("RequestedClass");
             Assert(selection.Items.Count == 2 && selection.SelectedIndex == -1 && commands[^1].SchoolQuery == "学校全称" && commands[^1].ClassQuery == "G2-C03",
@@ -202,7 +222,7 @@ internal static partial class Program
         };
         static void Raise(Button button)
         {
-            Assert(button.IsEnabled, "test attempted to use a disabled catalogue action");
+            Assert(button.IsEnabled && button.IsVisible, $"action {button.Name} is unavailable (visible={button.IsVisible}, enabled={button.IsEnabled})");
             button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         }
     }

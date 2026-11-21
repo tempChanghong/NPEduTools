@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -11,6 +12,8 @@ internal static partial class Program
 {
     private static void RunSchoolConnectionChecks()
     {
+        RunSchoolAdmissionJourney(occupied: false);
+        RunSchoolAdmissionJourney(occupied: true);
         NpepState state = new(1, "ACTIVE", "OFFLINE", "证书恢复后将自动连接。", Error: "TLS_VALIDATION_FAILED",
             Origin: "https://school.example", LastReceivedAt: "2026-10-07T01:00:00Z");
         bool unavailable = false;
@@ -75,11 +78,11 @@ internal static partial class Program
             state = state with { Connection = "PAUSED", ReportingPaused = true, Error = null };
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(((TextBlock)Find(onboarding, "NpepStatusTitle")).Text.Contains("互联已暂停"), "shared pause title stale");
-            Assert(((Button)Find(settings, "NpepPause")).Content.ToString() == "恢复互联", "resume button changed");
+            Assert(OpenPauseAction(settings).Content.ToString() == "恢复互联", "resume button changed");
             state = state with { State = "SUSPENDED", Connection = "STOPPED", ReportingPaused = false, Error = "AUTH_INVALID" };
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(((TextBlock)Find(settings, "NpepStatusTitle")).Text.Contains("已停用"), "suspension title missing");
-            Assert(!((Button)Find(onboarding, "NpepPause")).IsVisible, "suspended device shows pause/resume");
+            Assert(!session.CanPause && NoAvailableAction(onboarding, "NpepPause"), "suspended device shows pause/resume");
             Snapshot(window, "school-suspended.png");
             unavailable = true; session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(((TextBlock)Find(onboarding, "NpepStatusTitle")).Text.Contains("未确认"), "missing Host retains old suspension/online title");
@@ -98,7 +101,7 @@ internal static partial class Program
             foreach (var view in new[] { settings, onboarding })
             {
                 Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("未确认"), "invalid protocol retained the online title");
-                Assert(!((Button)Find(view, "NpepPause")).IsEnabled && !((Button)Find(view, "NpepUnpair")).IsEnabled,
+                Assert(!session.CanPause && NoAvailableAction(view, "NpepPause") && !session.CanUnpair && NoAvailableAction(view, "NpepUnpair"),
                     "invalid protocol retained school mutation controls");
                 Assert(((Button)Find(view, "NpepRefresh")).IsEnabled, "invalid protocol blocked refresh");
             }
@@ -109,8 +112,8 @@ internal static partial class Program
             Assert(session.RefreshAsync().GetAwaiter().GetResult(), "fresh school state did not recover"); window.UpdateLayout();
             foreach (var view in new[] { settings, onboarding })
                 Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("互联已暂停") &&
-                    ((Button)Find(view, "NpepPause")).Content.ToString() == "恢复互联" &&
-                    ((Button)Find(view, "NpepPause")).IsEnabled, "valid recovery did not refresh both shared controls");
+                    OpenPauseAction(view).Content.ToString() == "恢复互联" &&
+                    OpenPauseAction(view).IsEnabled, "valid recovery did not refresh both shared controls");
             Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "protocol recovery sent a mutation");
             Checks.Add("Invalid protocol clears both shared online views and completion eligibility; read-only refresh restores the latest paused state without losing the device draft");
 
@@ -133,7 +136,7 @@ internal static partial class Program
                 foreach (var view in new[] { settings, onboarding })
                 {
                     Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("未确认"), "access denial retained shared connected status");
-                    Assert(!((Button)Find(view, "NpepPause")).IsEnabled && !((Button)Find(view, "NpepUnpair")).IsEnabled &&
+                    Assert(!session.CanPause && NoAvailableAction(view, "NpepPause") && !session.CanUnpair && NoAvailableAction(view, "NpepUnpair") &&
                         ((Button)Find(view, "NpepRefresh")).IsEnabled, "access denial retained mutation controls or blocked recovery");
                 }
                 Assert(!session.CanFinish && !session.IsWorking && session.DeviceName == "隔离设备草稿",
@@ -142,7 +145,7 @@ internal static partial class Program
                 Assert(session.RefreshAsync().GetAwaiter().GetResult(), "read-only refresh after access denial failed"); window.UpdateLayout();
                 foreach (var view in new[] { settings, onboarding })
                     Assert(((TextBlock)Find(view, "NpepStatusTitle")).Text.Contains("当前在线") &&
-                        ((Button)Find(view, "NpepPause")).IsEnabled, "fresh status failed to restore both shared views");
+                        OpenPauseAction(view).IsEnabled, "fresh status failed to restore both shared views");
                 Assert(requests.All(r => r.Capability == "npep.status" && r.Npep is null), "access recovery replayed a school mutation");
                 Checks.Add("Access-denied real refresh event does not crash; both shared views become unknown and recover on read-only status without losing the draft or replaying commands");
             }
@@ -214,15 +217,22 @@ internal static partial class Program
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             var target = (ComboBox)view.FindName("RequestedClass");
             var secret = (PasswordBox)view.FindName("ClassManagementSecret");
-            var code = (TextBox)Find(view, "NpepWebPairingCode");
-            Assert(target.IsVisible && secret.IsVisible && target.Items.Count == 2, "class pairing inputs missing");
-            session.ServerConfirmed = true;
+            var serverConfirmation = (CheckBox)Find(view, "NpepServerConfirmed");
+            Assert(serverConfirmation.IsVisible && serverConfirmation.IsEnabled && !target.IsVisible && !secret.IsVisible,
+                "unverified service exposed class or password inputs");
+            serverConfirmation.IsChecked = true; window.UpdateLayout();
+            Assert(target.IsVisible && !secret.IsVisible && target.Items.Count == 2, "class catalogue should wait for a manual target");
+            target.SelectedIndex = 0; window.UpdateLayout();
             var apply = FlowElements<Button>(view).Single(button => Equals(button.Content, "向学校申请连接（尚无管理口令）"));
-            Assert(apply.IsEnabled, "class pairing fixture did not reach confirmed provider");
-            target.SelectedIndex = 0;
+            Assert(apply.IsVisible && apply.IsEnabled && secret.IsVisible, "class pairing fixture did not reach confirmed provider");
             apply.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Assert(((TextBlock)view.FindName("ClassInputMessage")).Text == "学校暂未开放申请",
                 "class pairing replaced the school's rejection with an input error");
+            var alternativeMethods = (Expander)view.FindName("WebPairingOptions");
+            Assert(alternativeMethods.IsVisible && alternativeMethods.IsEnabled, "alternative routes are unreachable after checking a service");
+            alternativeMethods.IsExpanded = true; window.UpdateLayout();
+            var code = (TextBox)Find(view, "NpepWebPairingCode");
+            Assert(code.IsVisible && code.IsEnabled, "web pairing code entry missing");
             secret.Password = "fixture-only"; code.Text = "ABCD1234";
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(secret.Password == "fixture-only" && code.Text == "ABCD1234", "status poll erased pairing drafts");
@@ -233,14 +243,21 @@ internal static partial class Program
             session.RefreshAsync().GetAwaiter().GetResult(); window.UpdateLayout();
             Assert(secret.Password.Length == 0 && code.Text.Length == 0 && !session.ServerConfirmed,
                 "a new deployment at the same address inherited pairing drafts or consent");
-            code.Text = "ABCD2345";
+            serverConfirmation.IsChecked = true; window.UpdateLayout();
+            target.SelectedIndex = 0; window.UpdateLayout();
+            Assert(secret.IsVisible, "new deployment could not explicitly select a class");
             secret.Password = "fixture-only";
-            ((TextBox)Find(view, "NpepOrigin")).Text = "https://other-school.example";
+            Click(window, "HomeNav"); window.UpdateLayout();
+            Click(window, "HomeSchoolConnection", true); window.UpdateLayout();
+            Assert(secret.Password.Length == 0 && target.SelectedIndex == -1, "inputs survived leaving the pairing form");
+            target.SelectedIndex = 0; window.UpdateLayout();
+            Assert(secret.IsVisible, "class target was not usable after returning");
+            secret.Password = "fixture-only";
+            ((Button)Find(view, "NpepEditServer")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); window.UpdateLayout();
+            var editableAddress = (TextBox)Find(view, "NpepOrigin");
+            Assert(editableAddress.IsVisible && editableAddress.IsEnabled && !session.ServerConfirmed, "edit school failed to reopen address entry");
+            editableAddress.Text = "https://other-school.example";
             Assert(secret.Password.Length == 0 && code.Text.Length == 0, "changing school service retained pairing inputs");
-            secret.Password = "fixture-only";
-            Click(window, "GeneralSettingsTab"); window.UpdateLayout();
-            Click(window, "NpepSettingsTab"); window.UpdateLayout();
-            Assert(secret.Password.Length == 0, "a password survived leaving the pairing form");
             Checks.Add("Periodic reads preserve pairing drafts; switching classes, changing provider and leaving the form clear scoped inputs");
             state = state with { State = "APPROVED", Approval = new JsonObject {
                 ["approvalId"] = Guid.NewGuid().ToString(), ["schoolName"] = "测试学校", ["screenBindingName"] = "测试大屏" } };
@@ -263,6 +280,19 @@ internal static partial class Program
         Checks.Add("Settings home entry shows status, receipt and guidance before scrolling; pairing and ownership consent stay inline until bound");
         RunClassCatalogueUiChecks();
     }
+
+    private static Button OpenPauseAction(NpepConnectionControl view)
+    {
+        var management = (Expander)Find(view, "NpepBindingManagement");
+        Assert(management.IsVisible && management.IsEnabled, "binding management cannot be opened");
+        management.IsExpanded = true;
+        view.UpdateLayout();
+        var pause = (Button)Find(management, "NpepPause");
+        Assert(pause.IsVisible, "pause/resume cannot be reached through binding management");
+        return pause;
+    }
+    private static bool NoAvailableAction(NpepConnectionControl view, string id) => !FlowElements<Button>(view)
+        .Any(button => AutomationProperties.GetAutomationId(button) == id && button.IsVisible && button.IsEnabled);
 
     private static void CheckSchoolFirstScreen(NpepConnectionControl view, ScrollViewer scroll, bool expectError = true)
     {
