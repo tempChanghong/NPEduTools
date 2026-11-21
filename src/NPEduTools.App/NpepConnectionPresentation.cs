@@ -34,6 +34,7 @@ public static class NpepConnectionPresentation
         if (state.State == "SUSPENDED") return "学校连接已停用";
         if (state.State == "UNPAIRING") return state.Busy ? "正在解除绑定" : "解绑结果待确认";
         if (state.Busy) return "学校互联操作正在处理";
+        if (state.Error == "BINDING_OCCUPIED") return "所选大屏已有设备接入";
         if (state.Error == "PAIRING_EXPIRED") return "配对码已过期";
         if (state.State == "ACTIVE" && state.ReportingPaused) return "已配对 · 互联已暂停";
         if (Resampling(state)) return "已配对 · 状态待重新上报";
@@ -69,7 +70,7 @@ public static class NpepConnectionPresentation
         if (state.Busy) return "等待后台更新；关闭此页面不会取消已受理的操作，不要重复提交。";
         if (feedbackCode is not null && !IsBindingState(state)) return Explain(feedbackCode).Advice;
         if (state.State == "ACTIVE" && state.ReportingPaused)
-            return "需要继续时，请点击“恢复互联”。后台不会自行解除暂停。";
+            return "需要继续时，展开“绑定管理”并点击“恢复互联”。后台不会自行解除暂停。";
         if (Resampling(state)) return "无需操作，后台会重新采样并自动重试。";
         if (ReceiptExpired(state)) return "距上次收到回执已满 60 秒，后台会继续上报，无需操作。";
         if (AutomaticRetry(state)) return state.Error == "TLS_VALIDATION_FAILED"
@@ -81,7 +82,7 @@ public static class NpepConnectionPresentation
             (state is { State: "ACTIVE", Connection: "STOPPED" } ? " 后台不会自动重试。" : "");
         return state.State switch
         {
-            "UNPAIRED" => state.Connection == "VERIFIED" ? "核对学校服务后，输入网页配对码或创建配对申请。" : "填写学校提供的后端服务地址，再点击“检查学校服务”。",
+            "UNPAIRED" => state.Connection == "VERIFIED" ? "核对学校服务，选择本班大屏后继续连接。" : "填写学校提供的服务地址，再点击“检查服务”。",
             "CREATING" or "CONFIRMING" => "点击“恢复未完成操作”核查原申请或确认结果；不要另建配对申请。",
             "PENDING" => state.Connection == "STOPPED" ? "核对错误原因，再点击“恢复未完成操作”；不会自动创建新申请。" :
                 state.PairingSource == "SCREEN" ? "等待后台读取学校预授权，再核对归属并确认连接。" : "请学校管理员在有效期内批准原申请；无需重复创建配对码。",
@@ -106,6 +107,7 @@ public static class NpepConnectionPresentation
 
     private static Reason Explain(string code) => code switch
     {
+        "BINDING_OCCUPIED" => new("这块大屏仍绑定着另一台有效终端。", "请学校管理员核对旧设备。若确认换机，管理员可在现有学校管理网页撤销旧终端的互联授权，再在这里恢复原申请。"),
         "TLS_VALIDATION_FAILED" => new("学校服务的 HTTPS 证书验证失败。", "核对学校地址、系统时间及服务器证书；按当前连接状态等待重试或恢复原操作，保留证书校验。"),
         "NETWORK_UNAVAILABLE" => new("暂时无法连接学校服务。", "核对网络与学校服务；未完成的手动操作需要刷新后核查或恢复原操作，不要重复创建申请。"),
         "TEMPORARILY_UNAVAILABLE" => new("学校服务暂时不可用。", "按当前连接状态等待自动重试或恢复原操作；核对学校服务与网关，不要重复创建配对。"),

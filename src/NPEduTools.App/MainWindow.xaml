@@ -559,10 +559,9 @@
                   <Grid x:Name="NotificationPreviewActions" SizeChanged="NotificationPreviewSizeChanged">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <ComboBox x:Name="NotificationPreviewPriority" SelectedIndex="1" Style="{x:Null}" MinHeight="44" Width="220"
+                    <ComboBox x:Name="NotificationPreviewPriority" SelectedIndex="1" Style="{DynamicResource SettingsChoice}" MinHeight="44" Width="220"
                               HorizontalAlignment="Left" VerticalContentAlignment="Center" Padding="10,6"
                               AutomationProperties.Name="预览等级" AutomationProperties.AutomationId="NotificationPreviewPriority">
-                      <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem"><Setter Property="MinHeight" Value="44" /></Style></ComboBox.ItemContainerStyle>
                       <ComboBoxItem Tag="Minor">次要</ComboBoxItem>
                       <ComboBoxItem Tag="Normal">普通</ComboBoxItem>
                       <ComboBoxItem Tag="Important">重要</ComboBoxItem>

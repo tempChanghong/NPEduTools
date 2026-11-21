@@ -86,6 +86,15 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         : "此地址属于当前申请或绑定。更换提供商需先取消申请或解除绑定，再输入新地址并重新配对。";
     public bool ShowCreate => _state?.State == "UNPAIRED";
     public bool ShowServer => ShowCreate && _state?.Server is not null;
+    public bool SchoolVerified => HasCatalogueProvider && ServerConfirmed;
+    public bool ShowServiceEntry => ShowAddressEditor && !SchoolVerified;
+    public bool ShowInspectedService => HasCatalogueProvider && !ServerConfirmed;
+    public bool HasSchoolDirectory => ProviderCatalogue is not null;
+    public bool UseAlternatePairing => SchoolVerified && !ShowClassLookup && !HasClasses;
+    public bool ShowApprovalReview => ShowBinding && !ShowBindingManagement;
+    public bool ScreenOccupied => _state?.Error == "BINDING_OCCUPIED";
+    public bool ShowConnectionAdvice => _state is null || _feedback is not null || _state.Error is not null ||
+        _state.ReportingPaused || (!ShowCreate && _state.Connection != "ONLINE") || _state.State == "STORE_UNAVAILABLE";
     public bool ShowCode => _state?.State == "PENDING" && _state.PairingSource != "SCREEN";
     public bool ShowBinding => _state?.Approval is not null;
     public bool ShowConfirm => _state?.State == "APPROVED";
@@ -96,7 +105,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         _lookupInHost is { } lookup && _state.OperationId == lookup));
     public bool CanReviewBinding => !_mutating && _state is { Busy: false } && ShowConfirm;
     public bool CanInspect => Available && CanEdit && NpepContract.Valid(new("inspect", 0, Origin.Trim()));
-    private bool HasCatalogueProvider => ShowServer && Uri.TryCreate(Origin.Trim(), UriKind.Absolute, out var origin) &&
+    private bool HasCatalogueProvider => ShowServer && NpepContract.Valid(new("inspect", 0, Origin.Trim())) && Uri.TryCreate(Origin.Trim(), UriKind.Absolute, out var origin) &&
         origin.GetLeftPart(UriPartial.Authority) == _state!.Origin;
     public bool CanPair => Available && CanEdit && ServerConfirmed && HasCatalogueProvider && _state!.Server is { } server &&
         NpepContract.Valid(new("pair", _state.Revision, Origin.Trim(), DeviceName.Trim(), Text(server, "serverInstanceId"), Text(server, "deploymentEpoch")));
@@ -105,7 +114,10 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private string NormalizedCode => UserCode.Replace("-", "").Replace(" ", "").ToUpperInvariant();
     public bool CanClaim => CanPair && NpepContract.Valid(new("claim", _state!.Revision, Origin.Trim(), DeviceName.Trim(),
         Text(_state.Server, "serverInstanceId"), Text(_state.Server, "deploymentEpoch"), UserCode: NormalizedCode));
-    public sealed record ClassChoice(string Id, string Name);
+    public sealed record ClassChoice(string Id, string Name)
+    {
+        public bool? Preauthorized { get; init; }
+    }
     public IReadOnlyList<ClassChoice> Classes => _classes;
     public bool HasClasses => Classes.Count > 0;
     private JsonObject? ProviderCatalogue => HasCatalogueProvider ? _state?.Catalogue : null;
@@ -139,6 +151,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
                 return HasClasses ? $"本页找到 {Classes.Count} 台大屏，请核对后手动选择。" : "本页没有符合条件的大屏，请核对学校和班级的全称或代码。";
             }
             if (HasLookupScope(ProviderCatalogue)) return "可重新查找，或返回快速列表。";
+            if (ProviderCatalogue is not null && !HasClasses && !ShowClassLookup)
+                return "学校服务暂未列出可选大屏。可展开其他连接方式，使用网页配对码或发起申请。";
             if (!Flag(ProviderCatalogue, "truncated")) return "";
             return ShowClassLookup ? "快速列表只显示部分大屏。请用下方精确查找定位其他班级。"
                 : "快速列表只显示部分大屏。若找不到本班，请联系学校管理员升级学校服务。";
@@ -238,7 +252,10 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         if (!matches || catalogue?["items"] is not JsonArray items) { _classes = []; return; }
 
         var choices = items.OfType<JsonObject>().Where(row => Text(row, "screenBindingId").Length > 0)
-            .Select(row => new ClassChoice(Text(row, "screenBindingId"), CatalogueLabel(row))).DistinctBy(row => row.Id).ToArray();
+            .Select(row => new ClassChoice(Text(row, "screenBindingId"), CatalogueLabel(row))
+            {
+                Preauthorized = row["preauthorized"] is JsonValue flag && flag.TryGetValue<bool>(out var enabled) ? enabled : null
+            }).DistinctBy(row => row.Id).ToArray();
         var duplicateLabels = choices.GroupBy(row => row.Name).Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
         _classes = choices.Select(row => duplicateLabels.Contains(row.Name) ? row with { Name = $"{row.Name}（大屏编号 {row.Id}）" } : row).ToArray();
     }
@@ -270,17 +287,21 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public string UnpairLabel => _state?.State is "PENDING" or "APPROVED" or "CREATING" ? "取消配对申请" : "解除绑定";
     public string Stage => _state?.State switch
     {
-        "UNPAIRED" => "1 / 4 · 检查学校服务", "CREATING" or "PENDING" => _state.PairingSource == "SCREEN" ? "2 / 4 · 读取学校预授权" : "2 / 4 · 等待学校批准",
-        "APPROVED" or "CONFIRMING" => "3 / 4 · 核对归属并确认", "ACTIVE" => "4 / 4 · 已完成配对",
+        "UNPAIRED" => "接入教室 · 核对学校服务", "CREATING" or "PENDING" => _state.PairingSource == "SCREEN" ? "接入教室 · 读取学校预授权" : "接入教室 · 配对申请",
+        "APPROVED" or "CONFIRMING" => "接入教室 · 确认归属", "ACTIVE" => "已完成配对",
         _ => "连接学校 · 等待检查"
     };
     public string Title => NpepConnectionPresentation.Title(_state);
-    public string Message => _feedback ?? (ShowBindingManagement ? "" :
+    public string Message => _feedback ?? (ShowBindingManagement || ScreenOccupied ? "" :
         _state?.Message ?? "无法读取后台状态。恢复后重新检查；旧状态不代表当前连接。");
     public string Error => NpepConnectionPresentation.Cause(ShowBindingManagement ? _state?.Error : _feedbackCode ?? _state?.Error);
     public string NextAction => NpepConnectionPresentation.NextAction(_state, _feedbackCode);
     public string TechnicalDetails => NpepConnectionPresentation.Details(_state, _feedbackCode, _feedbackRequestId, _feedback);
     public string Receipt => NpepConnectionPresentation.Receipt(_state);
+    public string BoundSchool => BindingField("schoolName");
+    public string BoundClass => BindingField("administrativeClassName");
+    public string BoundScreen => BindingField("screenBindingName");
+    private string BindingField(string field) => Text(_state?.Approval, field) is { Length: > 0 } value ? value : "暂无记录";
     public string ServerIdentity => _state?.Server is null ? "" : $"地址：{_state.Origin}\n实例：{Text(_state.Server, "serverInstanceId")}\n部署标识：{Text(_state.Server, "deploymentEpoch")}";
     public string PairingCode => Text(_state?.Pairing, "userCode");
     public string Expiry => "配对截止（学校服务器 UTC）：" + Text(_state?.Pairing, "expiresAt");

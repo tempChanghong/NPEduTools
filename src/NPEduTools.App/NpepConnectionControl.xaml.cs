@@ -13,6 +13,7 @@ public partial class NpepConnectionControl : UserControl
     private int _providerRevision;
     private int _classSelectionRevision;
     private int _classInputRevision;
+    private bool _wasBound, _wasOccupied;
     private bool _diagnosticBusy;
     private int _diagnosticViewRevision;
     private CancellationTokenSource? _comparisonCancellation;
@@ -50,12 +51,9 @@ public partial class NpepConnectionControl : UserControl
         ClearComparison(); ClearClassSelection();
         _session = session; _providerRevision = session.ProviderRevision;
         _classSelectionRevision = session.ClassSelectionRevision; DataContext = session;
+        _wasBound = session.ShowBindingManagement;
+        _wasOccupied = session.ScreenOccupied;
         if (IsLoaded) ObserveSession();
-    }
-    internal void UseGuidedSetup()
-    {
-        ServerIdentityDetails.IsExpanded = false;
-        WebPairingOptions.IsExpanded = false;
     }
     private void ObserveSession()
     {
@@ -73,6 +71,18 @@ public partial class NpepConnectionControl : UserControl
             ClearClassSelection();
         }
         if (_comparisonBindingContext is { } context && context != ConnectionContext()) ClearComparison();
+        if (_session is { } current)
+        {
+            bool showResult = (!_wasBound && current.ShowBindingManagement) || (!_wasOccupied && current.ScreenOccupied);
+            _wasBound = current.ShowBindingManagement;
+            _wasOccupied = current.ScreenOccupied;
+            if (showResult && IsVisible)
+                Dispatcher.InvokeAsync(() =>
+                {
+                    if (ReferenceEquals(current, _session) && IsVisible && (current.ShowBindingManagement || current.ScreenOccupied))
+                        ConnectionSummary.BringIntoView();
+                }, DispatcherPriority.Loaded);
+        }
     }
     private void ClearClassSelection()
     {
@@ -107,6 +117,22 @@ public partial class NpepConnectionControl : UserControl
         .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "";
     private async void RefreshClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.RefreshAsync(); }
     private async void InspectClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.InspectAsync(); }
+    private void EditSchoolClicked(object sender, RoutedEventArgs e)
+    {
+        if (_session is not { CanEdit: true } session) return;
+        session.ServerConfirmed = false;
+        Dispatcher.InvokeAsync(() => { if (OriginInput.IsVisible) OriginInput.Focus(); }, DispatcherPriority.Input);
+    }
+    private void SchoolReviewed(object sender, RoutedEventArgs e)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (_session?.SchoolVerified != true || !IsVisible) return;
+            if (RequestedClass.IsVisible) RequestedClass.Focus();
+            else if (ClassLookupPanel.IsVisible) ClassLookupPanel.MoveFocus(new(System.Windows.Input.FocusNavigationDirection.First));
+            else WebPairingOptions.MoveFocus(new(System.Windows.Input.FocusNavigationDirection.First));
+        }, DispatcherPriority.Input);
+    }
     private async void FindClassClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindClassAsync(); }
     private async void PreviousClassPageClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindPreviousClassPageAsync(); }
     private async void NextClassPageClicked(object sender, RoutedEventArgs e) { if (_session is { } session) await session.FindNextClassPageAsync(); }

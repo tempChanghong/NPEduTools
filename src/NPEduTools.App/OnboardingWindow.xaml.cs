@@ -40,7 +40,6 @@ public partial class OnboardingWindow : Window
         InitializeComponent();
         DesktopDialogSizing.Attach(this, endpoint);
         SchoolConnection.Bind(schoolConnection);
-        SchoolConnection.UseGuidedSetup();
         StudyDevices.Bind(endpoint);
         _schoolConnection.PropertyChanged += PreparationStatusChanged;
         StudyDevices.StatusChanged += PreparationStatusChanged;
