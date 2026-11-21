@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Pipes;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -68,6 +69,8 @@ internal static partial class Program
                         Assert(main.InputHitTest(center) is DependencyObject hit && (ReferenceEquals(hit, button) || button.IsAncestorOf(hit)),
                             $"{name} centre is not reachable from the first screen at {size}");
                     }
+                    Reachable(main, Element<Button>("HomeHomeworkButton"));
+                    Reachable(main, (Button)Find(main, "HomeSchoolConnection"));
                     Reachable(main, Element<TextBlock>("StudyHomeNext")); Reachable(main, Element<TextBlock>("HomeRecordingNext"));
                     Snapshot(main, $"home-first-screen-{size.Width}-{size.Height}.png");
                     CheckTeacherDpi(main, size);
@@ -103,12 +106,91 @@ internal static partial class Program
                 Assert(Element<Button>("RecordingRecordsTab").Tag?.ToString() == "active", "failed recording did not lead to records");
                 Invoke("HomeNavClicked", main, new RoutedEventArgs());
                 Checks.Add("Homepage authority and routing: clock/pipe loss withdraws cached time; fresh snapshot recovers; Windows study source remains separate; manual reservation is explicit; saved result opens records without starting capture");
+
+                var link = new NpepState(2, "ACTIVE", "ONLINE", "学校互联状态。", LastReceivedAt: "2026-10-13T19:15:00.000Z");
+                var homework = new StudyHomeworkState("READY", "snapshot", 1, "2026-10-13", "fixture");
+                var hidden = activeSchool with { Homework = homework, Display = new(Guid.NewGuid(), true, false, 120) };
+                HostResponse Status(StudyHostState study, NpepState? connection = null) => new(Protocol.Version,
+                    Guid.NewGuid(), "Succeeded", null, "isolated snapshot", Study: study, Npep: connection ?? link);
+                var homeworkButton = Element<Button>("HomeHomeworkButton");
+                Assert(!homeworkButton.IsEnabled, "homework action is enabled without authoritative display state");
+                Invoke("ObserveHomeSchool", Status(hidden with { ProjectionPriority = true }));
+                Assert(!homeworkButton.IsEnabled, "homework action appeared during an exam projection");
+                Invoke("ObserveHomeSchool", Status(hidden, link with { ReportingPaused = true }));
+                Assert(!homeworkButton.IsEnabled, "homework action appeared after the school link was paused");
+                Invoke("ObserveHomeSchool", Status(hidden));
+                Assert(homeworkButton.IsEnabled, "fresh hidden school display with homework is not actionable");
+                Assert(Element<TextBlock>("HomeSchoolStatus").Text.Contains("当前在线"), "home school row ignored its live receipt");
+                VerifyHomeworkCommand("study.show", hidden);
+
+                var manualHidden = hidden with { Display = hidden.Display! with { InstanceId = Guid.NewGuid() }, Manual = manual with { State = "Active" } };
+                var manualDisplay = typeof(MainWindow).GetField("_homeManualDisplay", flags)!.GetValue(main)!;
+                Invoke("ObserveHomeHomework", manualDisplay, Status(manualHidden));
+                Assert(!homeworkButton.IsEnabled, "manual homework displaced an active school session");
+                Invoke("ObserveHomeSchool", Status(school));
+                Assert(homeworkButton.IsEnabled, "fresh hidden manual display with homework is not actionable");
+                VerifyHomeworkCommand("manual.study.show", manualHidden);
+                Invoke("ObserveHomeSchool", (object?)null);
+                Assert(!homeworkButton.IsEnabled && Element<TextBlock>("HomeSchoolStatus").Text == "连接状态待确认", "the home row kept an obsolete online receipt");
+                Checks.Add("Homepage homework action sends the exact validated school/manual display recovery command, follows school and projection priority, and withdraws stale availability");
+
+                Invoke("UpdateStudyHome", school); Invoke("UpdateWorkspaceManual", manual);
+                Click(main, "WorkspacePrimary");
+                Assert(Element<FrameworkElement>("ManualWorkspaceHost").IsVisible, "home study action did not open the existing manual study entry");
+                Click(main, "HomeNav");
+                var unpaired = new NpepConnectionSession((request, _) => Task.FromResult(new HostResponse(Protocol.Version,
+                    request.RequestId, "Succeeded", null, "尚未配对", Npep: new(1, "UNPAIRED", "WAITING", "请填写学校服务地址。"))));
+                typeof(MainWindow).GetField("_schoolConnection", flags)!.SetValue(main, unpaired);
+                Invoke("InitializeNpepConnection");
+                Click(main, "HomeSchoolConnection", true); main.UpdateLayout();
+                Assert(Element<TextBlock>("SettingsHeading").Text == "学校互联" && Element<TextBlock>("PageBreadcrumb").Text == "学校互联" &&
+                    !Element<FrameworkElement>("SettingsCategoryTabs").IsVisible && Element<FrameworkElement>("SettingsSchoolConnection").IsVisible &&
+                    Equals(Element<Button>("NpepSettingsTab").Tag, "active") && Element<Button>("SettingsNav").Tag is null,
+                    "home school entry opened the generic settings shell or selected the wrong navigation item");
+                var remoteExam = Element<Expander>("RemoteExamSettings");
+                Assert(!remoteExam.IsExpanded && !Element<Button>("RemoteExamCheckButton").IsVisible,
+                    "remote exam policy details took space on the initial school page");
+                Snapshot(main, "home-school-direct.png");
+                remoteExam.IsExpanded = true; main.UpdateLayout();
+                Assert(Element<Button>("RemoteExamCheckButton").IsVisible, "remote exam setup can no longer be reached from school connection");
+                remoteExam.IsExpanded = false;
+                Click(main, "SettingsNav"); main.UpdateLayout();
+                Assert(Element<TextBlock>("SettingsHeading").Text == "设备与连接" && Element<FrameworkElement>("SettingsCategoryTabs").IsVisible &&
+                    Element<FrameworkElement>("GeneralSettingsPanel").IsVisible && Element<Button>("NpepSettingsTab").Tag is null,
+                    "device settings no longer provides a separate destination");
+                Click(main, "NpepSettingsTab"); main.UpdateLayout();
+                Assert(Element<FrameworkElement>("SettingsSchoolConnection").IsVisible && !Element<FrameworkElement>("SettingsCategoryTabs").IsVisible,
+                    "sidebar and home school entries diverged");
+                Click(main, "HomeNav");
+                Checks.Add("Home and sidebar open the same dedicated school heading with no general settings tabs; the device settings and manual study routes remain separate");
+
                 Invoke("ShowClassroomModeState", (object?)null);
                 Assert(Element<Expander>("HomeClassroomModeDetails").IsExpanded, "mode warning was hidden inside closed details");
                 Element<Expander>("HomeClassroomModeDetails").IsExpanded = false;
                 Invoke("ShowClassroomModeState", (object?)null);
                 Assert(!Element<Expander>("HomeClassroomModeDetails").IsExpanded, "unchanged status forcibly reopened dismissed details");
                 main.Close();
+
+                void VerifyHomeworkCommand(string capability, StudyHostState expected)
+                {
+                    using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    using var peer = new NamedPipeServerStream(pipe, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+                        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                    async Task<HostRequest> ReadAsync()
+                    {
+                        await peer.WaitForConnectionAsync(deadline.Token);
+                        var request = await Protocol.ReadAsync<HostRequest>(peer, deadline.Token);
+                        await Protocol.WriteAsync(peer, new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "恢复已受理"), deadline.Token);
+                        return request;
+                    }
+                    var read = ReadAsync();
+                    Click(main, "HomeHomeworkButton");
+                    PumpUntil(() => read.IsCompleted && !(bool)typeof(MainWindow).GetField("_homeHomeworkBusy", flags)!.GetValue(main)!, "homework recovery command did not settle");
+                    var received = read.GetAwaiter().GetResult();
+                    Assert(received.Capability == capability && received.StudyHide == new StudyHideCommand(expected.Display!.InstanceId, expected.Version!, expected.Window!),
+                        "homework recovery did not use the current display identity and time window");
+                    Assert(!homeworkButton.IsEnabled, "accepted recovery left the old button enabled without fresh status");
+                }
             });
         }
         finally

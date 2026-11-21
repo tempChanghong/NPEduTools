@@ -165,23 +165,28 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    private void ShowSettings() { SelectPage(true); RestoreWindow(); }
+    private void ShowSettings()
+    {
+        if (NpepSettingsPanel.Visibility == Visibility.Visible) SelectSettingsCategory("General");
+        SelectPage(true);
+        if (ConnectionsSettingsPanel.Visibility == Visibility.Visible) _ = RefreshAdminAsync();
+        RestoreWindow();
+    }
     private void HomeNavClicked(object sender, RoutedEventArgs e) => SelectPage(false);
-    private void SettingsNavClicked(object sender, RoutedEventArgs e) => SelectPage(true);
+    private void SettingsNavClicked(object sender, RoutedEventArgs e) => ShowSettings();
     private void SelectPage(bool settings)
     {
         HideStudyWorkspace();
         HideRecordingWorkspace();
         AboutPageView.Visibility = Visibility.Collapsed;
         AboutNav.Tag = null;
-        PageBreadcrumb.Text = settings ? "设备与连接" : "主页";
+        if (!settings) PageBreadcrumb.Text = "主页";
         ShortcutPage.Visibility = Visibility.Collapsed;
         ShortcutNav.Tag = null;
         HomePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
         SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
         HomeNav.Tag = settings ? null : "active";
-        SettingsNav.Tag = settings ? "active" : null;
-        if (settings && ConnectionsSettingsPanel.Visibility == Visibility.Visible) _ = RefreshAdminAsync();
+        UpdateSettingsNavigation();
     }
     private void RefreshToday() => TodayText.Text = DateTime.Now.ToString("M月d日 dddd", System.Globalization.CultureInfo.GetCultureInfo("zh-CN"));
     private void OpenQuickClicked(object sender, RoutedEventArgs e) { Hide(); _quick?.OpenPanel(); }

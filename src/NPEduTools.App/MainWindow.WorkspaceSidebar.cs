@@ -54,16 +54,16 @@ public partial class MainWindow
     {
         bool compact = _workspaceSidebarChoice ?? ActualWidth < 900;
         WorkspaceNavColumn.Width = new GridLength(compact ? 64 : 164);
-        WorkspaceSidebar.Margin = new Thickness(compact ? 6 : 12, 24, compact ? 6 : 12, 18);
+        WorkspaceSidebar.Margin = new Thickness(compact ? 6 : 12, 13, compact ? 6 : 12, 14);
+        WorkspaceBrand.HorizontalAlignment = compact ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+        WorkspaceBrand.Margin = compact ? new Thickness(0) : new Thickness(8, 0, 0, 0);
         foreach (var (button, label, icon) in _workspaceNavigation)
         {
             label.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-            icon.Margin = compact ? new Thickness(0) : new Thickness(0, 0, 10, 0);
+            icon.Margin = compact ? new Thickness(0) : new Thickness(0, 0, 9, 0);
             button.Padding = new Thickness(compact ? 8 : 12, 8, compact ? 8 : 12, 8);
+            button.HorizontalContentAlignment = compact ? HorizontalAlignment.Center : HorizontalAlignment.Left;
         }
         foreach (var label in WorkspaceBrand.Children.OfType<TextBlock>()) label.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        foreach (var scroll in WorkspaceSidebar.Children.OfType<ScrollViewer>())
-            if (scroll.Content is StackPanel items)
-                foreach (var group in items.Children.OfType<TextBlock>()) group.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
     }
 }

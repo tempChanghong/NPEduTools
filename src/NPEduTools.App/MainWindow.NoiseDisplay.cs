@@ -105,8 +105,9 @@ public partial class MainWindow
                 } else if (probeSeating && studyResponse.Outcome == "Succeeded") _seatingUnsupportedAt = null;
                 var studyRoundTrip = Stopwatch.GetElapsedTime(studyRequestAt);
                 if (_lifetime.IsCancellationRequested) break;
-                UpdateStudyHome(studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(3.5) ? studyResponse.Study : null);
                 bool workspaceFresh = studyResponse.Outcome == "Succeeded" && studyRoundTrip < TimeSpan.FromSeconds(3.5);
+                UpdateStudyHome(workspaceFresh ? studyResponse.Study : null);
+                ObserveHomeSchool(workspaceFresh ? studyResponse : null);
                 UpdateWorkspaceReadiness(workspaceFresh ? studyResponse.Noise : null, workspaceFresh ? studyResponse.Study?.Settings : null,
                     workspaceFresh ? studyResponse.NoiseCalibrationStatus : null);
                 _quickProjectionAt = studyResponse.Outcome == "Succeeded" && studyResponse.Study?.ProjectionPriority == true && studyRoundTrip < TimeSpan.FromSeconds(1.5) ? Stopwatch.GetTimestamp() : null;
@@ -119,7 +120,9 @@ public partial class MainWindow
                 long manualAt=Stopwatch.GetTimestamp();
                 var manual=await calibrationRead.RequestAsync(new(1,Guid.NewGuid(),"manual.study.status"), ManagementRequestAsync);
                 var manualAge=Stopwatch.GetElapsedTime(manualAt);
-                UpdateWorkspaceManual(manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(3.5) ? manual.ManualStudy : null);
+                bool manualFresh = manual.Outcome == "Succeeded" && manualAge < TimeSpan.FromSeconds(3.5);
+                UpdateWorkspaceManual(manualFresh ? manual.ManualStudy : null);
+                ObserveHomeHomework(_homeManualDisplay, manualFresh ? manual : null);
                 ReconcileExistingManualDisplay(manual, manualAge, studyResponse.StudyPhotos);
                 if (SchoolStudyTakesPriority(studyResponse)) _manualStudyWindow?.HideDisplay();
                 else if(studyResponse.Study?.ProjectionPriority != true && !_exitBusy && _exitWarning is not {IsVisible:true} && !NotificationPresentationActive && !RuntimeOperationFile.PriorityRequested && NotificationDesktopAvailable() && manual.Outcome=="Succeeded")
@@ -240,6 +243,7 @@ public partial class MainWindow
             catch (Exception e) when (IsManagementError(e))
             {
                 UpdateStudyHome(null); UpdateWorkspaceManual(null); UpdateWorkspaceReadiness(null, null);
+                ObserveHomeHomework(_homeManualDisplay, null); ObserveHomeSchool(null);
                 _scheduledNoiseWindow?.Hide(); RetainConfirmedSchoolDisplay();
                 _studyReportWindow?.HideDisplay(); RetainConfirmedManualDisplay();
             }

@@ -48,7 +48,7 @@ public partial class MainWindow
     private void GeneralSettingsClicked(object sender, RoutedEventArgs e) => SelectSettingsCategory("General");
     private void TeachingSettingsClicked(object sender, RoutedEventArgs e) => SelectSettingsCategory("Teaching");
     private void ConnectionsSettingsClicked(object sender, RoutedEventArgs e) => ShowConnectionSettings();
-    private void NpepSettingsClicked(object sender, RoutedEventArgs e) => SelectSettingsCategory("Npep");
+    private void NpepSettingsClicked(object sender, RoutedEventArgs e) => ShowSettingsCategory("Npep");
 
     private void SelectSettingsCategory(string category)
     {
@@ -59,7 +59,7 @@ public partial class MainWindow
         GeneralSettingsTab.Tag = category == "General" ? "active" : null;
         TeachingSettingsTab.Tag = category == "Teaching" ? "active" : null;
         ConnectionsSettingsTab.Tag = category == "Connections" ? "active" : null;
-        NpepSettingsTab.Tag = category == "Npep" ? "active" : null;
+        UpdateSettingsNavigation();
         SettingsScroll.ScrollToTop();
         if (category == "Teaching") ReadManualStudyPreferences();
         if (category == "Connections") { _ = RefreshAdminAsync(); _ = RefreshClassIslandBridgeAsync(); }
@@ -68,8 +68,21 @@ public partial class MainWindow
 
     private void ShowSettingsCategory(string category)
     {
-        ShowSettings();
         SelectSettingsCategory(category);
+        SelectPage(true);
+        RestoreWindow();
+        if (category == "Npep") SettingsHeading.Focus();
+    }
+
+    private void UpdateSettingsNavigation()
+    {
+        bool settingsVisible = SettingsPage.Visibility == Visibility.Visible;
+        bool school = NpepSettingsPanel.Visibility == Visibility.Visible;
+        SettingsCategoryTabs.Visibility = school ? Visibility.Collapsed : Visibility.Visible;
+        SettingsHeading.Text = school ? "学校互联" : "设备与连接";
+        NpepSettingsTab.Tag = settingsVisible && school ? "active" : null;
+        SettingsNav.Tag = settingsVisible && !school ? "active" : null;
+        if (settingsVisible) PageBreadcrumb.Text = SettingsHeading.Text;
     }
     private void ShowConnectionSettings() => ShowSettingsCategory("Connections");
 

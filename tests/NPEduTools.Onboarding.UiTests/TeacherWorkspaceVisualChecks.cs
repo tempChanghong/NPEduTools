@@ -33,6 +33,8 @@ internal static partial class Program
         var app = Application.Current.Resources;
         var nav = (Button)main.FindName("HomeNav");
         var mark = (TextBlock)main.FindName("HomeRecordingPhaseMark");
+        var sidebar = (Border)main.FindName("WorkspaceSidebarSurface");
+        var content = (Grid)main.FindName("WorkspaceContentSurface");
         var originalMark = ((SolidColorBrush)mark.Foreground).Color;
         try
         {
@@ -40,7 +42,9 @@ internal static partial class Program
             main.UpdateLayout();
             Assert(((SolidColorBrush)mark.Foreground).Color == SystemColors.WindowTextColor &&
                 ((SolidColorBrush)nav.Background).Color == SystemColors.HighlightColor &&
-                ((SolidColorBrush)nav.Foreground).Color == SystemColors.HighlightTextColor,
+                ((SolidColorBrush)nav.Foreground).Color == SystemColors.HighlightTextColor &&
+                ((SolidColorBrush)sidebar.Background).Color == SystemColors.WindowColor &&
+                ((SolidColorBrush)content.Background).Color == SystemColors.WindowColor,
                 "an existing window did not follow the system contrast palette");
             Snapshot(main, "teacher-system-colors.png");
             app["TeacherFont"] = new FontFamily("Microsoft YaHei UI");

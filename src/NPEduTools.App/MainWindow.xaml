@@ -5,7 +5,7 @@
   <Window.Resources>
     <Style x:Key="SidebarNavigation" TargetType="Button" BasedOn="{StaticResource TeacherNavigation}">
       <Setter Property="MinHeight" Value="44" /><Setter Property="Padding" Value="12,8" />
-      <Setter Property="Margin" Value="0,0,0,4" />
+      <Setter Property="FontSize" Value="14" /><Setter Property="Margin" Value="0,0,0,2" />
     </Style>
     <Style x:Key="ScrollPage" TargetType="RepeatButton">
       <Setter Property="Focusable" Value="False" />
@@ -48,38 +48,36 @@
       <Setter Property="BorderBrush" Value="#E5EBE7" /><Setter Property="BorderThickness" Value="1" />
       <Setter Property="Padding" Value="22" /><Setter Property="Margin" Value="0,0,0,18" />
     </Style>
-    <Style x:Key="HomeTool" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-      <Setter Property="Background" Value="White" /><Setter Property="BorderBrush" Value="#E5EBE7" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="VerticalContentAlignment" Value="Top" />
-      <Setter Property="MinHeight" Value="112" /><Setter Property="Padding" Value="16" /><Setter Property="Margin" Value="0,0,10,10" />
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-        <Border x:Name="ToolSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="{TemplateBinding Padding}">
-          <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True" />
-        </Border>
-        <ControlTemplate.Triggers>
-          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ToolSurface" Property="Background" Value="#F0F7F3" /><Setter TargetName="ToolSurface" Property="BorderBrush" Value="#B4D4C5" /></Trigger>
-          <Trigger Property="IsPressed" Value="True"><Setter TargetName="ToolSurface" Property="Background" Value="#E2F0E9" /></Trigger>
-          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ToolSurface" Property="BorderBrush" Value="#147D68" /></Trigger>
-          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ToolSurface" Property="Opacity" Value="0.4" /></Trigger>
-        </ControlTemplate.Triggers>
-      </ControlTemplate></Setter.Value></Setter>
+    <Style x:Key="HomeTaskSurface" TargetType="Border">
+      <Setter Property="Background" Value="{DynamicResource TeacherSurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource TeacherShellLineBrush}" />
+      <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="16,14" /><Setter Property="Margin" Value="0,0,12,8" />
+    </Style>
+    <Style x:Key="HomeAction" TargetType="Button" BasedOn="{StaticResource TeacherQuiet}">
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="10,6" /><Setter Property="Margin" Value="0,0,4,0" />
+    </Style>
+    <Style x:Key="HomeIcon" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="Segoe MDL2 Assets" /><Setter Property="FontSize" Value="16" />
+      <Setter Property="Margin" Value="0,0,10,0" /><Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style x:Key="HomeSection" TargetType="TextBlock">
-      <Setter Property="FontSize" Value="14" /><Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource TeacherTextBrush}" /><Setter Property="Margin" Value="0,0,0,8" />
+      <Setter Property="FontSize" Value="17" /><Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource TeacherTextBrush}" /><Setter Property="Margin" Value="0,0,0,6" />
     </Style>
   </Window.Resources>
   <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition x:Name="WorkspaceNavColumn" Width="164" /><ColumnDefinition /></Grid.ColumnDefinitions>
-    <Border Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,0,1,0">
-      <Grid x:Name="WorkspaceSidebar" Margin="12,24,12,18">
+    <Border x:Name="WorkspaceSidebarSurface" Background="{DynamicResource TeacherShellNavigationBrush}"
+            BorderBrush="{DynamicResource TeacherShellLineBrush}" BorderThickness="0,0,1,0">
+      <Grid x:Name="WorkspaceSidebar" Margin="12,13,12,14">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <StackPanel x:Name="WorkspaceBrand" Margin="6,0,0,0">
-          <Image Source="{StaticResource BrandLogoSmall}" Width="40" Height="40" HorizontalAlignment="Left" AutomationProperties.Name="NPEduTools 标志" />
-          <TextBlock Text="NPEduTools" Foreground="{DynamicResource TeacherTextBrush}" FontFamily="Segoe UI" FontSize="19" FontWeight="SemiBold" Margin="0,12,0,4" />
+        <StackPanel x:Name="WorkspaceBrand" Orientation="Horizontal" Margin="8,0,0,0">
+          <Image Source="{StaticResource BrandLogoSmall}" Width="24" Height="24" HorizontalAlignment="Left" AutomationProperties.Name="NPEduTools 标志" />
+          <TextBlock Text="NPEduTools" Foreground="{DynamicResource TeacherTextBrush}" FontFamily="Segoe UI" FontSize="14" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center" />
         </StackPanel>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,18,0,12"><StackPanel>
-          <TextBlock Text="工作空间" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12" Margin="14,0,0,8" />
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,18,0,8"><StackPanel>
           <Button x:Name="HomeNav" Tag="active" Style="{StaticResource SidebarNavigation}" Click="HomeNavClicked" AutomationProperties.AutomationId="HomeTab">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE80F;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="主页" /></StackPanel>
           </Button>
@@ -87,33 +85,35 @@
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A7;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="快捷启动" /></StackPanel>
           </Button>
           <Button x:Name="StudyNav" Style="{StaticResource SidebarNavigation}" Click="StudyNavClicked" AutomationProperties.AutomationId="StudyTab"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center"/><TextBlock Text="自习"/></StackPanel></Button>
+          <Button x:Name="RecordingNav" Content="录课" Style="{StaticResource SidebarNavigation}" Click="RecordingNavClicked" AutomationProperties.AutomationId="RecordingNav" />
+          <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,8" />
+          <Button x:Name="NpepSettingsTab" Style="{StaticResource SidebarNavigation}" Click="NpepSettingsClicked" AutomationProperties.AutomationId="NpepSettingsTab">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="学校互联" /></StackPanel>
+          </Button>
           <Button x:Name="SettingsNav" Style="{StaticResource SidebarNavigation}" Click="SettingsNavClicked" AutomationProperties.AutomationId="SettingsTab">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设备与连接" /></StackPanel>
           </Button>
-          <TextBlock Text="课堂工具" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12" Margin="14,16,0,8" />
-          <Button x:Name="RecordingNav" Content="录课" Style="{StaticResource SidebarNavigation}" Click="RecordingNavClicked" AutomationProperties.AutomationId="RecordingNav" />
-
+          <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,8" />
           <Button Content="考试看板" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
           <Button Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
-
           <Button Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
         </StackPanel></ScrollViewer>
         <StackPanel Grid.Row="2">
           <Button x:Name="AboutNav" Style="{StaticResource SidebarNavigation}" Click="AboutNavClicked" AutomationProperties.AutomationId="AboutTab">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="关于" /></StackPanel>
           </Button>
-          <Button Content="展开侧边栏  ↗" Style="{StaticResource SidebarNavigation}" Click="OpenQuickClicked" AutomationProperties.AutomationId="OpenQuick" />
+          <Button Content="展开侧边栏" Style="{StaticResource SidebarNavigation}" Click="OpenQuickClicked" AutomationProperties.AutomationId="OpenQuick" />
           <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="12,8" />
           <Button x:Name="ExitButton" Content="退出后台" Style="{StaticResource SidebarNavigation}" FontSize="12" Click="StopClicked" AutomationProperties.AutomationId="StopHost" />
         </StackPanel>
       </Grid>
     </Border>
-    <Grid Grid.Column="1">
+    <Grid x:Name="WorkspaceContentSurface" Grid.Column="1" Background="{DynamicResource TeacherShellContentBrush}">
       <Grid.RowDefinitions><RowDefinition Height="52" /><RowDefinition /></Grid.RowDefinitions>
       <Grid Margin="28,0,10,0">
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
           <Button Content="&#xE700;" FontFamily="Segoe MDL2 Assets" ToolTip="展开或折叠导航" Click="FoldWorkspaceSidebarClicked" Style="{DynamicResource TeacherQuiet}" Width="44" Padding="0" Margin="0,0,10,0" AutomationProperties.AutomationId="FoldWorkspaceSidebar" AutomationProperties.Name="展开或折叠导航"/>
-          <TextBlock Text="工作空间" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12" VerticalAlignment="Center" /><TextBlock Text="／" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12" Margin="8,0" VerticalAlignment="Center" /><TextBlock x:Name="PageBreadcrumb" Text="主页" Foreground="{DynamicResource TeacherTextBrush}" FontSize="12" VerticalAlignment="Center" />
+          <TextBlock x:Name="PageBreadcrumb" Text="主页" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12" VerticalAlignment="Center" />
         </StackPanel>
         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
           <Button Content="−" ToolTip="收起到侧边栏" Style="{DynamicResource TeacherQuiet}" Width="44" Padding="0" FontSize="20" Click="MinimizeClicked" AutomationProperties.AutomationId="MinimizeWindow" AutomationProperties.Name="收起到侧边栏" />
@@ -177,71 +177,146 @@
         </Grid>
         <Grid x:Name="WorkspaceCalibration" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><Button Content="← 返回自习" Click="ReturnFromCalibrationClicked" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Margin="0,0,0,10"/><ContentControl x:Name="WorkspaceCalibrationHost" Grid.Row="1"/></Grid>
         <ScrollViewer x:Name="HomePage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
-          <StackPanel SizeChanged="HomeLayoutSizeChanged">
-            <Grid Margin="0,0,0,12">
+          <StackPanel MaxWidth="1080" SizeChanged="HomeLayoutSizeChanged">
+            <Grid Margin="0,0,0,18">
               <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <TextBlock Text="课堂工作台" FontSize="27" FontWeight="SemiBold" />
-              <TextBlock x:Name="TodayText" Grid.Column="1" ToolTip="本机日期；自动录课使用 ClassIsland 校准后的时间。" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" VerticalAlignment="Center" Margin="16,0,0,0" />
+              <TextBlock Text="课堂工作台" FontSize="32" FontWeight="SemiBold"
+                         AutomationProperties.HeadingLevel="Level1" />
+              <TextBlock x:Name="TodayText" Grid.Column="1" ToolTip="本机日期；自动录课使用 ClassIsland 校准后的时间。"
+                         Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" VerticalAlignment="Center" Margin="16,0,0,0" />
             </Grid>
-            <TextBlock x:Name="HomeMessage" Foreground="#7D602B" Background="#FFF5E6" Padding="12,10" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" AutomationProperties.AutomationId="HomeMessage">
+            <TextBlock x:Name="HomeMessage" Foreground="{DynamicResource TeacherWarningBrush}" Background="{DynamicResource TeacherPageBrush}"
+                       Padding="12,8" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.AutomationId="HomeMessage">
               <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
             </TextBlock>
-            <Border Style="{DynamicResource SettingsGroupSurface}" Padding="16,12" Margin="0,0,0,10"><StackPanel>
-              <TextBlock Text="当前任务" Style="{StaticResource HomeSection}" />
-              <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition/><ColumnDefinition Width="126"/></Grid.ColumnDefinitions>
-                <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="19" Foreground="{DynamicResource TeacherMutedBrush}" VerticalAlignment="Center" />
-                <StackPanel Grid.Column="1" Margin="0,0,12,0" VerticalAlignment="Center">
-                  <TextBlock x:Name="WorkspaceTaskTitle" Text="自习状态待确认" Style="{DynamicResource SettingsLabel}" />
-                  <TextBlock x:Name="StudyHomeStatus" Text="正在读取后台状态" Style="{DynamicResource SettingsHint}" AutomationProperties.AutomationId="StudyHomeStatus" />
-                </StackPanel>
-                <Button x:Name="WorkspacePrimary" Grid.Column="2" Content="进入自习" Click="WorkspacePrimaryClicked" Style="{DynamicResource TeacherPrimary}" MinHeight="57" VerticalAlignment="Center" AutomationProperties.AutomationId="HomeStudyPrimary" />
-              </Grid>
-              <Border BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Margin="0,8,0,0" Padding="0,8,0,0">
+
+            <UniformGrid x:Name="HomeCurrentTasks" Columns="2" Margin="0,0,-12,2">
+              <Border Style="{StaticResource HomeTaskSurface}" Background="{DynamicResource TeacherHoverBrush}">
                 <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition/><ColumnDefinition Width="126"/></Grid.ColumnDefinitions>
-                  <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="19" Foreground="{DynamicResource TeacherMutedBrush}" VerticalAlignment="Center" />
-                  <StackPanel Grid.Column="1" Margin="0,0,12,0" VerticalAlignment="Center">
+                  <Grid.RowDefinitions><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                  <StackPanel Margin="0,0,0,12">
                     <DockPanel>
-                      <TextBlock x:Name="HomeRecordingPhaseMark" Margin="0,0,5,0" FontSize="14" VerticalAlignment="Center" />
-                      <TextBlock x:Name="RecordingHomeTitle" Text="录课状态待确认" Style="{DynamicResource SettingsLabel}" />
+                      <TextBlock Text="&#xE7F4;" Style="{StaticResource HomeIcon}" Foreground="{DynamicResource TeacherAccentBrush}" />
+                      <TextBlock x:Name="WorkspaceTaskTitle" Text="自习状态待确认" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap" />
                     </DockPanel>
-                    <TextBlock x:Name="RecordingHomeStatus" Text="正在读取后台状态" Style="{DynamicResource SettingsHint}" AutomationProperties.AutomationId="RecordingHomeStatus" />
+                    <TextBlock x:Name="StudyHomeStatus" Text="正在读取后台状态" Style="{DynamicResource SettingsHint}"
+                               Margin="0,5,0,0" AutomationProperties.AutomationId="StudyHomeStatus" />
                   </StackPanel>
-                  <Button x:Name="RecordingHomeButton" Grid.Column="2" Click="HomeRecordingPrimaryClicked" Style="{DynamicResource TeacherButton}" MinHeight="57" VerticalAlignment="Center" AutomationProperties.AutomationId="OpenRecording" AutomationProperties.Name="录课">
+                  <Button x:Name="WorkspacePrimary" Grid.Row="1" Content="进入自习" Click="WorkspacePrimaryClicked"
+                          Style="{DynamicResource TeacherPrimary}" MinHeight="56" MinWidth="132" HorizontalAlignment="Left"
+                          AutomationProperties.AutomationId="HomeStudyPrimary" />
+                </Grid>
+              </Border>
+              <Border Style="{StaticResource HomeTaskSurface}">
+                <Grid>
+                  <Grid.RowDefinitions><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                  <StackPanel Margin="0,0,0,12">
+                    <DockPanel>
+                      <TextBlock Text="&#xE714;" Style="{StaticResource HomeIcon}" Foreground="{DynamicResource TeacherMutedBrush}" />
+                      <TextBlock x:Name="HomeRecordingPhaseMark" Margin="0,0,5,0" FontSize="13" VerticalAlignment="Center" />
+                      <TextBlock x:Name="RecordingHomeTitle" Text="录课状态待确认" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    </DockPanel>
+                    <TextBlock x:Name="RecordingHomeStatus" Text="正在读取后台状态" Style="{DynamicResource SettingsHint}"
+                               Margin="0,5,0,0" AutomationProperties.AutomationId="RecordingHomeStatus" />
+                  </StackPanel>
+                  <Button x:Name="RecordingHomeButton" Grid.Row="1" Click="HomeRecordingPrimaryClicked"
+                          Style="{DynamicResource TeacherButton}" MinHeight="56" MinWidth="132" HorizontalAlignment="Left"
+                          AutomationProperties.AutomationId="OpenRecording" AutomationProperties.Name="录课">
                     <TextBlock x:Name="RecordingHomeAction" Text="进入录课" />
                   </Button>
                 </Grid>
               </Border>
-            </StackPanel></Border>
-            <Border Style="{DynamicResource SettingsGroupSurface}" Padding="16,12" Margin="0,0,0,10"><StackPanel>
-              <TextBlock Text="接下来的安排" Style="{StaticResource HomeSection}" />
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel Margin="0,0,12,0"><TextBlock Text="学校自习" Style="{DynamicResource SettingsLabel}"/><TextBlock x:Name="StudyHomeNext" Text="学校安排待确认" Style="{DynamicResource SettingsHint}" AutomationProperties.AutomationId="StudyHomeNext"/></StackPanel>
-                <Button Grid.Column="1" Content="查看安排" Click="OpenStudyMonitoringClicked" Style="{DynamicResource TeacherQuiet}" VerticalAlignment="Center"/>
-              </Grid>
-              <Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel Margin="0,0,12,0"><TextBlock Text="下一节自动录课" Style="{DynamicResource SettingsLabel}"/><TextBlock x:Name="HomeRecordingNext" Text="录课安排待确认" Style="{DynamicResource SettingsHint}" AutomationProperties.AutomationId="HomeRecordingNext"/></StackPanel>
-                <Button Grid.Column="1" Content="查看安排" Click="OpenRecordingPlanClicked" Style="{DynamicResource TeacherQuiet}" VerticalAlignment="Center" AutomationProperties.AutomationId="HomeRecordingPlan"/>
-              </Grid>
-            </StackPanel></Border>
-            <Border x:Name="ClassroomModeCard" Style="{DynamicResource SettingsGroupSurface}" Padding="16,8" Margin="0,0,0,12">
+            </UniformGrid>
+            <WrapPanel Margin="0,0,0,12">
+              <Button x:Name="HomeHomeworkButton" Style="{StaticResource HomeAction}" Click="HomeHomeworkClicked" IsEnabled="False"
+                      ToolTip="自习中已收起的作业全屏可从这里恢复。" ToolTipService.ShowOnDisabled="True"
+                      AutomationProperties.AutomationId="HomeHomework" AutomationProperties.Name="展示作业">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="&#xE8A5;" Style="{StaticResource HomeIcon}" /><TextBlock Text="展示作业" />
+                </StackPanel>
+              </Button>
+              <Button Style="{StaticResource HomeAction}" Click="OpenSecRandomClicked"
+                      AutomationProperties.AutomationId="HomeOpenSecRandom" AutomationProperties.Name="课堂点名" ToolTip="SecRandom 连接与闪抽">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="&#xE8D4;" Style="{StaticResource HomeIcon}" /><TextBlock Text="课堂点名" />
+                </StackPanel>
+              </Button>
+              <Button Style="{StaticResource HomeAction}" Click="OpenExamAwareClicked"
+                      AutomationProperties.AutomationId="HomeOpenExamAware" AutomationProperties.Name="考试看板" ToolTip="ExamAware2 连接与管理">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="&#xE7C3;" Style="{StaticResource HomeIcon}" /><TextBlock Text="考试看板" />
+                </StackPanel>
+              </Button>
+            </WrapPanel>
+
+            <TextBlock Text="接下来的安排" Style="{StaticResource HomeSection}" AutomationProperties.HeadingLevel="Level2" />
+            <UniformGrid x:Name="HomeUpcoming" Columns="2" Margin="0,0,0,14">
+              <Border BorderBrush="{DynamicResource TeacherShellLineBrush}" BorderThickness="0,1,0,0" Padding="0,3,0,0" Margin="0,0,14,0">
+                <StackPanel>
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="查看 ›" Click="OpenStudyMonitoringClicked" Style="{StaticResource HomeAction}"
+                            AutomationProperties.Name="查看学校自习安排" />
+                    <TextBlock Text="学校自习" Style="{DynamicResource SettingsLabel}" VerticalAlignment="Center" />
+                  </DockPanel>
+                  <TextBlock x:Name="StudyHomeNext" Text="学校安排待确认" Style="{DynamicResource SettingsHint}"
+                             AutomationProperties.AutomationId="StudyHomeNext" />
+                </StackPanel>
+              </Border>
+              <Border BorderBrush="{DynamicResource TeacherShellLineBrush}" BorderThickness="0,1,0,0" Padding="0,3,0,0">
+                <StackPanel>
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="查看 ›" Click="OpenRecordingPlanClicked" Style="{StaticResource HomeAction}"
+                            AutomationProperties.AutomationId="HomeRecordingPlan" AutomationProperties.Name="查看自动录课安排" />
+                    <TextBlock Text="下一节自动录课" Style="{DynamicResource SettingsLabel}" VerticalAlignment="Center" />
+                  </DockPanel>
+                  <TextBlock x:Name="HomeRecordingNext" Text="录课安排待确认" Style="{DynamicResource SettingsHint}"
+                             AutomationProperties.AutomationId="HomeRecordingNext" />
+                </StackPanel>
+              </Border>
+            </UniformGrid>
+
+            <Border x:Name="ClassroomModeCard" BorderBrush="{DynamicResource TeacherShellLineBrush}" BorderThickness="0,1,0,0"
+                    Padding="0,4" Margin="0,0,0,2">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <StackPanel Margin="0,0,14,0">
-                  <TextBlock x:Name="ClassroomModeTitle" Text="课堂模式 · 正在连接…" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="HomeClassroomModeTitle" />
-                  <Expander x:Name="HomeClassroomModeDetails" Header="模式详情" FontSize="12"><TextBlock x:Name="ClassroomModeDetail" TextWrapping="Wrap" FontSize="12" Foreground="#64776D" AutomationProperties.AutomationId="HomeClassroomModeDetail" /></Expander>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+                  <TextBlock x:Name="ClassroomModeTitle" Text="课堂模式 · 正在连接…" Style="{DynamicResource SettingsLabel}"
+                             AutomationProperties.AutomationId="HomeClassroomModeTitle" />
+                  <Expander x:Name="HomeClassroomModeDetails" Header="模式详情" FontSize="12">
+                    <TextBlock x:Name="ClassroomModeDetail" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
+                               AutomationProperties.AutomationId="HomeClassroomModeDetail" />
+                  </Expander>
                 </StackPanel>
-                <Button Grid.Column="1" Content="管理模式" Style="{DynamicResource TeacherQuiet}" Click="OpenClassroomModeClicked" VerticalAlignment="Center" AutomationProperties.AutomationId="HomeClassroomMode" />
+                <Button Grid.Column="1" Content="管理模式 ›" Style="{StaticResource HomeAction}" Click="OpenClassroomModeClicked"
+                        VerticalAlignment="Center" AutomationProperties.AutomationId="HomeClassroomMode" />
               </Grid>
             </Border>
-            <DockPanel Margin="0,0,0,10">
-              <Button DockPanel.Dock="Right" Content="查看全部" Style="{DynamicResource TeacherQuiet}" Click="ShortcutNavClicked" AutomationProperties.AutomationId="ManageHomeShortcuts" />
-              <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="我的快捷" Style="{StaticResource HomeSection}" Margin="0" /><TextBlock x:Name="HomeShortcutCount" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="10,0,0,0" VerticalAlignment="Center" /></StackPanel>
+            <Border BorderBrush="{DynamicResource TeacherShellLineBrush}" BorderThickness="0,1,0,1" Padding="0,3" Margin="0,0,0,15">
+              <Button Style="{StaticResource HomeAction}" Margin="0" HorizontalContentAlignment="Stretch"
+                      Click="HomeSchoolConnectionClicked" AutomationProperties.AutomationId="HomeSchoolConnection" AutomationProperties.Name="学校互联"
+                      AutomationProperties.HelpText="{Binding Text, ElementName=HomeSchoolStatus}">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                  <TextBlock Text="&#xE774;" Style="{StaticResource HomeIcon}" />
+                  <TextBlock Grid.Column="1" Text="学校互联" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  <TextBlock x:Name="HomeSchoolStatus" Grid.Column="2" Text="连接状态待确认" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" FontSize="13" Margin="16,0,8,0" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                  <TextBlock Grid.Column="3" Text="›" FontSize="21" VerticalAlignment="Center" />
+                </Grid>
+              </Button>
+            </Border>
+
+            <DockPanel Margin="0,0,0,6">
+              <Button DockPanel.Dock="Right" Content="查看全部 ›" Style="{StaticResource HomeAction}" Click="ShortcutNavClicked" AutomationProperties.AutomationId="ManageHomeShortcuts" />
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="我的快捷" Style="{StaticResource HomeSection}" Margin="0" AutomationProperties.HeadingLevel="Level2" />
+                <TextBlock x:Name="HomeShortcutCount" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="10,0,0,0" VerticalAlignment="Center" />
+              </StackPanel>
             </DockPanel>
             <Border x:Name="HomeShortcutEmpty" Style="{DynamicResource SettingsGroupSurface}" Padding="16,8" Margin="0,0,0,12">
               <DockPanel>
-                <Button DockPanel.Dock="Right" Content="添加快捷" Style="{DynamicResource TeacherButton}" IsEnabled="{Binding IsEnabled, ElementName=AddShortcutButton}" Click="AddShortcutClicked" AutomationProperties.AutomationId="HomeAddShortcut" Margin="12,0,0,0" />
+                <Button DockPanel.Dock="Right" Content="添加快捷" Style="{DynamicResource TeacherButton}" IsEnabled="{Binding IsEnabled, ElementName=AddShortcutButton}"
+                        Click="AddShortcutClicked" AutomationProperties.AutomationId="HomeAddShortcut" Margin="12,0,0,0" />
                 <TextBlock Text="添加常用软件、课件或网址" Style="{DynamicResource SettingsHint}" VerticalAlignment="Center" />
               </DockPanel>
             </Border>
@@ -251,40 +326,9 @@
                 <Button Content="{Binding}" ContentTemplate="{StaticResource ShortcutContent}" Style="{DynamicResource TeacherButton}" HorizontalContentAlignment="Stretch" Margin="0,0,10,10" Padding="12" MinHeight="64" ToolTip="{Binding Tip}" Click="OpenShortcutClicked" AutomationProperties.AutomationId="{Binding OpenId}" AutomationProperties.Name="{Binding Name}" />
               </DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBlock x:Name="HomeShortcutMessage" Margin="0,0,0,14" FontSize="12" Foreground="#718089" TextWrapping="Wrap" AutomationProperties.AutomationId="HomeShortcutMessage">
+            <TextBlock x:Name="HomeShortcutMessage" Margin="0,0,0,12" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" AutomationProperties.AutomationId="HomeShortcutMessage">
               <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
             </TextBlock>
-            <TextBlock Text="课堂工具" Style="{StaticResource HomeSection}" Margin="0,8,0,10" />
-            <UniformGrid x:Name="HomeToolsGrid" Columns="2" Margin="0,0,-10,12">
-              <Button Style="{StaticResource HomeTool}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="HomeOpenSecRandom" AutomationProperties.Name="课堂点名">
-                <StackPanel>
-                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE8D4;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="课堂点名" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
-                  </Grid>
-                  <TextBlock Text="SecRandom 连接与闪抽" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-              </Button>
-
-              <Button Style="{StaticResource HomeTool}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="HomeOpenExamAware" AutomationProperties.Name="考试看板">
-                <StackPanel>
-                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="考试看板" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
-                  </Grid>
-                  <TextBlock Text="ExamAware2 连接与管理" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-              </Button>
-              <Button Style="{StaticResource HomeTool}" Click="HomeSchoolConnectionClicked" AutomationProperties.AutomationId="HomeSchoolConnection" AutomationProperties.Name="学校互联">
-                <StackPanel>
-                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-                    <Border Background="#EAF6F2" CornerRadius="9" Width="32" Height="32" Margin="0,0,10,0"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" Foreground="#147D68" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                    <TextBlock Grid.Column="1" Text="学校互联" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
-                  </Grid>
-                  <TextBlock Text="NPEP 配对、通知与远程安排" Foreground="#718089" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
-                </StackPanel>
-              </Button>
-            </UniformGrid>
 
             <Expander Header="设备准备与课堂辅助" FontSize="14" Margin="0,8,0,0"><StackPanel>
             <Border Style="{StaticResource Surface}" Padding="16"><DockPanel>
@@ -394,52 +438,47 @@
         </Grid>
         <Grid x:Name="SettingsPage" Visibility="Collapsed">
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-          <StackPanel Margin="0,0,0,20">
-            <TextBlock Text="设置" FontSize="28" FontWeight="SemiBold" />
-            <TextBlock Text="调整应用偏好，配置课堂工具与外部软件。" Foreground="#64776D" FontSize="13" Margin="0,8,0,0" TextWrapping="Wrap" />
-          </StackPanel>
-          <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16">
+          <TextBlock x:Name="SettingsHeading" Text="设备与连接" FontSize="30" FontWeight="SemiBold" Margin="0,0,0,18"
+                     Focusable="True" KeyboardNavigation.IsTabStop="False" AutomationProperties.HeadingLevel="Level1" />
+          <WrapPanel x:Name="SettingsCategoryTabs" Grid.Row="1" Margin="0,0,0,12">
             <Button x:Name="GeneralSettingsTab" Content="常规" Tag="active" Style="{StaticResource Navigation}" Click="GeneralSettingsClicked" AutomationProperties.AutomationId="GeneralSettingsTab" Margin="0,0,8,0" />
             <Button x:Name="TeachingSettingsTab" Content="课堂工具" Style="{StaticResource Navigation}" Click="TeachingSettingsClicked" AutomationProperties.AutomationId="TeachingSettingsTab" Margin="0,0,8,0" />
             <Button x:Name="ConnectionsSettingsTab" Content="软件连接" Style="{StaticResource Navigation}" Click="ConnectionsSettingsClicked" AutomationProperties.AutomationId="ConnectionsSettingsTab" Margin="0" />
-            <Button x:Name="NpepSettingsTab" Content="学校互联" Style="{StaticResource Navigation}" Click="NpepSettingsClicked" AutomationProperties.AutomationId="NpepSettingsTab" Margin="8,0,0,0" />
-          </StackPanel>
+          </WrapPanel>
           <ScrollViewer x:Name="SettingsScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
           <StackPanel>
             <StackPanel x:Name="NpepSettingsPanel" Visibility="Collapsed">
-              <Border Style="{StaticResource Surface}" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}">
-                <StackPanel>
-                  <local:NpepConnectionControl x:Name="SettingsSchoolConnection" />
-                  <Expander Header="学校连接权限" Style="{DynamicResource TeacherExpander}" AutomationProperties.Name="学校连接权限" Margin="0,2,0,0">
-                    <TextBlock Text="配对后，NPClassworks 可接收设备状态、投递学校通知、管理考试与日常模式（含登录自启动）、考试方案和自习策略。噪音监测仅上传统计；学校启用照片策略时可上传单张捕获画面。屏幕、录课文件、原始录音和完整课表不会上传。"
-                               TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="12,6,0,8" />
+              <local:NpepConnectionControl x:Name="SettingsSchoolConnection" />
+              <Expander Header="学校连接权限" Style="{DynamicResource TeacherExpander}" AutomationProperties.Name="学校连接权限" Margin="0,10,0,16">
+                <TextBlock Text="配对后，NPClassworks 可接收设备状态、投递学校通知、管理考试与日常模式（含登录自启动）、考试方案和自习策略。噪音监测仅上传统计；学校启用照片策略时可上传单张捕获画面。屏幕、录课文件、原始录音和完整课表不会上传。"
+                           TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="12,6,0,8" />
+              </Expander>
+              <Expander x:Name="RemoteExamSettings" Header="远程考试模式" Style="{DynamicResource TeacherExpander}"
+                        AutomationProperties.Name="远程考试模式" Margin="0,0,0,16">
+                <StackPanel Margin="12,0,12,12">
+                  <TextBlock x:Name="RemoteExamBinding" Text="正在读取当前学校绑定…" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,12" />
+                  <TextBlock Text="学校配对即授权考试控制：切换考试／日常模式（含登录自启动）、投递方案及明确请求开始放映。" TextWrapping="Wrap" />
+                  <TextBlock Text="解绑或学校撤销设备后停止接收新请求。" Margin="0,12,0,0" TextWrapping="Wrap" />
+                  <TextBlock x:Name="ExamPlanPolicyMessage" TextWrapping="Wrap" Margin="0,6,0,10" Foreground="{DynamicResource TeacherMutedBrush}" />
+                  <TextBlock Text="学校切入考试时优先执行：正常保存当前录制，暂时收起通知，关闭 ClassIsland 登录自启动、开启 ExamAware2 登录自启动，准备考试看板并退出 ClassIsland。重复请求会核对实际状态、补做缺失步骤，已有放映保留。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,8" />
+                  <TextBlock Text="学校也可远程返回日常：恢复日常自启动，正常退出 ExamAware2，等待 ClassIsland 就绪后解除远程录课暂停。放映或编辑器阻止退出时保留暂停并报告原因。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,8" />
+                  <TextBlock x:Name="RemoteExamPolicyMessage" Text="正在读取 N3 通道状态…" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" />
+                  <TextBlock x:Name="RemoteExamRuntimeMessage" Text="正在读取本地考试状态…" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,12,0,0" />
+                  <TextBlock Text="此项仅表示当前远程录课暂停，不代表 ExamAware2 或 ClassIsland 的运行状态；历史回执另列在下方。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,0" />
+                  <Expander x:Name="RemoteExamRuntimeDetailsPanel" Header="当前暂停详情" Visibility="Collapsed" Margin="0,8,0,0">
+                    <TextBox x:Name="RemoteExamRuntimeDetails" Style="{StaticResource TeacherInput}" IsReadOnly="True" TextWrapping="Wrap" VerticalContentAlignment="Top" FontSize="12" AutomationProperties.AutomationId="RemoteExamRuntimeDetails" />
                   </Expander>
+                  <TextBlock Text="检查后台权限、程序位置、录制状态和软件连接。仅检查当前环境，不会启动或退出软件，也不会修改 Windows 自启动。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,12" />
+                  <Button x:Name="RemoteExamCheckButton" Content="检查考试环境" Click="RemoteExamCheckClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="RemoteExamPreflight" />
+                  <TextBlock x:Name="RemoteExamCheckMessage" Text="本机检查不代表已授权学校远程控制。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,10,0,0" />
+                  <Expander x:Name="RemoteExamCheckDetailsPanel" Header="技术详情（请求编号与后台说明）" Visibility="Collapsed" Margin="0,8,0,0">
+                    <TextBox x:Name="RemoteExamCheckDetails" Style="{StaticResource TeacherInput}" IsReadOnly="True" TextWrapping="Wrap" VerticalContentAlignment="Top" FontSize="12" AutomationProperties.AutomationId="RemoteExamCheckDetails" />
+                  </Expander>
+                  <Button x:Name="RemoteExamEndButton" Content="解除本次远程录课暂停" Click="RemoteExamEndClicked" IsEnabled="False" HorizontalAlignment="Left" Margin="0,12,0,0" AutomationProperties.AutomationId="RemoteExamEndLocal" />
+                  <TextBlock Text="考试结束后，先在“课堂模式”返回日常（可同时切换软件）；失败时先恢复切换前设置。再在此核实并解除远程录课暂停，当前课时可能按原计划开始录制。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,0" />
+                  <Expander Header="最近操作记录（历史回执）" Margin="0,12,0,0"><local:RemoteExamHistoryView x:Name="RemoteExamHistory" /></Expander>
                 </StackPanel>
-              </Border>
-              <Border Style="{StaticResource Surface}"><StackPanel>
-                <TextBlock Text="远程考试模式" FontSize="17" FontWeight="SemiBold" />
-                <TextBlock x:Name="RemoteExamBinding" Text="正在读取当前学校绑定…" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,12" />
-                <TextBlock Text="学校配对即授权考试控制：切换考试／日常模式（含登录自启动）、投递方案及明确请求开始放映。" TextWrapping="Wrap" />
-                <TextBlock Text="解绑或学校撤销设备后停止接收新请求。" Margin="0,12,0,0" TextWrapping="Wrap" />
-                <TextBlock x:Name="ExamPlanPolicyMessage" TextWrapping="Wrap" Margin="0,6,0,10" Foreground="#607078" />
-                <TextBlock Text="学校切入考试时优先执行：正常保存当前录制，暂时收起通知，关闭 ClassIsland 登录自启动、开启 ExamAware2 登录自启动，准备考试看板并退出 ClassIsland。重复请求会核对实际状态、补做缺失步骤，已有放映保留。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,8" />
-                <TextBlock Text="学校也可远程返回日常：恢复日常自启动，正常退出 ExamAware2，等待 ClassIsland 就绪后解除远程录课暂停。放映或编辑器阻止退出时保留暂停并报告原因。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,0,0,8" />
-                <TextBlock x:Name="RemoteExamPolicyMessage" Text="正在读取 N3 通道状态…" TextWrapping="Wrap" Foreground="#64776D" />
-                <TextBlock x:Name="RemoteExamRuntimeMessage" Text="正在读取本地考试状态…" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,12,0,0" />
-                <TextBlock Text="此项仅表示当前远程录课暂停，不代表 ExamAware2 或 ClassIsland 的运行状态；历史回执另列在下方。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,6,0,0" />
-                <Expander x:Name="RemoteExamRuntimeDetailsPanel" Header="当前暂停详情" Visibility="Collapsed" Margin="0,8,0,0">
-                  <TextBox x:Name="RemoteExamRuntimeDetails" Style="{StaticResource TeacherInput}" IsReadOnly="True" TextWrapping="Wrap" VerticalContentAlignment="Top" FontSize="12" AutomationProperties.AutomationId="RemoteExamRuntimeDetails" />
-                </Expander>
-                <TextBlock Text="检查后台权限、程序位置、录制状态和软件连接。仅检查当前环境，不会启动或退出软件，也不会修改 Windows 自启动。" TextWrapping="Wrap" Foreground="#526A60" Margin="0,8,0,12" />
-                <Button x:Name="RemoteExamCheckButton" Content="检查考试环境" Click="RemoteExamCheckClicked" HorizontalAlignment="Left" AutomationProperties.AutomationId="RemoteExamPreflight" />
-                <TextBlock x:Name="RemoteExamCheckMessage" Text="本机检查不代表已授权学校远程控制。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,10,0,0" />
-                <Expander x:Name="RemoteExamCheckDetailsPanel" Header="技术详情（请求编号与后台说明）" Visibility="Collapsed" Margin="0,8,0,0">
-                  <TextBox x:Name="RemoteExamCheckDetails" Style="{StaticResource TeacherInput}" IsReadOnly="True" TextWrapping="Wrap" VerticalContentAlignment="Top" FontSize="12" AutomationProperties.AutomationId="RemoteExamCheckDetails" />
-                </Expander>
-                <Button x:Name="RemoteExamEndButton" Content="解除本次远程录课暂停" Click="RemoteExamEndClicked" IsEnabled="False" HorizontalAlignment="Left" Margin="0,12,0,0" AutomationProperties.AutomationId="RemoteExamEndLocal" />
-                <TextBlock Text="考试结束后，先在“课堂模式”返回日常（可同时切换软件）；失败时先恢复切换前设置。再在此核实并解除远程录课暂停，当前课时可能按原计划开始录制。" TextWrapping="Wrap" Foreground="#64776D" Margin="0,8,0,0" />
-                <Expander Header="最近操作记录（历史回执）" Margin="0,12,0,0"><local:RemoteExamHistoryView x:Name="RemoteExamHistory" /></Expander>
-              </StackPanel></Border>
+              </Expander>
               <Border x:Name="NotificationInboxCard" Style="{StaticResource Surface}"
                       Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
                       Initialized="NotificationInboxInitialized" Loaded="NotificationInboxLoaded" Unloaded="NotificationInboxUnloaded">

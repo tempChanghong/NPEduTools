@@ -50,8 +50,7 @@ public partial class MainWindow
         ClassroomModeTitle.Text = view.Title;
         ConnectionsModeTitle.Text = view.Title;
         ClassroomModeDetail.Text = view.Detail;
-        ClassroomModeCard.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "TeacherSurfaceBrush");
-        ClassroomModeCard.SetResourceReference(System.Windows.Controls.Border.BorderBrushProperty, view.Attention ? "TeacherWarningBrush" : "TeacherLineBrush");
+        ClassroomModeCard.SetResourceReference(System.Windows.Controls.Border.BorderBrushProperty, view.Attention ? "TeacherWarningBrush" : "TeacherShellLineBrush");
         _quick?.UpdateClassroomMode(view);
     }
 }

@@ -4,6 +4,9 @@
     <ResourceDictionary Source="SettingsRows.HighContrast.xaml" />
   </ResourceDictionary.MergedDictionaries>
   <SolidColorBrush x:Key="TeacherPageBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+  <SolidColorBrush x:Key="TeacherShellNavigationBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+  <SolidColorBrush x:Key="TeacherShellContentBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+  <SolidColorBrush x:Key="TeacherShellLineBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
   <SolidColorBrush x:Key="TeacherSurfaceBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
   <SolidColorBrush x:Key="TeacherTextBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
   <SolidColorBrush x:Key="TeacherMutedBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />

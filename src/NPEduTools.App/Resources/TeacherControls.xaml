@@ -1,6 +1,11 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <SolidColorBrush x:Key="TeacherPageBrush" Color="#F4F6F5" />
+  <LinearGradientBrush x:Key="TeacherShellNavigationBrush" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#E9F3EC" Offset="0" /><GradientStop Color="#E0EEEB" Offset="1" />
+  </LinearGradientBrush>
+  <SolidColorBrush x:Key="TeacherShellContentBrush" Color="#F5F8F6" />
+  <SolidColorBrush x:Key="TeacherShellLineBrush" Color="#DFE9E3" />
   <SolidColorBrush x:Key="TeacherSurfaceBrush" Color="White" />
   <SolidColorBrush x:Key="TeacherTextBrush" Color="#202925" />
   <SolidColorBrush x:Key="TeacherMutedBrush" Color="#52635A" />
