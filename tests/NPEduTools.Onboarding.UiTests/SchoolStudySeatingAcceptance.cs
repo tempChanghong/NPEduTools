@@ -2,12 +2,14 @@ using System.IO;
 using System.IO.Pipes;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using NPEduTools.App;
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 using NPEduTools.Host;
 
 internal static partial class Program
@@ -32,6 +34,7 @@ internal static partial class Program
         var host = new StudySettingsService(() => new(connection, bridge, Interlocked.Increment(ref sample), 0,
             now.AddMilliseconds(clock.Ms), 0, "Advancing", "test school clock"), () => false, clock, background: false);
         var display = new StudyDisplayService(host.DisplaySnapshot, clock, directory: _output);
+        host.PresentationObservation = display.ObservePresentation;
         string pipe = "NPEduTools.Test.school-study." + Guid.NewGuid().ToString("N");
         var served = ServeAsync();
         var window = new StudyWindow(pipe, () => {}, muted: true, time: clock) { Width = 1060, Height = 670, Topmost = false };
@@ -130,6 +133,12 @@ internal static partial class Program
                 Exchange();
             }
 
+            if (data["homeworkAcceptance"]?.GetValue<bool>() == true)
+            {
+                VerifyHomework();
+                return;
+            }
+
             Load(WaitFor(1));
             PumpUntil(() => open.IsEnabled && surface.SeatingRevision == 1, "WPF did not decode v1 through the Host pipe.");
             Click(open);
@@ -172,6 +181,87 @@ internal static partial class Program
             Mark("restored");
             Snapshot(window, "front-restored-history.png");
             Checks.Add("Real isolated KV policy/assets → native Host scheduling and cache → private named pipe → WPF render → Host observation and KV seating evidence; old image remains until closed, withdrawal clears, history reopens.");
+
+            void VerifyHomework()
+            {
+                var manifest = WaitFor(1);
+                Assert(manifest["asset"]?["hash"]?.GetValue<string>() == data["seatingHash"]!.GetValue<string>(), "The seventh classroom must keep its own seating plan.");
+                Load(manifest);
+                var initial = ReadHomework();
+                Assert(initial.Items is [{ Sources.Count: 2 } duplicate] &&
+                    duplicate.Sources.Select(row => row.Name).ToHashSet().SetEquals(new[] {"高二（8）班", "物理 A1"}),
+                    "The isolated device received one publication with the two authorized labels.");
+                var reader = (FrameworkElement)surface.FindName("HomeworkReader");
+                var openReader = (Button)surface.FindName("OpenHomeworkReader");
+                var pager = (StudyHomeworkPager)typeof(StudySurface).GetField("_pager", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(surface)!;
+                PumpUntil(() => openReader.IsEnabled && pager.PageCount > 1, "Real WPF did not unpack and paginate the long KV assignment.");
+                Assert(pager.IntervalSeconds == 30, "The actual display did not apply 30 seconds per page.");
+                Snapshot(window, "front-deduplicated-homework.png");
+                Mark("homework-open");
+                Click(openReader);
+                PumpUntil(() => reader.IsVisible, "The real reading view did not open.");
+                int currentPage = pager.Page;
+                for (int second = 0; second < 40; second++)
+                {
+                    clock.Ms += 1000;
+                    host.ApplyStudy(config);
+                    Apply();
+                }
+                Assert(reader.IsVisible && pager.Page == currentPage, "The reading view must pause the overview rotation.");
+                Mark("append-homework");
+                Exchange();
+                var updated = ReadHomework();
+                Assert(updated.Items.Count == 2 && updated.Items.Any(item => item.Title == "同来源新作业"), "Same-source publications should refresh the snapshot.");
+                Assert(reader.IsVisible && pager.Page == currentPage, "Refreshing a same-source snapshot must not interrupt reading.");
+                Snapshot(window, "front-reading-with-pending-refresh.png");
+                InputKey((Button)surface.FindName("ReturnFromReader"), System.Windows.Input.Key.Escape);
+                PumpUntil(() => !reader.IsVisible, "Escape did not return from reading.");
+                long presentationSequence = 0;
+                bool marked = false;
+                while (!Allowed("display-checked"))
+                {
+                    Tick();
+                    var observed = host.ObserveStudyPresentation();
+                    if (observed?["status"]?["state"]?.GetValue<string>() == "Visible")
+                    {
+                        Exchange();
+                        Await(DeviceAsync("study-settings/presentation", "0.13", new JsonObject
+                        {
+                            ["context"] = context.DeepClone(), ["sequence"] = ++presentationSequence,
+                            ["version"] = observed["version"]!.DeepClone(), ["status"] = observed["status"]!.DeepClone(),
+                        }));
+                        if (!marked) { Mark("presentation"); marked = true; }
+                    }
+                    Wait(Task.Delay(350, finish.Token));
+                }
+                Assert(marked, "No real WPF window observation reached KV.");
+                Snapshot(window, "front-verified-study-window.png");
+                Checks.Add("Actual Host and WPF read deduplicated KV homework with both labels, paginate at 30 seconds, keep reading during refresh, own-class seating, and emit presentation evidence.");
+            }
+
+            StudyHomeworkSnapshot ReadHomework()
+            {
+                Exchange();
+                var request = host.StudyHomeworkRequest() ?? throw new InvalidDataException("Study homework is not eligible.");
+                string? snapshotId = null;
+                using var memory = new MemoryStream();
+                int count = 1;
+                for (int index = 0; index < count; index++)
+                {
+                    var part = Await(DeviceAsync("study-settings/homework", "0.12", new JsonObject
+                    {
+                        ["context"] = context.DeepClone(), ["version"] = request["version"]!.DeepClone(), ["date"] = request["date"]!.DeepClone(),
+                        ["snapshotId"] = snapshotId, ["index"] = index,
+                    }));
+                    snapshotId ??= part["snapshotId"]!.GetValue<string>();
+                    count = part["count"]!.GetValue<int>();
+                    memory.Write(Convert.FromBase64String(part["data"]!.GetValue<string>()));
+                }
+                var bytes = memory.ToArray();
+                host.ApplyStudyHomework(JsonNode.Parse(bytes)!.AsObject(), bytes, snapshotId!);
+                Apply();
+                return StudyHomeworkContract.Parse(bytes);
+            }
         }
         finally
         {
@@ -183,6 +273,12 @@ internal static partial class Program
         }
 
         static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        static void InputKey(FrameworkElement control, System.Windows.Input.Key key)
+        {
+            var source = PresentationSource.FromVisual(control) ?? throw new InvalidOperationException("Test window is not connected.");
+            control.RaiseEvent(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, source,
+                Environment.TickCount, key) { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent });
+        }
         T Await<T>(Task<T> task) { PumpUntil(() => task.IsCompleted, "Native school study request did not finish.", 60); return task.GetAwaiter().GetResult(); }
         void Wait(Task task) { PumpUntil(() => task.IsCompleted, "Native school study action did not finish.", 60); task.GetAwaiter().GetResult(); }
         void Mark(string name)
@@ -223,6 +319,7 @@ internal static partial class Program
                 {
                     "study.seating" => host.ReadSeating(request),
                     "study.seating.presentation" => host.ReceiveSeating(request, display.Snapshot()),
+                    "study.homework" => host.ReadHomework(request),
                     _ => display.Handle(request)
                 };
                 await Protocol.WriteAsync(stream, result, finish.Token).ConfigureAwait(false);
