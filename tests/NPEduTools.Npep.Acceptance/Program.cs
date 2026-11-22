@@ -13,6 +13,8 @@ if (args.Length == 3 && args[0] == "--seating-http-local")
     return await SeatingHttpAcceptance.RunAsync(args[1], args[2]);
 if (args.Length == 3 && args[0] == "--study-http-local")
     return await StudyHttpAcceptance.RunAsync(args[1], args[2]);
+if (args.Length == 3 && args[0] == "--device-field-actions-http")
+    return await StudyHttpAcceptance.RunFieldActionsAsync(args[1], args[2]);
 if (args.Length == 3 && args[0] == "--screen-pairing-http")
     return await ScreenPairingAcceptance.RunAsync(args[1], args[2]);
 if (args.Length == 3 && args[0] == "--control-http")

@@ -3,7 +3,7 @@ using NPEduTools.Contracts;
 using NPEduTools.Host;
 using NPEduTools.Integrations.Npep;
 
-internal static class StudyHttpAcceptance
+internal static partial class StudyHttpAcceptance
 {
     private sealed class Clock : TimeProvider
     {
