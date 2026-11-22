@@ -19,6 +19,13 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args is [var photoOutput, "--live-school-study-photo", var photoFixture])
+        {
+            _output = Path.GetFullPath(photoOutput);
+            Directory.CreateDirectory(_output);
+            try { RunSchoolStudyPhotoAcceptance(photoFixture).GetAwaiter().GetResult(); WriteResult("PASSED", null); return 0; }
+            catch (Exception error) { WriteResult("FAILED", error.ToString()); return 1; }
+        }
         bool aboutVersionOnly = args.Length == 2 && args[1] == "--about-version";
         bool quickBoundariesOnly = args.Length == 2 && args[1] is "--quick-boundaries" or "--quick-slideshow";
         bool quickWorkspaceOnly = args.Length == 2 && args[1] == "--quick-workspace";
