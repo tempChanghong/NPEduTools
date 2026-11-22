@@ -17,11 +17,13 @@ internal static partial class StudyHttpAcceptance
         var start = new DateTimeOffset(day.ToDateTime(new(19, 10)), TimeSpan.Zero);
         var evidenceRoot = Path.GetFullPath(runDirectory);
         Require(Directory.Exists(evidenceRoot), "Expected an existing isolated run directory.");
+        bool withReports = access["withReports"]?.GetValue<bool>() == true;
         await using var frontPeer = new FieldPeer(http, start, evidenceRoot, access["front"]!.AsObject(), deadline.Token);
-        await using var rearPeer = new FieldPeer(http, start, evidenceRoot, access["rear"]!.AsObject(), deadline.Token);
+        await using var rearPeer = new FieldPeer(http, start, evidenceRoot, access["rear"]!.AsObject(), deadline.Token, withReports);
         await frontPeer.StartAsync();
         await rearPeer.StartAsync();
         await rearPeer.StopLocallyAsync();
+        if (withReports) await rearPeer.UploadReportsAsync(1);
         await PublishBothAsync(probeRear: true, sampleRear: false);
         await MarkAsync("host-ready");
 
@@ -44,6 +46,7 @@ internal static partial class StudyHttpAcceptance
         await AwaitSignalAsync("allow-local-stop", () => PublishBothAsync(false, true));
 
         await rearPeer.StopLocallyAsync();
+        if (withReports) await rearPeer.UploadReportsAsync(1);
         rearPeer.Host.ApplyStudyResume(rearPeer.Configuration, command);
         Require(rearPeer.Host.ObserveStudyResumeReceipt()!["outcome"]!.GetValue<string>() == "ACCEPTED" && rearPeer.Starts == 2 &&
             rearPeer.Execution()["reason"]!.GetValue<string>() == "WINDOW_SKIPPED", "Duplicate delivery cleared the later locally authorized stop.");
@@ -99,27 +102,33 @@ internal static partial class StudyHttpAcceptance
         private readonly Clock _time = new();
         private readonly List<Capture> _captures = [];
         private readonly NoiseService _noise;
+        private readonly NoiseTransport? _transport;
         private readonly NoiseScheduleService _scheduler;
         private readonly string _stateDirectory;
         private JsonObject _context = null!;
-        private long _reports, _execution, _probes, _sample, _health;
+        private long _reports, _execution, _probes, _sample, _health, _reportSequence;
         private readonly Guid _connection = Guid.NewGuid(), _bridge = Guid.NewGuid();
+        private readonly string _controlEpoch = Guid.NewGuid().ToString("D");
         public StudySettingsService Host { get; }
         public JsonObject Configuration { get; private set; } = null!;
         public bool Active => _noise.Snapshot().State == "Active";
         public int Starts { get { lock (_captures) return _captures.Count; } }
 
-        public FieldPeer(HttpClient http, DateTimeOffset start, string root, JsonObject access, CancellationToken ct)
+        public FieldPeer(HttpClient http, DateTimeOffset start, string root, JsonObject access, CancellationToken ct, bool withReports = false)
         {
             _http = http; _access = access; _ct = ct;
             string directory = _stateDirectory = Path.Combine(root, "field-native-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             _noise = new(_ => { var capture = new Capture(); lock (_captures) _captures.Add(capture); return capture; },
                 () => [new("fixture-microphone", "Synthetic")], _time, management: new NoiseManagementStore(directory, _time));
+            if (withReports) _transport = new(_noise, directory);
             var initial = _noise.Snapshot();
             _noise.Handle(new(Protocol.Version, Guid.NewGuid(), "noise.command", Noise: new("select", initial.InstanceId, initial.Revision, "fixture-microphone")));
             SchoolClockFrame ReadClock() => new(_connection, _bridge, ++_sample, 0, start.AddMilliseconds(_time.Ms), 0, "Advancing", "synthetic school time");
-            _scheduler = new(_noise, ReadClock, () => false, directory, _time, background: false);
+            _scheduler = new(_noise, ReadClock, () => false, directory, _time, background: false,
+                bindReports: _transport is null ? null : _transport.Bind,
+                statisticsReady: _transport is null ? null : () => _transport.Available,
+                studySession: _transport is null ? null : _transport.OwnStudySession);
             Host = new(ReadClock, () => false, _time, background: false, capture: _scheduler);
         }
 
@@ -182,6 +191,25 @@ internal static partial class StudyHttpAcceptance
 
         public async Task<JsonObject?> ProbeAsync(JsonObject? receipt) => (await CallAsync("study-settings/resume-exchange", "0.11", new()
         { ["context"] = _context.DeepClone(), ["sequence"] = ++_probes, ["version"] = Configuration["version"]!.DeepClone(), ["receipt"] = receipt?.DeepClone() }))["command"]?.AsObject();
+
+        public async Task UploadReportsAsync(int count)
+        {
+            var transport = _transport ?? throw new InvalidOperationException("Missing isolated reporting transport.");
+            await Until(() => transport.Reports().Count == count);
+            var reports = transport.Reports();
+            Require(reports.All(report => report?["study"] is not null), "A scheduled native report lost its study scope.");
+            var context = _context.DeepClone().AsObject();
+            context["controlEpoch"] = _controlEpoch;
+            var reply = await CallAsync("noise-exchange", "0.6", new()
+            {
+                ["context"] = context, ["sequence"] = ++_reportSequence, ["status"] = transport.Observe(),
+                ["reports"] = reports, ["receipts"] = transport.Receipts()
+            });
+            var accepted = reply["acceptedReports"]!.AsArray();
+            Require(accepted.Count == count, "The real KV did not acknowledge the native report upload.");
+            transport.Acknowledge(reply);
+            Console.WriteLine($"PASS native report upload: {string.Join(", ", accepted.Select(value => value!.GetValue<string>()))}");
+        }
 
         public async Task HeartbeatAsync()
         {
