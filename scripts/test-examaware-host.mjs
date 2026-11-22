@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,20 +16,28 @@ const options = Object.fromEntries(Array.from({ length: (process.argv.length - 2
   [process.argv[2 + i * 2], process.argv[3 + i * 2]]));
 const e4 = options['--e4'] === 'true';
 const plans = options['--plans'] === 'true';
+const remote = options['--remote-workbench'] ? resolve(options['--remote-workbench']) : null;
+if (remote) assert.match(dirname(remote), /[\\/]\.artifacts[\\/]exam-workbench[\\/]native-fixture-[\w-]+$/i);
+const fixtureTcp = remote !== null || options['--test-tcp'] === 'true';
+assert.ok(!fixtureTcp || (plans || remote), 'The fixture transport only supports plan validation.');
 assert.ok(options['--source'], 'Provide --source pointing to the built ExamAware2 checkout.');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = resolve(options['--source']);
 const desktop = join(source, 'packages/desktop');
+const appArchive = options['--app-archive'] ? resolve(options['--app-archive']) : null;
+const application = appArchive ?? desktop;
 const require = createRequire(options['--playwright'] ? resolve(options['--playwright']) : import.meta.url);
 const { _electron } = require('playwright');
-const electronPath = createRequire(join(desktop, 'package.json'))('electron');
+const electronPath = options['--electron'] ? resolve(options['--electron']) : createRequire(join(desktop, 'package.json'))('electron');
 const version = JSON.parse(await readFile(join(desktop, 'package.json'), 'utf8')).version;
 assert.equal(version, '1.5.2', 'This acceptance test is scoped to 1.5.2.');
 const plugin = JSON.parse(await readFile(join(root, 'plugins/npedutools-examaware-bridge/package.json'), 'utf8'));
 const packagePath = join(root, '.artifacts/examaware-bridge', `${plugin.name}-${plugin.version}.ea2x`);
 await readFile(packagePath);
-const fixture = await mkdtemp(join(tmpdir(), 'NPEduTools.ExamAware.Real.'));
-const output = join(root, '.artifacts/examaware-real-host', new Date().toISOString().replace(/[:.]/g, '-'));
+const fixtureParent = remote ? dirname(remote) : fixtureTcp ? join(root, '.artifacts/examaware-real-host') : tmpdir();
+await mkdir(fixtureParent, {recursive: true});
+const fixture = await mkdtemp(join(fixtureParent, 'NPEduTools.ExamAware.Real.'));
+const output = remote ? join(dirname(remote), 'player-evidence') : join(root, '.artifacts/examaware-real-host', new Date().toISOString().replace(/[:.]/g, '-'));
 await mkdir(output, { recursive: true });
 const wrapper = join(fixture, 'wrapper');
 await mkdir(wrapper);
@@ -42,7 +50,7 @@ fs.mkdirSync(data, { recursive: true });
 app.setPath('userData', data);
 app.setPath('sessionData', data);
 app.setAppLogsPath(path.join(data, 'logs'));
-app.setAppPath(${JSON.stringify(desktop)});
+app.setAppPath(${JSON.stringify(application)});
 globalThis.testGuards = { protocolRegistrations: 0, loginItemWrites: 0 };
 app.setAsDefaultProtocolClient = () => { globalThis.testGuards.protocolRegistrations++; return false; };
 app.setLoginItemSettings = () => { globalThis.testGuards.loginItemWrites++; throw new Error('Read-only fixture prohibits login-item changes'); };
@@ -64,24 +72,25 @@ if (${e4}) {
     if (state.mode !== 'mismatch') fs.writeFileSync(loginFile, JSON.stringify({ enabled: options.openAtLogin }));
   };
 }
-import(require('node:url').pathToFileURL(${JSON.stringify(join(desktop, 'dist/main/index.js'))}).href);
+import(require('node:url').pathToFileURL(${JSON.stringify(join(application, 'dist/main/index.js'))}).href);
 `);
 const pipe = `NPEduTools.Test.examaware.real.${randomUUID()}`;
-const e3 = options['--e3'] === 'true' || e4 || plans;
+const e3 = options['--e3'] === 'true' || e4 || plans || remote !== null;
 const hostExe = options['--host'] ? resolve(options['--host']) : e3 ? join(root, 'tests/NPEduTools.ExamAware.TestHost/bin/Release/net10.0/NPEduTools.ExamAware.TestHost.exe') : join(root, 'src/NPEduTools.Host/bin/Release/net10.0/NPEduTools.Host.exe');
-let host, ea, page;
+let host, ea, page, endpoint;
 let sourceCommit = null;
 try { sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
 catch { /* A copied source-build fixture has no Git metadata; record its entry hash instead. */ }
 const summary = {
-  sourceCommit, sourceEntrySha256: createHash('sha256').update(await readFile(join(desktop, 'dist/main/index.js'))).digest('hex'),
-  hostVersion: version, pluginVersion: plugin.version, mode: 'isolated-source-build', checks: [],
+  sourceCommit, sourceEntrySha256: createHash('sha256').update(await readFile(appArchive ?? join(desktop, 'dist/main/index.js'))).digest('hex'),
+  hostVersion: version, pluginVersion: plugin.version, mode: appArchive ? 'isolated archive under Electron' : 'isolated-source-build', checks: [],
   limits: ['Not an official packaged release', 'Native file/message dialogs adapted; permission dialog and installer are real',
     'Protocol registry writes blocked; second-instance command-line deeplinks are tested',
     'Login auto-start is read-only and refers to this development executable',
     'NPEduTools production ExamAware.exe path validation and launch are not exercised by this source-build test']
 };
 const check = name => { summary.checks.push(name); console.log(`PASS ${name}`); };
+if (fixtureTcp) summary.limits.push('The isolated TestHost identifies the Playwright-owned PID by path and Windows session using a read-only process handle; production token and all-access checks are outside this fixture.');
 async function until(fn, label, timeout = 15000) {
   const deadline = Date.now() + timeout;
   let last;
@@ -91,15 +100,26 @@ async function until(fn, label, timeout = 15000) {
   }
   throw new Error(`Timed out: ${label}`, { cause: last });
 }
+async function remoteSignal(fn, label, timeout) {
+  const stop = Symbol('stop');
+  const signal = await until(async () => {
+    const result = await fn();
+    if (result) return result;
+    try { await access(join(remote, 'finish')); return stop; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; return null; }
+  }, label, timeout);
+  if (signal === stop) throw new Error('Remote fixture finished before ' + label);
+  return signal;
+}
 async function request(capability, extra = {}) {
   return new Promise((res, rej) => {
     const body = Buffer.from(JSON.stringify({ version: 1, requestId: randomUUID(), capability, ...extra }));
     const header = Buffer.alloc(4); header.writeInt32LE(body.length);
-    const socket = net.connect('\\\\.\\pipe\\' + pipe);
+    const socket = endpoint ? net.connect(endpoint.port, '127.0.0.1') : net.connect('\\\\.\\pipe\\' + pipe);
     let buffer = Buffer.alloc(0);
     socket.setTimeout(4000, () => socket.destroy(new Error('Pipe timeout')));
     socket.on('error', rej);
-    socket.on('connect', () => socket.write(Buffer.concat([header, body])));
+    socket.on('connect', () => socket.write(Buffer.concat(endpoint ? [Buffer.from(endpoint.key, 'hex'), header, body] : [header, body])));
     socket.on('data', data => {
       buffer = Buffer.concat([buffer, data]);
       if (buffer.length >= 4 && buffer.length >= 4 + buffer.readInt32LE()) {
@@ -111,8 +131,19 @@ async function request(capability, extra = {}) {
 const status = async () => (await request('examaware.status')).examAware;
 async function state(expected) { return until(async () => (await status()).bridgeState === expected, expected); }
 async function startHost() {
-  host = spawn(hostExe, ['--pipe', pipe, '--data-dir', join(fixture, 'host'), ...(e3 ? ['--executable', electronPath] : [])], { cwd: fixture, windowsHide: true, stdio: 'ignore' });
-  await until(async () => (await request('host.ping')).outcome === 'Succeeded', 'Host ready');
+  const endpointFile = join(fixture, 'host-endpoint.json');
+  host = spawn(hostExe, ['--pipe', pipe, '--data-dir', join(fixture, 'host'), ...(e3 ? ['--executable', electronPath] : []),
+    ...(fixtureTcp ? ['--fixture-tcp', endpointFile] : [])], { cwd: fixture, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  let failure = '';
+  host.stderr.on('data', value => { failure = (failure + value).slice(-2000); summary.hostDiagnostics = failure; });
+  const exited = new Promise((_, reject) => {
+    host.once('error', reject);
+    host.once('exit', code => reject(new Error(`Isolated ExamAware test Host exited (${code}). ${failure}`)));
+  });
+  await Promise.race([(async () => {
+    if (fixtureTcp) endpoint = await until(async () => JSON.parse(await readFile(endpointFile, 'utf8')), 'isolated Host endpoint');
+    await until(async () => (await request('host.ping')).outcome === 'Succeeded', 'Host ready');
+  })(), exited]);
 }
 async function stopHost() {
   if (host && host.exitCode === null && host.signalCode === null) {
@@ -130,6 +161,7 @@ async function launch() {
   assert.equal(resolve(data.path), resolve(fixture, 'userdata'));
   assert.equal(data.version, version); assert.equal(data.packaged, false);
   const ids = { launched: ea.process().pid, main: await ea.evaluate(() => process.pid) };
+  if (fixtureTcp) await writeFile(join(fixture, 'player-pid'), String(ids.main));
   summary.processes ??= []; summary.processes.push(ids);
 }
 // Cleanup only our isolated Electron fixture, including intentional policy/cancel refusals.
@@ -193,7 +225,38 @@ try {
   summary.connected = connected;
   await page.screenshot({ path: join(output, 'connected-home.png') });
   check('renderer pairing import, real SDK TCP, authenticated version and auto-start readback');
-  if (plans) {
+  if (remote) {
+    assert.equal((await request('examaware.config.set', { executablePath: electronPath, expectedRevision: connected.revision })).outcome, 'Succeeded');
+    assert.ok((await status()).canPresent);
+    await writeFile(join(remote, 'bridge.json'), JSON.stringify(endpoint));
+    const playerPage = await remoteSignal(() => ea.windows().find(p => p.url().includes('/player')), 'remote-created real player window', 180000);
+    await playerPage.getByText('隔离语文考试', { exact: true }).first().waitFor();
+    const active = await until(async () => {
+      const s = await status();
+      return s.player?.sessions.find(item => item.id === s.planOperation?.sessionId && item.state === 'ready');
+    }, 'remote session reported ready');
+    await playerPage.screenshot({ path: join(output, 'real-examaware-ready.png') });
+    await writeFile(join(remote, 'ready.json'), JSON.stringify({sessionId: active.id, observedAt: new Date().toISOString()}));
+    check('real renderer displays the exam for the same bridge session');
+    await remoteSignal(async () => {
+      try { return await readFile(join(remote, 'close'), 'utf8'); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; return null; }
+    }, 'isolated teacher requests local exit', 120000);
+    await playerPage.evaluate(() => window.api.player.exitWindow());
+    const closed = await until(async () => {
+      const last = (await status()).player?.lastSession;
+      return playerPage.isClosed() && last?.id === active.id && last.state === 'closed' && last;
+    }, 'same renderer actually closed');
+    assert.equal(ea.windows().filter(p => p.url().includes('/player')).length, 0);
+    await page.screenshot({ path: join(output, 'real-examaware-after-close.png') });
+    await writeFile(join(remote, 'closed.json'), JSON.stringify({sessionId: closed.id, observedAt: new Date().toISOString()}));
+    check('official local exit closes the actual window and reports the same session');
+    summary.playback = {sessionId: closed.id, ready: true, closed: true};
+    summary.guards = await ea.evaluate(() => globalThis.testGuards);
+    assert.equal(summary.guards.loginItemWrites, 0);
+    // The desktop may verify subsequent exam cycles before it releases this paired bridge.
+    await until(async () => await readFile(join(remote, 'finish'), 'utf8'), 'remote test cleanup', 6 * 60 * 1000);
+  } else if (plans) {
     assert.equal((await request('examaware.config.set', { executablePath: electronPath, expectedRevision: connected.revision })).outcome, 'Succeeded');
     const revision = (await status()).revision;
     assert.equal((await status()).canPresent, true);
@@ -203,7 +266,7 @@ try {
     const plan = async data => {
       const reply = await request('examaware.plan', { expectedRevision: revision,
         examPlan: { action: 'prepare', dataBase64: Buffer.from(JSON.stringify(data)).toString('base64') } });
-      assert.equal(reply.outcome, 'Accepted');
+      assert.equal(reply.outcome, 'Accepted', reply.errorCode ?? reply.message);
       await until(async () => (await status()).planOperation?.state !== 'Sending', 'official plan validation');
       return status();
     };
@@ -417,7 +480,8 @@ try {
   await disposeFixture();
   await stopHost();
   // Only delete the uniquely created test root; never an input checkout or user configuration.
-  assert.ok(resolve(fixture).startsWith(resolve(tmpdir()) + '\\'));
+  assert.equal(dirname(resolve(fixture)), resolve(fixtureParent));
+  assert.ok(resolve(fixture).split(/[\\/]/).at(-1).startsWith('NPEduTools.ExamAware.Real.'));
   await rm(fixture, { recursive: true, force: true, maxRetries: 3 });
   await writeFile(join(output, 'summary.json'), JSON.stringify(summary, null, 2));
   console.log(`Report: ${output}`);
