@@ -10,11 +10,11 @@ public sealed partial class NoiseService
     private sealed record UsbObservation(ClassroomActionPolicyState Policy, bool Present);
 
     internal void SetClassroomActionPolicy(string? version, string? stopMode, string? exitMode, Func<bool>? usbPresent,
-        string? credentialScope = null)
+        string? credentialScope = null, string? switchClassroomMode = null)
     {
         lock (_sync)
         {
-            var policy = version is null ? null : new ClassroomActionPolicyState(version, stopMode ?? "deny", exitMode ?? "deny");
+            var policy = version is null ? null : new ClassroomActionPolicyState(version, stopMode ?? "deny", exitMode ?? "deny", switchClassroomMode);
             _registeredUsbPresent = usbPresent;
             if (policy == _classroomPolicy && credentialScope == _classroomCredentialScope) return;
             _classroomPolicy = policy;
@@ -24,13 +24,15 @@ public sealed partial class NoiseService
         }
     }
 
-    internal NoiseProtectionState ClassroomProtection()
+    internal NoiseProtectionState ClassroomProtection() => ClassroomProtection(false);
+
+    private NoiseProtectionState ClassroomProtection(bool includeMode)
     {
         lock (_sync)
         {
             var status = Protection();
             return _classroomPolicy is null ? status : status with
-                { ClassroomPolicy = _classroomPolicy, Configured = ClassroomPasswordReady };
+                { ClassroomPolicy = includeMode ? _classroomPolicy : _classroomPolicy with { SwitchClassroomMode = null }, Configured = ClassroomPasswordReady };
         }
     }
 
@@ -41,6 +43,7 @@ public sealed partial class NoiseService
     {
         "stop" when ScheduledLive => _classroomPolicy?.StopScheduled,
         "maintenance" => _classroomPolicy?.ExitHost,
+        "switch-classroom-mode" => _classroomPolicy?.SwitchClassroomMode,
         _ => null
     };
 

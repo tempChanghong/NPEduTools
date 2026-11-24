@@ -95,8 +95,9 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             "NoiseStateChanged" => "当前监测会话已变化，请重新核实后验证。",
             null => "管理验证已完成。",
             _ => "管理验证未通过。"
-        }, Noise: Snapshot(), NoiseProtection: (r.Capability == "noise.management.status.classroom-policy" ||
-            r.NoiseManagement?.ClassroomPolicyVersion is not null ? ClassroomProtection() : Protection()) with { Ticket = ticket });
+        }, Noise: Snapshot(), NoiseProtection: (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" ||
+            r.NoiseManagement?.ClassroomPolicyVersion is not null ? ClassroomProtection(
+                r.Capability == "noise.management.status.classroom-policy.v2" || r.NoiseManagement?.Purpose == "switch-classroom-mode") : Protection()) with { Ticket = ticket });
 
     public HostResponse ManagementHandle(HostRequest r)
     {
@@ -112,7 +113,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         {
             if (Protocol.Validate(r) is { } invalid) return ManagementReply(r, invalid);
             if (r.Capability == "noise.management.status") return ManagementReply(r, management?.Error);
-            if (r.Capability == "noise.management.status.classroom-policy")
+            if (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2")
                 return ManagementReply(r, _classroomPolicy is null ? management?.Error : null);
             if (r.Capability == "noise.management.prepare-exit")
             {
@@ -133,6 +134,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             var c = r.NoiseManagement!;
             if (c.Action == "verify") return ManagementReply(r, management.VerifyCalibration(c.Secret));
             if (c.Action == "configure") return ManagementReply(r, management.Configure(c.Secret, c.NewSecret!, ScheduledLive));
+            if (c.Purpose == "switch-classroom-mode" && ScheduledLive && ClassroomRule(c.Purpose) is { } switchRule and not "deny")
+                return ManagementReply(r, "CLASSROOM_STOP_REQUIRED");
             if (ClassroomRule(c.Purpose!) is { } actionRule and not "default")
                 return IssueClassroomTicket(r, c, actionRule, usb);
             if (c.ClassroomPolicyVersion is not null) return ManagementReply(r, "CLASSROOM_POLICY_CHANGED");
@@ -155,6 +158,13 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             string purpose = Protocol.NoisePurpose(r);
             string? rule = ClassroomRule(purpose);
             bool managed = rule is not null and not "default";
+            // A local mode change normally interrupts capture. Its own permission cannot
+            // authorize stopping a scheduled session. Unconfigured devices keep the old ticket.
+            if (purpose == "switch-classroom-mode")
+            {
+                if (ScheduledLive && managed && rule != "deny") return ManagementReply(r, "CLASSROOM_STOP_REQUIRED");
+                if (!managed) purpose = "change-environment";
+            }
             if (r.Capability == "host.stop" && ExitPending)
             {
                 if (_exitReservation!.Value.Request != r.RequestId || _exitReservation.Value.Ticket != r.NoiseAuthorization)

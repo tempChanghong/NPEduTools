@@ -8,7 +8,8 @@ public sealed record NoiseManagementCommand(string Action, string? Secret = null
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DeviceId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? PolicyToken = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassroomPolicyVersion = null);
-public sealed record ClassroomActionPolicyState(string Version, string StopScheduled, string ExitHost);
+public sealed record ClassroomActionPolicyState(string Version, string StopScheduled, string ExitHost,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SwitchClassroomMode = null);
 public sealed record NoiseProtectionState(bool Protected, bool Configured, Guid InstanceId, Guid? SessionId,
     string? ErrorCode = null, Guid? Ticket = null, string ManagementSource = "Local", long CredentialRevision = 0,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomActionPolicyState? ClassroomPolicy = null);
@@ -22,7 +23,7 @@ public static class NoiseManagementContract
                 c.Action == "authorize" && c.NewSecret is null && c.DeviceId is null && c.PolicyToken is null &&
                 (c.Secret is null || SecretValid(c.Secret)) && c.TargetRequestId is { } target && target != Guid.Empty &&
                 c.InstanceId is { } host && host != Guid.Empty && c.SessionId != Guid.Empty &&
-                (c.Purpose == "maintenance" || c.Purpose == "stop" && c.SessionId is not null);
+                (c.Purpose is "maintenance" or "switch-classroom-mode" || c.Purpose == "stop" && c.SessionId is not null);
         if (c.Action == "replace-microphone")
             return SecretValid(c.Secret) && NoiseContract.ValidDeviceId(c.DeviceId) && c.PolicyToken is { } token && token != Guid.Empty &&
                 c.NewSecret is null && c.Purpose is null && c.TargetRequestId is null && c.InstanceId is null && c.SessionId is null;

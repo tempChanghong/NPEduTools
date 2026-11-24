@@ -91,6 +91,30 @@ public sealed class SchoolActionPolicyDeliveryTests
     }
 
     [Fact]
+    public async Task Upgrading_the_same_policy_revision_protects_local_mode_after_restart()
+    {
+        await using var screen = new Screen();
+        var original = Policy(6, FirstId, "GRADE", Rule("ALLOW"), Rule("ALLOW"));
+        screen.School.ApplySchool(screen.Envelope(original));
+        var mode = new HostRequest(Protocol.Version, Guid.NewGuid(), "classroom.set", ExpectedRevision: 0, ClassroomMode: new("Exam"));
+        Assert.Null(screen.Noise.AuthorizeInterruption(mode));
+
+        var complete = original.DeepClone().AsObject();
+        complete["schemaVersion"] = 2;
+        complete["policyId"] = SecondId;
+        complete["actions"]!["switchClassroomMode"] = Rule("DENY");
+        screen.School.ApplySchool(screen.Envelope(complete));
+        Assert.Equal(2, screen.Receipt()["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(SecondId, screen.Receipt()["policyId"]!.GetValue<string>());
+        Assert.Null(screen.Status()!.SwitchClassroomMode);
+        await screen.ReloadOffline();
+        screen.School.BindSchool(screen.Identity.ToJsonString());
+        screen.School.ApplySchool(screen.Envelope(original));
+        Assert.Equal("CLASSROOM_ACTION_DENIED", screen.Noise.AuthorizeInterruption(mode)!.ErrorCode);
+        Assert.Null(screen.Noise.AuthorizeInterruption(new(Protocol.Version, Guid.NewGuid(), "classroom.status")));
+    }
+
+    [Fact]
     public async Task Classroom_override_survives_lost_ack_offline_reload_and_duplicate_delivery_until_explicitly_replaced()
     {
         await using var screen = new Screen();

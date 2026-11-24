@@ -11,26 +11,28 @@ internal sealed record ClassroomUsbKey(string KeyId, string MediaHash, string Se
 // The device receipt identifies the effective policy that this Host actually installed.
 // The school-wide sequence can change even when this particular classroom's rules do not.
 internal sealed record ClassroomPolicy(long Revision, string PolicyId, string Source, string Stop, string Exit,
-    IReadOnlyList<ClassroomUsbKey> Keys)
+    IReadOnlyList<ClassroomUsbKey> Keys, int SchemaVersion, string? SwitchMode)
 {
     internal static bool IsDigest(string? text) =>
         text is { Length: 64 } && text.All(ch => ch is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     internal static ClassroomPolicy Parse(JsonNode? node)
     {
-        if (node is not JsonObject p || p.Count != 6 || p["schemaVersion"]?.GetValue<int>() != 1 ||
+        if (node is not JsonObject p || p.Count != 6 || p["schemaVersion"]?.GetValue<int>() is not (1 or 2) ||
             p["revision"]?.GetValue<long>() is not { } rev || rev < 0 || rev > NpepProtocol.MaxInteger ||
             p["policyId"]?.GetValue<string>() is not { } id || !IsDigest(id) || !p.ContainsKey("actions") ||
             p["source"]?.GetValue<string>() is not ("LEGACY" or "GRADE" or "CLASS") ||
             p["usbKeys"] is not JsonArray keys || keys.Count > 64)
             throw new InvalidDataException("Invalid classroom policy.");
         string source = p["source"]!.GetValue<string>();
+        int schema = p["schemaVersion"]!.GetValue<int>();
         if (source == "LEGACY")
         {
             if (p["actions"] is not null || keys.Count != 0) throw new InvalidDataException("Invalid default policy.");
-            return new(rev, id, source, "default", "default", []);
+            return new(rev, id, source, "default", "default", [], schema, null);
         }
-        if (p["actions"] is not JsonObject actions || actions.Count != 2)
+        if (p["actions"] is not JsonObject actions ||
+            actions.Count != (schema == 2 && actions.ContainsKey("switchClassroomMode") ? 3 : 2))
             throw new InvalidDataException("Invalid classroom actions.");
         var parsed = new List<ClassroomUsbKey>(keys.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -45,7 +47,8 @@ internal sealed record ClassroomPolicy(long Revision, string PolicyId, string So
             parsed.Add(new(keyId, media, secret));
         }
         return new(rev, id, source, ReadRule(actions["stopScheduledMonitoring"]), ReadRule(actions["exitBackground"]),
-            parsed.OrderBy(k => k.KeyId, StringComparer.Ordinal).ToArray());
+            parsed.OrderBy(k => k.KeyId, StringComparer.Ordinal).ToArray(), schema,
+            actions["switchClassroomMode"] is { } switchMode ? ReadRule(switchMode) : null);
     }
 
     private static string ReadRule(JsonNode? node)
@@ -61,8 +64,17 @@ internal sealed record ClassroomPolicy(long Revision, string PolicyId, string So
         };
     }
 
-    internal bool SameRules(ClassroomPolicy other) =>
+    private bool SameBaseRules(ClassroomPolicy other) =>
         Source == other.Source && Stop == other.Stop && Exit == other.Exit && Keys.SequenceEqual(other.Keys);
+
+    internal bool CanFollow(ClassroomPolicy prior)
+    {
+        if (Revision < prior.Revision || SchemaVersion == 1 && prior.SwitchMode is not null) return false;
+        bool sameBase = SameBaseRules(prior);
+        if (PolicyId == prior.PolicyId) return sameBase && SwitchMode == prior.SwitchMode;
+        // Upgrading a device can reveal the third rule at the very same school revision.
+        return Revision > prior.Revision || prior.SchemaVersion == 1 && SchemaVersion == 2 && SwitchMode is not null && sameBase;
+    }
 }
 
 internal sealed class ClassroomPolicyStore
@@ -132,11 +144,16 @@ internal sealed class ClassroomPolicyStore
         {
             var raw = envelope["actionPolicy"] as JsonObject;
             var incoming = ClassroomPolicy.Parse(raw);
-            if ((_awaitingSave ?? _current) is { } prior && (incoming.Revision < prior.Revision ||
-                incoming.Revision == prior.Revision && incoming.PolicyId != prior.PolicyId ||
-                incoming.PolicyId == prior.PolicyId && !incoming.SameRules(prior)))
+            // The v1 server cannot receive a v2 receipt or revoke the mode rule.
+            // Continue reporting the other device settings to it.
+            if (incoming.SchemaVersion == 1 && _current?.SwitchMode is not null)
+            {
+                _advertised = false;
+                return;
+            }
+            if ((_awaitingSave ?? _current) is { } prior && !incoming.CanFollow(prior))
                 throw new InvalidDataException();
-            if (_hold || _current?.Revision != incoming.Revision)
+            if (_hold || _current?.Revision != incoming.Revision || _current.SchemaVersion != incoming.SchemaVersion)
             {
                 _awaitingSave = incoming;
                 Write(new(1, scope, raw, false));
@@ -168,7 +185,7 @@ internal sealed class ClassroomPolicyStore
 
     internal JsonObject? Observe() => !_advertised ? null : new JsonObject
     {
-        ["schemaVersion"] = 1, ["revision"] = _hold ? null : _current?.Revision,
+        ["schemaVersion"] = _current?.SchemaVersion ?? 1, ["revision"] = _hold ? null : _current?.Revision,
         ["policyId"] = _hold ? null : _current?.PolicyId, ["error"] = _error
     };
 
@@ -183,7 +200,7 @@ internal sealed class ClassroomPolicyStore
         var id = _hold ? "awaiting-policy" : policy!.PolicyId;
         var token = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(_scope + "\n" + id)));
         _noise.SetClassroomActionPolicy(token, _hold ? "deny" : policy!.Stop, _hold ? "deny" : policy!.Exit,
-            _hold ? null : () => _usb.HasRegisteredKey(policy!.Keys), _scope);
+            _hold ? null : () => _usb.HasRegisteredKey(policy!.Keys), _scope, _hold ? "deny" : policy!.SwitchMode);
     }
 
     private void Write(Saved next)
