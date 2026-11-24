@@ -467,7 +467,7 @@ public partial class MainWindow : Window
         try
         {
             if (!StudyActionConfirmation.Ask(this, "退出后台",
-                "退出会停止本机后台。正在进行的手动自习会结束。若正在执行定时监测，须先验证，退出会结束本场监测，排程仍保留。自动录课会关闭，当前录制将尝试保存。")) return;
+                "退出会停止本机后台及本场自习监测，后续排程保留。自动录课会关闭，当前录制将尝试保存。\n确认后会先核对本机适用的现场退出权限。")) return;
             HomeMessage.Text = "正在核对能否退出后台…";
             var shutdownRequest = new HostRequest(Protocol.Version, Guid.NewGuid(), "host.stop");
             if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var modeHost))
@@ -494,11 +494,19 @@ public partial class MainWindow : Window
                     RestoreWindow();
                     return;
                 }
-                var protection = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "noise.management.status"));
-                if (protection is not { Outcome: "Succeeded", NoiseProtection: { } protectionState } ||
-                    protectionState is { Protected: true, Configured: false })
+                using var accessDeadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+                accessDeadline.CancelAfter(5000);
+                var protection = await ClassroomActionAccess.ReadAsync(_pipe, accessDeadline.Token);
+                if (protection is not { Outcome: "Succeeded", NoiseProtection: { } protectionState })
                 {
-                    HomeMessage.Text = "定时监测的管理验证暂不可用，未发起退出验证。请核对当前监测和口令状态。";
+                    HomeMessage.Text = "退出权限暂未确认，请刷新后台连接。";
+                    RestoreWindow();
+                    return;
+                }
+                var exitMode = ClassroomActionAccess.Mode(protectionState, "maintenance");
+                if (ClassroomActionAccess.Blocked(protectionState, exitMode) is { } blocked)
+                {
+                    HomeMessage.Text = $"退出后台：{blocked}";
                     RestoreWindow();
                     return;
                 }
@@ -511,7 +519,7 @@ public partial class MainWindow : Window
                     else if(begun.Outcome=="Rejected"){HomeMessage.Text=begun.Message;return;}
                     else if(begun.StudyExit is {State:"Waiting"} waiting && waiting.AttemptId==shutdownRequest.RequestId)exitState=waiting;
                 }catch(Exception e2)when(IsManagementError(e2)){HomeMessage.Text="无法确认本次退出验证，后台继续运行。";return;}
-                var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest,exitState,ReadStudyExitAsync,ShowStudyExitWarning);
+                var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest,exitState,ReadStudyExitAsync,ShowStudyExitWarning, expectedAccess: protectionState);
                 if (authorized is null) { HomeMessage.Text = "未验证，后台与录课设置保持原状态。"; return; }
                 shutdownRequest = authorized;
                 try

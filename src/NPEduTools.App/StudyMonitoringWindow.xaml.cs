@@ -21,7 +21,7 @@ public partial class StudyMonitoringWindow : Window
     private readonly NoiseCalibrationRead _calibrationRead = new();
     private long _viewGeneration;
     private sealed record ScheduledStop(bool Legacy, SchoolNoiseWindow Window, Guid Instance, Guid Session, long Revision,
-        string? Mode = null, string? Version = null)
+        string? Mode = null, string? Version = null, NoiseProtectionState? Access = null)
     {
         public string Name => Legacy ? "定时噪音监测" : "学校定时自习";
     }
@@ -71,7 +71,7 @@ public partial class StudyMonitoringWindow : Window
                 Display.Selected: true, Execution: { Owner: "Schedule", State: "Starting" or "Active", SessionId: { } session, ClockReady: true } execution } school,
                 Noise: { State: "Starting" or "Active", SessionId: { } noiseSession } noise } && session == noiseSession &&
             MatchesWindow(school, window, execution))
-            return (study, new(false, window, noise.InstanceId, session, noise.Revision, school.Mode, school.Version));
+            return (study, await WithAccessAsync(new(false, window, noise.InstanceId, session, noise.Revision, school.Mode, school.Version), token));
 
         bool legacy = study is { Outcome: "Succeeded", Study.Display.Selected: false } ||
             study is { Outcome: "Rejected", ErrorCode: "UnknownCapability" or "STUDY_UNSUPPORTED" };
@@ -81,10 +81,24 @@ public partial class StudyMonitoringWindow : Window
             var display = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.display.status"), token);
             return (study, display is { Outcome: "Succeeded", NoiseDisplay: { Window: { } oldWindow, InstanceId: { } instance, SessionId: { } oldSession },
                 Noise: { State: "Starting" or "Active" } current } && current.InstanceId == instance && current.SessionId == oldSession
-                ? new(true, oldWindow, instance, oldSession, current.Revision) : null);
+                ? await WithAccessAsync(new(true, oldWindow, instance, oldSession, current.Revision), token) : null);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         { return (study, null); }
+    }
+    private async Task<ScheduledStop> WithAccessAsync(ScheduledStop target, CancellationToken token)
+    {
+        try
+        {
+            var reply = await ClassroomActionAccess.ReadAsync(_pipe, token);
+            if (reply is { Outcome: "Succeeded", NoiseProtection: { Protected: true } access } &&
+                access.InstanceId == target.Instance && access.SessionId == target.Session)
+                return target with { Access = access };
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or
+            OperationCanceledException or TimeoutException or System.Text.Json.JsonException) { }
+        // The captured schedule remains readable when only the policy read failed.
+        return target;
     }
     private static bool MatchesWindow(StudyHostState study, SchoolNoiseWindow window, StudyCaptureState execution)
     {
@@ -97,7 +111,11 @@ public partial class StudyMonitoringWindow : Window
     {
         _stopTarget = target;
         StopScheduledButton.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
-        StopScheduledButton.IsEnabled = !_stopping && target is not null;
+        var mode = target?.Access is { } access ? ClassroomActionAccess.Mode(access, "stop") : "unavailable";
+        string? blocked = target?.Access is { } available ? ClassroomActionAccess.Blocked(available, mode) : ClassroomActionAccess.Describe(mode);
+        StopScheduledButton.IsEnabled = !_stopping && target is not null && blocked is null;
+        StopRule.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
+        StopRule.Text = "停止本场：" + (blocked ?? ClassroomActionAccess.Describe(mode));
         if (target is { Legacy: true })
         {
             StudyPhase.Text = target.Name;
@@ -114,7 +132,7 @@ public partial class StudyMonitoringWindow : Window
     }
     private async void StopScheduledClicked(object sender, RoutedEventArgs e)
     {
-        if (_stopping || _stopTarget is not { } target) return;
+        if (_stopping || !StopScheduledButton.IsEnabled || _stopTarget is not { Access: { } access } target) return;
         _stopping = true;
         StopScheduledButton.IsEnabled = false;
         long generation = ++_viewGeneration;
@@ -134,10 +152,10 @@ public partial class StudyMonitoringWindow : Window
         {
             var owner = WorkspacePanel.DialogOwner(this);
             if (!StudyActionConfirmation.Ask(owner, "停止本场监测",
-                $"{target.Name} · {StudySchedulePresentation.Span(target.Window)}\n通过管理验证后，停止这一场的噪音采集。后台保持运行，后续场次仍按原排程办理。")) return;
+                $"{target.Name} · {StudySchedulePresentation.Span(target.Window)}\n{ClassroomActionAccess.Describe(ClassroomActionAccess.Mode(access, "stop"))}\n停止这一场的噪音采集。后台保持运行，后续场次仍按原排程办理。")) return;
             if (!Current() || !await RecheckAsync()) return;
             var request = new HostRequest(1, Guid.NewGuid(), "noise.command", Noise: new("stop", target.Instance, target.Revision));
-            var authorized = await NoiseManagementDialog.AuthorizeAsync(owner, _pipe, request, expectedSession: target.Session);
+            var authorized = await NoiseManagementDialog.AuthorizeAsync(owner, _pipe, request, expectedSession: target.Session, expectedAccess: access);
             if (!Current()) return;
             if (authorized is null) { StopFeedback("未取得原场次的管理授权，未发送停止请求。"); return; }
             if (!await RecheckAsync()) return;

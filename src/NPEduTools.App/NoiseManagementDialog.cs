@@ -15,6 +15,8 @@ internal sealed class NoiseManagementDialog : Window
     private readonly PasswordBox _old = new() { MaxLength = 128, Margin = new(0, 6, 0, 12) };
     private readonly PasswordBox _new = new() { MaxLength = 128, Margin = new(0, 6, 0, 12) };
     private readonly PasswordBox _confirm = new() { MaxLength = 128, Margin = new(0, 6, 0, 12) };
+    private readonly RadioButton _usbChoice = new() { Content = "使用教师 U 盘", Margin = new(0, 4, 0, 8) };
+    private readonly string _mode;
     private readonly TextBlock _message = new() { TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 12) };
     private readonly Button _submit = new() { Content = "验证并继续", IsDefault = true, MinWidth = 120 };
     private readonly TextBlock _deadline = new() { Margin = new(0, 0, 0, 14) };
@@ -32,7 +34,8 @@ internal sealed class NoiseManagementDialog : Window
     {
         Owner = PrepareOwner(owner); _pipe = pipe; _state = state; _target = target;
         _exit=exit;_exitRead=exitRead;
-        Title = target is null ? "本机管理口令" : "定时监测 · 管理验证";
+        _mode = target is null ? "default" : ClassroomActionAccess.Mode(state, Protocol.NoisePurpose(target));
+        Title = target is null ? "本机管理口令" : target.Capability == "host.stop" ? "退出后台 · 管理验证" : "定时监测 · 管理验证";
         Width = 460; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
         bool hiddenExitOwner = target?.Capability == "host.stop" && (!Owner.IsVisible || Owner.WindowState == WindowState.Minimized);
         WindowStartupLocation = hiddenExitOwner ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
@@ -48,9 +51,34 @@ internal sealed class NoiseManagementDialog : Window
             ? "用于本机停止定时监测和维护退出，与学校 PIN 分开。请使用 8–128 字符口令；Host 只保存加盐摘要。"
             : $"本场定时监测正在运行。请输入{secretName}。{sourceHint}本次验证只授权当前会话的这一项操作，关闭窗口不会停止采集。";
         body.Children.Add(_message);
-        if(exit is not null){_message.Text=$"请在倒计时结束前输入{secretName}。{sourceHint}首次密码错误或超时将显示退出验证未通过提醒，后台监测继续。";body.Children.Add(_deadline);UpdateDeadline(exit.VerificationRemainingSeconds);}
-        if (target is not null || state.Configured)
-        { body.Children.Add(new TextBlock { Text = target is null ? "原管理口令" : secretName }); body.Children.Add(_old); }
+        if (_mode != "default") _message.Text = ClassroomActionAccess.Describe(_mode);
+        if(exit is not null)
+        {
+            _message.Text += "\n请在倒计时结束前完成本次退出验证。";
+            body.Children.Add(_deadline); UpdateDeadline(exit.VerificationRemainingSeconds);
+        }
+        if (_mode == "either")
+        {
+            var choices = new StackPanel();
+            var password = new RadioButton { Content = "使用本班管理口令", IsEnabled = state.Configured,
+                IsChecked = state.Configured, Margin = new(0, 4, 0, 4) };
+            _usbChoice.IsChecked = !state.Configured;
+            choices.Children.Add(password);
+            choices.Children.Add(_usbChoice);
+            body.Children.Add(choices);
+            password.Checked += (_, _) => { _old.Visibility = Visibility.Visible; _old.Focus(); };
+            _usbChoice.Checked += (_, _) => { _old.Clear(); _old.Visibility = Visibility.Collapsed; };
+            if (!state.Configured) body.Children.Add(new TextBlock { Text = "本班口令尚未就绪，可使用已登记的教师 U 盘。", TextWrapping = TextWrapping.Wrap });
+            _old.Visibility = state.Configured ? Visibility.Visible : Visibility.Collapsed;
+            body.Children.Add(_old);
+        }
+        else if (_mode != "usb" && (target is not null || state.Configured))
+        {
+            body.Children.Add(new TextBlock { Text = target is null ? "原管理口令" : _mode == "default" ? secretName : "本班管理口令" });
+            body.Children.Add(_old);
+        }
+        if (_mode is "usb" or "both")
+            body.Children.Add(new TextBlock { Text = "请保持 U 盘插入，直至操作完成。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) });
         if (target is null)
         {
             body.Children.Add(new TextBlock { Text = "新口令" }); body.Children.Add(_new);
@@ -62,7 +90,12 @@ internal sealed class NoiseManagementDialog : Window
         DesktopDialogSizing.Attach(this, pipe);
         _submit.Click += Submit;
         Closed += (_, _) => { _old.Clear(); _new.Clear(); _confirm.Clear(); };
-        Loaded += (_, _) => { if (target is not null || state.Configured) _old.Focus(); else _new.Focus(); };
+        Loaded += (_, _) =>
+        {
+            if (_mode == "usb" || _usbChoice.IsChecked == true) _submit.Focus();
+            else if (target is not null || state.Configured) _old.Focus();
+            else _new.Focus();
+        };
         if(exit is not null){WindowStyle=WindowStyle.None;_exitTimer.Tick+=ExitTick;Loaded+=(_,_)=>_exitTimer.Start();Closed+=(_,_)=>_exitTimer.Stop();Closing+=(_,e)=>{if(!_completed)e.Cancel=true;};}
     }
     private async void ExitTick(object? sender,EventArgs args)
@@ -89,8 +122,8 @@ internal sealed class NoiseManagementDialog : Window
             if (_target is null && _new.Password != _confirm.Password) { _message.Text = "两次新口令不一致。"; return; }
             var command = _target is null
                 ? new NoiseManagementCommand("configure", _state.Configured ? _old.Password : null, _new.Password)
-                : new NoiseManagementCommand("authorize", _old.Password, Purpose: Protocol.NoisePurpose(_target),
-                    TargetRequestId: _target.RequestId, InstanceId: _state.InstanceId, SessionId: _state.SessionId);
+                : ClassroomActionAccess.AuthorizeCommand(_state, _target, _mode,
+                    _mode == "usb" || _usbChoice.IsChecked == true ? null : _old.Password);
             if (!NoiseManagementContract.Valid(command) && _exit is null) { _message.Text = "请输入 8–128 字符口令，不含控制字符。"; return; }
             var reply = await Request(_pipe, new(Protocol.Version, Guid.NewGuid(), "noise.management.command", NoiseManagement: command));
             _old.Clear(); _new.Clear(); _confirm.Clear();
@@ -98,11 +131,19 @@ internal sealed class NoiseManagementDialog : Window
             // Its eventual reply must not reopen it or set DialogResult on a closed window.
             if (!IsLoaded || _completed) return;
             if (reply.Outcome != "Succeeded") {
-                _message.Text = reply.Message;
+                _message.Text = reply.ErrorCode switch
+                {
+                    "CLASSROOM_USB_REQUIRED" => "未检测到本班获准的教师 U 盘。请插入正确的 U 盘再验证。",
+                    "CLASSROOM_ACTION_DENIED" => ClassroomActionAccess.Describe("deny"),
+                    "CLASSROOM_POLICY_CHANGED" => "学校策略已变化，请关闭此窗口并重新核对本次操作。",
+                    _ => reply.Message
+                };
                 if(_exit is not null && _exitRead is not null){var failed=await _exitRead();if(_completed)return;if(failed?.AttemptId==_exit.AttemptId && failed.State=="Failed"){FailedExit=failed;_completed=true;Close();}}
                 return;
             }
-            Ticket = reply.NoiseProtection?.Ticket; _completed=true;DialogResult = true;
+            if (_target is not null && (Ticket = ClassroomActionAccess.Ticket(reply, _state)) is null)
+            { _message.Text = "未收到原操作的有效验证结果，请重新核对。"; return; }
+            _completed=true;DialogResult = true;
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         { _message.Text = "无法确认管理验证，未继续操作。请核实后台连接后重试。"; }
@@ -121,36 +162,46 @@ internal sealed class NoiseManagementDialog : Window
         new WindowInteropHelper(owner).EnsureHandle();
         return owner;
     }
-    private static async Task<HostResponse?> ReadStateAsync(Window owner, string pipe)
+    private static async Task<HostResponse?> ReadStateAsync(Window owner, string pipe, bool classroomPolicy = false)
     {
         bool closed = false;
         void OwnerClosed(object? sender, EventArgs args) => closed = true;
         owner.Closed += OwnerClosed;
         try
         {
-            var reply = await Request(pipe, new(Protocol.Version, Guid.NewGuid(), "noise.management.status"));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var reply = classroomPolicy ? await ClassroomActionAccess.ReadAsync(pipe, deadline.Token) :
+                await HostClient.RequestAsync(pipe, "noise.management.status", deadline.Token);
             // IsLoaded can remain true until WPF processes unloading after Closed.
             return closed ? null : reply;
         }
         finally { owner.Closed -= OwnerClosed; }
     }
-    private static string MissingManagementMessage(NoiseProtectionState state) => state.ManagementSource == "School"
-        ? "学校管理口令尚未同步或不可用。请联系学校管理员，在 NPEduConsole 核对本班口令，并检查学校互联。\n原本机口令已停用；当前监测继续受到保护。"
-        : "本机尚未设置管理口令。首次设置需在无定时监测时进行；请等待本次监测按排程结束，再到“自习 → 联机校准 (Beta)”点击“设置管理口令”。\n当前监测继续受到保护。";
-    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null)
+    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null, NoiseProtectionState? expectedAccess = null)
     {
         if (!Protocol.NoiseInterruption(target)) return target;
         owner = PrepareOwner(owner);
-        var reply = await ReadStateAsync(owner, pipe);
+        var purpose = Protocol.NoisePurpose(target);
+        var reply = await ReadStateAsync(owner, pipe, purpose is "stop" or "maintenance");
         if (reply is null) return null;
         if (reply.Outcome != "Succeeded" || reply.NoiseProtection is not { } state)
         { MessageBox.Show(owner, reply.Message, "无法核实定时保护"); return null; }
         if (expectedSession is { } session && (!state.Protected || state.SessionId != session || state.InstanceId != target.Noise?.InstanceId)) return null;
-        if (!state.Protected) return target;
-        if (!state.Configured)
-        {
-            MessageBox.Show(owner, MissingManagementMessage(state), "定时监测受到保护");
+        if (expectedAccess is not null && (state.InstanceId != expectedAccess.InstanceId || state.SessionId != expectedAccess.SessionId ||
+            state.ClassroomPolicy != expectedAccess.ClassroomPolicy || state.CredentialRevision != expectedAccess.CredentialRevision))
             return null;
+        var mode = ClassroomActionAccess.Mode(state, purpose);
+        if (ClassroomActionAccess.Blocked(state, mode) is { } blocked)
+        {
+            MessageBox.Show(owner, blocked, "学校管理策略");
+            return null;
+        }
+        if (mode == "default" && !state.Protected) return target;
+        if (mode == "allow")
+        {
+            var command = ClassroomActionAccess.AuthorizeCommand(state, target, mode, null);
+            var grant = await Request(pipe, new(Protocol.Version, Guid.NewGuid(), "noise.management.command", NoiseManagement: command));
+            return ClassroomActionAccess.Ticket(grant, state) is { } managedTicket ? target with { NoiseAuthorization = managedTicket } : null;
         }
         var dialog = new NoiseManagementDialog(owner, pipe, state, target,exit,exitRead);
         bool succeeded=dialog.ShowDialog()==true;
@@ -167,7 +218,7 @@ internal sealed class NoiseManagementDialog : Window
         if (state.ManagementSource == "School")
         { MessageBox.Show(owner, CalibrationAccess.Hint(state) + "\n学校口令由学校管理员在 NPEduConsole 设置，本机不能覆盖。", "学校管理口令"); return; }
         if (state.Protected && !state.Configured)
-        { MessageBox.Show(owner, MissingManagementMessage(state), "本机管理口令"); return; }
+        { MessageBox.Show(owner, ClassroomActionAccess.Blocked(state, "default")!, "本机管理口令"); return; }
         new NoiseManagementDialog(owner, pipe, state, null).ShowDialog();
     }
 }

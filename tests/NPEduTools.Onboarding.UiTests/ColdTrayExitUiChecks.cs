@@ -11,7 +11,7 @@ internal static partial class Program
 {
     private static void RunColdTrayExitCheck()
     {
-        foreach (string scenario in new[] { "Cancel", "Busy", "ClassroomUnknown", "RecordingUnknown", "CredentialUnavailable", "Verify", "PrepareReplyLost" })
+        foreach (string scenario in new[] { "Cancel", "Busy", "ClassroomUnknown", "RecordingUnknown", "CredentialUnavailable", "Verify", "PrepareReplyLost", "IdlePolicyDeny", "IdleUsbOnly", "IdleAllow" })
             RunColdTrayExitScenario(scenario);
     }
     private static void RunColdTrayExitScenario(string scenario)
@@ -20,7 +20,7 @@ internal static partial class Program
         using var hostMutex = new Mutex(false, @"Local\" + pipe + ".Host");
         using var stop = new CancellationTokenSource();
         var main = PrivateWorkspace(pipe);
-        bool losePrepareReply = scenario == "PrepareReplyLost";
+        bool losePrepareReply = scenario is "PrepareReplyLost" or "IdleAllow";
         int sourceCount = 0, visibleCount = 0, beginCount = 0;
         bool preparedBeforeBegin = false, validDialog = false, confirmed = false;
         main.SourceInitialized += (_, _) => Interlocked.Increment(ref sourceCount);
@@ -28,6 +28,17 @@ internal static partial class Program
         var requests = new ConcurrentQueue<string>();
         var failures = new List<Exception>();
         var instance = Guid.NewGuid(); var session = Guid.NewGuid();
+        var granted = Guid.NewGuid();
+        var policy = scenario switch
+        {
+            "IdlePolicyDeny" => new ClassroomActionPolicyState(new string('d',64), "allow", "deny"),
+            "IdleUsbOnly" => new ClassroomActionPolicyState(new string('a',64), "deny", "usb"),
+            "IdleAllow" => new ClassroomActionPolicyState(new string('b',64), "deny", "allow"),
+            _ => null
+        };
+        var access = policy is null ? new NoiseProtectionState(!losePrepareReply, scenario != "CredentialUnavailable", instance, session, ManagementSource: "School") :
+            new NoiseProtectionState(false, false, instance, null, ManagementSource: "School", ClassroomPolicy: policy);
+        HostRequest? permitRequest = null, preparation = null;
         StudyExitState? exit = null;
         var dialogType = typeof(MainWindow).Assembly.GetType("NPEduTools.App.NoiseManagementDialog")!;
         var closeProbeDialog = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
@@ -68,10 +79,14 @@ internal static partial class Program
             {
                 Interlocked.Increment(ref beginCount);
                 preparedBeforeBegin = Volatile.Read(ref sourceCount) == 1 && Volatile.Read(ref visibleCount) == 0;
-                exit = new(request.RequestId, losePrepareReply ? "NotRequired" : "Waiting", null, 30, 0, "Disabled", "NotRequired");
+                exit = new(request.RequestId, losePrepareReply || scenario == "IdleUsbOnly" ? "NotRequired" : "Waiting", null, 30, 0, "Disabled", "NotRequired");
             }
             if (request.Capability == "noise.management.prepare-exit" && losePrepareReply)
+            {
+                preparation = request;
                 throw new IOException("Drop the response after the synthetic Host accepts prepare-exit");
+            }
+            if (request.Capability == "noise.management.command") permitRequest = request;
             return Task.FromResult(request.Capability switch
             {
                 "study.exit.begin" or "study.exit.status" => new HostResponse(1, request.RequestId, "Succeeded", null,
@@ -81,8 +96,10 @@ internal static partial class Program
                 "recording.status" when scenario != "RecordingUnknown" => new(1, request.RequestId, "Succeeded", null,
                     "Synthetic idle recording status", Recording: new("Idle", "fixture"), Automatic: new(false, Guid.Empty, "fixture", null, [])),
                 "recording.automatic" when losePrepareReply && request.Automatic?.Action == "lease" => new(1, request.RequestId, "Succeeded", null, "Synthetic recording lease"),
-                "noise.management.status" => new(1, request.RequestId, "Succeeded", null,
-                    "Synthetic protected session", NoiseProtection: new(!losePrepareReply, scenario != "CredentialUnavailable", instance, session, ManagementSource: "School")),
+                ClassroomActionAccess.StatusCapability => new(1, request.RequestId, "Succeeded", null,
+                    "Synthetic protected session", NoiseProtection: access),
+                "noise.management.command" when scenario == "IdleAllow" => new(1, request.RequestId, "Succeeded", null,
+                    "Explicit exit scope acknowledged", NoiseProtection: access with { Ticket = granted }),
                 _ => new(1, request.RequestId, "Rejected", "ProbeUnexpectedCapability", "No side effects implemented by this probe")
             });
         }, stop.Token));
@@ -108,18 +125,27 @@ internal static partial class Program
                 var feedback = ((TextBlock)main.FindName("HomeMessage")).Text;
                 Assert(beginCount == 1 && requests.Count(capability => capability == "noise.management.prepare-exit") == 1 && !requests.Contains("host.stop") &&
                     feedback.Contains("本场监测或录课设置可能已变化") && !feedback.Contains("未发送"), "lost prepare response was reported as unsent or replayed");
+                if (scenario == "IdleAllow")
+                    Assert(!validDialog && requests.Count(capability => capability == "noise.management.command") == 1 &&
+                        permitRequest?.NoiseManagement is { Purpose: "maintenance", SessionId: null, Secret: null } permit &&
+                        permit.ClassroomPolicyVersion == policy!.Version && permit.TargetRequestId == exit!.AttemptId &&
+                        preparation?.RequestId == permit.TargetRequestId && preparation?.NoiseAuthorization == granted,
+                        "idle allow must obtain one scoped no-secret ticket and prepare the same confirmed operation");
             }
-            else if (scenario == "Verify")
+            else if (scenario is "Verify" or "IdleUsbOnly")
             {
                 Assert(validDialog && preparedBeforeBegin && beginCount == 1 && sourceCount == 1 && visibleCount == 0 && !main.IsVisible,
                     "exit intent started before owner preparation, or verification exposed the hidden workspace");
-                Assert(requests.Take(4).SequenceEqual(new[] { "classroom.status", "recording.status", "noise.management.status", "study.exit.begin" }),
+                Assert(requests.Take(4).SequenceEqual(new[] { "classroom.status", "recording.status", ClassroomActionAccess.StatusCapability, "study.exit.begin" }),
                     "known blockers were not checked before exit intent");
             }
             else Assert(beginCount == 0 && !validDialog && (scenario != "Cancel" || requests.IsEmpty),
                 "cancellation or an already known blocker started strict exit verification");
-            Assert(requests.All(capability => capability is "study.exit.begin" or "study.exit.status" or "classroom.status" or "recording.status" or "noise.management.status" ||
+            if (scenario == "IdlePolicyDeny")
+                Assert(((TextBlock)main.FindName("HomeMessage")).Text.Contains("学校已禁止"), "missing school denial on idle exit");
+            Assert(requests.All(capability => capability is "study.exit.begin" or "study.exit.status" or "classroom.status" or "recording.status" or ClassroomActionAccess.StatusCapability ||
                        scenario == "Busy" && (capability is "classisland.config.get" or "examaware.status") ||
+                       scenario == "IdleAllow" && capability == "noise.management.command" ||
                        losePrepareReply && (capability is "study.photos.flush" or "noise.management.prepare-exit" or "recording.automatic")),
                 "unexpected traffic during " + scenario + ": " + string.Join(", ", requests));
             Checks.Add($"Tray exit {scenario}: real confirmation and read-only precheck; only a verified target can enter the timed check; private pipe only");

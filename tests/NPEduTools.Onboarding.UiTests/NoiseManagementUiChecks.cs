@@ -60,10 +60,11 @@ internal static partial class Program
             if (ownerAction != "cold-hidden") owner.Show();
             var read = Read();
             var method = type.GetMethod(operation == "configure" ? "ConfigureAsync" : "AuthorizeAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
-            var action = (Task)method.Invoke(null, operation == "configure" ? [owner, pipe] : [owner, pipe, target, null, null, null, null])!;
+            var action = (Task)method.Invoke(null, operation == "configure" ? [owner, pipe] : [owner, pipe, target, null, null, null, null, null])!;
             PumpUntil(() => read.IsCompleted, "management owner status query did not arrive");
             var request = read.GetAwaiter().GetResult();
-            Assert(request.Capability == "noise.management.status" && Protocol.Validate(request) is null, "management entry sent a mutation");
+            Assert(request.Capability == (operation == "configure" ? "noise.management.status" : ClassroomActionAccess.StatusCapability) &&
+                Protocol.Validate(request) is null, "management entry sent a mutation");
             if (closeOwner) owner.Close();
             else if (ownerAction == "hide") owner.Hide();
             cancelDialog.Start();
