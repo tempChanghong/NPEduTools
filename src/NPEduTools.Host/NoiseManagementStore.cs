@@ -15,7 +15,8 @@ public sealed partial class NoiseManagementStore
     private long? _lockedAt;
     private readonly Dictionary<Guid, Ticket> _tickets = [];
     private sealed record Credential(int Version, string Salt, string Hash);
-    private sealed record Ticket(Guid InstanceId, Guid SessionId, string Purpose, Guid RequestId, long IssuedAt);
+    private sealed record Ticket(Guid InstanceId, Guid? SessionId, string Purpose, Guid RequestId, long IssuedAt,
+        string? ClassroomPolicyVersion, bool RequiresUsb, long? NoiseRevision);
     private const int Iterations = 210000;
     public NoiseManagementStore(string directory, TimeProvider? time = null)
     {
@@ -76,17 +77,32 @@ public sealed partial class NoiseManagementStore
     {
         if (c.InstanceId != instance || c.SessionId != session) return (null, "NoiseStateChanged");
         if (Verify(c.Secret) is { } error) return (null, error);
+        return IssueAfterVerification(instance, session, c.Purpose!, c.TargetRequestId!.Value, null, false);
+    }
+    internal (Guid? Ticket, string? Error) IssueAfterVerification(Guid instance, Guid? session, string purpose,
+        Guid requestId, string? policyVersion, bool requiresUsb, long? noiseRevision = null)
+    {
         foreach (var id in _tickets.Where(p => _time.GetElapsedTime(p.Value.IssuedAt).TotalSeconds >= 60).Select(p => p.Key).ToArray()) _tickets.Remove(id);
         if (_tickets.Count >= 32) return (null, "MANAGEMENT_RATE_LIMITED");
         Guid ticket = Guid.NewGuid();
-        _tickets[ticket] = new(instance, session, c.Purpose!, c.TargetRequestId!.Value, _time.GetTimestamp());
+        _tickets[ticket] = new(instance, session, purpose, requestId, _time.GetTimestamp(), policyVersion, requiresUsb, noiseRevision);
         return (ticket, null);
     }
-    public bool Consume(Guid? ticket, Guid instance, Guid session, string purpose, Guid requestId)
+    internal bool RequiresUsb(Guid? ticket, Guid requestId, string policyVersion) =>
+        ticket is { } id && _tickets.TryGetValue(id, out var t) && t.RequiresUsb &&
+        t.RequestId == requestId && t.ClassroomPolicyVersion == policyVersion && _time.GetElapsedTime(t.IssuedAt).TotalSeconds < 60;
+
+    public bool Consume(Guid? ticket, Guid instance, Guid session, string purpose, Guid requestId) =>
+        CheckTicket(ticket, instance, session, purpose, requestId, null, null, consume: true);
+
+    internal bool CheckTicket(Guid? ticket, Guid instance, Guid? session, string purpose, Guid requestId,
+        string? policyVersion, long? noiseRevision, bool consume)
     {
         if (ticket is null || !_tickets.TryGetValue(ticket.Value, out var t) ||
             t.InstanceId != instance || t.SessionId != session || t.Purpose != purpose || t.RequestId != requestId ||
+            t.ClassroomPolicyVersion != policyVersion || t.NoiseRevision != noiseRevision ||
             _time.GetElapsedTime(t.IssuedAt).TotalSeconds >= 60) return false;
-        _tickets.Remove(ticket.Value); return true;
+        if (consume) _tickets.Remove(ticket.Value);
+        return true;
     }
 }

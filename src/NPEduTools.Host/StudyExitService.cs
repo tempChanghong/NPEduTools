@@ -24,26 +24,35 @@ public sealed class StudyExitService : INpepStudyExitEvents,IAsyncDisposable
         _sample=sample;_protection=protection;_photos=photos;_journal=journal;_time=time??TimeProvider.System;_resume=resume;
         _loop=background?Task.Run(async()=>{try{while(!_stop.IsCancellationRequested){Tick();await Task.Delay(TimeSpan.FromMilliseconds(200),_time,_stop.Token);}}catch(OperationCanceledException)when(_stop.IsCancellationRequested){} }):Task.CompletedTask;
     }
-    private (string Scope,StudyHostState State,NoiseProtectionState Protection)? Read()
+    private (string Scope,StudyHostState State,NoiseProtectionState Protection)? Read(NoiseProtectionState? protection=null)
     {
-        var x=_sample();var p=_protection();
+        var x=_sample();var p=protection??_protection();
         if(_scope is null || x.Scope!=_scope || x.State is not {PolicyState:"APPLIED",Phase:"Active",ClockReady:true,Version:not null,Window:not null,SchoolNow:not null,
-            Settings.Noise.Enabled:true,Execution:{Owner:"Schedule",State:"Starting" or "Active",SessionId:not null}} || !p.Protected || p.SessionId!=x.State.Execution.SessionId)return null;
+            Settings.Noise.Enabled:true,Execution:{Owner:"Schedule",State:"Starting" or "Active",SessionId:not null}} ||
+            !p.Protected || p.ClassroomPolicy?.ExitHost=="deny" || p.SessionId!=x.State.Execution.SessionId)return null;
         return(_scope,x.State,p);
     }
-    private static string Key(string scope,StudyHostState s,NoiseProtectionState p)=>$"{scope}|{s.Version}|{s.Window}|{p.InstanceId}|{p.SessionId}";
+    private static string Key(string scope,StudyHostState s,NoiseProtectionState p)=>
+        $"{scope}|{s.Version}|{s.Window}|{p.InstanceId}|{p.SessionId}|{p.CredentialRevision}|{p.ClassroomPolicy?.Version}";
     public void BindExit(string? scope){lock(_sync){if(_scope!=scope){_scope=scope;_state="NotRequired";_key=null;}}}
     public HostResponse Begin(HostRequest request)
     {
         lock(_sync) {
-            Tick();var current=Read();
+            Tick();
+            var protection=_protection();
+            if (protection.ClassroomPolicy?.ExitHost=="deny")
+                return new(1,request.RequestId,"Rejected","CLASSROOM_ACTION_DENIED","学校策略禁止在这块大屏上退出后台。");
+            var current=Read(protection);
             if(current is null)return new(1,request.RequestId,"NotRequired",null,"当前没有有效自习退出验证。",StudyExit:Snapshot());
             if(_id==request.RequestId)return new(1,request.RequestId,"Succeeded",null,"本次退出验证状态。",StudyExit:Snapshot());
             if(_state=="Waiting" || _state=="Failed" && WarningRemaining>0)return new(1,request.RequestId,"Rejected","EXIT_VERIFICATION_BUSY","已有退出验证或提醒，未创建新尝试。",StudyExit:Snapshot());
             _id=request.RequestId;_begin=current.Value.State;_instance=current.Value.Protection.InstanceId;_session=current.Value.Protection.SessionId;
-            _key=Key(current.Value.Scope,_begin,current.Value.Protection);_started=_time.GetTimestamp();_state="Waiting";_reason=null;_audit="NotRequired";_auditError=null;
+            _key=Key(current.Value.Scope,_begin,current.Value.Protection);_started=_time.GetTimestamp();
+            bool verificationRequired = protection.ClassroomPolicy?.ExitHost != "allow";
+            _state=verificationRequired?"Waiting":"NotRequired";_reason=null;_audit="NotRequired";_auditError=null;
             _photos.ExitIntent(request with{Capability="study.photos.exit-intent"});
-            return new(1,request.RequestId,"Succeeded",null,"开始本次自习退出验证；后台监测继续。",StudyExit:Snapshot());
+            return new(1,request.RequestId,"Succeeded",null,verificationRequired?"开始本次自习退出验证；后台监测继续。":
+                "学校策略允许现场退出，本次无需验证；后台监测继续。",StudyExit:Snapshot());
         }
     }
     private double VerificationRemaining=>Math.Max(0,VerificationSeconds-_time.GetElapsedTime(_started).TotalSeconds);
@@ -68,7 +77,7 @@ public sealed class StudyExitService : INpepStudyExitEvents,IAsyncDisposable
     }
     public bool CanAuthorize(NoiseManagementCommand c)
     {
-        lock(_sync){Tick();return c.TargetRequestId!=_id || c.Purpose!="maintenance" || _state=="Waiting";}
+        lock(_sync){Tick();return c.TargetRequestId!=_id || c.Purpose!="maintenance" || _state is "Waiting" or "NotRequired";}
     }
     public bool CanComplete(Guid requestId)
     {lock(_sync){Tick();return requestId!=_id || _state is "Succeeded" or "NotRequired" or "Invalidated";}}

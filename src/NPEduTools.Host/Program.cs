@@ -193,7 +193,7 @@ studySettings.PresentationObservation = studyDisplay.ObservePresentation;
 await using var studyPhotos = new StudyPhotoService(()=>manualStudy.Status().State is "Starting" or "Active"?manualStudy.PhotoSource():studySettings.DisplaySnapshot(), noise, studyDevices, StudyPhotoProcess.CaptureAsync,
     new StudyPhotoJournal(Path.Combine(dataDirectory, "npep", "photos"), NpepPhotoProtection.Protect));
 studySettings.Photos = studyPhotos;
-await using var studyExit=new StudyExitService(studySettings.DisplaySnapshot,noise.Protection,studyPhotos,
+await using var studyExit=new StudyExitService(studySettings.DisplaySnapshot,noise.ClassroomProtection,studyPhotos,
     new StudyExitJournal(Path.Combine(dataDirectory,"npep","exit-events"),NpepPhotoProtection.Protect),resume:studyDisplay.ResumeAfterExitWarning);
 await using var studyRecovery=new StudyRecoveryService(new GuardFiles(Path.Combine(dataDirectory,"guard")),studySettings.DisplaySnapshot,studyPhotos,
     new StudyExitJournal(Path.Combine(dataDirectory,"npep","recovery-events"),NpepPhotoProtection.Protect),resume:studyDisplay.ResumeAfterExitWarning);

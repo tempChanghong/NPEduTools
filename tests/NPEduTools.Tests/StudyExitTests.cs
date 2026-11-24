@@ -29,7 +29,7 @@ public sealed partial class StudyExitTests
             static byte[] Protect(byte[] data,bool encrypt)=>data.Select(b=>(byte)(b^101)).ToArray();
             Photos=new(()=>("scope",true,State),Noise,new(()=>[],Folder),(_,_)=>throw new InvalidOperationException("Camera must not open"),new(Path.Combine(Folder,"photos"),Protect,Time),Time,false);
             Journal=new(Path.Combine(Folder,"exit"),Protect);
-            Guard=new(()=>("scope",true,ExitSample?.Invoke()??State),()=>protectedNoise?Noise.Protection():new(true,true,Host,Session),Photos,Journal,Time,false,_=>Resumed++);Guard.BindExit("scope");
+            Guard=new(()=>("scope",true,ExitSample?.Invoke()??State),()=>protectedNoise?Noise.ClassroomProtection():new(true,true,Host,Session),Photos,Journal,Time,false,_=>Resumed++);Guard.BindExit("scope");
         }
         public HostRequest Begin(Guid id)=>new(1,id,"study.exit.begin");
         public HostRequest Authorize(Guid id,Guid? session=null)=>new(1,Guid.NewGuid(),"noise.management.command",NoiseManagement:new("authorize","bad-password",Purpose:"maintenance",TargetRequestId:id,InstanceId:Host,SessionId:session??Session));

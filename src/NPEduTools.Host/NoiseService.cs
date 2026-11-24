@@ -58,10 +58,13 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     // Called before an accepted user STOP, under the capture lock. The callback only
     // journals the intent; it must never call back into the scheduler or capture.
     internal Func<Guid, bool>? ManualStopping { get; set; }
-    private (Guid Request, Guid? Ticket, long At)? _exitReservation;
+    private (Guid Request, Guid? Ticket, long At, string? PolicyVersion)? _exitReservation;
     private bool _shuttingDown;
-    private bool ScheduledLive => management is not null && _state is "Starting" or "Active" or "Stopping" && _session is { Scheduled: true, Work.IsCompleted: false };
-    private bool ExitPending => _exitReservation is { } r && _time.GetElapsedTime(r.At).TotalSeconds < 60;
+    private bool ScheduledLive => (management is not null || _classroomPolicy is not null) &&
+        _state is "Starting" or "Active" or "Stopping" && _session is { Scheduled: true, Work.IsCompleted: false };
+    private bool ExitPending => _exitReservation is { } r && _time.GetElapsedTime(r.At).TotalSeconds < 60 &&
+        (r.PolicyVersion is null || management?.CheckTicket(r.Ticket, _instance, _session?.Id, "maintenance", r.Request, r.PolicyVersion,
+            _revision, consume: false) == true);
 
     public NoiseProtectionState Protection()
     {
@@ -81,12 +84,20 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                 : "本机管理口令不正确。",
             "MANAGEMENT_RATE_LIMITED" => "尝试过于频繁，请一分钟后重试。",
             "MANAGEMENT_STORE_UNAVAILABLE" => "管理口令文件不可用，原文件已保留；请联系管理员。",
+            "MANAGEMENT_REQUIRED" when _classroomPolicy is not null => "请按本班大屏当前的安全策略重新确认本次操作。",
             "MANAGEMENT_REQUIRED" => "学校定时监测受到保护；停止或退出需管理验证，关闭窗口不会停止采集。",
+            "CLASSROOM_ACTION_DENIED" => "学校策略禁止在这块大屏上执行此操作。",
+            "CLASSROOM_POLICY_CHANGED" => "学校操作策略已变化，请重新读取本班大屏的权限后再确认。",
+            "CLASSROOM_USB_REQUIRED" => "请插入本班获准使用的管理 U 盘。执行本次操作时仍需在场。",
+            "SCHOOL_MANAGEMENT_REQUIRED" => "此策略需要当前班级的管理口令，请等待学校同步。",
+            "CLASSROOM_STOP_REQUIRED" => "变更运行环境会中断当前学校监测，请先在自习监测中办理停止本场。",
             "SCHEDULE_STORE_UNAVAILABLE" => "未能保存本时段跳过记录，未受理正常停止；请检查存储状态。",
             "NoiseStateChanged" => "当前监测会话已变化，请重新核实后验证。",
             null => "管理验证已完成。",
             _ => "管理验证未通过。"
-        }, Noise: Snapshot(), NoiseProtection: Protection() with { Ticket = ticket });
+        }, Noise: Snapshot(), NoiseProtection: Protection() with { Ticket = ticket,
+            ClassroomPolicy = r.Capability == "noise.management.status.classroom-policy" || r.NoiseManagement?.ClassroomPolicyVersion is not null
+                ? _classroomPolicy : null });
 
     public HostResponse ManagementHandle(HostRequest r)
     {
@@ -97,22 +108,37 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                 ? "EQUIPMENT_LOCKED" : replace(change);
             lock (_sync) return ManagementReply(r, error);
         }
+        var usb = ReadActionUsb(r);
         lock (_sync)
         {
             if (Protocol.Validate(r) is { } invalid) return ManagementReply(r, invalid);
             if (r.Capability == "noise.management.status") return ManagementReply(r, management?.Error);
+            if (r.Capability == "noise.management.status.classroom-policy")
+                return ManagementReply(r, _classroomPolicy is null ? management?.Error : null);
             if (r.Capability == "noise.management.prepare-exit")
             {
-                if (ExitPending && _exitReservation!.Value.Request == r.RequestId && _exitReservation.Value.Ticket == r.NoiseAuthorization)
-                    return ManagementReply(r);
-                if (AuthorizeInterruption(r) is { } denied) return denied;
-                _exitReservation = (r.RequestId, r.NoiseAuthorization, _time.GetTimestamp());
+                if (ExitPending)
+                {
+                    if (_exitReservation!.Value.Request != r.RequestId || _exitReservation.Value.Ticket != r.NoiseAuthorization)
+                        return ManagementReply(r, "MANAGEMENT_REQUIRED");
+                    string? error = ClassroomRule("maintenance") is { } rule and not "default"
+                        ? CheckClassroomTicket(r, "maintenance", rule, usb) : null;
+                    return ManagementReply(r, error);
+                }
+                if (AuthorizeInterruption(r, usb) is { } denied) return denied;
+                _exitReservation = (r.RequestId, r.NoiseAuthorization, _time.GetTimestamp(),
+                    ClassroomRule("maintenance") is { } and not "default" ? _classroomPolicy!.Version : null);
                 return ManagementReply(r);
             }
             if (management is null) return ManagementReply(r, "MANAGEMENT_UNSUPPORTED");
             var c = r.NoiseManagement!;
             if (c.Action == "verify") return ManagementReply(r, management.VerifyCalibration(c.Secret));
             if (c.Action == "configure") return ManagementReply(r, management.Configure(c.Secret, c.NewSecret!, ScheduledLive));
+            if (ClassroomRule(c.Purpose!) is { } actionRule and not "default")
+                return IssueClassroomTicket(r, c, actionRule, usb);
+            if (c.ClassroomPolicyVersion is not null) return ManagementReply(r, "CLASSROOM_POLICY_CHANGED");
+            if (c.Purpose == "change-environment" && ClassroomRule("stop") is { } and not "default")
+                return ManagementReply(r, "CLASSROOM_STOP_REQUIRED");
             if (!ScheduledLive || _session is null) return ManagementReply(r, "NoiseStateChanged");
             var grant = management.Issue(c, _instance, _session.Id);
             return ManagementReply(r, grant.Error, grant.Ticket);
@@ -120,20 +146,36 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     }
 
     /// <summary>Checked under the same lock as scheduled start. UI claims cannot bypass this boundary.</summary>
-    public HostResponse? AuthorizeInterruption(HostRequest r)
+    public HostResponse? AuthorizeInterruption(HostRequest r) => AuthorizeInterruption(r, ReadActionUsb(r));
+
+    private HostResponse? AuthorizeInterruption(HostRequest r, UsbObservation? usb)
     {
         lock (_sync)
         {
             if (!Protocol.NoiseInterruption(r)) return null;
+            string purpose = Protocol.NoisePurpose(r);
+            string? rule = ClassroomRule(purpose);
+            bool managed = rule is not null and not "default";
             if (r.Capability == "host.stop" && ExitPending)
             {
                 if (_exitReservation!.Value.Request != r.RequestId || _exitReservation.Value.Ticket != r.NoiseAuthorization)
                     return ManagementReply(r, "MANAGEMENT_REQUIRED");
-                _shuttingDown = true; return null;
+                if (!managed) { _shuttingDown = true; return null; }
             }
+            if (managed)
+            {
+                if (CheckClassroomTicket(r, purpose, rule!, usb) is { } policyError) return ManagementReply(r, policyError);
+                // Let the current session continue through recording/photo preparation.
+                // At the actual shutdown, recheck the grant and USB before journaling a stop.
+                if (r.Capability == "noise.management.prepare-exit") return null;
+            }
+            else if (!ScheduledLive && r.NoiseAuthorization is not null)
+                return ManagementReply(r, "MANAGEMENT_REQUIRED");
             if (ScheduledLive && _session is { } s)
             {
-                if (management!.Consume(r.NoiseAuthorization, _instance, s.Id, Protocol.NoisePurpose(r), r.RequestId) != true)
+                if (purpose == "change-environment" && ClassroomRule("stop") is { } and not "default")
+                    return ManagementReply(r, "CLASSROOM_STOP_REQUIRED");
+                if (!managed && management?.Consume(r.NoiseAuthorization, _instance, s.Id, purpose, r.RequestId) != true)
                     return ManagementReply(r, "MANAGEMENT_REQUIRED");
                 if (ManualStopping?.Invoke(s.Id) == false) return ManagementReply(r, "SCHEDULE_STORE_UNAVAILABLE");
                 _revision++; _state = "Stopping"; _message = "管理授权已确认，正在停止本时段监测…"; s.Stop.Cancel();
@@ -279,8 +321,9 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         public Queue<NoiseEstimatedPoint> EstimateTrend { get; } = new();
     }
 
-    public HostResponse Handle(HostRequest request) => Handle(request, null, 10800, false);
-    private HostResponse Handle(HostRequest request, Guid? sessionId, double limit, bool trustedStop, NoiseQuickCalibration? calibration = null)
+    public HostResponse Handle(HostRequest request) => Handle(request, null, 10800, false, usb: ReadActionUsb(request));
+    private HostResponse Handle(HostRequest request, Guid? sessionId, double limit, bool trustedStop, NoiseQuickCalibration? calibration = null,
+        UsbObservation? usb = null)
     {
         if (request.Capability == "noise.devices")
         {
@@ -312,8 +355,15 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
                     return Reply(request, "Rejected", "CalibrationOwned", "校准采样请从对应的校准窗口取消。");
                 if (_state is "Starting" or "Active" or "Stopping" && _session is { } current && !current.Work.IsCompleted)
                 {
-                    if (ScheduledLive && !trustedStop && management!.Consume(request.NoiseAuthorization, _instance, current.Id, "stop", request.RequestId) != true)
-                        return ManagementReply(request, "MANAGEMENT_REQUIRED");
+                    if (ScheduledLive && !trustedStop)
+                    {
+                        if (ClassroomRule("stop") is { } stopRule and not "default")
+                        {
+                            if (CheckClassroomTicket(request, "stop", stopRule, usb) is { } error) return ManagementReply(request, error);
+                        }
+                        else if (management?.Consume(request.NoiseAuthorization, _instance, current.Id, "stop", request.RequestId) != true)
+                            return ManagementReply(request, "MANAGEMENT_REQUIRED");
+                    }
                     if (ManualStopping?.Invoke(current.Id) == false) return ManagementReply(request, "SCHEDULE_STORE_UNAVAILABLE");
                     _revision++; _state = "Stopping"; _message = "正在停止并释放麦克风…";
                     current.Stop.Cancel();
