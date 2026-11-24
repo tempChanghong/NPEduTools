@@ -32,6 +32,7 @@ internal static partial class Program
                 Checks.Add("Exit warning: corrected ten languages, plain white glyphs, deep red, larger left area, 1080p fit, guarded close and acknowledged expiry; no sensors/audio");
             }finally{warning.Shutdown();owner.Close();}
             RunExitDialogCheck(false);RunExitDialogCheck(true);RunColdTrayExitCheck();RunNoiseManagementChecks();
+            RunScheduledStopSafetyChecks();
         }finally{SynchronizationContext.SetSynchronizationContext(prior);}
     }
     private static void RunExitDialogCheck(bool correct)

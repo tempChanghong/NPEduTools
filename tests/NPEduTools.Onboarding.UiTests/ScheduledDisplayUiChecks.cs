@@ -21,6 +21,9 @@ internal static partial class Program
             RunScheduledReturnCheck(false, false, "Succeeded");
             RunScheduledReturnCheck(false, false, "Rejected");
             RunScheduledReturnCheck(false, false, "Disconnected");
+            RunScheduledReturnCheck(false, false, "Succeeded", manage: true);
+            RunScheduledReturnCheck(false, true, "Succeeded", manage: true);
+            RunScheduledReturnCheck(false, false, "Disconnected", manage: true);
             var failures = new List<Exception>();
             foreach (string invalid in new[] { "RequestId", "Version", "ZeroLength", "EmptyMessage" })
             foreach (var identity in new[] { (false, false), (false, true), (true, false) })
@@ -32,7 +35,7 @@ internal static partial class Program
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
-    private static void RunScheduledReturnCheck(bool newInstance, bool newSession, string outcome)
+    private static void RunScheduledReturnCheck(bool newInstance, bool newSession, string outcome, bool manage = false)
     {
         string pipe = "NPEduTools.Test.scheduled-display." + Guid.NewGuid().ToString("N");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -45,7 +48,8 @@ internal static partial class Program
         var display = new NoiseDisplayState("FALLBACK", "隔离旧会话", true, instance, session,
             new(DateTimeOffset.Now.AddMinutes(-1), DateTimeOffset.Now.AddMinutes(20)), ReturnMinutes: 10);
         // Never invoke MainWindow.Start, any actual Host, microphone or school endpoint.
-        var window = new ScheduledNoiseWindow(pipe, () => { }) { Width = 1100, Height = 780, Left = 80, Top = 60, Topmost = false };
+        int manageCalls = 0;
+        var window = new ScheduledNoiseWindow(pipe, () => manageCalls++) { Width = 1100, Height = 780, Left = 80, Top = 60, Topmost = false };
         var method = typeof(ScheduledNoiseWindow).GetMethod("ReturnAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
         try
         {
@@ -60,12 +64,14 @@ internal static partial class Program
                         return await Protocol.ReadAsync<HostRequest>(server, timeout.Token);
                     }
                     var read = Read();
-                    var operation = (Task)method.Invoke(window, null)!;
+                    Task? operation = null;
+                    if (manage) Click(window, "ManageButton");
+                    else operation = (Task)method.Invoke(window, null)!;
                     PumpUntil(() => read.IsCompleted, "return request did not reach the fake Host");
                     var request = read.GetAwaiter().GetResult();
                     Assert(request.Capability == "noise.display.return" && request.NoiseDisplay == new NoiseDisplayCommand("return", instance, session) &&
                         Protocol.Validate(request) is null, "return carried unexpected identity or capture command");
-                    Assert(!Button(owner, "ReturnButton").IsEnabled, "return button remains enabled during the request");
+                    Assert(!Button(owner, "ReturnButton").IsEnabled && !Button(owner, "ManageButton").IsEnabled, "display actions remain enabled during the request");
                     var duplicate = (Task)method.Invoke(window, null)!;
                     Assert(duplicate.IsCompletedSuccessfully, "repeated return was not locally ignored while waiting");
                     var currentNoise = noise with { InstanceId = newInstance ? Guid.NewGuid() : instance, SessionId = newSession ? Guid.NewGuid() : session, CurrentDbfs = -42 };
@@ -83,8 +89,11 @@ internal static partial class Program
                                 "隔离返回回执"), timeout.Token);
                         PumpUntil(() => response.IsCompleted, "return response write did not finish"); response.GetAwaiter().GetResult();
                     }
-                    PumpUntil(() => operation.IsCompleted, "return operation did not settle"); operation.GetAwaiter().GetResult();
+                    PumpUntil(() => operation?.IsCompleted ?? Button(owner, "ManageButton").IsEnabled, "return operation did not settle");
+                    operation?.GetAwaiter().GetResult();
                     bool changed = newInstance || newSession;
+                    Assert(manageCalls == (manage && !changed && outcome == "Succeeded" ? 1 : 0),
+                        "management page opened without a display return receipt for the same session");
                     if (changed)
                     {
                         Snapshot(owner, $"scheduled-stale-{(newInstance ? "host" : "session")}-{outcome}.png");
@@ -118,7 +127,7 @@ internal static partial class Program
                         freshReply.GetAwaiter().GetResult(); newOperation.GetAwaiter().GetResult();
                         Assert(!window.IsVisible, "fresh return success did not hide its own monitoring page");
                     }
-                    Checks.Add($"Return {outcome}: {(newInstance ? "new Host" : newSession ? "new session" : "same session")}; correct visibility, feedback and retry identity; no capture command");
+                    Checks.Add($"{(manage ? "Manage after display return" : "Return")} {outcome}: {(newInstance ? "new Host" : newSession ? "new session" : "same session")}; correct visibility, feedback and retry identity; no capture command");
                 }
                 finally { window.Shutdown(); }
             });

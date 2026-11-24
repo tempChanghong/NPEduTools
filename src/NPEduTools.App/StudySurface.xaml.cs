@@ -350,7 +350,7 @@ public partial class StudySurface : UserControl
         _holdAt = null;
         _holdTimer.Stop();
         HoldText.Text = "临时使用电脑";
-        EndText.Text = "结束自习";
+        EndText.Text = "结束手动自习";
         TemporaryHoldProgress.Visibility = EndHoldProgress.Visibility = Visibility.Collapsed;
     }
     public void ReturnError(string? message) { _returnError = message; if (!_paused) Render(); }

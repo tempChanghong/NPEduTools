@@ -33,29 +33,31 @@ public partial class ScheduledNoiseWindow : Window
         if (noise.Estimate is { } estimate) QualityText.Text += "\n" + NoiseSignalPresentation.Estimated(estimate.CurrentDbA) + " · " + NoiseSignalPresentation.EstimateReason(estimate);
         MessageText.Text = display.Message;
         ReturnButton.Content = $"返回作业板（{display.ReturnMinutes} 分钟）";
-        ReturnButton.IsEnabled = !_returning;
+        ManageButton.IsEnabled = ReturnButton.IsEnabled = !_returning;
         DrawTrend();
     }
-    private async Task ReturnAsync()
+    private async Task<bool> ReturnAsync()
     {
-        if (_closing || _returning || _display is not { InstanceId: { } instance, SessionId: { } session }) return;
+        if (_closing || _returning || _display is not { InstanceId: { } instance, SessionId: { } session }) return false;
         bool StillCurrent() => !_closing && _display?.InstanceId == instance && _display.SessionId == session;
-        _returning = true; ReturnButton.IsEnabled = false;
+        _returning = true; ManageButton.IsEnabled = ReturnButton.IsEnabled = false;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var response = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.display.return",
                 NoiseDisplay: new("return", instance, session)), timeout.Token);
-            if (!StillCurrent()) return;
-            if (response.Outcome == "Succeeded") Hide();
+            if (!StillCurrent()) return false;
+            if (response.Outcome == "Succeeded") { Hide(); return true; }
             else MessageText.Text = response.Message;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or TimeoutException or OperationCanceledException or JsonException or UnauthorizedAccessException)
         { if (StillCurrent()) MessageText.Text = "后台暂未确认返回期限，请等待连接恢复。没有停止监测。"; }
-        finally { _returning = false; if (!_closing) ReturnButton.IsEnabled = true; }
+        finally { _returning = false; if (!_closing) ManageButton.IsEnabled = ReturnButton.IsEnabled = true; }
+        return false;
     }
     private async void ReturnClicked(object sender, RoutedEventArgs e) => await ReturnAsync();
-    private void ManageClicked(object sender, RoutedEventArgs e) { Hide(); _manage(); }
+    private async void ManageClicked(object sender, RoutedEventArgs e)
+    { if (await ReturnAsync()) _manage(); }
     private void TrendSizeChanged(object sender, SizeChangedEventArgs e) => DrawTrend();
     private void DrawTrend()
     {

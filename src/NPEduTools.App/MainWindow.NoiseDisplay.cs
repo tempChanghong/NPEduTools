@@ -234,7 +234,7 @@ public partial class MainWindow
                     if (probe is null) _scheduledNoiseWindow?.Hide();
                     else
                     {
-                        _scheduledNoiseWindow ??= new(_pipe, () => OpenNoiseClicked(this, new RoutedEventArgs()));
+                        _scheduledNoiseWindow ??= new(_pipe, () => OpenStudyMonitoringClicked(this, new RoutedEventArgs()));
                         _scheduledNoiseWindow.Apply(display, noise);
                         if (!_scheduledNoiseWindow.IsVisible) _scheduledNoiseWindow.Show();
                     }

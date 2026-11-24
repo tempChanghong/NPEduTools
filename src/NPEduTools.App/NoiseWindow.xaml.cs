@@ -134,7 +134,7 @@ public partial class NoiseWindow : Window
             StartButton.Content = pending.StartUtc.HasValue ? "正在保存预约…" : "正在启动…";
         StartButton.IsEnabled = _connected && !_busy && canArrange && !captureBusy && !needsDevice;
         StopButton.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
-        StopButton.Content = reservation ? "取消预约" : "结束自习";
+        StopButton.Content = reservation ? "取消预约" : "结束手动自习";
         if (_pendingManualCommand?.Action == "end" || phase == "Stopping")
             StopButton.Content = reservation ? "正在取消预约…" : "正在结束…";
         StopButton.IsEnabled = _connected && !_busy && live && phase != "Stopping" && _manual?.SessionId is not null;

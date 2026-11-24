@@ -61,7 +61,7 @@ public partial class MainWindow : Window
             if (_exiting || !initializeServices) return;
             e.Cancel = true;
             if (_quick is not null || _tray is not null) HideToEdge();
-            else StopClicked(this, new RoutedEventArgs());
+            else HomeMessage.Text = "托盘和侧边入口不可用，已保留主窗口。若需结束后台，请使用「退出后台」。";
         };
         Closed += (_, _) => { _lifetime.Cancel(); CloseWorkspaceCalibration(); _noiseWindow?.Shutdown(); _studyMonitoringWindow?.Shutdown(); _scheduledNoiseWindow?.Shutdown(); _scheduledNoiseWindow = null; _studyWindow?.Shutdown();_manualStudyWindow?.Shutdown(); _studyWindow = null; _studyReportWindow?.Shutdown(); _studyReportWindow = null; _schoolNotification?.Shutdown(); _notificationPreview?.Shutdown(); _onboardingWindow?.Shutdown(); _quick?.Shutdown(); _tray?.Dispose(); _trayIcon?.Dispose(); _recordingWindow?.Shutdown(); _autoRecordingWindow?.Shutdown(); _examAwareWindow?.Shutdown(); _secRandomWindow?.Shutdown(); _recording?.Detach(); };
         _model.PropertyChanged += (_, _) =>
@@ -144,7 +144,7 @@ public partial class MainWindow : Window
             _trayPause.Click += (_, _) => Dispatcher.Invoke(() => TouchPauseClicked(this, new RoutedEventArgs()));
             menu.Items.Add(_trayPause);
             menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("停止后台并退出", null, (_, _) => Dispatcher.Invoke(() => StopClicked(this, new RoutedEventArgs())));
+            menu.Items.Add("退出后台…", null, (_, _) => Dispatcher.Invoke(() => StopClicked(this, new RoutedEventArgs())));
             using var resource = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/npedutools.ico")).Stream;
             using var source = new System.Drawing.Icon(resource, Forms.SystemInformation.SmallIconSize);
             _trayIcon = (System.Drawing.Icon)source.Clone();
@@ -460,20 +460,49 @@ public partial class MainWindow : Window
         if (_exitBusy || _adminBusy || _actionInProgress) return;
         _exitBusy = true;
         ExitButton.IsEnabled = false;
-        HomeMessage.Text = "正在停止辅助与后台…";
         RefreshTouchControls();
         // _exitBusy prevents a new Host launch while shutdown is being negotiated.
-        bool shutdownDispatched = false;
+        bool shutdownDispatched = false, exitPrepared = false;
+        const string partialExit = "退出尚未完成。本场监测或录课设置可能已变化，请核对当前状态。";
         try
         {
-            // Prepare the verification owner before exit.begin starts its timed
-            // audit/photo intent. Quiet login must remain hidden throughout.
-            NoiseManagementDialog.PrepareOwner(this);
+            if (!StudyActionConfirmation.Ask(this, "退出后台",
+                "退出会停止本机后台。正在进行的手动自习会结束。若正在执行定时监测，须先验证，退出会结束本场监测，排程仍保留。自动录课会关闭，当前录制将尝试保存。")) return;
+            HomeMessage.Text = "正在核对能否退出后台…";
             var shutdownRequest = new HostRequest(Protocol.Version, Guid.NewGuid(), "host.stop");
             if (Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var modeHost))
             {
                 modeHost.Dispose();
-                // The click precedes management verification. Hiding the study display never sends this capability.
+                var classroom = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classroom.status"));
+                if (classroom is not { Outcome: "Succeeded", ClassroomMode: not null } &&
+                    classroom.ErrorCode is not ("UnknownCapability" or "ClassroomUnavailable"))
+                {
+                    HomeMessage.Text = "课堂模式状态未确认，未发起退出验证。请刷新后再试。";
+                    RestoreWindow();
+                    return;
+                }
+                if (classroom.ClassroomMode?.Busy == true)
+                {
+                    HomeMessage.Text = "课堂模式正在切换，请等待完成或处理提示后再退出。";
+                    ShowClassroomMode();
+                    return;
+                }
+                var recording = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "recording.status"));
+                if (recording is not { Outcome: "Succeeded", Recording: not null, Automatic: not null })
+                {
+                    HomeMessage.Text = "当前录制状态未确认，未发起退出验证。请等待后台重新连接。";
+                    RestoreWindow();
+                    return;
+                }
+                var protection = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "noise.management.status"));
+                if (protection is not { Outcome: "Succeeded", NoiseProtection: { } protectionState } ||
+                    protectionState is { Protected: true, Configured: false })
+                {
+                    HomeMessage.Text = "定时监测的管理验证暂不可用，未发起退出验证。请核对当前监测和口令状态。";
+                    RestoreWindow();
+                    return;
+                }
+                // Start a timed exit attempt only after confirmation and read-only checks.
                 StudyExitState? exitState=null;
                 try {
                     var begun=await ManagementRequestAsync(shutdownRequest with{Capability="study.exit.begin"});
@@ -482,13 +511,6 @@ public partial class MainWindow : Window
                     else if(begun.Outcome=="Rejected"){HomeMessage.Text=begun.Message;return;}
                     else if(begun.StudyExit is {State:"Waiting"} waiting && waiting.AttemptId==shutdownRequest.RequestId)exitState=waiting;
                 }catch(Exception e2)when(IsManagementError(e2)){HomeMessage.Text="无法确认本次退出验证，后台继续运行。";return;}
-                var classroom = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classroom.status"));
-                if (classroom.ClassroomMode?.Busy == true)
-                {
-                    HomeMessage.Text = "课堂模式正在切换，请等待完成或处理提示后再退出。";
-                    ShowClassroomMode();
-                    return;
-                }
                 var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, shutdownRequest,exitState,ReadStudyExitAsync,ShowStudyExitWarning);
                 if (authorized is null) { HomeMessage.Text = "未验证，后台与录课设置保持原状态。"; return; }
                 shutdownRequest = authorized;
@@ -499,29 +521,36 @@ public partial class MainWindow : Window
                 }
                 catch (Exception e2) when (IsManagementError(e2)) { }
                 // Fence scheduled starts and journal authorized intent before touching automatic recording.
+                if (!_recording.StateAvailable || !_recording.AutomaticAvailable)
+                {
+                    HomeMessage.Text = "当前录制状态未确认，未发送停止后台请求。请等待状态恢复。";
+                    ShowRecording();
+                    return;
+                }
+                exitPrepared = true;
                 var prepared = await NoiseManagementDialog.Request(_pipe, shutdownRequest with { Capability = "noise.management.prepare-exit" });
-                if (prepared.Outcome != "Succeeded") { HomeMessage.Text = prepared.Message; return; }
+                if (prepared.Outcome != "Succeeded") { HomeMessage.Text = prepared.Message; RestoreWindow(); return; }
             }
             // Do not skip saving based on a cached idle snapshot while the Host
             // still exists. Closing the window alone remains independent of this command.
             if ((!_recording.StateAvailable || !_recording.AutomaticAvailable) && Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var recordingHost))
             {
                 recordingHost.Dispose();
-                HomeMessage.Text = "当前录制状态未确认，请等待后台重新连接后再停止并退出。";
+                HomeMessage.Text = exitPrepared ? partialExit : "当前录制状态未确认，请等待后台重新连接后再退出。";
                 ShowRecording(); return;
             }
             if (_recording.Automatic.Enabled) await _recording.SetAutomaticAsync("disable");
             if ((!_recording.StateAvailable || !_recording.AutomaticAvailable) && Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var receiptHost))
             {
                 receiptHost.Dispose();
-                HomeMessage.Text = "自动录课开关已处理，但当前录制状态未确认，请核对后再退出。";
+                HomeMessage.Text = partialExit;
                 ShowRecording(); return;
             }
             if (_recording.State.Active)
             {
                 HomeMessage.Text = "正在保存微课，完成后退出…";
                 if (!await _recording.StopAndSaveAsync())
-                { HomeMessage.Text = "微课未能完成保存，请先查看录制状态和保留片段。"; ShowRecording(); return; }
+                { HomeMessage.Text = partialExit + " 微课未能确认保存，请检查录制状态和保留片段。"; ShowRecording(); return; }
             }
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
             if (!Mutex.TryOpenExisting($@"Local\{_pipe}.Host", out var existing)) { await _recording.DisposeAsync(); _exiting = true; Close(); return; }
@@ -531,7 +560,7 @@ public partial class MainWindow : Window
             if (response.Outcome != "Succeeded")
             {
                 shutdownDispatched = false;
-                HomeMessage.Text = response.Message;
+                HomeMessage.Text = exitPrepared ? partialExit + " " + response.Message : response.Message;
                 if (response.ErrorCode == "ClassroomBusy") ShowClassroomMode();
                 return;
             }
@@ -553,8 +582,8 @@ public partial class MainWindow : Window
         {
             if (shutdownDispatched) _lifetime.Cancel(); // An uncertain accepted stop must not silently launch a replacement Host.
             ShowClassroomModeState(null);
-            _model.Disconnected("未能确认后台已停止。可重试停止，或关闭窗口后重新打开。 ");
-            HomeMessage.Text = "未能确认后台已停止，请重试“停止后台并退出”。";
+            _model.Disconnected("未能确认后台已停止。请先核对当前状态。");
+            HomeMessage.Text = exitPrepared || shutdownDispatched ? partialExit : "未能核对后台状态，未发送停止命令。";
             RestoreWindow();
         }
         finally { _exitBusy = false; ExitButton.IsEnabled = true; }

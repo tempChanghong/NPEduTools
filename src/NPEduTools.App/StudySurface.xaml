@@ -139,10 +139,10 @@
      </Grid>
     </Border>
      <Button x:Name="EndButton" Canvas.Left="40" Canvas.Bottom="33" Width="204" Height="77" Style="{StaticResource StudyAction}" BorderBrush="#77565A" Visibility="Collapsed"
-      AutomationProperties.Name="结束自习" AutomationProperties.HelpText="长按 2 秒"
+      AutomationProperties.Name="结束手动自习" AutomationProperties.HelpText="长按 2 秒，只结束本次手动自习"
      PreviewMouseLeftButtonDown="EndMouseDown" PreviewMouseLeftButtonUp="EndMouseUp" LostMouseCapture="HoldLost" LostKeyboardFocus="HoldLost"
      PreviewTouchDown="EndTouchDown" PreviewTouchUp="EndTouchUp" LostTouchCapture="HoldLost" PreviewKeyDown="EndKeyDown" PreviewKeyUp="HoldKeyUp">
-      <StackPanel><TextBlock x:Name="EndText" Text="结束自习" FontSize="23" HorizontalAlignment="Center"/><TextBlock Text="长按 2 秒 · 提前结束" FontSize="15" HorizontalAlignment="Center"/></StackPanel>
+      <StackPanel><TextBlock x:Name="EndText" Text="结束手动自习" FontSize="23" HorizontalAlignment="Center"/><TextBlock Text="长按 2 秒 · 提前结束" FontSize="15" HorizontalAlignment="Center"/></StackPanel>
     </Button>
      <Button x:Name="HoldButton" Canvas.Left="40" Canvas.Bottom="33" Width="204" Height="77" Style="{StaticResource StudyAction}" IsEnabled="False"
       AutomationProperties.Name="临时使用电脑" AutomationProperties.HelpText="长按 2 秒"
