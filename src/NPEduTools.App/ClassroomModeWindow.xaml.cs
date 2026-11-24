@@ -120,8 +120,8 @@ public partial class ClassroomModeWindow : Window
             _sending = false;
             if (_closing) return;
             if (response.ClassroomMode is { } state) Render(state);
-            else if (_state is not null && response.ErrorCode is "MANAGEMENT_CANCELLED" or "CLASSROOM_ACTION_DENIED" or
-                "CLASSROOM_STOP_REQUIRED" or "CLASSROOM_USB_REQUIRED" or "CLASSROOM_POLICY_CHANGED") Render(_state);
+            else if (_state is not null && (response.ErrorCode == "MANAGEMENT_CANCELLED" || response.NoiseProtection is not null))
+                Render(_state);
             else Disconnected(response.Message);
             if (response.Outcome != "Accepted") StatusText.Text = response.ErrorCode switch
             {
@@ -156,6 +156,7 @@ public partial class ClassroomModeWindow : Window
     private void ShowOperationFeedback(string message)
     {
         SetOperationFeedback("最近一次请求未完成：" + message);
+        OperationFeedbackText.BringIntoView();
     }
     private void SetOperationFeedback(string message)
     {
