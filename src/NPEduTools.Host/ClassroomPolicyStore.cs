@@ -18,7 +18,7 @@ internal sealed record ClassroomPolicy(long Revision, string PolicyId, string So
 
     internal static ClassroomPolicy Parse(JsonNode? node)
     {
-        if (node is not JsonObject p || p.Count != 6 || p["schemaVersion"]?.GetValue<int>() is not (1 or 2) ||
+        if (node is not JsonObject p || p.Count != 6 || p["schemaVersion"]?.GetValue<int>() is not (1 or 2 or 3) ||
             p["revision"]?.GetValue<long>() is not { } rev || rev < 0 || rev > NpepProtocol.MaxInteger ||
             p["policyId"]?.GetValue<string>() is not { } id || !IsDigest(id) || !p.ContainsKey("actions") ||
             p["source"]?.GetValue<string>() is not ("LEGACY" or "GRADE" or "CLASS") ||
@@ -28,11 +28,16 @@ internal sealed record ClassroomPolicy(long Revision, string PolicyId, string So
         int schema = p["schemaVersion"]!.GetValue<int>();
         if (source == "LEGACY")
         {
-            if (p["actions"] is not null || keys.Count != 0) throw new InvalidDataException("Invalid default policy.");
+            bool defaults = schema < 3 ? p["actions"] is null :
+                p["actions"] is JsonObject a && a.Count == 3 &&
+                a.ContainsKey("stopScheduledMonitoring") && a.ContainsKey("exitBackground") &&
+                a.ContainsKey("switchClassroomMode") && a.All(pair => pair.Value is null);
+            if (!defaults || keys.Count != 0) throw new InvalidDataException("Invalid default policy.");
             return new(rev, id, source, "default", "default", [], schema, null);
         }
-        if (p["actions"] is not JsonObject actions ||
-            actions.Count != (schema == 2 && actions.ContainsKey("switchClassroomMode") ? 3 : 2))
+        if (p["actions"] is not JsonObject actions || !actions.ContainsKey("stopScheduledMonitoring") ||
+            !actions.ContainsKey("exitBackground") || schema == 3 && !actions.ContainsKey("switchClassroomMode") ||
+            actions.Count != (schema >= 2 && actions.ContainsKey("switchClassroomMode") ? 3 : 2))
             throw new InvalidDataException("Invalid classroom actions.");
         var parsed = new List<ClassroomUsbKey>(keys.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -46,7 +51,8 @@ internal sealed record ClassroomPolicy(long Revision, string PolicyId, string So
                 throw new InvalidDataException("Invalid classroom key.");
             parsed.Add(new(keyId, media, secret));
         }
-        return new(rev, id, source, ReadRule(actions["stopScheduledMonitoring"]), ReadRule(actions["exitBackground"]),
+        string EffectiveRule(string action) => schema == 3 && actions[action] is null ? "default" : ReadRule(actions[action]);
+        return new(rev, id, source, EffectiveRule("stopScheduledMonitoring"), EffectiveRule("exitBackground"),
             parsed.OrderBy(k => k.KeyId, StringComparer.Ordinal).ToArray(), schema,
             actions["switchClassroomMode"] is { } switchMode ? ReadRule(switchMode) : null);
     }
@@ -70,10 +76,14 @@ internal sealed record ClassroomPolicy(long Revision, string PolicyId, string So
     internal bool CanFollow(ClassroomPolicy prior)
     {
         if (Revision < prior.Revision || SchemaVersion == 1 && prior.SwitchMode is not null) return false;
-        bool sameBase = SameBaseRules(prior);
-        if (PolicyId == prior.PolicyId) return sameBase && SwitchMode == prior.SwitchMode;
-        // Upgrading a device can reveal the third rule at the very same school revision.
-        return Revision > prior.Revision || prior.SchemaVersion == 1 && SchemaVersion == 2 && SwitchMode is not null && sameBase;
+        if (PolicyId == prior.PolicyId) return SameBaseRules(prior) && SwitchMode == prior.SwitchMode;
+        if (Revision > prior.Revision) return true;
+        if (SchemaVersion <= prior.SchemaVersion || Source != prior.Source || !Keys.SequenceEqual(prior.Keys)) return false;
+        // Match exactly the old wire projection of this revision before replacing it.
+        string Project(string rule) => rule == "default" && SchemaVersion == 3 && Source != "LEGACY" ? "deny" : rule;
+        return Project(Stop) == prior.Stop && Project(Exit) == prior.Exit &&
+            (prior.SchemaVersion == 1 || SwitchMode == prior.SwitchMode) &&
+            (Stop != prior.Stop || Exit != prior.Exit || SwitchMode != prior.SwitchMode);
     }
 }
 
@@ -144,9 +154,10 @@ internal sealed class ClassroomPolicyStore
         {
             var raw = envelope["actionPolicy"] as JsonObject;
             var incoming = ClassroomPolicy.Parse(raw);
-            // The v1 server cannot receive a v2 receipt or revoke the mode rule.
-            // Continue reporting the other device settings to it.
-            if (incoming.SchemaVersion == 1 && _current?.SwitchMode is not null)
+            // An older server cannot replace a rule it cannot express or read its receipt.
+            if (incoming.SchemaVersion == 1 && _current?.SwitchMode is not null ||
+                incoming.SchemaVersion < 3 && _current is { Source: not "LEGACY", SchemaVersion: 3 } priorV3 &&
+                (priorV3.Stop == "default" || priorV3.Exit == "default"))
             {
                 _advertised = false;
                 return;

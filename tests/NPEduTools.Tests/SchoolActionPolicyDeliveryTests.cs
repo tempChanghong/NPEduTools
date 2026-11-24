@@ -91,6 +91,30 @@ public sealed class SchoolActionPolicyDeliveryTests
     }
 
     [Fact]
+    public async Task Same_revision_upgrade_restores_only_rows_projected_as_denied()
+    {
+        await using var screen = new Screen();
+        var old = Policy(7, FirstId, "CLASS", Rule("DENY"), Rule("DENY"));
+        old["schemaVersion"] = 2;
+        old["actions"]!["switchClassroomMode"] = Rule("VERIFY", "USB");
+        screen.School.ApplySchool(screen.Envelope(old));
+
+        var full = old.DeepClone().AsObject();
+        full["schemaVersion"] = 3;
+        full["policyId"] = SecondId;
+        full["actions"]!["exitBackground"] = null;
+        screen.School.ApplySchool(screen.Envelope(full));
+        Assert.Equal(3, screen.Receipt()["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(SecondId, screen.Receipt()["policyId"]!.GetValue<string>());
+
+        await screen.ReloadOffline();
+        var reply = screen.Noise.ManagementHandle(new(1, Guid.NewGuid(), "noise.management.status.classroom-policy.v2"));
+        var policy = Assert.IsType<ClassroomActionPolicyState>(reply.NoiseProtection!.ClassroomPolicy);
+        Assert.Equal(("deny", "default", "usb"), (policy.StopScheduled, policy.ExitHost, policy.SwitchClassroomMode));
+        Assert.Null(screen.Noise.AuthorizeInterruption(new(1, Guid.NewGuid(), "host.stop")));
+    }
+
+    [Fact]
     public async Task Upgrading_the_same_policy_revision_protects_local_mode_after_restart()
     {
         await using var screen = new Screen();

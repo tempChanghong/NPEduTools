@@ -20,7 +20,11 @@ public sealed partial class NpepApi
         string requestId = body?.Text("requestId") ?? NpepProtocol.Id();
         using var request = new HttpRequestMessage(body is null ? HttpMethod.Get : HttpMethod.Post, path);
         request.Headers.Add("X-NPEP-Version", "0.16"); request.Headers.Add("X-Request-Id", requestId);
-        if (path == "device/school-management" && body is null) request.Headers.Add("X-NPEP-Classroom-Action-Policy", "2");
+        if (path == "device/school-management" && body is null)
+        {
+            request.Headers.Add("X-NPEP-Classroom-Action-Policy", "2");
+            request.Headers.Add("X-NPEP-Classroom-Action-Inheritance", "1");
+        }
         if(bearer is not null) request.Headers.Authorization = new("Bearer", bearer);
         if(body is not null)
         {
