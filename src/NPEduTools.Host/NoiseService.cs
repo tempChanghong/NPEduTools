@@ -372,6 +372,19 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             return result;
         }
     }
+    internal void UpdateScheduledWindow(Guid sessionId, Action updateJournal)
+    {
+        lock (_sync)
+        {
+            if (_state is not ("Starting" or "Active") || _session is not { Scheduled: true } session ||
+                session.Id != sessionId || session.Work.IsCompleted) return;
+            // A running microphone can carry over to a different school interval.
+            // Serialize its new target with the same capture -> journal lock order as a local stop.
+            _revision++;
+            management?.InvalidateTickets();
+            updateJournal();
+        }
+    }
     internal void StopScheduled(Guid id)
     {
         lock (_sync)

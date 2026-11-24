@@ -231,11 +231,14 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             {
                 // A continuing capture adopts the newly applied window. STOP/failure records
                 // and protection must describe that window, not the one used at startup.
-                lock (_journalLock)
+                _noise.UpdateScheduledWindow(continuing, () =>
                 {
-                    _journal = _journal with { OwnedWindow = decision.Window }; Save();
-                    if (_storeError is null) _ownedWindow = decision.Window;
-                }
+                    lock (_journalLock)
+                    {
+                        _journal = _journal with { OwnedWindow = decision.Window }; Save();
+                        if (_storeError is null) _ownedWindow = decision.Window;
+                    }
+                });
                 if (_storeError is not null)
                 { _reason = _storeError; _noise.StopScheduled(continuing); return; }
             }

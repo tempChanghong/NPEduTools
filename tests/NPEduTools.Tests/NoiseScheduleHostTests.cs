@@ -78,6 +78,16 @@ public sealed partial class NoiseScheduleHostTests
         {
             var s=Noise.Snapshot(); return new(Protocol.Version,Guid.NewGuid(),"noise.command",Noise:new(action,s.InstanceId,s.Revision,mic));
         }
+        public HostRequest Authorize(HostRequest request, string secret)
+        {
+            var state = Noise.Protection();
+            Assert.True(state.Protected);
+            var reply = Noise.ManagementHandle(new(Protocol.Version, Guid.NewGuid(), "noise.management.command",
+                NoiseManagement: new("authorize", secret, Purpose: Protocol.NoisePurpose(request), TargetRequestId: request.RequestId,
+                    InstanceId: state.InstanceId, SessionId: state.SessionId)));
+            Assert.Equal("Succeeded", reply.Outcome);
+            return request with { NoiseAuthorization = Assert.IsType<Guid>(reply.NoiseProtection?.Ticket) };
+        }
         public JsonObject Policy(string source="Grade",int seconds=86400,bool confirmed=true) => new() {
             ["policy"]=new JsonObject { ["version"]=new string('a',64),["source"]=source,
                 ["rules"]=source is "None" or "Disabled" ? new JsonArray() : JsonNode.Parse("[{\"days\":[4],\"start\":\"19:00\",\"end\":\"20:00\"}]") },
@@ -261,6 +271,42 @@ public sealed partial class NoiseScheduleHostTests
         else Assert.Equal("Active", f.Noise.Snapshot().State);
         Assert.Equal(original, File.ReadAllBytes(path));
         Assert.Single(f.Captures);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_live_schedule_edit_requires_new_confirmation_only_when_the_window_moves(bool extend)
+    {
+        const string secret = "fixture-teacher-secret";
+        await using var f = new Fixture(withManagement: true);
+        Assert.Equal("Succeeded", f.Noise.ManagementHandle(new(Protocol.Version, Guid.NewGuid(), "noise.management.command",
+            NoiseManagement: new("configure", NewSecret: secret))).Outcome);
+        await f.Start();
+        var before = f.Noise.Snapshot();
+        var stop = f.Authorize(f.Command("stop"), secret);
+        var exit = f.Authorize(new(Protocol.Version, Guid.NewGuid(), "host.stop"), secret);
+        var policy = f.Policy();
+        policy["policy"]!["version"] = new string('b', 64);
+        if (extend) policy["policy"]!["rules"]![0]!["end"] = "21:00";
+        f.Scheduler.Confirm(policy);
+        f.Tick();
+        var current = f.Noise.Snapshot();
+        Assert.Equal(before.SessionId, current.SessionId);
+        Assert.Single(f.Captures);
+        if (extend)
+        {
+            Assert.True(current.Revision > before.Revision);
+            Assert.Equal("NoiseStateChanged", f.Noise.Handle(stop).ErrorCode);
+            Assert.Equal("MANAGEMENT_REQUIRED", f.Noise.ManagementHandle(exit with { Capability = "noise.management.prepare-exit" }).ErrorCode);
+            Assert.Equal("Active", f.Noise.Snapshot().State);
+            stop = f.Authorize(f.Command("stop"), secret);
+        }
+        else Assert.Equal(before.Revision, current.Revision);
+        Assert.Equal("Accepted", f.Noise.Handle(stop).Outcome);
+        await Until(() => f.Noise.Snapshot().State == "Stopped");
+        f.Tick();
+        Assert.Equal("WINDOW_SKIPPED", f.Scheduler.Observe().Text("reason"));
     }
 
     [Theory] [InlineData(false)] [InlineData(true)]

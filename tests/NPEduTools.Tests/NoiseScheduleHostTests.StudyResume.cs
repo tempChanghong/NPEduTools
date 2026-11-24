@@ -65,22 +65,11 @@ public sealed partial class NoiseScheduleHostTests
         Assert.Equal("OFFLINE_CONTINUING", study.Snapshot().Reason);
         Assert.Equal(firstSession, f.Noise.Snapshot().SessionId);
 
-        HostRequest Authorize(HostRequest stop)
-        {
-            var state = f.Noise.Protection();
-            Assert.True(state.Protected);
-            Assert.Equal("School", state.ManagementSource);
-            var reply = f.Noise.ManagementHandle(new(Protocol.Version, Guid.NewGuid(), "noise.management.command",
-                NoiseManagement: new("authorize", classroomSecret, Purpose: "stop", TargetRequestId: stop.RequestId,
-                    InstanceId: state.InstanceId, SessionId: state.SessionId)));
-            Assert.Equal("Succeeded", reply.Outcome);
-            return stop with { NoiseAuthorization = Assert.IsType<Guid>(reply.NoiseProtection?.Ticket) };
-        }
-
+        Assert.Equal("School", f.Noise.Protection().ManagementSource);
         var firstStop = f.Command("stop");
         Assert.Equal("MANAGEMENT_REQUIRED", f.Noise.Handle(firstStop).ErrorCode);
-        var unusedGrant = Authorize(f.Command("stop"));
-        Assert.Equal("Accepted", f.Noise.Handle(Authorize(firstStop)).Outcome);
+        var unusedGrant = f.Authorize(f.Command("stop"), classroomSecret);
+        Assert.Equal("Accepted", f.Noise.Handle(f.Authorize(firstStop, classroomSecret)).Outcome);
         await Until(() => f.Noise.Snapshot().State == "Stopped");
         f.Tick();
         Assert.Equal("WINDOW_SKIPPED", f.Scheduler.ObserveStudyExecution()!.Text("reason"));
@@ -95,7 +84,7 @@ public sealed partial class NoiseScheduleHostTests
         Assert.NotEqual(firstSession, f.Noise.Snapshot().SessionId);
         Assert.Equal("MANAGEMENT_REQUIRED", f.Noise.Handle(secondStop with
             { RequestId = unusedGrant.RequestId, NoiseAuthorization = unusedGrant.NoiseAuthorization }).ErrorCode);
-        Assert.Equal("Accepted", f.Noise.Handle(Authorize(secondStop)).Outcome);
+        Assert.Equal("Accepted", f.Noise.Handle(f.Authorize(secondStop, classroomSecret)).Outcome);
         await Until(() => f.Noise.Snapshot().State == "Stopped");
         study.ApplyStudyResume(config, resume);
         f.Tick();
