@@ -35,7 +35,14 @@ internal sealed class NoiseManagementDialog : Window
         Owner = PrepareOwner(owner); _pipe = pipe; _state = state; _target = target;
         _exit=exit;_exitRead=exitRead;
         _mode = target is null ? "default" : ClassroomActionAccess.Mode(state, Protocol.NoisePurpose(target));
-        Title = target is null ? "本机管理口令" : target.Capability == "host.stop" ? "退出后台 · 管理验证" : "定时监测 · 管理验证";
+        Title = target?.Capability switch
+        {
+            null => "本机管理口令",
+            "host.stop" => "退出后台 · 管理验证",
+            "classroom.set" or "classroom.retry" => target.ClassroomMode?.Target == "Exam" ? "切换到考试模式 · 管理验证" : "切换到日常模式 · 管理验证",
+            "classroom.restore" => "恢复课堂模式配置 · 管理验证",
+            _ => "定时监测 · 管理验证"
+        };
         Width = 460; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
         bool hiddenExitOwner = target?.Capability == "host.stop" && (!Owner.IsVisible || Owner.WindowState == WindowState.Minimized);
         WindowStartupLocation = hiddenExitOwner ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
@@ -162,7 +169,7 @@ internal sealed class NoiseManagementDialog : Window
         new WindowInteropHelper(owner).EnsureHandle();
         return owner;
     }
-    private static async Task<HostResponse?> ReadStateAsync(Window owner, string pipe, bool classroomPolicy = false)
+    private static async Task<HostResponse?> ReadStateAsync(Window owner, string pipe, string? purpose = null)
     {
         bool closed = false;
         void OwnerClosed(object? sender, EventArgs args) => closed = true;
@@ -170,30 +177,36 @@ internal sealed class NoiseManagementDialog : Window
         try
         {
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var reply = classroomPolicy ? await ClassroomActionAccess.ReadAsync(pipe, deadline.Token) :
+            var reply = purpose is "stop" or "maintenance" or "switch-classroom-mode"
+                ? await ClassroomActionAccess.ReadAsync(pipe, deadline.Token, purpose == "switch-classroom-mode") :
                 await HostClient.RequestAsync(pipe, "noise.management.status", deadline.Token);
             // IsLoaded can remain true until WPF processes unloading after Closed.
             return closed ? null : reply;
         }
         finally { owner.Closed -= OwnerClosed; }
     }
-    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null, NoiseProtectionState? expectedAccess = null)
+    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null, NoiseProtectionState? expectedAccess = null, Action<string>? reportBlocked = null)
     {
         if (!Protocol.NoiseInterruption(target)) return target;
         owner = PrepareOwner(owner);
         var purpose = Protocol.NoisePurpose(target);
-        var reply = await ReadStateAsync(owner, pipe, purpose is "stop" or "maintenance");
+        var reply = await ReadStateAsync(owner, pipe, purpose);
         if (reply is null) return null;
         if (reply.Outcome != "Succeeded" || reply.NoiseProtection is not { } state)
-        { MessageBox.Show(owner, reply.Message, "无法核实定时保护"); return null; }
+        {
+            if (reportBlocked is null) MessageBox.Show(owner, reply.Message, "无法核实操作权限");
+            else reportBlocked("无法核实操作权限：" + reply.Message);
+            return null;
+        }
         if (expectedSession is { } session && (!state.Protected || state.SessionId != session || state.InstanceId != target.Noise?.InstanceId)) return null;
         if (expectedAccess is not null && (state.InstanceId != expectedAccess.InstanceId || state.SessionId != expectedAccess.SessionId ||
             state.ClassroomPolicy != expectedAccess.ClassroomPolicy || state.CredentialRevision != expectedAccess.CredentialRevision))
             return null;
         var mode = ClassroomActionAccess.Mode(state, purpose);
-        if (ClassroomActionAccess.Blocked(state, mode) is { } blocked)
+        if (ClassroomActionAccess.Blocked(state, mode, purpose) is { } blocked)
         {
-            MessageBox.Show(owner, blocked, "学校管理策略");
+            if (reportBlocked is null) MessageBox.Show(owner, blocked, "学校管理策略");
+            else reportBlocked(blocked);
             return null;
         }
         if (mode == "default" && !state.Protected) return target;
@@ -201,7 +214,9 @@ internal sealed class NoiseManagementDialog : Window
         {
             var command = ClassroomActionAccess.AuthorizeCommand(state, target, mode, null);
             var grant = await Request(pipe, new(Protocol.Version, Guid.NewGuid(), "noise.management.command", NoiseManagement: command));
-            return ClassroomActionAccess.Ticket(grant, state) is { } managedTicket ? target with { NoiseAuthorization = managedTicket } : null;
+            if (ClassroomActionAccess.Ticket(grant, state) is { } managedTicket) return target with { NoiseAuthorization = managedTicket };
+            reportBlocked?.Invoke(grant.Outcome == "Succeeded" ? "本次授权结果与原请求不符，请重新核对。" : grant.Message);
+            return null;
         }
         var dialog = new NoiseManagementDialog(owner, pipe, state, target,exit,exitRead);
         bool succeeded=dialog.ShowDialog()==true;

@@ -37,8 +37,9 @@ public partial class ClassroomModeWindow : Window
     {
         var request = new HostRequest(Protocol.Version, Guid.NewGuid(), capability,
             ExpectedRevision: revision, ClassroomMode: target is null ? null : new(target, running, running && target == "Daily"));
-        var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, request);
-        if (authorized is null) return new(Protocol.Version, request.RequestId, "Rejected", "MANAGEMENT_CANCELLED", "未验证，定时监测继续。");
+        string reason = "本次课堂模式操作尚未授权。";
+        var authorized = await NoiseManagementDialog.AuthorizeAsync(this, _pipe, request, reportBlocked: message => reason = message);
+        if (authorized is null) return new(Protocol.Version, request.RequestId, "Rejected", "MANAGEMENT_CANCELLED", reason);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
         return await HostClient.RequestAsync(_pipe, authorized, deadline.Token);
@@ -119,7 +120,8 @@ public partial class ClassroomModeWindow : Window
             _sending = false;
             if (_closing) return;
             if (response.ClassroomMode is { } state) Render(state);
-            else if (response.ErrorCode == "MANAGEMENT_CANCELLED" && _state is not null) Render(_state);
+            else if (_state is not null && response.ErrorCode is "MANAGEMENT_CANCELLED" or "CLASSROOM_ACTION_DENIED" or
+                "CLASSROOM_STOP_REQUIRED" or "CLASSROOM_USB_REQUIRED" or "CLASSROOM_POLICY_CHANGED") Render(_state);
             else Disconnected(response.Message);
             if (response.Outcome != "Accepted") StatusText.Text = response.ErrorCode switch
             {

@@ -2,12 +2,22 @@ using System.IO.Pipes;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using NPEduTools.App;
 using NPEduTools.Contracts;
 
 internal static partial class Program
 {
     private static void RunClassroomAcceptedFeedbackChecks()
     {
+        var live = new NoiseProtectionState(true, true, Guid.NewGuid(), Guid.NewGuid());
+        var switchTarget = new HostRequest(1, Guid.NewGuid(), "classroom.retry", ExpectedRevision: 7,
+            ClassroomMode: new("Daily", true, true));
+        var proof = new ClassroomActionPolicyState(new string('a', 64), "usb", "both", "either");
+        Assert(ClassroomActionAccess.AuthorizeCommand(live, switchTarget, "default", "fixture-only").Purpose == "change-environment" &&
+            ClassroomActionAccess.Blocked(live with { ClassroomPolicy = proof }, "either", "switch-classroom-mode")?.Contains("先到") == true &&
+            ClassroomActionAccess.Blocked(live with { ClassroomPolicy = proof with { SwitchClassroomMode = "deny" } }, "deny", "switch-classroom-mode")?.Contains("禁止现场") == true,
+            "inherited switch must retain the old ticket; deny and protected-stop rules must precede a new switch authorization");
+        Checks.Add("Scheduled classroom switching distinguishes deny, independent stop, and legacy interruption scope");
         foreach (string scenario in new[] { "success", "failure", "incomplete", "superseded", "older", "fast-success", "fast-failure" })
             RunClassroomAcceptedFeedbackCheck(scenario);
     }
@@ -38,13 +48,37 @@ internal static partial class Program
         async Task Accept()
         {
             var protection = await Read();
-            Assert(protection.Capability == "noise.management.status", "confirmation path did not check scheduled protection");
+            Assert(protection.Capability == ClassroomActionAccess.SwitchStatusCapability, "confirmation path did not check classroom mode permissions");
+            if (scenario == "older")
+            {
+                foreach (var fallback in new[] { ClassroomActionAccess.StatusCapability, "noise.management.status" })
+                {
+                    await Protocol.WriteAsync(server, new HostResponse(1, protection.RequestId, "Rejected", "UnknownCapability", "older host"), deadline.Token);
+                    server.Disconnect(); protection = await Read();
+                    Assert(protection.Capability == fallback, "older host capability negotiation lost its current stop policy");
+                }
+            }
+            var policy = scenario == "fast-success" ? new ClassroomActionPolicyState(new string('b',64), "deny", "deny", "allow") : null;
+            var current = new NoiseProtectionState(false, false, Guid.NewGuid(), null, ManagementSource: "School", ClassroomPolicy: policy);
             await Protocol.WriteAsync(server, new HostResponse(1, protection.RequestId, "Succeeded", null, "fixture",
-                NoiseProtection: new(false, false, Guid.NewGuid(), null)), deadline.Token);
+                NoiseProtection: current), deadline.Token);
             server.Disconnect();
+            Guid? confirmedId = null, ticket = null;
+            if (policy is not null)
+            {
+                var grant = await Read();
+                Assert(grant.Capability == "noise.management.command" && grant.NoiseManagement is
+                    { Purpose: "switch-classroom-mode", Secret: null, SessionId: null } && grant.NoiseManagement.ClassroomPolicyVersion == policy.Version,
+                    "managed idle switch must use the classroom action, current version and no password for allow");
+                confirmedId = grant.NoiseManagement!.TargetRequestId; ticket = Guid.NewGuid();
+                await Protocol.WriteAsync(server, new HostResponse(1, grant.RequestId, "Succeeded", null, "fixture", NoiseProtection: current with { Ticket = ticket }), deadline.Token);
+                server.Disconnect();
+            }
             var request = await Read();
             Assert(request.Capability == "classroom.set" && request.ClassroomMode?.Target == "Daily" && request.ExpectedRevision == 7,
                 "wrong mode or revision on confirmed switch");
+            Assert(request.NoiseAuthorization == ticket && (confirmedId is null || request.RequestId == confirmedId),
+                "switch used a different operation or inherited an unrelated ticket");
             accepted = initialState with { Revision = 8, Phase = "Checking", Message = "正在检查切换条件", RecentRequests = [request.RequestId] };
             if (scenario == "fast-success") accepted = accepted with { Mode = "Daily", Phase = "Idle", Actual = startup,
                 CheckedAt = DateTimeOffset.UtcNow, MatchesMode = true, Message = "已核实并完成" };
