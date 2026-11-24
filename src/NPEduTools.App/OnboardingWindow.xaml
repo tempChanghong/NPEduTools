@@ -153,7 +153,9 @@
             </StackPanel></Expander>
             <TextBlock Style="{StaticResource Hint}" Text="学校安排由管理后台配置。开启学校照片策略后，超限、退出尝试和定时异常恢复可触发单张捕获；噪音监测不保存或上传原音频。" />
             <Expander Header="管理保护与照片隐私" Margin="0,0,0,12"><StackPanel>
-              <TextBlock Style="{StaticResource Hint}" Text="定时自习停止或退出后台需要管理验证，异常退出可能恢复。临时收起展示不停止采集；默认连续无操作十分钟后返回，手动自习可调整或不自动返回。学校锁定设备后，使用学校口令解锁，直到管理员再次锁定。手动自习不套用定时退出保护。" />
+              <TextBlock Style="{StaticResource Hint}" Text="返回作业板后，正在运行的监测继续。定时自习默认在连续十分钟无操作后恢复展示，手动自习可以调整或关闭自动返回。" />
+              <TextBlock Style="{StaticResource Hint}" Text="手动自习可在手动页结束。定时监测期间，停止本场或退出后台须通过管理验证。本场停止后保留后续排程，异常退出后后台可能恢复。" />
+              <TextBlock Style="{StaticResource Hint}" Text="学校锁定设备后，只有学校允许现场换麦时，才可用本班口令更换这台屏的麦克风。摄像头仍按学校设置运行。" />
               <TextBlock Style="{StaticResource Hint}" Text="学校照片只有 OWNER 与第二管理员可查看；默认保留 30 天、最多 180 天，备份期限待运营者确认。首次执行及照片上传需要在目标设备验收。" />
               <Button Content="查看服务与隐私协议" Click="AgreementsClicked" Style="{StaticResource TeacherQuiet}" HorizontalAlignment="Left" />
             </StackPanel></Expander>
