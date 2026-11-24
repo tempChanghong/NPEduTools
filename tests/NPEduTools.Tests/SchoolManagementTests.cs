@@ -8,7 +8,7 @@ namespace NPEduTools.Tests;
 public sealed class SchoolManagementTests
 {
     private const string Local="local-password",School="school-password";
-    private static JsonObject Credential(long revision=1,string secret=School)
+    internal static JsonObject Credential(long revision=1,string secret=School)
     {
         byte[] salt=RandomNumberGenerator.GetBytes(16),hash=Rfc2898DeriveBytes.Pbkdf2(secret,salt,210000,HashAlgorithmName.SHA256,32);
         return new(){["revision"]=revision,["updatedAt"]="2026-10-11T00:00:00.000Z",["verifier"]=new JsonObject{["iterations"]=210000,["salt"]=Convert.ToBase64String(salt),["hash"]=Convert.ToBase64String(hash)}};

@@ -64,10 +64,11 @@ public sealed partial class NoiseScheduleHostTests
         public DateTimeOffset Base = new(2026, 10, 1, 19, 0, 0, TimeSpan.Zero);
         private readonly Guid _connection = Guid.NewGuid(), _bridge = Guid.NewGuid();
         private long _sequence;
-        public Fixture(ManualResetEventSlim? startGate = null)
+        public Fixture(ManualResetEventSlim? startGate = null, bool withManagement = false)
         {
             Noise = new(_ => { var c = new Capture { StartGate = startGate }; lock (Captures) Captures.Add(c); return c; },
-                () => { Enumerations++; return MicrophonePresent ? [new("synthetic", "Synthetic")] : []; }, Time);
+                () => { Enumerations++; return MicrophonePresent ? [new("synthetic", "Synthetic")] : []; }, Time,
+                management: withManagement ? new NoiseManagementStore(Path, Time) : null);
             Noise.Handle(Command("select", "synthetic"));
             Scheduler = NewScheduler(); Scheduler.Bind(Scope, true); Scheduler.Confirm(Policy());
         }
