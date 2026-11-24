@@ -117,6 +117,20 @@ public sealed class SchoolActionPolicyDeliveryTests
         screen.AssertApplied(8, new string('c', 64));
     }
 
+    [Fact]
+    public async Task Malformed_class_verifier_cannot_keep_a_superseded_permission_active()
+    {
+        await using var screen = new Screen();
+        screen.School.ApplySchool(screen.Envelope(Policy(10, FirstId, "GRADE", Rule("ALLOW"), Rule("ALLOW"))));
+        var update = screen.Envelope(Policy(11, SecondId, "CLASS", Rule("DENY"), Rule("DENY")));
+        update["credential"] = new JsonArray();
+        screen.School.ApplySchool(update);
+        Assert.Equal("INVALID_RESPONSE", screen.School.ObserveSchool()["error"]!.GetValue<string>());
+        screen.AssertApplied(11, SecondId);
+        await screen.ReloadOffline();
+        Assert.Equal("deny", screen.Status()!.ExitHost);
+    }
+
     [Theory]
     [InlineData("old-kv")]
     [InlineData("stale")]

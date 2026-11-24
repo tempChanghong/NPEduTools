@@ -4,6 +4,13 @@ namespace NPEduTools.Integrations.Npep;
 
 public sealed partial class NpepDevice
 {
+    internal static JsonObject RegistrationIdentity(JsonObject registration)
+    {
+        var identity = new JsonObject();
+        foreach (var name in new[] { "serverInstanceId", "deploymentEpoch", "deviceId", "bindingRevision", "credentialGeneration" })
+            identity[name] = registration[name]?.DeepClone() ?? throw new NpepException("INVALID_RESPONSE");
+        return identity;
+    }
     internal async Task<JsonObject> ControlContextAsync(Guid epoch, CancellationToken token)
     {
         await _gate.WaitAsync(token);
@@ -12,8 +19,7 @@ public sealed partial class NpepDevice
             RequireNotificationConnection();
             if (_session is null) throw new NpepException("SESSION_SUPERSEDED");
             var r = (JsonObject)Required()["registration"]!;
-            var identity = new JsonObject();
-            foreach (var field in new[] { "serverInstanceId", "deploymentEpoch", "deviceId", "bindingRevision", "credentialGeneration" }) identity[field] = r[field]!.DeepClone();
+            var identity = RegistrationIdentity(r);
             return new() { ["identity"] = identity, ["runId"] = _runId, ["sessionId"] = _session["sessionId"]!.DeepClone(),
                 ["statusEpoch"] = _session["statusEpoch"]!.DeepClone(), ["controlEpoch"] = epoch.ToString("D") };
         }

@@ -14,6 +14,9 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     private readonly NoiseService _noise;
     private readonly StudyDeviceService _cameras;
     private readonly string _path;
+    private readonly ClassroomPolicyStore _classroomPolicy;
+    private bool _tracksRegistration;
+    private string? _registeredScope;
     private Saved _saved=new(null,0,false,0,null,null,false);
     private string? _error;
     private string? _credentialError;
@@ -25,6 +28,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     public SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory)
     {
         _noise=noise;_cameras=cameras;_path=Path.Combine(directory,"school-equipment.json");
+        _classroomPolicy = new ClassroomPolicyStore(directory, noise);
         try
         {
             if(File.Exists(_path))
@@ -97,12 +101,23 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     {
         lock(_sync)
         {
+            if (_tracksRegistration && scope is not null && _registeredScope != scope) return;
+            _classroomPolicy.Bind(scope);
             _noise.BindSchoolManagement(scope);
             if(_saved.Scope==scope){if(_savePending){Save();SetLocks();}return;}
             _credentialError=null;
             _extendedReceipt=false;
             _saved=new(scope,0,scope is not null,0,null,null,false);
             Save();SetLocks();
+        }
+    }
+    public void ObserveActionBinding(string? scope)
+    {
+        lock (_sync)
+        {
+            _tracksRegistration = true;
+            _registeredScope = scope;
+            _classroomPolicy.Bind(scope);
         }
     }
     public void ApplySchool(JsonObject policy)
@@ -112,9 +127,21 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             try
             {
                 if(_saved.Scope is null || !JsonNode.DeepEquals(policy["identity"],JsonNode.Parse(_saved.Scope)))throw new NpepException("SESSION_SUPERSEDED");
+                if (_tracksRegistration && _saved.Scope != _registeredScope) throw new NpepException("SESSION_SUPERSEDED");
                 // Credential and equipment acknowledgements are independent; a durable
                 // equipment write cannot erase a rejected credential update.
-                _error=null;_credentialError=_noise.ApplySchoolManagement(_saved.Scope!,policy["credential"]?.AsObject());
+                _error = null;
+                try { _credentialError = _noise.ApplySchoolManagement(_saved.Scope, policy["credential"]); }
+                catch (Exception e) when (policy.ContainsKey("actionPolicy") &&
+                    e is InvalidOperationException or FormatException or NullReferenceException or JsonException)
+                {
+                    // A bad verifier blocks password use and equipment updates. A valid
+                    // action-policy revocation from the same binding still takes effect.
+                    _credentialError = "INVALID_RESPONSE";
+                    _classroomPolicy.Apply(_saved.Scope, policy);
+                    return;
+                }
+                _classroomPolicy.Apply(_saved.Scope, policy);
                 var p=policy["equipment"]!.AsObject();long revision=p["revision"]!.Deserialize<long>();bool locked=p["locked"]!.GetValue<bool>();
                 string? mic=p["microphoneId"]?.GetValue<string>(),cam=p["cameraId"]?.GetValue<string>();
                 bool extended = p.ContainsKey("allowLocalMicrophoneChange");
@@ -205,6 +232,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
                 receipt["supportsLocalMicrophoneChange"] = true;
                 receipt["localMicrophoneOverride"] = _saved.LocalMicrophoneOverride == _saved.Microphone ? null : _saved.LocalMicrophoneOverride;
             }
+            if (_classroomPolicy.Observe() is { } actionReceipt) receipt["actionPolicyReceipt"] = actionReceipt;
             // Inventory budgets alone omit the selected IDs repeated in this receipt.
             // Keep the whole observation under 60,000 bytes, reserving >5 KiB for
             // the fixed-schema context, request ID and sequence added by the runtime.

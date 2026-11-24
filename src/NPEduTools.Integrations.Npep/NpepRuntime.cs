@@ -56,7 +56,10 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             });
         }
         catch (Exception e) when (StorageError(e))
-        { _state = _state with { State = "STORE_UNAVAILABLE", Connection = "DISABLED", Error = "CREDENTIAL_STORE_UNAVAILABLE", Message = "凭据无法读取或已被另一实例占用。请关闭冲突实例后重启后台；原文件已保留。" }; }
+        {
+            _schoolManagement?.ObserveActionBinding(null);
+            _state = _state with { State = "STORE_UNAVAILABLE", Connection = "DISABLED", Error = "CREDENTIAL_STORE_UNAVAILABLE", Message = "凭据无法读取或已被另一实例占用。请关闭冲突实例后重启后台；原文件已保留。" };
+        }
         _history = new(_device?.DataDirectory);
         if (_device is not null) _device.Observation = item => _history.Add(item.Kind, item.Endpoint, item.Code, item.HttpStatus, item.RequestId, item.ElapsedMs, item.Retrying);
         _loop = Task.Run(LoopAsync);
@@ -320,6 +323,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
 
     private void Publish(string connection, string message, string? error = null, string? receivedAt = null, bool statusSampleExpired = false)
     {
+        SynchronizeActionBinding();
         long? receiptTimestamp = receivedAt is not null ? _receiptTime.GetTimestamp() : null;
         lock (_sync)
         {

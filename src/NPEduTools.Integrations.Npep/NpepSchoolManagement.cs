@@ -5,6 +5,8 @@ namespace NPEduTools.Integrations.Npep;
 public interface INpepSchoolManagement
 {
     void BindSchool(string? scope);
+    // The durable pairing identity is available before the first online school poll.
+    void ObserveActionBinding(string? scope) { }
     void ApplySchool(JsonObject policy);
     JsonObject ObserveSchool();
 }
@@ -73,7 +75,27 @@ public sealed partial class NpepRuntime
 {
     private INpepSchoolManagement? _schoolManagement;
     private long _schoolSequence;
-    private async Task SchoolManagementCycleAsync(CancellationToken token)
+    private readonly object _actionBindingSync = new();
+    private string? _observedActionScope;
+    private bool _observedActionBinding;
+
+    private void SynchronizeActionBinding()
+    {
+        if (_schoolManagement is null) return;
+        // Do not wait on the capture or persistence lock while holding the runtime lock.
+        lock (_actionBindingSync)
+        {
+            var view = _device?.View();
+            string? scope = view?["state"]?.GetValue<string>() == "ACTIVE" &&
+                view["suspended"]?.GetValue<bool>() != true && view["registration"] is JsonObject registration
+                ? NpepDevice.RegistrationIdentity(registration).ToJsonString() : null;
+            if (_observedActionBinding && _observedActionScope == scope) return;
+            _schoolManagement.ObserveActionBinding(scope);
+            _observedActionScope = scope;
+            _observedActionBinding = true;
+        }
+    }
+    internal async Task SchoolManagementCycleAsync(CancellationToken token)
     {
         if(_schoolManagement is null) return;
         var context=await StudyContextAsync(token);
