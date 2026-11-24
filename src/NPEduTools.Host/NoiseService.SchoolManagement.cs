@@ -9,7 +9,27 @@ public sealed partial class NoiseService
     internal volatile bool EquipmentLocked = false;
     internal Func<NoiseManagementCommand, string?>? ReplaceLocalMicrophone {get;set;}
     internal string? BindSchoolManagement(string? scope) {lock(_sync)return management?.BindSchool(scope);}
-    internal string? ApplySchoolManagement(string scope,JsonObject? credential){lock(_sync)return management?.ApplySchool(scope,credential);}
+    internal string? ApplySchoolManagement(string scope, JsonNode? credential)
+    {
+        lock (_sync)
+        {
+            if (management is null) return null;
+            if (!management.MatchesSchool(scope)) return "SESSION_SUPERSEDED";
+            bool healthy = false;
+            try
+            {
+                string? error = management.ApplySchool(scope, credential?.AsObject());
+                healthy = error is null;
+                return error;
+            }
+            finally
+            {
+                // An authenticated response from this binding can explicitly lack a verifier
+                // or reject one before replacing the old cache. Offline silence never enters here.
+                management.SetClassroomPasswordReady(healthy);
+            }
+        }
+    }
     internal long SchoolCredentialRevision {get{lock(_sync)return management?.SchoolRevision??0;}}
     internal bool UsesMicrophone(string id) { lock (_sync) return _selected == id; }
     internal string? ChangeAuthorizedMicrophone(string scope, string secret, string id, Func<bool> commit)

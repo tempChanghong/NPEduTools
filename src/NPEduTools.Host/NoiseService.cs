@@ -95,9 +95,8 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             "NoiseStateChanged" => "当前监测会话已变化，请重新核实后验证。",
             null => "管理验证已完成。",
             _ => "管理验证未通过。"
-        }, Noise: Snapshot(), NoiseProtection: Protection() with { Ticket = ticket,
-            ClassroomPolicy = r.Capability == "noise.management.status.classroom-policy" || r.NoiseManagement?.ClassroomPolicyVersion is not null
-                ? _classroomPolicy : null });
+        }, Noise: Snapshot(), NoiseProtection: (r.Capability == "noise.management.status.classroom-policy" ||
+            r.NoiseManagement?.ClassroomPolicyVersion is not null ? ClassroomProtection() : Protection()) with { Ticket = ticket });
 
     public HostResponse ManagementHandle(HostRequest r)
     {

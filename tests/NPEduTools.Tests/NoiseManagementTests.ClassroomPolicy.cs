@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using NPEduTools.Contracts;
+using NPEduTools.Host;
 
 namespace NPEduTools.Tests;
 
@@ -12,28 +13,34 @@ public sealed partial class NoiseManagementTests
     private const string SchoolScope = "synthetic-original-school-and-binding";
     private const string SchoolSecret = "fixture-classroom-credential";
 
-    private static void ApplyCredential(Fixture f, long version = 1)
+    private static JsonObject CredentialRow(long version)
     {
-        Assert.Null(f.Noise.BindSchoolManagement(SchoolScope));
         var salt = RandomNumberGenerator.GetBytes(16);
         var hash = Rfc2898DeriveBytes.Pbkdf2(SchoolSecret, salt, 210000, HashAlgorithmName.SHA256, 32);
-        Assert.Null(f.Noise.ApplySchoolManagement(SchoolScope, new JsonObject
+        return new JsonObject
         {
             ["revision"] = version,
             ["verifier"] = new JsonObject
             { ["salt"] = Convert.ToBase64String(salt), ["hash"] = Convert.ToBase64String(hash), ["iterations"] = 210000 }
-        }));
+        };
+    }
+    private static void ApplyCredential(Fixture f, long version = 1)
+    {
+        Assert.Null(f.Noise.BindSchoolManagement(SchoolScope));
+        Assert.Null(f.Noise.ApplySchoolManagement(SchoolScope, CredentialRow(version)));
     }
 
     private static HostResponse PolicyGrant(Fixture f, HostRequest target, string? secret = null,
-        string? version = null)
+        string? version = null) => PolicyGrant(f.Noise, target, secret, version);
+
+    private static HostResponse PolicyGrant(NoiseService noise, HostRequest target, string? secret = null, string? version = null)
     {
-        var state = f.Noise.Protection();
+        var state = noise.Protection();
         var request = new HostRequest(1, Guid.NewGuid(), "noise.management.command",
             NoiseManagement: new("authorize", secret, Purpose: Protocol.NoisePurpose(target), TargetRequestId: target.RequestId,
                 InstanceId: state.InstanceId, SessionId: state.SessionId, ClassroomPolicyVersion: version ?? ClassroomVersion));
         Assert.Null(Protocol.Validate(request));
-        return f.Noise.ManagementHandle(request);
+        return noise.ManagementHandle(request);
     }
 
     [Theory]
@@ -173,5 +180,71 @@ public sealed partial class NoiseManagementTests
         await using var f = new Fixture();
         f.Noise.SetClassroomActionPolicy(ClassroomVersion, "allow", "password", null);
         Assert.Equal("SCHOOL_MANAGEMENT_REQUIRED", PolicyGrant(f, new(1, Guid.NewGuid(), "host.stop"), Secret).ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("wrong-type")]
+    [InlineData("invalid-verifier")]
+    public async Task Negative_school_credential_observation_survives_restart_and_only_invalidates_the_password_factor(string change)
+    {
+        await using var f = new Fixture(false);
+        ApplyCredential(f);
+        f.Noise.SetClassroomActionPolicy(ClassroomVersion, "deny", "either", () => true, SchoolScope);
+        var byPassword = new HostRequest(1, Guid.NewGuid(), "host.stop");
+        byPassword = byPassword with { NoiseAuthorization = PolicyGrant(f, byPassword, SchoolSecret).NoiseProtection!.Ticket };
+        var byUsb = new HostRequest(1, Guid.NewGuid(), "host.stop");
+        byUsb = byUsb with { NoiseAuthorization = PolicyGrant(f, byUsb).NoiseProtection!.Ticket };
+        Assert.NotNull(byPassword.NoiseAuthorization);
+        Assert.NotNull(byUsb.NoiseAuthorization);
+
+        void Receive()
+        {
+            if (change == "missing")
+                Assert.Equal("MANAGEMENT_NOT_CONFIGURED", f.Noise.ApplySchoolManagement(SchoolScope, null));
+            else if (change == "wrong-type")
+                Assert.Throws<InvalidOperationException>(() => f.Noise.ApplySchoolManagement(SchoolScope, new JsonArray()));
+            else
+            {
+                var row = CredentialRow(2);
+                row["verifier"]!["iterations"] = 1;
+                Assert.Equal("INVALID_RESPONSE", f.Noise.ApplySchoolManagement(SchoolScope, row));
+            }
+        }
+        Receive();
+        Assert.False(f.Noise.ClassroomProtection().Configured);
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", PolicyGrant(f, byPassword, SchoolSecret).ErrorCode);
+        Assert.Equal("MANAGEMENT_REQUIRED", f.Noise.AuthorizeInterruption(byPassword)!.ErrorCode);
+        Assert.Equal("Succeeded", f.Noise.ManagementHandle(byUsb with { Capability = "noise.management.prepare-exit" }).Outcome);
+        var marker = Path.Combine(f.Path, "noise-management.json.classroom-password-unavailable");
+        var firstWrite = File.GetLastWriteTimeUtc(marker);
+        Receive();
+        Assert.Equal(firstWrite, File.GetLastWriteTimeUtc(marker));
+
+        await using var reopened = new NoiseService(_ => new Capture(null), () => [], f.Time,
+            management: new NoiseManagementStore(f.Path, f.Time));
+        reopened.SetClassroomActionPolicy(ClassroomVersion, "deny", "either", () => true, SchoolScope);
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", PolicyGrant(reopened, byPassword, SchoolSecret).ErrorCode);
+        Assert.Equal("Succeeded", PolicyGrant(reopened, byUsb).Outcome);
+        Assert.Null(reopened.ApplySchoolManagement(SchoolScope, CredentialRow(2)));
+        Assert.True(reopened.ClassroomProtection().Configured);
+        Assert.False(File.Exists(marker));
+        Assert.Equal("Succeeded", PolicyGrant(reopened, byPassword, SchoolSecret).Outcome);
+    }
+
+    [Fact]
+    public async Task Scope_mismatch_between_cached_password_and_effective_policy_requires_current_class_credential()
+    {
+        await using var f = new Fixture(false);
+        ApplyCredential(f);
+        const string targetScope = "synthetic-other-binding";
+        f.Noise.SetClassroomActionPolicy(SecondVersion, "deny", "password", null, targetScope);
+        var target = new HostRequest(1, Guid.NewGuid(), "host.stop");
+        Assert.False(f.Noise.ClassroomProtection().Configured);
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", PolicyGrant(f, target, SchoolSecret, SecondVersion).ErrorCode);
+        Assert.Null(f.Noise.BindSchoolManagement(targetScope));
+        Assert.Null(f.Noise.ApplySchoolManagement(targetScope, CredentialRow(1)));
+        Assert.True(f.Noise.ClassroomProtection().Configured);
+        Assert.Equal("Succeeded", PolicyGrant(f, target, SchoolSecret, SecondVersion).Outcome);
     }
 }

@@ -29,11 +29,12 @@ public sealed class StudyExitService : INpepStudyExitEvents,IAsyncDisposable
         var x=_sample();var p=protection??_protection();
         if(_scope is null || x.Scope!=_scope || x.State is not {PolicyState:"APPLIED",Phase:"Active",ClockReady:true,Version:not null,Window:not null,SchoolNow:not null,
             Settings.Noise.Enabled:true,Execution:{Owner:"Schedule",State:"Starting" or "Active",SessionId:not null}} ||
-            !p.Protected || p.ClassroomPolicy?.ExitHost=="deny" || p.SessionId!=x.State.Execution.SessionId)return null;
+            !p.Protected || p.ClassroomPolicy?.ExitHost=="deny" || PasswordUnavailable(p) || p.SessionId!=x.State.Execution.SessionId)return null;
         return(_scope,x.State,p);
     }
     private static string Key(string scope,StudyHostState s,NoiseProtectionState p)=>
         $"{scope}|{s.Version}|{s.Window}|{p.InstanceId}|{p.SessionId}|{p.CredentialRevision}|{p.ClassroomPolicy?.Version}";
+    private static bool PasswordUnavailable(NoiseProtectionState p) => !p.Configured && p.ClassroomPolicy?.ExitHost is "password" or "both";
     public void BindExit(string? scope){lock(_sync){if(_scope!=scope){_scope=scope;_state="NotRequired";_key=null;}}}
     public HostResponse Begin(HostRequest request)
     {
@@ -42,6 +43,8 @@ public sealed class StudyExitService : INpepStudyExitEvents,IAsyncDisposable
             var protection=_protection();
             if (protection.ClassroomPolicy?.ExitHost=="deny")
                 return new(1,request.RequestId,"Rejected","CLASSROOM_ACTION_DENIED","学校策略禁止在这块大屏上退出后台。");
+            if (PasswordUnavailable(protection))
+                return new(1,request.RequestId,"Rejected","MANAGEMENT_NOT_CONFIGURED","本班所需的管理口令尚未确认，未开始退出验证。");
             var current=Read(protection);
             if(current is null)return new(1,request.RequestId,"NotRequired",null,"当前没有有效自习退出验证。",StudyExit:Snapshot());
             if(_id==request.RequestId)return new(1,request.RequestId,"Succeeded",null,"本次退出验证状态。",StudyExit:Snapshot());

@@ -16,7 +16,7 @@ public sealed partial class NoiseManagementStore
     private readonly Dictionary<Guid, Ticket> _tickets = [];
     private sealed record Credential(int Version, string Salt, string Hash);
     private sealed record Ticket(Guid InstanceId, Guid? SessionId, string Purpose, Guid RequestId, long IssuedAt,
-        string? ClassroomPolicyVersion, bool RequiresUsb, long? NoiseRevision);
+        string? ClassroomPolicyVersion, bool RequiresUsb, long? NoiseRevision, bool RequiresClassroomPassword);
     private const int Iterations = 210000;
     public NoiseManagementStore(string directory, TimeProvider? time = null)
     {
@@ -32,7 +32,7 @@ public sealed partial class NoiseManagementStore
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or FormatException)
         { _error = "MANAGEMENT_STORE_UNAVAILABLE"; }
-        finally { LoadSchool(); }
+        finally { LoadSchool(); ReadClassroomPasswordAvailability(); }
     }
     public bool Configured => _credential is not null && _error is null;
     public string? Error => _error;
@@ -80,12 +80,13 @@ public sealed partial class NoiseManagementStore
         return IssueAfterVerification(instance, session, c.Purpose!, c.TargetRequestId!.Value, null, false);
     }
     internal (Guid? Ticket, string? Error) IssueAfterVerification(Guid instance, Guid? session, string purpose,
-        Guid requestId, string? policyVersion, bool requiresUsb, long? noiseRevision = null)
+        Guid requestId, string? policyVersion, bool requiresUsb, long? noiseRevision = null, bool requiresClassroomPassword = false)
     {
         foreach (var id in _tickets.Where(p => _time.GetElapsedTime(p.Value.IssuedAt).TotalSeconds >= 60).Select(p => p.Key).ToArray()) _tickets.Remove(id);
         if (_tickets.Count >= 32) return (null, "MANAGEMENT_RATE_LIMITED");
         Guid ticket = Guid.NewGuid();
-        _tickets[ticket] = new(instance, session, purpose, requestId, _time.GetTimestamp(), policyVersion, requiresUsb, noiseRevision);
+        _tickets[ticket] = new(instance, session, purpose, requestId, _time.GetTimestamp(), policyVersion, requiresUsb,
+            noiseRevision, requiresClassroomPassword);
         return (ticket, null);
     }
     internal bool RequiresUsb(Guid? ticket, Guid requestId, string policyVersion) =>

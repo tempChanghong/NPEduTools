@@ -5,17 +5,20 @@ namespace NPEduTools.Host;
 public sealed partial class NoiseService
 {
     private ClassroomActionPolicyState? _classroomPolicy;
+    private string? _classroomCredentialScope;
     private Func<bool>? _registeredUsbPresent;
     private sealed record UsbObservation(ClassroomActionPolicyState Policy, bool Present);
 
-    internal void SetClassroomActionPolicy(string? version, string? stopMode, string? exitMode, Func<bool>? usbPresent)
+    internal void SetClassroomActionPolicy(string? version, string? stopMode, string? exitMode, Func<bool>? usbPresent,
+        string? credentialScope = null)
     {
         lock (_sync)
         {
             var policy = version is null ? null : new ClassroomActionPolicyState(version, stopMode ?? "deny", exitMode ?? "deny");
             _registeredUsbPresent = usbPresent;
-            if (policy == _classroomPolicy) return;
+            if (policy == _classroomPolicy && credentialScope == _classroomCredentialScope) return;
             _classroomPolicy = policy;
+            _classroomCredentialScope = credentialScope;
             management?.InvalidateTickets();
             _exitReservation = null;
         }
@@ -23,8 +26,16 @@ public sealed partial class NoiseService
 
     internal NoiseProtectionState ClassroomProtection()
     {
-        lock (_sync) return Protection() with { ClassroomPolicy = _classroomPolicy };
+        lock (_sync)
+        {
+            var status = Protection();
+            return _classroomPolicy is null ? status : status with
+                { ClassroomPolicy = _classroomPolicy, Configured = ClassroomPasswordReady };
+        }
     }
+
+    private bool ClassroomPasswordReady => management is { ClassroomPasswordReady: true } &&
+        (_classroomCredentialScope is null || management.MatchesSchool(_classroomCredentialScope));
 
     private string? ClassroomRule(string purpose) => purpose switch
     {
@@ -81,11 +92,12 @@ public sealed partial class NoiseService
         if (passwordRequired)
         {
             if (management.Source != "School") return ManagementReply(request, "SCHOOL_MANAGEMENT_REQUIRED");
+            if (!ClassroomPasswordReady) return ManagementReply(request, "MANAGEMENT_NOT_CONFIGURED");
             if (c.Secret is null) return ManagementReply(request, "MANAGEMENT_REQUIRED");
             if (management.VerifyCalibration(c.Secret) is { } error) return ManagementReply(request, error);
         }
         var grant = management.IssueAfterVerification(_instance, _session?.Id, c.Purpose!, c.TargetRequestId!.Value,
-            _classroomPolicy.Version, usbRequired, _revision);
+            _classroomPolicy.Version, usbRequired, _revision, passwordRequired);
         return ManagementReply(request, grant.Error, grant.Ticket);
     }
 
