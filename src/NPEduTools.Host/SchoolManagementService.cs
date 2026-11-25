@@ -8,7 +8,7 @@ using NPEduTools.Integrations.Npep;
 namespace NPEduTools.Host;
 
 /// <summary>Inventory never opens devices. Each local microphone choice belongs to one school policy revision.</summary>
-public sealed class SchoolManagementService : INpepSchoolManagement
+public sealed partial class SchoolManagementService : INpepSchoolManagement
 {
     private readonly object _sync=new();
     private readonly NoiseService _noise;
@@ -105,6 +105,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             _classroomPolicy.Bind(scope);
             _noise.BindSchoolManagement(scope);
             if(_saved.Scope==scope){if(_savePending){Save();SetLocks();}return;}
+            _websitePolicyReceipt = null;
             _credentialError=null;
             _extendedReceipt=false;
             _saved=new(scope,0,scope is not null,0,null,null,false);
@@ -115,6 +116,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
     {
         lock (_sync)
         {
+            if (_registeredScope != scope) _websitePolicyReceipt = null;
             _tracksRegistration = true;
             _registeredScope = scope;
             _classroomPolicy.Bind(scope);
@@ -128,6 +130,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
             {
                 if(_saved.Scope is null || !JsonNode.DeepEquals(policy["identity"],JsonNode.Parse(_saved.Scope)))throw new NpepException("SESSION_SUPERSEDED");
                 if (_tracksRegistration && _saved.Scope != _registeredScope) throw new NpepException("SESSION_SUPERSEDED");
+                ReceiveWebsitePolicy(policy["websitePolicy"]);
                 // Credential and equipment acknowledgements are independent; a durable
                 // equipment write cannot erase a rejected credential update.
                 _error = null;
@@ -233,6 +236,7 @@ public sealed class SchoolManagementService : INpepSchoolManagement
                 receipt["localMicrophoneOverride"] = _saved.LocalMicrophoneOverride == _saved.Microphone ? null : _saved.LocalMicrophoneOverride;
             }
             if (_classroomPolicy.Observe() is { } actionReceipt) receipt["actionPolicyReceipt"] = actionReceipt;
+            if (_websitePolicyReceipt is { } websiteReceipt) receipt["websitePolicyReceipt"] = websiteReceipt.DeepClone();
             // Inventory budgets alone omit the selected IDs repeated in this receipt.
             // Keep the whole observation under 60,000 bytes, reserving >5 KiB for
             // the fixed-schema context, request ID and sequence added by the runtime.
