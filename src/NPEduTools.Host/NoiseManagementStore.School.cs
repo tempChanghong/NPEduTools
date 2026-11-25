@@ -34,6 +34,7 @@ public sealed partial class NoiseManagementStore
     {
         if (_schoolScope == scope) return _error;
         // Retire local credentials in memory before attempting IO. A failure stays closed.
+        ClassroomPasswordEpoch++;
         _credential = null; _schoolScope = scope; _schoolRevision = 0; _tickets.Clear();
         return SaveSchool();
     }
@@ -49,6 +50,7 @@ public sealed partial class NoiseManagementStore
         if (v["iterations"]!.GetValue<int>() != Iterations || Convert.FromBase64String(credential.Salt).Length != 16 || Convert.FromBase64String(credential.Hash).Length != 32)
             return "INVALID_RESPONSE";
         if (revision == _schoolRevision && credential == _credential && _error is null) return null;
+        ClassroomPasswordEpoch++;
         _credential = credential; _schoolRevision = revision; _tickets.Clear(); _failures = 0; _lockedAt = null;
         return SaveSchool();
     }

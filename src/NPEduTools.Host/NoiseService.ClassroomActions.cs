@@ -6,15 +6,23 @@ public sealed partial class NoiseService
 {
     private ClassroomActionPolicyState? _classroomPolicy;
     private string? _classroomCredentialScope;
+    private string? _manualStudyScopeVersion;
+    private long _manualStudyPolicyEpoch;
     private Func<bool>? _registeredUsbPresent;
     private sealed record UsbObservation(ClassroomActionPolicyState Policy, bool Present);
 
     internal void SetClassroomActionPolicy(string? version, string? stopMode, string? exitMode, Func<bool>? usbPresent,
-        string? credentialScope = null, string? switchClassroomMode = null)
+        string? credentialScope = null, string? switchClassroomMode = null, string? startManualStudy = null,
+        string? manualStudyScopeVersion = null)
     {
         lock (_sync)
         {
-            var policy = version is null ? null : new ClassroomActionPolicyState(version, stopMode ?? "deny", exitMode ?? "deny", switchClassroomMode);
+            var policy = version is null ? null : new ClassroomActionPolicyState(version, stopMode ?? "deny", exitMode ?? "deny", switchClassroomMode, startManualStudy);
+            if (_manualStudyScopeVersion != manualStudyScopeVersion ||
+                (_classroomPolicy?.StartManualStudy ?? "default") != (policy?.StartManualStudy ?? "default") ||
+                (manualStudyScopeVersion is null && _classroomCredentialScope != credentialScope))
+                _manualStudyPolicyEpoch++;
+            _manualStudyScopeVersion = manualStudyScopeVersion;
             _registeredUsbPresent = usbPresent;
             if (policy == _classroomPolicy && credentialScope == _classroomCredentialScope) return;
             _classroomPolicy = policy;
@@ -26,13 +34,15 @@ public sealed partial class NoiseService
 
     internal NoiseProtectionState ClassroomProtection() => ClassroomProtection(false);
 
-    private NoiseProtectionState ClassroomProtection(bool includeMode)
+    private NoiseProtectionState ClassroomProtection(bool includeMode, bool includeManual = false)
     {
         lock (_sync)
         {
             var status = Protection();
             return _classroomPolicy is null ? status : status with
-                { ClassroomPolicy = includeMode ? _classroomPolicy : _classroomPolicy with { SwitchClassroomMode = null }, Configured = ClassroomPasswordReady };
+                { ClassroomPolicy = _classroomPolicy with {
+                    SwitchClassroomMode = includeMode ? _classroomPolicy.SwitchClassroomMode : null,
+                    StartManualStudy = includeManual ? _classroomPolicy.StartManualStudy : null }, Configured = ClassroomPasswordReady };
         }
     }
 
@@ -44,6 +54,7 @@ public sealed partial class NoiseService
         "stop" when ScheduledLive => _classroomPolicy?.StopScheduled,
         "maintenance" => _classroomPolicy?.ExitHost,
         "switch-classroom-mode" => _classroomPolicy?.SwitchClassroomMode,
+        "start-manual-study" => _classroomPolicy?.StartManualStudy,
         _ => null
     };
 
@@ -100,7 +111,7 @@ public sealed partial class NoiseService
             if (management.VerifyCalibration(c.Secret) is { } error) return ManagementReply(request, error);
         }
         var grant = management.IssueAfterVerification(_instance, _session?.Id, c.Purpose!, c.TargetRequestId!.Value,
-            _classroomPolicy.Version, usbRequired, _revision, passwordRequired);
+            _classroomPolicy.Version, usbRequired, _revision, passwordRequired, c.ManualStudyTarget);
         return ManagementReply(request, grant.Error, grant.Ticket);
     }
 
@@ -112,6 +123,6 @@ public sealed partial class NoiseService
         if (management.RequiresUsb(request.NoiseAuthorization, request.RequestId, version) && !UsbConfirmed(usb))
             return "CLASSROOM_USB_REQUIRED";
         return management.CheckTicket(request.NoiseAuthorization, _instance, _session?.Id, purpose, request.RequestId, version, _revision,
-            consume: request.Capability != "noise.management.prepare-exit") ? null : "MANAGEMENT_REQUIRED";
+            consume: request.Capability != "noise.management.prepare-exit", manualStudyTarget: request.ManualStudy) ? null : "MANAGEMENT_REQUIRED";
     }
 }

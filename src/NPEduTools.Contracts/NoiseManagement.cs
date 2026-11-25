@@ -7,9 +7,11 @@ public sealed record NoiseManagementCommand(string Action, string? Secret = null
     string? Purpose = null, Guid? TargetRequestId = null, Guid? InstanceId = null, Guid? SessionId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DeviceId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? PolicyToken = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassroomPolicyVersion = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ClassroomPolicyVersion = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyCommand? ManualStudyTarget = null);
 public sealed record ClassroomActionPolicyState(string Version, string StopScheduled, string ExitHost,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SwitchClassroomMode = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SwitchClassroomMode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? StartManualStudy = null);
 public sealed record NoiseProtectionState(bool Protected, bool Configured, Guid InstanceId, Guid? SessionId,
     string? ErrorCode = null, Guid? Ticket = null, string ManagementSource = "Local", long CredentialRevision = 0,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClassroomActionPolicyState? ClassroomPolicy = null);
@@ -18,12 +20,21 @@ public static class NoiseManagementContract
     public static bool SecretValid(string? value) => value is { Length: >= 8 and <= 128 } && !value.Any(char.IsControl);
     public static bool Valid(NoiseManagementCommand c)
     {
+        if (c.Purpose == "start-manual-study")
+        {
+            if (c.ClassroomPolicyVersion is null || c.ManualStudyTarget is not
+                { Action: "start", SessionId: null, InstanceId: var manual, Revision: >= 0 } manualTarget || manual == Guid.Empty ||
+                !NoiseContract.ValidDeviceId(manualTarget.DeviceId) || manualTarget.HideSeconds is < 1 or > 10800 ||
+                manualTarget.StartUtc is { Offset: var startOffset } && startOffset != TimeSpan.Zero ||
+                manualTarget.EndUtc is { Offset: var endOffset } && endOffset != TimeSpan.Zero) return false;
+        }
+        else if (c.ManualStudyTarget is not null) return false;
         if (c.ClassroomPolicyVersion is { } version)
             return version.Length == 64 && version.All(ch => ch is >= '0' and <= '9' or >= 'a' and <= 'f') &&
                 c.Action == "authorize" && c.NewSecret is null && c.DeviceId is null && c.PolicyToken is null &&
                 (c.Secret is null || SecretValid(c.Secret)) && c.TargetRequestId is { } target && target != Guid.Empty &&
                 c.InstanceId is { } host && host != Guid.Empty && c.SessionId != Guid.Empty &&
-                (c.Purpose is "maintenance" or "switch-classroom-mode" || c.Purpose == "stop" && c.SessionId is not null);
+                (c.Purpose is "maintenance" or "switch-classroom-mode" or "start-manual-study" || c.Purpose == "stop" && c.SessionId is not null);
         if (c.Action == "replace-microphone")
             return SecretValid(c.Secret) && NoiseContract.ValidDeviceId(c.DeviceId) && c.PolicyToken is { } token && token != Guid.Empty &&
                 c.NewSecret is null && c.Purpose is null && c.TargetRequestId is null && c.InstanceId is null && c.SessionId is null;

@@ -4,7 +4,7 @@ using NPEduTools.Core;
 using NPEduTools.Host;
 namespace NPEduTools.Tests;
 
-public sealed class ManualStudyTests
+public sealed partial class ManualStudyTests
 {
     private sealed class Clock:TimeProvider
     {
@@ -27,9 +27,10 @@ public sealed class ManualStudyTests
         public bool Blocked=false;public int Lead=120;public long LastInput;public Func<int>? ReadLead;public readonly NoiseService Noise;public readonly ManualStudyService Manual;
         public (string? Scope, bool Selected, StudyHostState State) School = (null, false,
             new(null,"UNAVAILABLE","","","Outside","",false,null,null,null,null));
-        public Fixture()
+        public Fixture(bool managed = false)
         {
-            Noise=new(_=>{var c=new Capture();Captures.Add(c);return c;},()=>[new("mic","Synthetic")],Time);
+            Noise=new(_=>{var c=new Capture();Captures.Add(c);return c;},()=>[new("mic","Synthetic")],Time,
+                management: managed ? new NoiseManagementStore(Path.Combine(Folder,"management"), Time) : null);
             Manual=new(Noise,()=>School,()=>Blocked,Folder,Time,false,displayLeadSeconds:()=>ReadLead?.Invoke()??Lead,
                 inactivity:()=>TimeSpan.FromMilliseconds(Time.Ms-LastInput));
         }

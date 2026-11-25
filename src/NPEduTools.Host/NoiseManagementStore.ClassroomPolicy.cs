@@ -8,6 +8,7 @@ public sealed partial class NoiseManagementStore
     private bool _classroomPasswordBlocked;
     private bool _classroomMarkerPending;
     internal bool ClassroomPasswordReady => _schoolScope is not null && Configured && !_classroomPasswordBlocked;
+    internal long ClassroomPasswordEpoch { get; private set; }
 
     private void ReadClassroomPasswordAvailability()
     {
@@ -32,6 +33,7 @@ public sealed partial class NoiseManagementStore
         if (!_classroomMarkerPending && _classroomPasswordBlocked == shouldBlock) return;
         if (!_classroomPasswordBlocked)
         {
+            ClassroomPasswordEpoch++;
             foreach (var id in _tickets.Where(t => t.Value.RequiresClassroomPassword).Select(t => t.Key).ToArray())
                 _tickets.Remove(id);
         }

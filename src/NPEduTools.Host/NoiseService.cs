@@ -95,9 +95,10 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             "NoiseStateChanged" => "当前监测会话已变化，请重新核实后验证。",
             null => "管理验证已完成。",
             _ => "管理验证未通过。"
-        }, Noise: Snapshot(), NoiseProtection: (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" ||
+        }, Noise: Snapshot(), NoiseProtection: (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4" ||
             r.NoiseManagement?.ClassroomPolicyVersion is not null ? ClassroomProtection(
-                r.Capability == "noise.management.status.classroom-policy.v2" || r.NoiseManagement?.Purpose == "switch-classroom-mode") : Protection()) with { Ticket = ticket });
+                r.Capability is "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4" || r.NoiseManagement?.Purpose is "switch-classroom-mode" or "start-manual-study",
+                r.Capability == "noise.management.status.classroom-policy.v4" || r.NoiseManagement?.Purpose == "start-manual-study") : Protection()) with { Ticket = ticket });
 
     public HostResponse ManagementHandle(HostRequest r)
     {
@@ -113,7 +114,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         {
             if (Protocol.Validate(r) is { } invalid) return ManagementReply(r, invalid);
             if (r.Capability == "noise.management.status") return ManagementReply(r, management?.Error);
-            if (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2")
+            if (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4")
                 return ManagementReply(r, _classroomPolicy is null ? management?.Error : null);
             if (r.Capability == "noise.management.prepare-exit")
             {
