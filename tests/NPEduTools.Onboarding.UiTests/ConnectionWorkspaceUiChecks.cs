@@ -49,7 +49,8 @@ internal static partial class Program
                 renderSec.Invoke(sec, [ready with { Revision = 2 }]);
                 Assert(config.IsExpanded && ((TextBox)window.FindName("Executable")).Text == "edited-fixture.exe", "SecRandom polling folded setup or replaced path draft");
                 renderSec.Invoke(sec, [ready with { Operation = new(Guid.NewGuid(), "quick-draw", "Unknown", "隔离待核实", DateTimeOffset.Now) }]);
-                Assert(!Button(window, "DrawButton").IsEnabled && ((TextBlock)window.FindName("NextActionText")).Text.Contains("不要重复"), "unknown draw result allows a repeat or hides recovery guidance");
+                Assert(!Button(window, "DrawButton").IsEnabled && ((TextBlock)window.FindName("OperationText")).Text.Contains("不会自动重抽") &&
+                    Button(window, "AcknowledgeButton").IsVisible, "unknown draw result allows a repeat or hides recovery guidance");
                 renderSec.Invoke(sec, [null]);
                 Assert(!Button(window, "OpenButton").IsEnabled && !Button(window, "DrawButton").IsEnabled, "SecRandom lost-state actions remain enabled");
                 sec.Shutdown();

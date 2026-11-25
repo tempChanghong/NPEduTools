@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using Microsoft.Win32;
 using NPEduTools.Contracts;
 
@@ -12,18 +13,29 @@ public partial class SecRandomWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private SecRandomState? _state;
     private SecRandomState? _lastKnownState;
+    private SecRandomOperation? _pendingReconciliation;
     private long _generation;
     private bool _loaded, _busy, _closing, _configurationPresented;
     public SecRandomWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent();
         DesktopDialogSizing.Attach(this, pipe);
+        PageScroll.SizeChanged += (_, e) => UpdateDrawLayout(e.NewSize.Width);
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Render(null);
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
+
+    private void UpdateDrawLayout(double width)
+    {
+        bool stacked = width < 650;
+        Grid.SetRow(DrawResult, stacked ? 1 : 0);
+        Grid.SetColumn(DrawResult, stacked ? 0 : 1);
+        DrawLayout.ColumnDefinitions[1].Width = stacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        DrawResult.Margin = stacked ? new Thickness(0, 8, 0, 0) : new Thickness(20, 0, 0, 0);
+    }
     private string ShowGuidance(string message)
     {
         Message.Text = message;
@@ -73,13 +85,15 @@ public partial class SecRandomWindow : Window
     private void Render(SecRandomState? state)
     {
         _state = state;
-        NextActionText.Text = state is null ? "等待后台连接；上次接口检查与抽取结果仅供核对。" :
-            state.Error is not null ? "请先核对下方错误与程序配置，恢复后再操作。" :
-            string.IsNullOrWhiteSpace(state.ExecutablePath) ? "先在连接配置中选择并保存 SecRandom 程序位置。" :
-            state.Operation?.State == "Unknown" ? "先查看 SecRandom 的窗口与历史，再核实上次操作；不要重复闪抽。" :
-            state.Operation?.State == "Running" ? "等待当前操作完成，再进行下一次操作。" :
-            state.Connection == "Ready" ? "上次接口检查已就绪；点名、浮窗与闪抽沿用 SecRandom 的名单和规则。" :
-            "可打开点名页，或在软件已运行时检查接口；无需桥接插件。";
+        // A read-only check may temporarily take the snapshot's operation slot.
+        if (state?.Operation is { State: "Unknown" } pending) _pendingReconciliation = pending;
+        else if (state is not null && state.Operation is not { Action: "check", State: "Running" }) _pendingReconciliation = null;
+        NextActionText.Text = state switch
+        {
+            { Error: not null } => "核对程序位置与错误详情，恢复后再操作。",
+            { ExecutablePath: null or "" } => "先选择并保存 SecRandom 程序位置。",
+            _ => ""
+        };
         if (state is not null && !_configurationPresented)
         {
             _configurationPresented = true;
@@ -90,27 +104,31 @@ public partial class SecRandomWindow : Window
         if (!_loaded && state is not null) { Executable.Text = state.ExecutablePath ?? ""; _loaded = true; }
         Connection.Text = state?.Error ?? state?.Connection switch
         {
-            "Ready" => "上次检查：SecRandom 接口已就绪", "Unavailable" => "上次检查：接口未就绪，请查看执行结果",
+            "Ready" => "接口已就绪", "Unavailable" => "接口未就绪",
             _ => state is null ? "后台连接未确认，等待重新连接。" : "尚未检查 SecRandom 接口"
         };
         var display = state ?? _lastKnownState;
-        CheckedAt.Text = state is null
-            ? display?.CheckedAt is { } last ? $"上次接口检查：{last.ToLocalTime():MM-dd HH:mm:ss} · 当前后台状态未知" : "收到后台状态后恢复操作。"
-            : state.CheckedAt is { } at ? $"{at.ToLocalTime():MM-dd HH:mm:ss} · 此状态不是实时订阅" : "点击“打开点名页”启动软件，或在软件已运行时检查接口。";
-        bool running = state?.Operation?.State == "Running", uncertain = state?.Operation?.State == "Unknown";
+        CheckedAt.Text = display?.CheckedAt is { } at ? $"上次检查 {at.ToLocalTime():MM-dd HH:mm}" : "";
+        bool running = state?.Operation?.State == "Running", uncertain = _pendingReconciliation is not null;
         ConfigActions.IsEnabled = !_busy && !running && !uncertain && state is { Error: null };
         bool available = !_busy && !running && !uncertain && state is { ExecutablePath: not null, Error: null };
         OpenButton.IsEnabled = ShowFloatButton.IsEnabled = available;
         HideFloatButton.IsEnabled = DrawButton.IsEnabled = available && state?.Connection == "Ready";
         CheckButton.IsEnabled = !_busy && !running && state is { ExecutablePath: not null, Error: null };
         AcknowledgeButton.Visibility = uncertain ? Visibility.Visible : Visibility.Collapsed;
-        AcknowledgeButton.IsEnabled = !_busy && !running && state?.Error is null;
-        OperationText.Text = display?.Operation is { } op
+        AcknowledgeButton.IsEnabled = !_busy && state is { Error: null, Operation.State: "Unknown" };
+        var operation = _pendingReconciliation ?? display?.Operation;
+        OperationText.Text = _pendingReconciliation is { } unresolved
+            ? "结果待核实\n" + (unresolved.Action == "quick-draw"
+                ? "到 SecRandom 核对窗口和抽取历史。系统不会自动重抽。" : unresolved.Message) +
+                (state is null ? "\n后台恢复后可确认。" : "")
+            : operation is { } op
             ? (state is null ? "上次已确认的回执（仅供核对，不代表本次结果）：\n" : "") +
                 $"{op.UpdatedAt.ToLocalTime():MM-dd HH:mm:ss} · {StateName(op.State)}\n{op.Message}" +
                 (op.ErrorCode is null ? "" : $"（{op.ErrorCode}）")
             : state is null ? "当前执行结果未知，请等待连接恢复。" : "尚未执行操作。";
-        WinnerText.Text = display?.Operation?.Winner is { } winner ? (state is null ? "上次回执：" : "") + $"{winner.Name} · {winner.Id}" : "";
+        OperationText.SetResourceReference(TextBlock.ForegroundProperty, uncertain ? "TeacherWarningBrush" : "TeacherMutedBrush");
+        WinnerText.Text = operation?.Winner is { } winner ? (state is null ? "上次回执：" : "") + $"{winner.Name} · {winner.Id}" : "";
     }
     private static string StateName(string state) => state switch
     { "Running" => "正在执行", "Succeeded" => "已完成", "Failed" => "未完成", "Unknown" => "结果待核实", "Acknowledged" => "已核实", _ => "未知" };
@@ -148,7 +166,8 @@ public partial class SecRandomWindow : Window
         {
             var response = await RequestAsync(save ? "secrandom.config.set" : "secrandom.command", save ? Executable.Text.Trim() : null,
                 save ? null : new(action!, acknowledge));
-            Render(response.SecRandom); Message.Text = response.Message;
+            Render(response.SecRandom);
+            Message.Text = action == "quick-draw" && response.Outcome == "Accepted" ? "" : response.Message;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
         { Render(null); Message.Text = "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。"; }
@@ -183,12 +202,16 @@ public partial class SecRandomWindow : Window
     private async void ShowFloatClicked(object sender, RoutedEventArgs e) => await RunAsync("show-float");
     private async void HideFloatClicked(object sender, RoutedEventArgs e) => await RunAsync("hide-float");
     private async void CheckClicked(object sender, RoutedEventArgs e) => await RunAsync("check");
-    private async void DrawClicked(object sender, RoutedEventArgs e) => await RunAsync("quick-draw");
+    private async void DrawClicked(object sender, RoutedEventArgs e)
+    {
+        if (DrawButton.IsEnabled) await RunAsync("quick-draw");
+    }
     private async void AcknowledgeClicked(object sender, RoutedEventArgs e)
     {
-        if (_state?.Operation is not { State: "Unknown" } op) return;
+        if (!AcknowledgeButton.IsEnabled || _state?.Operation is not { State: "Unknown" } op) return;
         if (MessageBox.Show(this, "请先在 SecRandom 核实窗口和抽取历史，确认上次请求是否完成。\n解除后可以发起新的操作，但不会重新执行旧请求。确认已经核实？",
-            "核实操作结果", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+            "核实操作结果", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK &&
+            AcknowledgeButton.IsEnabled && _state?.Operation?.RequestId == op.RequestId)
             await RunAsync("acknowledge", acknowledge: op.RequestId);
     }
 }
