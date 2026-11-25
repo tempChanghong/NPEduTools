@@ -94,6 +94,8 @@ if (workerMode || scheduleMode || calendarMode)
 }
 
 if (options.ContainsKey("--observe-ms") || options.ContainsKey("--school-date")) return 2;
+string dataDirectory = options.GetValueOrDefault("--data-dir", GuardFiles.DataDirectory(pipeName));
+HostCrashReport.Register(dataDirectory);
 using var instance = new Mutex(false, $@"Local\{pipeName}.Host", out bool createdNew);
 if (!createdNew)
 {
@@ -127,7 +129,6 @@ ProcessStartInfo WorkerStart(bool monitor, int observeMs = 0, bool schedule = fa
 using var reader = new IsolatedStatusReader(query => WorkerStart(false, (int)query.ObservationWindow.TotalMilliseconds, query.IncludeSchedule, schoolDate: query.SchoolDate));
 await using var monitor = new StatusMonitor(() => WorkerStart(true), Console.Error.WriteLine);
 await using var schoolClock = new SchoolClockMonitor(() => WorkerStart(true, bridge: true), Console.Error.WriteLine);
-string dataDirectory = options.GetValueOrDefault("--data-dir", GuardFiles.DataDirectory(pipeName));
 var runtimeGate = new RuntimeOperationGate(coordinateDesktop: true);
 await using var secRandom = new SecRandomService(dataDirectory, runtimeGate);
 await using var launch = new LaunchService(dataDirectory, new ClassIslandLaunchTarget(), reader, runtimeGate: runtimeGate);
