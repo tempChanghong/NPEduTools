@@ -285,7 +285,7 @@
           <Border Background="{DynamicResource TeacherHoverBrush}" CornerRadius="10" Padding="14" Margin="0,8,0,0"><TextBlock Text="{Binding Binding}" TextWrapping="Wrap" LineHeight="24" AutomationProperties.AutomationId="NpepBinding" /></Border>
           <Expander Style="{StaticResource Disclosure}" Header="归属核对编号" FontSize="13" Margin="0,8,0,0"><TextBlock Text="{Binding BindingIdentity}" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,0" /></Expander>
           <StackPanel Visibility="{Binding ShowConfirm, Converter={StaticResource VisibleWhenTrue}}">
-            <TextBlock Text="确认后，学校可接收设备状态、投递通知、管理日常 / 考试环境与放映，并下发自习排程和设备策略。噪音监测只上传统计，不上传原音频，学校开启照片策略时按规则上传单张捕获画面。请先核对归属与隐私告知。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,12,0,8" />
+            <TextBlock Text="确认后，学校可接收设备状态、投递通知、管理日常 / 考试环境与放映，并下发自习排程、设备策略和 Edge 网站访问规则。噪音监测只上传统计，不上传原音频，学校开启照片策略时按规则上传单张捕获画面。请先核对归属与隐私告知。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,12,0,8" />
             <CheckBox IsChecked="{Binding BindingConfirmed}" IsEnabled="{Binding CanReviewBinding}" Style="{StaticResource Switch}" Margin="0,4,0,10" AutomationProperties.AutomationId="NpepBindingConfirmed"><TextBlock Text="学校、班级和大屏归属正确，同意上述连接功能" TextWrapping="Wrap" /></CheckBox>
             <Button Content="{Binding ConfirmLabel}" Click="ConfirmClicked" HorizontalAlignment="Left" Style="{StaticResource TeacherPrimary}" IsEnabled="{Binding CanConfirm}" AutomationProperties.AutomationId="NpepConfirm" />
           </StackPanel>

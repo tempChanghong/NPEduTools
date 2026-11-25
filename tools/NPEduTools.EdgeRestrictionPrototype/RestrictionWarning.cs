@@ -72,17 +72,21 @@ internal sealed class RestrictionWarning : Window
 
     internal static FrameworkElement CreateView(string host, string policy, TextBlock countdown)
     {
-        var right = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 40, 62, 40) };
-        right.Children.Add(WhiteText(29, "本教室大屏已限制访问此网站"));
-        var site = WhiteText(57, host);
-        site.Margin = new(0, 30, 0, 20);
+        var right = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(20, 40, 64, 40) };
+        var site = WhiteText(host.Length > 32 ? 42 : host.Length > 22 ? 52 : 68, host);
+        site.FontWeight = FontWeights.Bold;
+        site.Margin = new(0, 0, 0, 24);
         right.Children.Add(site);
-        right.Children.Add(WhiteText(29, policy));
-        countdown.Margin = new(0, 52, 0, 0);
+        right.Children.Add(WhiteText(34, "本教室大屏已限制访问此网站"));
+        var source = WhiteText(28, policy);
+        source.Opacity = 0.85;
+        source.Margin = new(0, 12, 0, 0);
+        right.Children.Add(source);
+        right.Children.Add(new Border { Height = 1, Background = Brushes.White, Opacity = 0.3, Margin = new(0, 36, 0, 24) });
+        Typography.SetNumeralAlignment(countdown, FontNumeralAlignment.Tabular);
         right.Children.Add(countdown);
         var surface = ClassroomWarningSurface.Create(Translations, right, emphasizedLine: 4);
         TextElement.SetFontFamily(surface, new FontFamily("Microsoft YaHei, Yu Gothic, Malgun Gothic, Segoe UI"));
-        TextElement.SetFontWeight(surface, FontWeights.Bold);
         return surface;
     }
 

@@ -137,7 +137,7 @@
             </TextBlock>
             <Expander Header="连接权限与服务地址说明" Margin="0,6,0,12"><StackPanel>
               <TextBlock Style="{StaticResource Hint}" Text="填写学校提供的 API 服务根地址；非默认端口需包含端口号。可向学校申请连接，或选择已预授权班级并使用学校口令连接。网页配对码仍可在其他方式中使用。" />
-              <TextBlock Style="{StaticResource Hint}" Text="配对后改用学校管理口令。学校可投递通知、管理日常／考试环境、控制放映和自习安排。学校照片策略会影响摄像头事件捕获，请核对配对归属、连接权限和服务与隐私协议，并向教室内师生告知。接受协议本身不会配对。" />
+              <TextBlock Style="{StaticResource Hint}" Text="配对后改用学校管理口令。学校可投递通知、管理日常／考试环境、控制放映和自习安排，并设置 Edge 网站访问规则。学校照片策略会影响摄像头事件捕获，请核对配对归属、连接权限和服务与隐私协议，并向教室内师生告知。接受协议本身不会配对。" />
               <Button Content="打开完整学校互联设置" Click="SchoolClicked" Style="{StaticResource TeacherQuiet}" HorizontalAlignment="Left" AutomationProperties.AutomationId="OobeSchoolSettings" />
               <Button Content="查看服务与隐私协议" Click="AgreementsClicked" Style="{StaticResource TeacherQuiet}" HorizontalAlignment="Left" />
             </StackPanel></Expander>
