@@ -13,11 +13,12 @@ public sealed partial class NoiseService
 
     internal void SetClassroomActionPolicy(string? version, string? stopMode, string? exitMode, Func<bool>? usbPresent,
         string? credentialScope = null, string? switchClassroomMode = null, string? startManualStudy = null,
-        string? manualStudyScopeVersion = null)
+        string? manualStudyScopeVersion = null, string? startManualRecording = null)
     {
         lock (_sync)
         {
-            var policy = version is null ? null : new ClassroomActionPolicyState(version, stopMode ?? "deny", exitMode ?? "deny", switchClassroomMode, startManualStudy);
+            var policy = version is null ? null : new ClassroomActionPolicyState(version, stopMode ?? "deny", exitMode ?? "deny",
+                switchClassroomMode, startManualStudy, startManualRecording);
             if (_manualStudyScopeVersion != manualStudyScopeVersion ||
                 (_classroomPolicy?.StartManualStudy ?? "default") != (policy?.StartManualStudy ?? "default") ||
                 (manualStudyScopeVersion is null && _classroomCredentialScope != credentialScope))
@@ -32,17 +33,18 @@ public sealed partial class NoiseService
         }
     }
 
-    internal NoiseProtectionState ClassroomProtection() => ClassroomProtection(false);
+    internal NoiseProtectionState ClassroomProtection() => ClassroomProtection(1);
 
-    private NoiseProtectionState ClassroomProtection(bool includeMode, bool includeManual = false)
+    private NoiseProtectionState ClassroomProtection(int version)
     {
         lock (_sync)
         {
             var status = Protection();
             return _classroomPolicy is null ? status : status with
                 { ClassroomPolicy = _classroomPolicy with {
-                    SwitchClassroomMode = includeMode ? _classroomPolicy.SwitchClassroomMode : null,
-                    StartManualStudy = includeManual ? _classroomPolicy.StartManualStudy : null }, Configured = ClassroomPasswordReady };
+                    SwitchClassroomMode = version >= 2 ? _classroomPolicy.SwitchClassroomMode : null,
+                    StartManualStudy = version >= 4 ? _classroomPolicy.StartManualStudy : null,
+                    StartManualRecording = version >= 5 ? _classroomPolicy.StartManualRecording : null }, Configured = ClassroomPasswordReady };
         }
     }
 
@@ -55,6 +57,7 @@ public sealed partial class NoiseService
         "maintenance" => _classroomPolicy?.ExitHost,
         "switch-classroom-mode" => _classroomPolicy?.SwitchClassroomMode,
         "start-manual-study" => _classroomPolicy?.StartManualStudy,
+        "start-manual-recording" => _classroomPolicy?.StartManualRecording,
         _ => null
     };
 
@@ -97,6 +100,8 @@ public sealed partial class NoiseService
         if (c.InstanceId != _instance || c.SessionId != _session?.Id)
             return ManagementReply(request, "NoiseStateChanged");
         if (management is null) return ManagementReply(request, "MANAGEMENT_UNSUPPORTED");
+        if (c.Purpose == "start-manual-recording" && !SourcesAreFixed(c.RecordingTarget))
+            return ManagementReply(request, "CLASSROOM_RECORDING_SOURCE_REQUIRED");
         if (rule is not ("allow" or "usb" or "password" or "either" or "both"))
             return ManagementReply(request, "CLASSROOM_ACTION_DENIED");
 
@@ -111,11 +116,11 @@ public sealed partial class NoiseService
             if (management.VerifyCalibration(c.Secret) is { } error) return ManagementReply(request, error);
         }
         var grant = management.IssueAfterVerification(_instance, _session?.Id, c.Purpose!, c.TargetRequestId!.Value,
-            _classroomPolicy.Version, usbRequired, _revision, passwordRequired, c.ManualStudyTarget);
+            _classroomPolicy.Version, usbRequired, _revision, passwordRequired, c.ManualStudyTarget, c.RecordingTarget);
         return ManagementReply(request, grant.Error, grant.Ticket);
     }
 
-    private string? CheckClassroomTicket(HostRequest request, string purpose, string rule, UsbObservation? usb)
+    private string? CheckClassroomTicket(HostRequest request, string purpose, string rule, UsbObservation? usb, bool consume = true)
     {
         if (rule == "deny") return "CLASSROOM_ACTION_DENIED";
         if (management is null || _classroomPolicy is null) return "MANAGEMENT_REQUIRED";
@@ -123,6 +128,22 @@ public sealed partial class NoiseService
         if (management.RequiresUsb(request.NoiseAuthorization, request.RequestId, version) && !UsbConfirmed(usb))
             return "CLASSROOM_USB_REQUIRED";
         return management.CheckTicket(request.NoiseAuthorization, _instance, _session?.Id, purpose, request.RequestId, version, _revision,
-            consume: request.Capability != "noise.management.prepare-exit", manualStudyTarget: request.ManualStudy) ? null : "MANAGEMENT_REQUIRED";
+            consume: consume && request.Capability != "noise.management.prepare-exit", manualStudyTarget: request.ManualStudy,
+            recordingTarget: request.Recording) ? null : "MANAGEMENT_REQUIRED";
+    }
+
+    private static bool SourcesAreFixed(RecorderCommand? command) => command?.Options is { } options &&
+        (!options.Microphone || options.MicrophoneId != "default") && (!options.SystemAudio || options.SpeakerId != "default");
+
+    internal string? AuthorizeManualRecordingStart(HostRequest request, bool consume)
+    {
+        var usb = ReadActionUsb(request);
+        lock (_sync)
+        {
+            var rule = ClassroomRule("start-manual-recording");
+            if (rule is null or "default") return request.NoiseAuthorization is null ? null : "CLASSROOM_POLICY_CHANGED";
+            if (rule != "deny" && !SourcesAreFixed(request.Recording)) return "CLASSROOM_RECORDING_SOURCE_REQUIRED";
+            return CheckClassroomTicket(request, "start-manual-recording", rule, usb, consume);
+        }
     }
 }

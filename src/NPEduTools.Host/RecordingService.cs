@@ -16,6 +16,7 @@ public sealed class RecordingService : IAsyncDisposable
     private readonly Func<bool> _modePaused;
     private readonly Func<bool> _remoteExamPaused;
     private readonly RuntimeOperationGate _runtimeGate;
+    private readonly NoiseService? _classroomActions;
     private int _runtimeReserved;
     private readonly SchoolClockTracker _clock = new();
     private readonly RecordingExecutionLedger _ledger;
@@ -31,6 +32,7 @@ public sealed class RecordingService : IAsyncDisposable
     private long _appLease;
     private long _enabledAt;
     private Guid _manualClient;
+    private (Guid RequestId, RecorderCommand Command)? _acceptedManual;
     private long _manualLease;
     private sealed record UpcomingSnapshot(PlannedRecording? Plan, Guid Profile, string State)
     { public PlannedRecording[] Plans { get; init; } = []; }
@@ -39,12 +41,13 @@ public sealed class RecordingService : IAsyncDisposable
     private RecordingState _last = new("Idle", "准备录制");
     private static TimeSpan Elapsed => Stopwatch.GetElapsedTime(0);
     public RecordingService(string pipe, string directory, Func<SchoolClockFrame> snapshot, Func<bool>? modePaused = null,
-        Func<bool>? remoteExamPaused = null, RuntimeOperationGate? runtimeGate = null)
+        Func<bool>? remoteExamPaused = null, RuntimeOperationGate? runtimeGate = null, NoiseService? classroomActions = null)
     {
         _snapshot = snapshot;
         _modePaused = modePaused ?? (() => false);
         _remoteExamPaused = remoteExamPaused ?? (() => false);
         _runtimeGate = runtimeGate ?? new();
+        _classroomActions = classroomActions;
         string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(pipe)))[..24];
         _bookPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NPEduTools", "ui", hash + ".recording-plans.json");
         _executable = Path.Combine(AppContext.BaseDirectory, "Recorder", "NPEduTools.Recorder.exe");
@@ -109,15 +112,30 @@ public sealed class RecordingService : IAsyncDisposable
                 var command = request.Recording!;
                 if (command.Action == "start")
                 {
-                    if (State.Control?.SessionId == request.RequestId) return Reply(request);
+                    if (_acceptedManual is { } accepted && accepted.RequestId == request.RequestId)
+                    {
+                        if (accepted.Command != command)
+                            return new(Protocol.Version, request.RequestId, "Rejected", "RECORDING_REQUEST_CONFLICT",
+                                "该请求编号已经用于其他录课设置。请核对原录制状态。", Recording: State, Automatic: Automatic);
+                        if (State.Control?.SessionId == request.RequestId) return Reply(request);
+                        return new(Protocol.Version, request.RequestId, "Rejected", "RECORDING_SESSION_CHANGED",
+                            "原录课申请已经受理，当前录制会话已变化。", Recording: State, Automatic: Automatic);
+                    }
                     if (Volatile.Read(ref _runtimeReserved) != 0)
                         return new(Protocol.Version, request.RequestId, "Rejected", "RuntimeOperationBusy",
                             "正在切换运行环境，请等待操作结束后再开始录制。", Recording: State, Automatic: Automatic);
                     if (State.Active) throw new InvalidOperationException("已有录制会话，请先结束当前会话。");
                     if (!await RetireAsync()) throw new InvalidOperationException("上一录制仍在收尾，请稍后重试。");
+                    RequireManualStart(request, consume: false);
                     var control = new RecorderControl("Manual", request.RequestId, "", 0, RecorderDeadline.After(TimeSpan.FromSeconds(8)));
-                    _manualClient = command.ClientId!.Value; _manualLease = RecorderDeadline.After(TimeSpan.FromSeconds(12));
-                    await StartAsync(command.Options!, control);
+                    await StartAsync(command.Options!, control, () =>
+                    {
+                        RequireManualStart(request, consume: true);
+                        // Record admission before sending anything to the worker. A lost response may still have started capture.
+                        _acceptedManual = (request.RequestId, command);
+                        _manualClient = command.ClientId!.Value;
+                        _manualLease = RecorderDeadline.After(TimeSpan.FromSeconds(12));
+                    });
                 }
                 else
                 {
@@ -178,11 +196,29 @@ public sealed class RecordingService : IAsyncDisposable
             }
             return Reply(request);
         }
+        catch (ManualRecordingDenied error)
+        { return new(Protocol.Version, request.RequestId, "Rejected", error.Code, error.Message, Recording: State, Automatic: Automatic); }
         catch (Exception error) when (error is not OutOfMemoryException)
         { return new(Protocol.Version, request.RequestId, "Rejected", "RecordingOperationFailed", error.Message, Recording: State, Automatic: Automatic); }
         finally { _gate.Release(); }
     }
     private HostResponse Reply(HostRequest request) => new(Protocol.Version, request.RequestId, "Succeeded", null, "录制状态", Recording: State, Automatic: Automatic);
+    private sealed class ManualRecordingDenied(string code) : InvalidOperationException(code switch
+    {
+        "CLASSROOM_ACTION_DENIED" => "学校策略禁止本班发起手动录课。",
+        "CLASSROOM_RECORDING_SOURCE_REQUIRED" => "请重新读取录制设备，确认本次录课实际使用的音源后再开始。",
+        "CLASSROOM_USB_REQUIRED" => "请插入本班已登记的管理 U 盘，再开始录课。",
+        _ => "请重新核对本班权限和本次录课设置。"
+    })
+    { public string Code { get; } = code; }
+
+    private void RequireManualStart(HostRequest request, bool consume)
+    {
+        if (_classroomActions is null && request.NoiseAuthorization is not null)
+            throw new ManualRecordingDenied("CLASSROOM_POLICY_CHANGED");
+        if (_classroomActions?.AuthorizeManualRecordingStart(request, consume) is { } denied)
+            throw new ManualRecordingDenied(denied);
+    }
     private async Task PreflightAsync(RecordingOptions options)
     {
         if (RecordingContract.Validate(options) is { } error) throw new InvalidDataException(error);
@@ -197,10 +233,18 @@ public sealed class RecordingService : IAsyncDisposable
         if (new DriveInfo(Path.GetPathRoot(Path.GetFullPath(options.OutputDirectory))!).AvailableFreeSpace < 512L * 1024 * 1024)
             throw new IOException("保存位置可用空间不足 512 MB。");
     }
-    private async Task StartAsync(RecordingOptions options, RecorderControl control)
+    private async Task StartAsync(RecordingOptions options, RecorderControl control, Action? confirmStart = null)
     {
         _worker = new(_executable, _fixture);
-        try { await _worker.StartAsync(options, control); }
+        try { await _worker.StartAsync(options, control, confirmStart); }
+        catch (ManualRecordingDenied denied)
+        {
+            // This worker only completed its idle handshake; no capture command was sent.
+            _worker.Fail(denied.Message);
+            await _worker.DisposeAsync();
+            if (!_worker.Alive) _worker = null;
+            throw;
+        }
         catch (Exception error) when (error is not OutOfMemoryException) { _worker.Fail(error.Message); throw; }
     }
     private async Task<bool> RetireAsync()

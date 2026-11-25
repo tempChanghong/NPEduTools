@@ -203,7 +203,8 @@ public static class Protocol
         if (request.Capability == "noise.management.command" ? request.NoiseManagement is null || !NoiseManagementContract.Valid(request.NoiseManagement) : request.NoiseManagement is not null)
             return "InvalidNoiseManagementCommand";
         if (request.NoiseAuthorization is { } grant && (grant == Guid.Empty || !NoiseInterruption(request) &&
-            !(request.Capability == "manual.study.command" && request.ManualStudy?.Action == "start"))) return "UnexpectedParameters";
+            !(request.Capability == "manual.study.command" && request.ManualStudy?.Action == "start") &&
+            !(request.Capability == "recording.command" && request.Recording?.Action == "start"))) return "UnexpectedParameters";
         if (request.Capability == "secrandom.command" ? request.SecRandom is null || !SecRandomContract.Valid(request.SecRandom) : request.SecRandom is not null)
             return "InvalidSecRandomCommand";
         if (request.Capability.StartsWith("secrandom.", StringComparison.Ordinal) && request.ObserveMs != 0) return "UnexpectedParameters";
@@ -217,7 +218,7 @@ public static class Protocol
             "study.devices.refresh-microphone-policy" or
             "manual.study.command" or "manual.study.status" or "manual.study.report.status" or "study.recovery.status" or "study.report.status" or "study.exit.begin" or "study.exit.status" or "study.photos.exit-intent" or "study.photos.flush" or "study.status.photos" or "study.devices.microphone" or "study.devices.status" or "study.devices.refresh" or "study.devices.select" or "study.status.seating" or "study.seating" or "study.seating.upload.status" or "study.seating.upload" or "study.seating.presentation" or "study.status" or "study.hide" or "study.show" or "study.reminder" or "study.homework" or "study.presentation" or "study.presentation.epoch" or "secrandom.status" or "secrandom.config.set" or "secrandom.command" or
             "examaware.status" or "examaware.config.set" or "examaware.start" or "examaware.settings" or "examaware.plugins" or "examaware.pairing.get" or "examaware.pairing.reset" or "examaware.quit" or "examaware.autostart.set" or "examaware.plan" or
-            "noise.meter.command" or "noise.reference.status" or "noise.reference.command" or "noise.calibration.status" or "noise.calibration.command" or "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or
+            "noise.meter.command" or "noise.reference.status" or "noise.reference.command" or "noise.calibration.status" or "noise.calibration.command" or "noise.status" or "noise.devices" or "noise.command" or "noise.display.status" or "noise.display.return" or "noise.management.status" or "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4" or "noise.management.status.classroom-policy.v5" or "noise.management.command" or "noise.management.prepare-exit" or "recording.status" or "recording.command" or "recording.automatic" or
             "classisland.day-plan" or "classisland.school-clock" or "classisland.schedule" or "classisland.config.get" or "classisland.config.set" or "classisland.start" or "classisland.verify" or "classisland.execution.get" or
             "presentation.touch.status" or "presentation.touch.enable" or "presentation.touch.disable" or
             "presentation.touch.pause" or "presentation.touch.resume" or "presentation.touch.compat.on" or "presentation.touch.compat.off")) return "UnknownCapability";
@@ -289,6 +290,7 @@ public static class Protocol
         window.End > window.Start && window.End - window.Start <= TimeSpan.FromHours(3);
 
     public static string NoisePurpose(HostRequest r) => r.Capability == "manual.study.command" && r.ManualStudy?.Action == "start" ? "start-manual-study" :
+        r.Capability == "recording.command" && r.Recording?.Action == "start" ? "start-manual-recording" :
         r.Capability is "host.stop" or "noise.management.prepare-exit" ? "maintenance" :
         r.Capability == "noise.command" ? "stop" :
         r.Capability is "classroom.set" or "classroom.retry" or "classroom.restore" ? "switch-classroom-mode" : "change-environment";

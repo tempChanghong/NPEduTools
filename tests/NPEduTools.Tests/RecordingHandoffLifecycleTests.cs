@@ -7,7 +7,7 @@ using NPEduTools.Host;
 namespace NPEduTools.Tests;
 
 [Collection(ProcessIntegrationCollection.Name)]
-public sealed class RecordingHandoffLifecycleTests
+public sealed partial class RecordingHandoffLifecycleTests
 {
     private static readonly DateOnly Date = new(2031, 4, 7);
     private static readonly DateTimeOffset Now = new(Date.ToDateTime(new(12, 15)), TimeSpan.Zero);
@@ -177,11 +177,18 @@ public sealed class RecordingHandoffLifecycleTests
         public string DirectoryPath { get; } = Directory.CreateTempSubdirectory("NPEduTools-handoff-").FullName;
         public string ReleasePath => Path.Combine(DirectoryPath, "release-worker");
         public RecordingService Service { get; }
+        public NoiseService Actions { get; }
         public string BookPath => Field<string>("_bookPath");
         public RecordingExecutionLedger Ledger => Field<RecordingExecutionLedger>("_ledger");
         public RecorderProcess? Worker => Field<RecorderProcess?>("_worker");
         private string Executable => Path.Combine(AppContext.BaseDirectory, "GuardFixture", "NPEduTools.GuardFixture.exe");
-        private Fixture() => Service = new("NPEduTools.Test.handoff." + Guid.NewGuid().ToString("N"), DirectoryPath, () => _frame);
+        private Fixture()
+        {
+            Actions = new(_ => throw new InvalidOperationException("No physical capture in fixture"), () => [],
+                management: new NoiseManagementStore(DirectoryPath));
+            Service = new("NPEduTools.Test.handoff." + Guid.NewGuid().ToString("N"), DirectoryPath, () => _frame,
+                classroomActions: Actions);
+        }
         public T Field<T>(string name) => (T)typeof(RecordingService).GetField(name, Flags)!.GetValue(Service)!;
         public void Set(string name, object value) => typeof(RecordingService).GetField(name, Flags)!.SetValue(Service, value);
         public static async Task<Fixture> Open()
@@ -244,6 +251,7 @@ public sealed class RecordingHandoffLifecycleTests
             // a late start receipt must not race a fabricated cleanup failure.
             if (Worker is { } worker) await worker.DisposeAsync();
             await Service.DisposeAsync();
+            await Actions.DisposeAsync();
             if (File.Exists(BookPath)) File.Delete(BookPath);
             Directory.Delete(DirectoryPath, true);
         }

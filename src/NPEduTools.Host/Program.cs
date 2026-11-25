@@ -143,10 +143,6 @@ await using var touch = new TouchAssistService(() =>
 var classroomStore = new ClassroomModeStore(dataDirectory);
 // Load the independent N3 protection before the scheduler. No remote execute entry is exposed yet.
 var remoteExamStore = new RemoteExamStore(dataDirectory);
-await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot,
-    () => classroomStore.State.AutomaticPaused, () => remoteExamStore.State.AutomaticPaused, runtimeGate);
-await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget(), runtimeGate);
-await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader), runtimeGate);
 var noiseManagement = new NoiseManagementStore(dataDirectory);
 NoiseService? meterNoise = null;
 var soundMeter = new SoundMeterService(() => OperatingSystem.IsWindows() ? new WindowsSoundMeterHid() : throw new PlatformNotSupportedException(),
@@ -155,9 +151,13 @@ await using var noise = new NoiseService(id => OperatingSystem.IsWindows()
     ? new WasapiNoiseCapture(id) : throw new PlatformNotSupportedException(), WasapiNoiseCapture.Enumerate, directory: dataDirectory,
     management: noiseManagement,
     referenceCreate: id => OperatingSystem.IsWindows() ? WasapiNoiseCapture.CreateReference(id) : throw new PlatformNotSupportedException(),
-    referencePaused: () => classroom.Snapshot.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
+    referencePaused: () => classroomStore.State.AutomaticPaused || remoteExamStore.State.AutomaticPaused || runtimeGate.Switching || runtimeGate.ExamRequested,
     referenceMeterOpen: soundMeter.OpenReferenceAsync);
 meterNoise = noise;
+await using var recording = new RecordingService(pipeName, dataDirectory, schoolClock.Snapshot,
+    () => classroomStore.State.AutomaticPaused, () => remoteExamStore.State.AutomaticPaused, runtimeGate, classroomActions: noise);
+await using var examAware = new ExamAwareService(dataDirectory, new ExamAwareTarget(), runtimeGate);
+await using var classroom = new ClassroomModeService(classroomStore, new ClassroomModeEffects(launch, examAware, recording, reader), runtimeGate);
 var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
     ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));

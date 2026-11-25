@@ -73,6 +73,21 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
     }
     internal (NoiseState Noise, NoiseProtectionState Protection) ManagementSnapshot()
     { lock (_sync) return (Snapshot(), Protection()); }
+    private static int ClassroomStatusVersion(string capability) => capability switch
+    {
+        "noise.management.status.classroom-policy" => 1, "noise.management.status.classroom-policy.v2" => 2,
+        "noise.management.status.classroom-policy.v4" => 4, "noise.management.status.classroom-policy.v5" => 5,
+        _ => 0
+    };
+
+    private NoiseProtectionState ManagementProtection(HostRequest request)
+    {
+        int version = ClassroomStatusVersion(request.Capability);
+        if (request.NoiseManagement is { ClassroomPolicyVersion: not null } command)
+            version = command.Purpose switch { "switch-classroom-mode" => 2, "start-manual-study" => 4, "start-manual-recording" => 5, _ => 1 };
+        return version == 0 ? Protection() : ClassroomProtection(version);
+    }
+
     private HostResponse ManagementReply(HostRequest r, string? error = null, Guid? ticket = null) =>
         new(Protocol.Version, r.RequestId, error is null ? "Succeeded" : "Rejected", error, error switch
         {
@@ -89,16 +104,14 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
             "CLASSROOM_ACTION_DENIED" => "学校策略禁止在这块大屏上执行此操作。",
             "CLASSROOM_POLICY_CHANGED" => "学校操作策略已变化，请重新读取本班大屏的权限后再确认。",
             "CLASSROOM_USB_REQUIRED" => "请插入本班获准使用的管理 U 盘。执行本次操作时仍需在场。",
+            "CLASSROOM_RECORDING_SOURCE_REQUIRED" => "请重新读取录制设备，确认本次录课实际使用的音源后再开始。",
             "SCHOOL_MANAGEMENT_REQUIRED" => "此策略需要当前班级的管理口令，请等待学校同步。",
             "CLASSROOM_STOP_REQUIRED" => "变更运行环境会中断当前学校监测，请先在自习监测中办理停止本场。",
             "SCHEDULE_STORE_UNAVAILABLE" => "未能保存本时段跳过记录，未受理正常停止；请检查存储状态。",
             "NoiseStateChanged" => "当前监测会话已变化，请重新核实后验证。",
             null => "管理验证已完成。",
             _ => "管理验证未通过。"
-        }, Noise: Snapshot(), NoiseProtection: (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4" ||
-            r.NoiseManagement?.ClassroomPolicyVersion is not null ? ClassroomProtection(
-                r.Capability is "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4" || r.NoiseManagement?.Purpose is "switch-classroom-mode" or "start-manual-study",
-                r.Capability == "noise.management.status.classroom-policy.v4" || r.NoiseManagement?.Purpose == "start-manual-study") : Protection()) with { Ticket = ticket });
+        }, Noise: Snapshot(), NoiseProtection: ManagementProtection(r) with { Ticket = ticket });
 
     public HostResponse ManagementHandle(HostRequest r)
     {
@@ -114,7 +127,7 @@ public sealed partial class NoiseService(Func<string, INoiseCapture> create, Fun
         {
             if (Protocol.Validate(r) is { } invalid) return ManagementReply(r, invalid);
             if (r.Capability == "noise.management.status") return ManagementReply(r, management?.Error);
-            if (r.Capability is "noise.management.status.classroom-policy" or "noise.management.status.classroom-policy.v2" or "noise.management.status.classroom-policy.v4")
+            if (ClassroomStatusVersion(r.Capability) != 0)
                 return ManagementReply(r, _classroomPolicy is null ? management?.Error : null);
             if (r.Capability == "noise.management.prepare-exit")
             {

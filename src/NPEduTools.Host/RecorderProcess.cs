@@ -34,7 +34,7 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
         if (process.ExitCode != 0) throw new IOException("录制设备检测失败。");
         return JsonSerializer.Deserialize<RecordingEnvironment>(await output, RecordingContract.Json) ?? throw new InvalidDataException("录制环境无效。");
     }
-    public async Task StartAsync(RecordingOptions options, RecorderControl control)
+    public async Task StartAsync(RecordingOptions options, RecorderControl control, Action? confirmStart = null)
     {
         _control = control;
         _state = new("Starting", "后台正在准备录制", Control: control);
@@ -46,6 +46,7 @@ public sealed class RecorderProcess(string executable, string? fixture = null) :
         // Absolute deadlines include startup time; never grant a fresh duration after the handshake.
         if (control.Owner == "Automatic" && RecorderDeadline.SecondsUntil(control.HardDeadline) <= 0) throw new IOException("准备期间已超过截止时间。");
         _control = control with { LeaseDeadline = RecorderDeadline.After(TimeSpan.FromSeconds(8)) };
+        confirmStart?.Invoke();
         await WriteAsync(new("start", options, _control));
         _lease = LeaseAsync();
     }
