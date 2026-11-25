@@ -143,17 +143,30 @@ public sealed partial class ExamAwareTests : IDisposable
             await Wait(() => service.Snapshot().BridgeState == "Disconnected");
         }
     }
-    [Fact]
-    public async Task UnsupportedVersionDoesNotReportAutostartAsKnown()
+    [Theory]
+    [InlineData("1.4.3", false)]
+    [InlineData("1.5.1", false)]
+    [InlineData("1.5.2", true)]
+    [InlineData("1.5.10", true)]
+    [InlineData("1.6.1", true)]
+    [InlineData("1.7.0", true)]
+    [InlineData("1.6.1-beta.1", false)]
+    [InlineData("1.6.1.0", false)]
+    [InlineData("1.06.1", false)]
+    [InlineData("2.0.0", false)]
+    public async Task AuthenticatedReleaseVersionControlsAvailability(string version, bool supported)
     {
         await using var service = new ExamAwareService(_directory, new Target());
         var pairing = await Pairing(service);
         var (client, hello) = await Connect(pairing);
         using (client)
         {
-            await Send(client, hello, pairing, version: "1.4.3");
-            await Wait(() => service.Snapshot().BridgeState == "UnsupportedVersion");
-            Assert.Null(service.Snapshot().AutoStartRegistered);
+            await Send(client, hello, pairing, version: version, canSetAutoStart: true);
+            await Wait(() => service.Snapshot().BridgeState == (supported ? "Connected" : "UnsupportedVersion"));
+            var status = service.Snapshot();
+            Assert.Equal(version, status.AppVersion);
+            Assert.Equal(supported, status.CanSetAutoStart);
+            Assert.Equal(supported ? true : (bool?)null, status.AutoStartRegistered);
         }
     }
     [Fact]

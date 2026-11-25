@@ -14,6 +14,7 @@ export function activateBridge(ctx: MainPluginContext) {
   let retry: ReturnType<typeof setTimeout> | undefined, cleanup: (() => void) | undefined;
   let failures = 0, connectingGeneration = -1, commandOwner: string | undefined, mutationEpoch = 0;
   const consumed = new Set<string>();
+  const canSetAutoStart = () => typeof ctx.api.app.getAutoStart === 'function' && typeof ctx.api.app.setAutoStart === 'function';
   function reset() { generation++; clearTimeout(retry); cleanup?.(); cleanup = undefined; socket?.dispose(); socket = undefined; }
   function schedule() {
     if (stopped) return;
@@ -65,7 +66,7 @@ export function activateBridge(ctx: MainPluginContext) {
         const player = plans.supported() ? await plans.observe() : undefined;
         if (!active() || commandOwner && !planBusy || observedEpoch !== mutationEpoch) return;
         await send('status', { name: info.name, version: info.version, platform: info.platform,
-          packaged: info.packaged, autoStartRegistered: registered, processId: process.pid, canSetAutoStart: true,
+          packaged: info.packaged, autoStartRegistered: registered, processId: process.pid, canSetAutoStart: canSetAutoStart(),
           ...(plans.supported() ? { canPresent: true, player } : {}) });
         failures = 0;
       } catch { fail(); } finally { sampling = false; }
@@ -76,6 +77,7 @@ export function activateBridge(ctx: MainPluginContext) {
         if (commandOwner || consumed.has(command.requestId) || consumed.size >= 64) { await reply('Failed'); return; }
         consumed.add(command.requestId);
         if (Date.now() > command.expiresAt || Date.now() < command.issuedAt - 1000) { await reply('Expired'); return; }
+        if (typeof ctx.api.app.quit !== 'function') { await reply('Failed'); return; }
         commandOwner = command.requestId;
         await reply('Accepted'); // The official quit call may synchronously dispose this socket.
         if (!active()) return;
@@ -92,6 +94,7 @@ export function activateBridge(ctx: MainPluginContext) {
         consumed.add(command.requestId);
         if (!active()) return;
         if (Date.now() > command.expiresAt || Date.now() < command.issuedAt - 1000) { await reply('Expired'); return; }
+        if (!canSetAutoStart()) { await reply('Failed'); return; }
         commandOwner = command.requestId; owns = true; mutationEpoch++;
         try { await ctx.api.app.setAutoStart(command.enabled); }
         catch (error) { await reply((error as { code?: string }).code === 'permission-denied' ? 'Denied' : 'Failed'); return; }

@@ -12,6 +12,19 @@ public interface IExamAwareTarget
 
 public interface IExamAwareProcess : IDisposable { bool HasExited { get; } }
 
+internal static class ExamAwareCompatibility
+{
+    private static readonly Version Minimum = new(1, 5, 2);
+    internal const string SupportedRelease = "Windows ExamAware2 1.5.2 或以上的 1.x 正式版";
+
+    internal static bool Supports(int major, int minor, int patch) =>
+        major == Minimum.Major && (minor > Minimum.Minor || minor == Minimum.Minor && patch >= Minimum.Build);
+
+    internal static bool Supports(string version) =>
+        Version.TryParse(version, out var number) && number.Build >= 0 && number.Revision < 0 &&
+        string.Equals(number.ToString(), version, StringComparison.Ordinal) && Supports(number.Major, number.Minor, number.Build);
+}
+
 public sealed class ExamAwareTarget : IExamAwareTarget
 {
     public static bool IsRunning(string path)
@@ -70,11 +83,11 @@ public sealed class ExamAwareTarget : IExamAwareTarget
         path = Path.GetFullPath(path);
         if (!File.Exists(path)) throw new LaunchTargetException("ExecutableMissing", "ExamAware 程序不存在，请重新选择。");
         using var file = File.OpenRead(path);
-        if (file.ReadByte() != 'M' || file.ReadByte() != 'Z' || FileVersionInfo.GetVersionInfo(path).ProductName != "ExamAware")
-            throw new LaunchTargetException("InvalidExecutable", "所选文件不是可识别的 ExamAware 程序。");
         var version = FileVersionInfo.GetVersionInfo(path);
-        if (version.FileMajorPart != 1 || version.FileMinorPart != 5 || version.FileBuildPart != 2)
-            throw new LaunchTargetException("UnsupportedVersion", "当前适配 ExamAware2 1.5.2，请选择这一版本的正式程序。");
+        if (file.ReadByte() != 'M' || file.ReadByte() != 'Z' || version.ProductName != "ExamAware")
+            throw new LaunchTargetException("InvalidExecutable", "所选文件不是可识别的 ExamAware 程序。");
+        if (!ExamAwareCompatibility.Supports(version.FileMajorPart, version.FileMinorPart, version.FileBuildPart) || version.IsPreRelease)
+            throw new LaunchTargetException("UnsupportedVersion", $"请选择 {ExamAwareCompatibility.SupportedRelease}。");
         // The product name alone cannot distinguish ExamAware 1 from 2.
         string asar = Path.Combine(Path.GetDirectoryName(path)!, "resources", "app.asar");
         if (!File.Exists(asar)) throw new LaunchTargetException("UnsupportedDistribution", "请选择 ExamAware2 正式发行版目录中的程序。");

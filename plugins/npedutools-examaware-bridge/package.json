@@ -1,6 +1,6 @@
 {
   "name": "npedutools-examaware-bridge",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "apiVersion": 2,
     "displayName": "NPEduTools 桥接",
     "engines": {
-      "desktop": "1.5.2",
+      "desktop": ">=1.5.2 <2.0.0",
       "sdk": "1.5.2"
     },
     "targets": {

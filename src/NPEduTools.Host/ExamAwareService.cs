@@ -83,10 +83,11 @@ public sealed partial class ExamAwareService : IAsyncDisposable
         lock (_sync)
         {
             bool fresh = _peer is not null && _sample is not null && Stopwatch.GetElapsedTime(_sampleAt) < TimeSpan.FromSeconds(7);
-            bool supported = fresh && _sample!.Version == "1.5.2" && _sample.Platform == "win32";
+            bool supported = fresh && ExamAwareCompatibility.Supports(_sample!.Version) && _sample.Platform == "win32";
             return new(_saved.Path, _saved.Revision,
                 _failure is not null ? "Unavailable" : !fresh ? "Disconnected" : supported ? "Connected" : "UnsupportedVersion",
-                _failure ?? (!fresh ? "尚未连接桥接插件；可先打开软件并完成配对。" : supported ? "桥接已连接" : "已连接，但此版本尚未验证。当前支持 Windows 1.5.2。"),
+                _failure ?? (!fresh ? "尚未连接桥接插件；可先打开软件并完成配对。" : supported ? "桥接已连接" :
+                    $"桥接报告的程序版本或平台不受支持。可使用 {ExamAwareCompatibility.SupportedRelease}。"),
                 fresh ? _sample!.Version : null, supported ? _sample!.AutoStartRegistered : null,
                 fresh ? _sample!.Packaged : null, _failure is null ? _saved.Port : null, _quit,
                 supported && _sample!.CanSetAutoStart, _autoStart, supported && _sample!.CanPresent,

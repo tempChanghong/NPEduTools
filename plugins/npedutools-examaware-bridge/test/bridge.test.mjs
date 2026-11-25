@@ -255,6 +255,21 @@ test('replayed sequence closes session without a second quit', async t => {
   f.send({ repeatedSequence: true }); await delay(300); assert.equal(f.calls, 1);
 });
 
+test('a host without the optional setter or quit method never gets a successful write acknowledgement', async t => {
+  const f = await commandFixture(t);
+  const first = await until(() => f.frames.find(x => x.type === 'status'));
+  const status = JSON.parse(first.payload);
+  assert.equal(status.autoStartRegistered, true);
+  assert.equal(status.canSetAutoStart, false);
+  const change = f.send({ action: 'autostart.set', enabled: false });
+  await until(() => f.reply(change).some(x => x.state === 'Failed'));
+  delete f.ctx.api.app.quit;
+  const quit = f.send();
+  await until(() => f.reply(quit).some(x => x.state === 'Failed'));
+  assert.deepEqual(f.reply(quit).map(x => x.state), ['Failed']);
+  assert.equal(f.calls, 0);
+});
+
 test('auto-start enable and disable use readback, not setter truthiness; no duplicate or expired write', async t => {
   const f = await commandFixture(t); let writes = 0;
   f.ctx.api.app.setAutoStart = async enabled => { writes++; f.ctx.state.registered = enabled; return enabled; };

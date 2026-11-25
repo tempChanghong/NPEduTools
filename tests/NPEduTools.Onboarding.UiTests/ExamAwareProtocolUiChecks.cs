@@ -78,6 +78,7 @@ internal static partial class Program
                     var idle = System.Windows.Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle).Task;
                     PumpUntil(() => idle.IsCompleted, "examination state rendering did not settle");
                     Assert(Text("Connection").Contains("未确认"), "invalid receipt kept a stale connected bridge");
+                    Assert(Text("BridgeStateLabel").Contains("协议不匹配"), "invalid receipt did not distinguish protocol mismatch");
                     Assert(Text("AutoStartText").Contains("未知") && Text("PlayerStateText").Contains("未知") &&
                         Text("PlanSummaryText").Contains("未知"), "invalid receipt retained old startup/player/plan facts");
                     Assert(!Button(owner, "PresentPlanButton").IsEnabled && !Button(owner, "QuitButton").IsEnabled &&

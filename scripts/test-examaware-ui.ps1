@@ -74,9 +74,11 @@ try {
     $confirm.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
     $null = Wait-Control 'ExamAwareResetPairing'
     $checks.Add('Pairing revocation shows a cancellable confirmation')
-    Click 'ExamAwareStart'
-    $null = Wait-Control 'ExamAwareMessage' '先选择'
-    $checks.Add('Unconfigured start directs user to select a path; disconnected autostart is unknown')
+    $startExamAware = Control 'ExamAwareStart'
+    if (-not $startExamAware -or $startExamAware.Current.IsEnabled) { throw 'Start must stay disabled until an executable is registered.' }
+    Click 'ExamAwareConfigure'
+    $null = Wait-Control 'ExamAwarePath'
+    $checks.Add('The initial primary action opens path registration; disconnected auto-start remains unknown')
     (Wait-Control 'ExamAwarePath').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('C:\不存在的中文 目录\ExamAware.exe')
     Click 'ExamAwareSave'
     $null = Wait-Control 'ExamAwareMessage' '不存在'

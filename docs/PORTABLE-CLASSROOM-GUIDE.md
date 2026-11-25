@@ -1,6 +1,6 @@
 # NPEduTools v1.1.9：安装、更新与回退
 
-当前源码：v1.1.9 EVA-02（二号机）；安装包与附件按实际发布版本核对。本指南适用于内置录制组件包，Windows x64，ClassIsland API 2.1.0.1／桥接 0.2.0.0，ExamAware2 1.5.2／桥接 0.4.0。已发布的 InDev 20261002 仍按随包原说明安装录制组件。发行附件与源码运行方法见对应包的 `RELEASE-NOTES.md`。开发机检查不等于目标大屏整课验收。自包含包内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在主程序包内。
+当前源码：v1.1.9 EVA-02（二号机）。安装包与附件按实际发布版本核对。本指南适用于内置录制组件包，Windows x64，ClassIsland API 2.1.0.1／桥接 0.2.0.0，ExamAware2 1.5.2 起的 1.x 正式版／桥接 0.4.1。已发布的 InDev 20261002 仍按随包原说明安装录制组件。发行附件与源码运行方法见对应包的 `RELEASE-NOTES.md`。开发机检查不等于目标大屏整课验收。自包含包内含 NPEduTools 的 .NET 运行时，不需要另外安装开发 SDK。ClassIsland 和 ExamAware2 本体及其运行环境单独维护，不包含在主程序包内。
 
 ## 第一次使用
 
@@ -16,7 +16,7 @@
 
 ## 文件位置
 
-需要日常／考试模式时，先在“考试看板”保存 ExamAware.exe 位置，通过 ExamAware 官方插件安装功能导入 `ExamAware2-plugin/npedutools-examaware-bridge-0.4.0.ea2x`，按该目录 README 完成配对；在 NPEduTools 的“设置 → 软件连接”配置并核实当前 ClassIsland 程序的管理员登录任务，再做首次检查。Windows UAC 由操作者核实授权。考试模式暂停自动录课并保留计划；本地“同时切换当前运行的软件”仍为可选项，网页远程模式切换则联动运行软件、登录自启动与录课暂停。完整返回前先保存编辑器并结束放映。
+需要日常／考试模式时，先在“考试看板”保存 ExamAware.exe 位置，通过 ExamAware 官方插件安装功能导入 `ExamAware2-plugin/npedutools-examaware-bridge-0.4.1.ea2x`，按该目录 README 完成配对。在 NPEduTools 的“设置 → 软件连接”配置并核实当前 ClassIsland 程序的管理员登录任务，再做首次检查。Windows UAC 由操作者核实授权。考试模式暂停自动录课并保留计划。本地“同时切换当前运行的软件”仍为可选项，网页远程模式切换则联动运行软件、登录自启动与录课暂停。完整返回前先保存编辑器并结束放映。
 
 **切回日常或退出 ExamAware2 前，先保存并关闭编辑器、结束放映。** 1.5.2 编辑器仍打开时退出可能提前卸载接口，导致无法保存；这是本版暂未解决的已知问题。关闭 NPEduTools 不会替你关闭这两款软件。
 

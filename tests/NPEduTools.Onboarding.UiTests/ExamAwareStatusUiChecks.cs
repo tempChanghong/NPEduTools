@@ -21,8 +21,92 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunExamAwareConfirmationChecks(); RunExamAwareProtocolChecks(); RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareOrderingCheck(true); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
+        try { RunExamAwareLayoutAndStatesCheck(); RunExamAwareConfirmationChecks(); RunExamAwareProtocolChecks(); RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareOrderingCheck(true); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+    private static void RunExamAwareLayoutAndStatesCheck()
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        string pipe = "NPEduTools.Test.examaware-layout." + Guid.NewGuid().ToString("N");
+        var window = new ExamAwareWindow(pipe);
+        typeof(ExamAwareWindow).GetField("_fileExists", flags)!.SetValue(window, (Func<string, bool>)(_ => false));
+        try
+        {
+            Exercise(window, owner =>
+            {
+                string Text(string name) => ((TextBlock)owner.FindName(name)).Text;
+                var config = (Expander)owner.FindName("ConnectionConfiguration");
+                var plans = (Expander)owner.FindName("PlanConfiguration");
+                ((FrameworkElement)owner.Content).LayoutTransform = new System.Windows.Media.ScaleTransform(1, 1);
+                owner.Width = 520; owner.Height = 440;
+
+                // 1. Uninstalled / unregistered path: setup expands, local plan folds, narrow primary actions stay reachable.
+                var unregistered = new ExamAwareStatus(null, 1, "Disconnected", "尚未登记程序位置", null, null, null, 12345);
+                ShowExamAware(window, unregistered);
+                ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
+                Assert(Text("BridgeStateLabel").Contains("待登记程序") && config.IsExpanded && !plans.IsExpanded &&
+                    !Button(owner, "StartButton").IsEnabled && !Button(owner, "SettingsButton").IsEnabled &&
+                    (string)Button(owner, "ConfigureButton").Content == "登记程序位置",
+                    "unregistered state did not distinguish missing setup or fold local plan section");
+                foreach (string id in new[] { "ExamAwareVersion", "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareStart", "ExamAwareSettings", "ExamAwareQuit", "ExamAwareConfigure" })
+                    Reachable(owner, (FrameworkElement)Find(owner, id));
+                Snapshot(owner, "examaware-narrow-unregistered.png");
+
+                // 2. Missing local executable on disk (uninstalled/moved path).
+                ShowExamAware(window, unregistered with { ExecutablePath = @"C:\Missing\ExamAware.exe" });
+                Assert(Text("BridgeStateLabel").Contains("程序文件缺失") && Text("ProgramSummaryText").Contains("未检测到"),
+                    "missing local executable was not distinguished from a valid path");
+                ShowExamAware(window, ReadyExamAware() with { ExecutablePath = @"C:\Missing\ExamAware.exe" });
+                Assert(Text("BridgeStateLabel") == "程序文件缺失" && !Button(owner, "QuitButton").IsEnabled &&
+                    !Button(owner, "PreparePlanButton").IsEnabled && Text("VersionText").Contains("已认证"),
+                    "a healthy bridge must not make a missing registered executable actionable");
+
+                // 3. Not running (after confirmed normal exit) vs Not running / unpaired.
+                ShowExamAware(window, ReadyExamAware() with
+                {
+                    BridgeState = "Disconnected",
+                    Message = "隔离已退出",
+                    AppVersion = null,
+                    Quit = new(Guid.NewGuid(), "Exited", "已确认目标 ExamAware 进程退出。", 42)
+                });
+                Assert(Text("BridgeStateLabel") == "桥接未连接" && Text("NextActionText").Contains("上次退出") &&
+                    Text("NextActionText").Contains("打开考试看板"),
+                    "exit receipt must stay historical when current process state has not been verified");
+
+                ShowExamAware(window, ReadyExamAware() with { BridgeState = "Disconnected", Message = "尚未连接桥接插件", AppVersion = null, Quit = null, PreparedPlan = null });
+                ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
+                Assert(Text("BridgeStateLabel").Contains("未运行") && Text("BridgeStateLabel").Contains("未配对") &&
+                    Text("NextActionText").Contains("快速开始向导"),
+                    "disconnected state did not distinguish not-running/unpaired or first-run wizard guidance");
+                foreach (string id in new[] { "ExamAwareVersion", "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareStart", "ExamAwareSettings", "ExamAwareQuit", "ExamAwareConfigure" })
+                    Reachable(owner, (FrameworkElement)Find(owner, id));
+
+                // 4. Version / protocol mismatch from Host.
+                ShowExamAware(window, ReadyExamAware() with { BridgeState = "UnsupportedVersion", Message = "版本未受支持", AppVersion = "2.0.0", CanPresent = false, CanSetAutoStart = false, PreparedPlan = null });
+                Assert(Text("BridgeStateLabel").Contains("不受支持") && Text("VersionText").Contains("2.0.0") &&
+                    !Button(owner, "PreparePlanButton").IsEnabled && !Button(owner, "QuitButton").IsEnabled,
+                    "unsupported version did not clearly distinguish mismatch or block actions");
+
+                // 5. First transition to Connected (even without prepared plan) opens local plan section and shows authenticated version; restricted permissions remain gated.
+                ShowExamAware(window, ReadyExamAware() with { AppVersion = "1.6.1", CanPresent = false, CanSetAutoStart = false, PreparedPlan = null });
+                Assert(Text("BridgeStateLabel").Contains("部分功能不可用") && Text("VersionText").Contains("1.6.1") && Text("VersionText").Contains("已认证") &&
+                    plans.IsExpanded && !Button(owner, "PreparePlanButton").IsEnabled && !Button(owner, "EnableAutoStartButton").IsEnabled,
+                    "permission-limited bridge did not show authenticated version, expand plan section, or restrict permissions");
+
+                // 6. Connected and ready on 1.6.1 at 520x440: authenticated version and primary actions reachable.
+                ShowExamAware(window, ReadyExamAware() with { AppVersion = "1.6.1" });
+                ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
+                Assert(Text("BridgeStateLabel").Contains("已连接") && Text("VersionText").Contains("1.6.1") && Text("VersionText").Contains("已认证") && plans.IsExpanded,
+                    "connected 1.6.1 state did not show authenticated version or expand local plan section");
+                foreach (string id in new[] { "ExamAwareVersion", "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareStart", "ExamAwareSettings", "ExamAwareQuit", "ExamAwareConfigure" })
+                    Reachable(owner, (FrameworkElement)Find(owner, id));
+                Snapshot(owner, "examaware-narrow-ready.png");
+
+                Checks.Add("ExamAware 520x440 layout & state taxonomy: narrow primary actions reachable; authenticated 1.6.1 version displayed; uninstalled/not-running/unpaired/version-mismatch/permission-limited states clearly distinguished");
+                window.Shutdown();
+            });
+        }
+        finally { window.Shutdown(); }
     }
     private static void RunExamAwareConfirmationChecks()
     {
@@ -254,12 +338,14 @@ internal static partial class Program
                 Assert(((TextBlock)owner.FindName("Message")).Text.Contains("未能导出") &&
                     ((TextBlock)owner.FindName("Connection")).Text == "隔离最新桥接状态" && Button(owner, "QuitButton").IsEnabled,
                     "local file-write failure falsely marks the backend disconnected or leaves confirmed controls disabled");
+                AssertNoCredentialText(owner, "fixture-not-a-real-key");
                 reply = Reply(true); export = Export(output);
                 PumpUntil(() => export.IsCompleted && reply.IsCompleted, "lost export response did not finish");
                 export.GetAwaiter().GetResult(); reply.GetAwaiter().GetResult();
                 Assert(!System.IO.File.Exists(output) && !Button(owner, "QuitButton").IsEnabled &&
                     ((TextBlock)owner.FindName("Connection")).Text.Contains("未确认"), "lost export response claims connection or creates a pairing file");
-                Checks.Add("Pairing export: local file failure retains a freshly confirmed bridge; transport failure shows unknown state and writes no pairing file; no real credentials or file dialog");
+                AssertNoCredentialText(owner, "fixture-not-a-real-key");
+                Checks.Add("Pairing export: local file failure retains a freshly confirmed bridge; transport failure shows unknown state and writes no pairing file; no real credentials or plaintext credential display");
                 window.Shutdown();
             });
         }
@@ -269,5 +355,12 @@ internal static partial class Program
             System.IO.File.Delete(blocker);
             if (System.IO.File.Exists(output)) System.IO.File.Delete(output);
         }
+    }
+    private static void AssertNoCredentialText(DependencyObject root, string secret)
+    {
+        if (root is TextBlock tb) Assert(!tb.Text.Contains(secret, StringComparison.OrdinalIgnoreCase), "pairing credential leaked into TextBlock: " + tb.Name);
+        if (root is TextBox box) Assert(!box.Text.Contains(secret, StringComparison.OrdinalIgnoreCase), "pairing credential leaked into TextBox: " + box.Name);
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+            AssertNoCredentialText(System.Windows.Media.VisualTreeHelper.GetChild(root, i), secret);
     }
 }
