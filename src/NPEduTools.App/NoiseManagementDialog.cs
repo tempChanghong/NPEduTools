@@ -53,14 +53,14 @@ internal sealed class NoiseManagementDialog : Window
         string secretName = state.ManagementSource == "School" ? "学校管理口令" : "本机管理口令";
         string sourceHint = state.ManagementSource == "School"
             ? "使用学校管理员为本班设置的口令，原本机口令已停用。" : "";
-        var body = new StackPanel { Margin = new(26) };
+        var reservationStart = target?.ManualStudy?.StartUtc;
+        var body = new StackPanel { Margin = reservationStart.HasValue ? new(26, 18, 26, 16) : new(26) };
         body.Children.Add(new TextBlock { Text = Title, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0,0,0,14) });
         _message.Text = target is null
             ? "用于本机停止定时监测和维护退出，与学校 PIN 分开。请使用 8–128 字符口令；Host 只保存加盐摘要。"
             : $"本场定时监测正在运行。请输入{secretName}。{sourceHint}本次验证只授权当前会话的这一项操作，关闭窗口不会停止采集。";
         body.Children.Add(_message);
         if (_mode != "default") _message.Text = ClassroomActionAccess.Describe(_mode);
-        var reservationStart = target?.ManualStudy?.StartUtc;
         if (reservationStart is { } start)
         {
             if (_mode == "both") _message.Text = "请同时验证本班管理口令和已登记的教师 U 盘。";
@@ -102,7 +102,7 @@ internal sealed class NoiseManagementDialog : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         if(exit is null)buttons.Children.Add(new Button { Content = "取消", IsCancel = true, Margin = new(0,0,12,0), MinWidth = 80 });
         buttons.Children.Add(_submit); body.Children.Add(buttons); Content = body;
-        DesktopDialogSizing.Attach(this, pipe);
+        DesktopDialogSizing.Attach(this, pipe, useContentHeight: reservationStart.HasValue);
         _submit.Click += Submit;
         Closed += (_, _) => { _old.Clear(); _new.Clear(); _confirm.Clear(); };
         Loaded += (_, _) =>

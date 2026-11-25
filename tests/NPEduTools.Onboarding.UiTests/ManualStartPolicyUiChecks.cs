@@ -116,7 +116,19 @@ internal static partial class Program
                                 text.Any(t => t.Text.Contains("09:15") && t.Text.Contains("同时验证")) &&
                                 text.Any(t => t.Text.Contains("预约受理后即可拔出")),
                                 "reservation dialog lost the time and school-required factors");
+                            var scroll = (ScrollViewer)dialog.Content;
+                            Assert(scroll.ComputedVerticalScrollBarVisibility != Visibility.Visible && scroll.ScrollableHeight == 0,
+                                $"reservation fits but shows a scrollbar: {scroll.ExtentHeight:F1} / {scroll.ViewportHeight:F1}");
                             Snapshot(dialog, "02-narrow-reservation-verification.png");
+                            double originalLimit = dialog.MaxHeight;
+                            dialog.MaxHeight = dialog.ActualHeight - 72;
+                            dialog.UpdateLayout();
+                            PumpUntil(() => scroll.ScrollableHeight > 0 && scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible,
+                                "a genuinely short reservation did not allow scrolling");
+                            scroll.ScrollToEnd();
+                            PumpUntil(() => scroll.VerticalOffset >= scroll.ScrollableHeight - 1, "short reservation cannot reach the actions");
+                            dialog.MaxHeight = originalLimit;
+                            dialog.UpdateLayout();
                         }
                         if (wait.Elapsed.TotalSeconds < 5.3) return;
                         timer.Stop();

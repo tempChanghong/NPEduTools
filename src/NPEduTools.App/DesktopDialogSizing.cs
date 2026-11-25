@@ -13,7 +13,7 @@ internal static class DesktopDialogSizing
 {
     private static readonly ConditionalWeakTable<Window, object> Attached = new();
     internal static bool IsAttached(Window window) => Attached.TryGetValue(window, out _);
-    public static void Attach(Window window, string? endpoint = null)
+    public static void Attach(Window window, string? endpoint = null, bool useContentHeight = false)
     {
         if (IsAttached(window)) return;
         Attached.Add(window, new());
@@ -49,7 +49,14 @@ internal static class DesktopDialogSizing
                 window.MinWidth = Math.Max(0, Math.Min(minimumWidth * scale, width - 16)); window.MinHeight = Math.Max(0, Math.Min(minimumHeight * scale, height - 16));
                 if (window.WindowState == WindowState.Normal)
                 {
-                    window.Width = Math.Max(1, Math.Min(designWidth * scale, width - 16)); window.Height = Math.Max(1, Math.Min(designHeight * scale, height - 16));
+                    window.Width = Math.Max(1, Math.Min(designWidth * scale, width - 16));
+                    if (useContentHeight)
+                    {
+                        // WPF measures the actual frame after scaling; only overflow beyond the work area needs a scrollbar.
+                        window.MaxHeight = Math.Max(1, height - 16);
+                        window.SizeToContent = SizeToContent.Height;
+                    }
+                    else window.Height = Math.Max(1, Math.Min(designHeight * scale, height - 16));
                     DesktopWindowBounds.KeepVisible(window);
                 }
             }
