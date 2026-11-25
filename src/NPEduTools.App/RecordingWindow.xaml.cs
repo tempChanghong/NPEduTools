@@ -133,6 +133,7 @@ public partial class RecordingWindow : Window
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
         if (_preparingStart || !RecordStart.IsEnabled) return;
+        RecordingStartRefusal.Text = "";
         var options = OptionsFromForm(); if (options is null) return;
         var sources = RecordingSources.Resolve(options, _environment);
         long generation = ++_startGeneration;
@@ -154,7 +155,7 @@ public partial class RecordingWindow : Window
                 RecordingError.Text = blocked ?? "已取消，未提交录制请求。";
                 return;
             }
-            await _client.StartPreparedAsync(request, async () =>
+            string? refusal = await _client.StartPreparedAsync(request, async () =>
             {
                 if (!Current()) return false;
                 if (request.NoiseAuthorization.HasValue)
@@ -175,6 +176,7 @@ public partial class RecordingWindow : Window
                 SavePreferences(options);
                 return true;
             });
+            if (!_shutdown && refusal is not null) RecordingStartRefusal.Text = refusal;
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
@@ -256,6 +258,7 @@ public partial class RecordingWindow : Window
         string? visiblePhase = available ? state.Phase : null;
         bool phaseChanged = visiblePhase != _lastVisiblePhase;
         _lastVisiblePhase = visiblePhase;
+        if (phaseChanged && available && state.Active) RecordingStartRefusal.Text = "";
         if (_preparingStart && (!available || state.Active)) _startGeneration++;
         if (_viewReady && _probeWhenIdle && !state.Active && available && !_probing)
         { _probeWhenIdle = false; _ = ProbeAsync(); }

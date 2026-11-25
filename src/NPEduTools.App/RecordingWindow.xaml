@@ -144,23 +144,32 @@
       </StackPanel>
     </ScrollViewer>
     <Border x:Name="RecordingCommandBar" Grid.Row="2" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="4,8,4,0">
-      <WrapPanel>
-        <Button x:Name="RecordStart" Content="开始录制" Style="{DynamicResource TeacherPrimary}" MinHeight="57" IsEnabled="False"
-         Click="StartClicked" AutomationProperties.AutomationId="RecordingStart" Margin="0,0,8,4" />
-        <Button x:Name="SaveSettings" Content="保存录制设置" Style="{DynamicResource TeacherButton}" Click="SaveSettingsClicked"
-         AutomationProperties.AutomationId="RecordingSaveSettings" Margin="0,0,8,4" />
-        <Button x:Name="ReturnRecordingSettings" Content="返回录制" Style="{DynamicResource TeacherQuiet}" Click="EditSettingsClicked"
-         AutomationProperties.AutomationId="RecordingReturnSettings" Visibility="Collapsed" Margin="0,0,8,4" />
-        <Button x:Name="RecordPause" Content="暂停" Style="{DynamicResource TeacherButton}" MinWidth="108" MinHeight="57" Visibility="Collapsed"
-         Click="PauseClicked" AutomationProperties.AutomationId="RecordingPause" Margin="0,0,8,4" />
-        <Button x:Name="RecordStop" Content="停止并保存" Style="{DynamicResource TeacherButton}" MinHeight="57" Visibility="Collapsed"
-         Click="StopClicked" AutomationProperties.AutomationId="RecordingStop" Margin="0,0,8,4" />
-        <Button x:Name="OpenVideo" Content="打开视频" Style="{DynamicResource TeacherPrimary}" Visibility="Collapsed"
-         Click="OpenVideoClicked" AutomationProperties.AutomationId="RecordingOpenVideo" Margin="0,0,8,4" />
-        <Button x:Name="OpenFolder" Content="打开文件夹" Style="{DynamicResource TeacherQuiet}" Visibility="Collapsed"
-         Click="OpenFolderClicked" AutomationProperties.AutomationId="RecordingOpenFolder" Margin="0,0,8,4" />
-        <Button Content="返回主页" Style="{DynamicResource TeacherQuiet}" Click="HideClicked" AutomationProperties.AutomationId="RecordingHide" Margin="0,0,0,4" />
-      </WrapPanel>
+      <DockPanel>
+        <TextBlock x:Name="RecordingStartRefusal" DockPanel.Dock="Top" Foreground="{DynamicResource TeacherErrorBrush}"
+         FontSize="14" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite"
+         AutomationProperties.AutomationId="RecordingStartRefusal">
+          <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+            <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger>
+          </Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
+        <WrapPanel>
+          <Button x:Name="RecordStart" Content="开始录制" Style="{DynamicResource TeacherPrimary}" MinHeight="57" IsEnabled="False"
+           Click="StartClicked" AutomationProperties.AutomationId="RecordingStart" Margin="0,0,8,4" />
+          <Button x:Name="SaveSettings" Content="保存录制设置" Style="{DynamicResource TeacherButton}" Click="SaveSettingsClicked"
+           AutomationProperties.AutomationId="RecordingSaveSettings" Margin="0,0,8,4" />
+          <Button x:Name="ReturnRecordingSettings" Content="返回录制" Style="{DynamicResource TeacherQuiet}" Click="EditSettingsClicked"
+           AutomationProperties.AutomationId="RecordingReturnSettings" Visibility="Collapsed" Margin="0,0,8,4" />
+          <Button x:Name="RecordPause" Content="暂停" Style="{DynamicResource TeacherButton}" MinWidth="108" MinHeight="57" Visibility="Collapsed"
+           Click="PauseClicked" AutomationProperties.AutomationId="RecordingPause" Margin="0,0,8,4" />
+          <Button x:Name="RecordStop" Content="停止并保存" Style="{DynamicResource TeacherButton}" MinHeight="57" Visibility="Collapsed"
+           Click="StopClicked" AutomationProperties.AutomationId="RecordingStop" Margin="0,0,8,4" />
+          <Button x:Name="OpenVideo" Content="打开视频" Style="{DynamicResource TeacherPrimary}" Visibility="Collapsed"
+           Click="OpenVideoClicked" AutomationProperties.AutomationId="RecordingOpenVideo" Margin="0,0,8,4" />
+          <Button x:Name="OpenFolder" Content="打开文件夹" Style="{DynamicResource TeacherQuiet}" Visibility="Collapsed"
+           Click="OpenFolderClicked" AutomationProperties.AutomationId="RecordingOpenFolder" Margin="0,0,8,4" />
+          <Button Content="返回主页" Style="{DynamicResource TeacherQuiet}" Click="HideClicked" AutomationProperties.AutomationId="RecordingHide" Margin="0,0,0,4" />
+        </WrapPanel>
+      </DockPanel>
     </Border>
   </Grid>
 </Window>

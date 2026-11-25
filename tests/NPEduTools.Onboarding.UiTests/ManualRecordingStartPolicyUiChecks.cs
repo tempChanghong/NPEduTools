@@ -18,6 +18,7 @@ internal static partial class Program
         RecordingEnvironment Inventory() => new(true, null, [display with { Left = displayLeft }], [new(micId, "讲台麦克风", true)],
             [new(speakerA, "讲台扬声器", !useSecondSpeaker), new(speakerB, "教室扩声器", useSecondSpeaker)]);
         var mode = "unknown";
+        bool rejectAuthorizedStart = false;
         Guid host = Guid.NewGuid(), ticket = Guid.NewGuid();
         string version = new('e', 64);
         int reads = 0, statusReads = 0;
@@ -49,6 +50,9 @@ internal static partial class Program
             else if (request.Recording is { } command)
             {
                 writes.Enqueue(request);
+                if (command.Action == "start" && Volatile.Read(ref rejectAuthorizedStart))
+                    return Task.FromResult(reply with { Outcome = "Rejected", ErrorCode = "MANAGEMENT_REQUIRED",
+                        Message = "请重新核对本班权限和本次录课设置。" });
                 var next = command.Action switch
                 {
                     "start" => new RecordingState("Recording", "正在录制所选屏幕", 5, 40, 42000, Control: new("Manual", Guid.NewGuid(), "", 0, 0)),
@@ -152,6 +156,19 @@ internal static partial class Program
                     "saved-state refresh hid the denied start or started another recording");
                 Snapshot(window, "04-narrow-denied-after-save.png");
                 Checks.Add("An explicit denial of the next recording survives refresh of the previously saved result, with zero extra writes.");
+                Volatile.Write(ref mode, "both"); Volatile.Write(ref rejectAuthorizedStart, true);
+                int beforeRejectedStart = writes.Count;
+                ViaDialog("host-rejected", () => Label("RecordingStartRefusal").Contains("本次录课未开始") &&
+                    Label("RecordingStartRefusal").Contains("重新核对本班权限"));
+                int afterHostReply = Volatile.Read(ref statusReads);
+                PumpUntil(() => Volatile.Read(ref statusReads) >= afterHostReply + 2, "post-rejection status polling stalled");
+                Assert(Label("RecordingStartRefusal").Contains("本次录课未开始") && Label("RecordingPhase") == "已保存" &&
+                    !Label("RecordingMessage").Contains("未确认") && Button(window, "OpenVideo") is { IsVisible: true, IsEnabled: true } &&
+                    client.State.OutputFile == Path.Combine(_output, "synthetic.mp4") && writes.Count == beforeRejectedStart + 2,
+                    "a confirmed Host refusal was retried, lost its reason, or hid the original saved video");
+                Snapshot(window, "05-narrow-host-refused-original-saved.png");
+                Checks.Add("A confirmed Host MANAGEMENT_REQUIRED after authorization retains its actual saved recording and the explicit refusal across normal refresh.");
+                Volatile.Write(ref rejectAuthorizedStart, false);
                 Volatile.Write(ref mode, "old"); int before = writes.Count; Start();
                 PumpUntil(() => Label("RecordingPhase") == "录制中", "an old Host could not start");
                 Assert(writes.Count == before + 1 && writes.Last() is { NoiseAuthorization: null, Recording.Options.SpeakerId: "default" },

@@ -121,14 +121,14 @@ internal sealed class RecordingClient : IAsyncDisposable
     }
     internal HostRequest CreateManualStart(RecordingOptions options) =>
         new(Protocol.Version, Guid.NewGuid(), "recording.command", 15000, Recording: new("start", options, ClientId: _client));
-    internal Task StartPreparedAsync(HostRequest request, Func<Task<bool>> checkBeforeSend) =>
+    internal Task<string?> StartPreparedAsync(HostRequest request, Func<Task<bool>> checkBeforeSend) =>
         SendManualAsync("start", request, checkBeforeSend);
     public Task SendAsync(string action, RecordingOptions? options = null) =>
         SendManualAsync(action, new(Protocol.Version, Guid.NewGuid(), "recording.command", 15000,
             Recording: new(action, options, action == "start" ? null : State.Control, _client)), null);
-    private async Task SendManualAsync(string action, HostRequest request, Func<Task<bool>>? checkBeforeSend)
+    private async Task<string?> SendManualAsync(string action, HostRequest request, Func<Task<bool>>? checkBeforeSend)
     {
-        if (_closing || !StateAvailable || _manualSending || _pending is not null || State.Busy && action != "stop") return;
+        if (_closing || !StateAvailable || _manualSending || _pending is not null || State.Busy && action != "stop") return null;
         // Coalesce manual double taps, but do not drop the first manual action
         // merely because an automatic operation is waiting for its receipt.
         _manualSending = true;
@@ -139,9 +139,9 @@ internal sealed class RecordingClient : IAsyncDisposable
         {
             await _commands.WaitAsync(_lifetime.Token);
             entered = true;
-            if (_closing || !StateAvailable) return;
-            if (checkBeforeSend is not null && !await checkBeforeSend()) return;
-            if (_closing || !StateAvailable) return;
+            if (_closing || !StateAvailable) return null;
+            if (checkBeforeSend is not null && !await checkBeforeSend()) return null;
+            if (_closing || !StateAvailable) return null;
             // The queue may span a lesson handoff. Never retarget the user's
             // action to that new session; lease renewal alone is not a handoff.
             if ((expected is null ? State.Control is not null : !expected.Matches(State.Control)) ||
@@ -149,7 +149,7 @@ internal sealed class RecordingClient : IAsyncDisposable
             {
                 State = State with { Error = "录制会话或状态已变化，本次操作未执行，请确认当前会话后重试。" };
                 Changed?.Invoke(State);
-                return;
+                return null;
             }
             previous = State;
             _generation++;
@@ -157,12 +157,13 @@ internal sealed class RecordingClient : IAsyncDisposable
             State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
             Changed?.Invoke(State);
             var response = await RequestAsync(request);
-            if (response.Outcome == "Rejected" && response.Recording is null && response.ErrorCode?.StartsWith("CLASSROOM_", StringComparison.Ordinal) == true)
+            if (action == "start" && response is { Outcome: "Rejected", ErrorCode: "CLASSROOM_ACTION_DENIED"
+                or "CLASSROOM_RECORDING_SOURCE_REQUIRED" or "CLASSROOM_USB_REQUIRED" or "CLASSROOM_POLICY_CHANGED" or "MANAGEMENT_REQUIRED" })
             {
                 _pending = null;
-                State = previous with { Error = response.Message };
-                Changed?.Invoke(State);
-                return;
+                if (response.Recording is not null) Apply(response);
+                else MarkUnavailable(previous);
+                return "本次录课未开始。" + response.Message;
             }
             if (response.Recording is null)
                 throw new InvalidDataException("后台未返回录制状态；" + response.Message);
@@ -172,7 +173,7 @@ internal sealed class RecordingClient : IAsyncDisposable
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             _pending = null;
-            if (_closing) return;
+            if (_closing) return null;
             if (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
                 MarkUnavailable(previous, "本次操作未确认；" + error.Message);
             else { State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }
@@ -184,6 +185,7 @@ internal sealed class RecordingClient : IAsyncDisposable
             if (entered) { _generation++; _sending = false; _commands.Release(); }
             _manualSending = false;
         }
+        return null;
     }
     public async Task SetAutomaticAsync(string action, RecordingOptions? options = null)
     {
