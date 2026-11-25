@@ -148,6 +148,39 @@ public sealed class SchoolActionPolicyDeliveryTests
     }
 
     [Fact]
+    public async Task Same_revision_upgrade_adds_recording_without_replacing_manual_study()
+    {
+        await using var screen = new Screen();
+        var original = Policy(9, FirstId, "GRADE", Rule("DENY"), Rule("ALLOW"));
+        original["schemaVersion"] = 4;
+        var previous = original["actions"]!.AsObject();
+        previous["switchClassroomMode"] = null;
+        previous["startManualStudy"] = Rule("DENY");
+        screen.School.ApplySchool(screen.Envelope(original));
+
+        var next = original.DeepClone().AsObject();
+        next["schemaVersion"] = 5;
+        next["policyId"] = SecondId;
+        next["source"] = "CLASS";
+        next["actions"]!["startManualRecording"] = Rule("VERIFY", "CLASS_PASSWORD");
+        var conflicting = next.DeepClone().AsObject();
+        conflicting["actions"]!["startManualStudy"] = Rule("ALLOW");
+        screen.School.ApplySchool(screen.Envelope(conflicting));
+        Assert.Equal(FirstId, screen.Receipt()["policyId"]!.GetValue<string>());
+        Assert.NotNull(screen.Receipt()["error"]);
+
+        screen.School.ApplySchool(screen.Envelope(next));
+        Assert.Equal(5, screen.Receipt()["schemaVersion"]!.GetValue<int>());
+        Assert.Null(screen.Receipt()["error"]);
+        screen.School.ApplySchool(screen.Envelope(original));
+        Assert.False(screen.School.ObserveSchool().ContainsKey("actionPolicyReceipt"));
+        await screen.ReloadOffline();
+        var reply = screen.Noise.ManagementHandle(new(1, Guid.NewGuid(), "noise.management.status.classroom-policy.v5"));
+        var policy = Assert.IsType<ClassroomActionPolicyState>(reply.NoiseProtection!.ClassroomPolicy);
+        Assert.Equal(("deny", "password"), (policy.StartManualStudy, policy.StartManualRecording));
+    }
+
+    [Fact]
     public async Task Upgrading_the_same_policy_revision_protects_local_mode_after_restart()
     {
         await using var screen = new Screen();

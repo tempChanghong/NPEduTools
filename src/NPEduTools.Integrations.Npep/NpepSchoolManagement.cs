@@ -25,6 +25,7 @@ public sealed partial class NpepApi
             request.Headers.Add("X-NPEP-Classroom-Action-Policy", "2");
             request.Headers.Add("X-NPEP-Classroom-Action-Inheritance", "1");
             request.Headers.Add("X-NPEP-Manual-Study-Policy", "1");
+            request.Headers.Add("X-NPEP-Manual-Recording-Policy", "1");
         }
         if(bearer is not null) request.Headers.Authorization = new("Bearer", bearer);
         if(body is not null)
