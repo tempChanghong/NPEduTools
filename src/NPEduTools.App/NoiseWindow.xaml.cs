@@ -30,6 +30,10 @@ public partial class NoiseWindow : Window
         ManualStartDate.SelectedDate = ManualEndDate.SelectedDate = DateTime.Today;
         DesktopDialogSizing.Attach(this, pipe);
         Closing += (_, args) => { if (!_closing) { args.Cancel = true; Hide(); } };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible && !WorkspacePanel.Embedded(this)) WorkspaceVisibilityChanged(false);
+        };
         Closed += (_, _) => _lifetime.Cancel();
         Microphone.SelectionChanged += (_, _) => UpdateButtons();
         ManualConfiguration.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
@@ -338,29 +342,56 @@ public partial class NoiseWindow : Window
     private async Task ManualCommandAsync(ManualStudyCommand command)
     {
         if (_busy) return;
-        _pendingManualCommand = command;
         _busy = true;
         long operation = ++_uiOperation;
+        bool Current() => !_lifetime.IsCancellationRequested && operation == _uiOperation && WorkspacePanel.Visible(this);
+        bool sent = false;
+        _timeValidationMessage = null;
+        MessageText.Text = command.Action == "start" ? "正在核对发起手动自习的权限…" : "";
         _returnDisplay.Observe(null);
         UpdateButtons();
         try
         {
+            var request = new HostRequest(Protocol.Version, Guid.NewGuid(), "manual.study.command", ManualStudy: command);
+            if (command.Action == "start")
+            {
+                string? blocked = null;
+                var authorized = await NoiseManagementDialog.AuthorizeAsync(WorkspacePanel.DialogOwner(this), _pipe, request,
+                    reportBlocked: message => blocked = message, stillCurrent: Current);
+                if (!Current()) return;
+                if (authorized is null)
+                {
+                    MessageText.Text = blocked ?? (command.StartUtc.HasValue ? "预约未提交。" : "本次开始请求未提交。");
+                    return;
+                }
+                request = authorized;
+            }
+            _pendingManualCommand = command;
+            UpdateButtons();
+            MessageText.Text = "";
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             deadline.CancelAfter(5000);
-            var reply = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "manual.study.command", ManualStudy: command), deadline.Token);
-            if (_lifetime.IsCancellationRequested || operation != _uiOperation) return;
-            _manual = reply.ManualStudy;
-            Render(reply.Noise);
+            sent = true;
+            var reply = await HostClient.RequestAsync(_pipe, request, deadline.Token);
+            if (!Current()) return;
+            if (reply.Outcome == "Succeeded" && (reply.ManualStudy is null || reply.Noise is null))
+            {
+                Render(null);
+                MessageText.Text = "后台已受理。正在核对手动自习与采集状态。";
+                return;
+            }
+            if (reply.ManualStudy is not null) _manual = reply.ManualStudy;
+            if (reply.Noise is not null) Render(reply.Noise);
             // Successful commands already have a phase, time and reason in the session panel.
-            MessageText.Text = reply.Outcome == "Succeeded" && _manual is not null ? "" : reply.Message;
+            MessageText.Text = reply.Outcome == "Succeeded" && reply.ManualStudy is not null ? "" : reply.Message;
             _timeValidationMessage = reply.ErrorCode == "MANUAL_TIME_INVALID" ? reply.Message : null;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or JsonException or OperationCanceledException)
         {
-            if (!_lifetime.IsCancellationRequested && operation == _uiOperation)
+            if (Current())
             {
                 Render(null);
-                MessageText.Text = "请求结果待确认，请等待后台状态恢复。";
+                MessageText.Text = sent ? "请求结果待确认，请等待后台状态恢复。" : "无法核实发起权限。请检查后台连接后重新提交。";
             }
         }
         finally

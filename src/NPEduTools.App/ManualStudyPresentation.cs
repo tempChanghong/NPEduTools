@@ -13,7 +13,7 @@ internal static class ManualStudyPresentation
         "Active" => "手动自习进行中",
         "Stopping" => "正在结束手动自习",
         "Ended" or "Stopped" => "手动自习已结束",
-        "Cancelled" when state.Reason is "CancelledBeforeStart" or "ScheduledTakeover" => "自习预约已取消",
+        "Cancelled" when state.Reason is "CancelledBeforeStart" or "ScheduledTakeover" or "CLASSROOM_POLICY_CHANGED" => "自习预约已取消",
         "Cancelled" => "手动自习未开始",
         "Interrupted" => "手动自习已中断",
         _ => "手动会话状态待确认"
@@ -42,6 +42,7 @@ internal static class ManualStudyPresentation
             "PlannedEnd" => "已到指定的结束时间。",
             "ThreeHourLimit" => "已到手动自习的三小时上限。",
             "CancelledBeforeStart" => "预约已在开始前取消。",
+            "CLASSROOM_POLICY_CHANGED" => "发起时的学校授权已变化。请重新核对本班权限并预约。",
             "ScheduledTakeover" when state.State == "Stopping" => "正在交给学校定时自习。",
             "ScheduledTakeover" => "学校定时自习已接管。",
             "SCHEDULE_PRIORITY" => "学校定时自习优先，此次手动自习未启动。",

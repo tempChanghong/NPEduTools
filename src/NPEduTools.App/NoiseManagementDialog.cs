@@ -39,6 +39,7 @@ internal sealed class NoiseManagementDialog : Window
         {
             null => "本机管理口令",
             "host.stop" => "退出后台 · 管理验证",
+            "manual.study.command" => target.ManualStudy?.StartUtc is null ? "开始手动自习 · 管理验证" : "预约手动自习 · 管理验证",
             "classroom.set" or "classroom.retry" => target.ClassroomMode?.Target == "Exam" ? "切换到考试模式 · 管理验证" : "切换到日常模式 · 管理验证",
             "classroom.restore" => "恢复课堂模式配置 · 管理验证",
             _ => "定时监测 · 管理验证"
@@ -59,6 +60,12 @@ internal sealed class NoiseManagementDialog : Window
             : $"本场定时监测正在运行。请输入{secretName}。{sourceHint}本次验证只授权当前会话的这一项操作，关闭窗口不会停止采集。";
         body.Children.Add(_message);
         if (_mode != "default") _message.Text = ClassroomActionAccess.Describe(_mode);
+        var reservationStart = target?.ManualStudy?.StartUtc;
+        if (reservationStart is { } start)
+        {
+            if (_mode == "both") _message.Text = "请同时验证本班管理口令和已登记的教师 U 盘。";
+            _message.Text += $"\n预约开始时间　{start.ToLocalTime():yyyy-MM-dd HH:mm}";
+        }
         if(exit is not null)
         {
             _message.Text += "\n请在倒计时结束前完成本次退出验证。";
@@ -84,8 +91,9 @@ internal sealed class NoiseManagementDialog : Window
             body.Children.Add(new TextBlock { Text = target is null ? "原管理口令" : _mode == "default" ? secretName : "本班管理口令" });
             body.Children.Add(_old);
         }
-        if (_mode is "usb" or "both")
-            body.Children.Add(new TextBlock { Text = "请保持 U 盘插入，直至操作完成。", TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) });
+        if (_mode is "usb" or "both" || reservationStart.HasValue && _mode == "either")
+            body.Children.Add(new TextBlock { Text = reservationStart.HasValue ? "如使用 U 盘，预约受理后即可拔出。" : "请保持 U 盘插入，直至操作完成。",
+                TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) });
         if (target is null)
         {
             body.Children.Add(new TextBlock { Text = "新口令" }); body.Children.Add(_new);
@@ -177,7 +185,9 @@ internal sealed class NoiseManagementDialog : Window
         try
         {
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var reply = purpose is "stop" or "maintenance" or "switch-classroom-mode"
+            var reply = purpose == "start-manual-study"
+                ? await HostClient.RequestAsync(pipe, ClassroomActionAccess.ManualStudyStatusCapability, deadline.Token)
+                : purpose is "stop" or "maintenance" or "switch-classroom-mode"
                 ? await ClassroomActionAccess.ReadAsync(pipe, deadline.Token, purpose == "switch-classroom-mode") :
                 await HostClient.RequestAsync(pipe, "noise.management.status", deadline.Token);
             // IsLoaded can remain true until WPF processes unloading after Closed.
@@ -185,13 +195,16 @@ internal sealed class NoiseManagementDialog : Window
         }
         finally { owner.Closed -= OwnerClosed; }
     }
-    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null, NoiseProtectionState? expectedAccess = null, Action<string>? reportBlocked = null)
+    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null, NoiseProtectionState? expectedAccess = null, Action<string>? reportBlocked = null, Func<bool>? stillCurrent = null)
     {
-        if (!Protocol.NoiseInterruption(target)) return target;
-        owner = PrepareOwner(owner);
         var purpose = Protocol.NoisePurpose(target);
+        bool manualStart = purpose == "start-manual-study";
+        if (!manualStart && !Protocol.NoiseInterruption(target)) return target;
+        owner = PrepareOwner(owner);
         var reply = await ReadStateAsync(owner, pipe, purpose);
-        if (reply is null) return null;
+        if (reply is null || stillCurrent?.Invoke() == false) return null;
+        // Older Hosts have no manual-start policy. Their normal start command still enforces capture and schedule priority.
+        if (manualStart && reply is { Outcome: "Rejected", ErrorCode: "UnknownCapability" }) return target;
         if (reply.Outcome != "Succeeded" || reply.NoiseProtection is not { } state)
         {
             if (reportBlocked is null) MessageBox.Show(owner, reply.Message, "无法核实操作权限");
@@ -203,6 +216,7 @@ internal sealed class NoiseManagementDialog : Window
             state.ClassroomPolicy != expectedAccess.ClassroomPolicy || state.CredentialRevision != expectedAccess.CredentialRevision))
             return null;
         var mode = ClassroomActionAccess.Mode(state, purpose);
+        if (manualStart && mode == "default") return target;
         if (ClassroomActionAccess.Blocked(state, mode, purpose) is { } blocked)
         {
             if (reportBlocked is null) MessageBox.Show(owner, blocked, "学校管理策略");

@@ -7,6 +7,7 @@ internal static partial class Program
 {
     private static void RunManualStudyChecks()
     {
+        RunManualStartPolicyChecks();
         RunStudyHomeworkReaderChecks(manual: true);
         RunManualHomeworkUiChecks();
         RunStudyHoldIntentCheck();
