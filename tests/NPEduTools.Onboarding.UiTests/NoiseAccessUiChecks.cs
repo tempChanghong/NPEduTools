@@ -143,7 +143,7 @@ internal static partial class Program
         var owner = new Window { Title = "隔离管理访问检查", Width = 600, Height = 400 };
         owner.Show();
         var type = typeof(NoiseWindow).Assembly.GetType("NPEduTools.App.NoiseManagementDialog")!;
-        var dialog = (Window)type.GetConstructors(flags).Single().Invoke([owner, pipe, state, target, null, null]);
+        var dialog = new NoiseManagementDialog(owner, pipe, state, target);
         var submit = (Button)type.GetField("_submit", flags)!.GetValue(dialog)!;
         var message = (TextBlock)type.GetField("_message", flags)!.GetValue(dialog)!;
         var context = new QuickEventContext();

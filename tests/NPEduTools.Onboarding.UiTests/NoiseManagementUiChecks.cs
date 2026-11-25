@@ -59,8 +59,8 @@ internal static partial class Program
         {
             if (ownerAction != "cold-hidden") owner.Show();
             var read = Read();
-            var method = type.GetMethod(operation == "configure" ? "ConfigureAsync" : "AuthorizeAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
-            var action = (Task)method.Invoke(null, operation == "configure" ? [owner, pipe] : [owner, pipe, target, null, null, null, null, null, null])!;
+            Task action = operation == "configure" ? NoiseManagementDialog.ConfigureAsync(owner, pipe) :
+                NoiseManagementDialog.AuthorizeAsync(owner, pipe, target);
             PumpUntil(() => read.IsCompleted, "management owner status query did not arrive");
             var request = read.GetAwaiter().GetResult();
             Assert(request.Capability == (operation == "configure" ? "noise.management.status" : ClassroomActionAccess.StatusCapability) &&
@@ -124,7 +124,7 @@ internal static partial class Program
         var type = typeof(NoiseWindow).Assembly.GetType("NPEduTools.App.NoiseManagementDialog")!;
         owner.Show();
         Window dialog;
-        try { dialog = (Window)type.GetConstructors(flags).Single().Invoke([owner, pipe, state, target, null, null]); }
+        try { dialog = new NoiseManagementDialog(owner, pipe, state, target); }
         catch { owner.Close(); throw; }
         var submit = (Button)type.GetField("_submit", flags)!.GetValue(dialog)!;
         var message = (TextBlock)type.GetField("_message", flags)!.GetValue(dialog)!;

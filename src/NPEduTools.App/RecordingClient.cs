@@ -38,10 +38,12 @@ internal sealed class RecordingClient : IAsyncDisposable
         if (process.ExitCode != 0) throw new IOException("无法检测录制设备。");
         return JsonSerializer.Deserialize<RecordingEnvironment>(await output, RecordingContract.Json) ?? throw new InvalidDataException();
     }
-    private async Task<HostResponse> RequestAsync(string capability, RecorderCommand? command = null, AutomaticRecordingCommand? automatic = null)
+    private Task<HostResponse> RequestAsync(string capability, AutomaticRecordingCommand? automatic = null)
+        => RequestAsync(new HostRequest(Protocol.Version, Guid.NewGuid(), capability, 15000, Automatic: automatic));
+    private async Task<HostResponse> RequestAsync(HostRequest request)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); timeout.CancelAfter(TimeSpan.FromSeconds(18));
-        return await HostClient.RequestAsync(_pipe, new HostRequest(Protocol.Version, Guid.NewGuid(), capability, 15000, Recording: command, Automatic: automatic), timeout.Token);
+        return await HostClient.RequestAsync(_pipe, request, timeout.Token);
     }
     private async Task PollAsync()
     {
@@ -117,7 +119,14 @@ internal sealed class RecordingClient : IAsyncDisposable
         if (!expected) return;
         _pending = null; StateAvailable = true; State = state; Changed?.Invoke(state);
     }
-    public async Task SendAsync(string action, RecordingOptions? options = null)
+    internal HostRequest CreateManualStart(RecordingOptions options) =>
+        new(Protocol.Version, Guid.NewGuid(), "recording.command", 15000, Recording: new("start", options, ClientId: _client));
+    internal Task StartPreparedAsync(HostRequest request, Func<Task<bool>> checkBeforeSend) =>
+        SendManualAsync("start", request, checkBeforeSend);
+    public Task SendAsync(string action, RecordingOptions? options = null) =>
+        SendManualAsync(action, new(Protocol.Version, Guid.NewGuid(), "recording.command", 15000,
+            Recording: new(action, options, action == "start" ? null : State.Control, _client)), null);
+    private async Task SendManualAsync(string action, HostRequest request, Func<Task<bool>>? checkBeforeSend)
     {
         if (_closing || !StateAvailable || _manualSending || _pending is not null || State.Busy && action != "stop") return;
         // Coalesce manual double taps, but do not drop the first manual action
@@ -130,6 +139,8 @@ internal sealed class RecordingClient : IAsyncDisposable
         {
             await _commands.WaitAsync(_lifetime.Token);
             entered = true;
+            if (_closing || !StateAvailable) return;
+            if (checkBeforeSend is not null && !await checkBeforeSend()) return;
             if (_closing || !StateAvailable) return;
             // The queue may span a lesson handoff. Never retarget the user's
             // action to that new session; lease renewal alone is not a handoff.
@@ -145,7 +156,14 @@ internal sealed class RecordingClient : IAsyncDisposable
             _sending = true; _pending = action;
             State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
             Changed?.Invoke(State);
-            var response = await RequestAsync("recording.command", new(action, options, action == "start" ? null : expected, _client));
+            var response = await RequestAsync(request);
+            if (response.Outcome == "Rejected" && response.Recording is null && response.ErrorCode?.StartsWith("CLASSROOM_", StringComparison.Ordinal) == true)
+            {
+                _pending = null;
+                State = previous with { Error = response.Message };
+                Changed?.Invoke(State);
+                return;
+            }
             if (response.Recording is null)
                 throw new InvalidDataException("后台未返回录制状态；" + response.Message);
             if (response.Outcome != "Succeeded") { _pending = null; Apply(response); throw new InvalidOperationException(response.Message); }

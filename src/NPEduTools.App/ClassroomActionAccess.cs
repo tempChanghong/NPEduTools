@@ -7,6 +7,7 @@ internal static class ClassroomActionAccess
     internal const string StatusCapability = "noise.management.status.classroom-policy";
     internal const string SwitchStatusCapability = StatusCapability + ".v2";
     internal const string ManualStudyStatusCapability = StatusCapability + ".v4";
+    internal const string ManualRecordingStatusCapability = StatusCapability + ".v5";
 
     internal static async Task<HostResponse> ReadAsync(string pipe, CancellationToken token, bool includeClassroomSwitch = false)
     {
@@ -27,6 +28,7 @@ internal static class ClassroomActionAccess
         string? mode = purpose switch
         {
             "start-manual-study" => policy.StartManualStudy,
+            "start-manual-recording" => policy.StartManualRecording,
             "switch-classroom-mode" => policy.SwitchClassroomMode,
             "maintenance" => policy.ExitHost,
             "stop" when state.Protected => policy.StopScheduled,
@@ -71,7 +73,8 @@ internal static class ClassroomActionAccess
         return new("authorize", secret, Purpose: purpose, TargetRequestId: target.RequestId,
             InstanceId: state.InstanceId, SessionId: state.SessionId,
             ClassroomPolicyVersion: mode == "default" ? null : state.ClassroomPolicy?.Version,
-            ManualStudyTarget: purpose == "start-manual-study" ? target.ManualStudy : null);
+            ManualStudyTarget: purpose == "start-manual-study" ? target.ManualStudy : null,
+            RecordingTarget: purpose == "start-manual-recording" ? target.Recording : null);
     }
 
     internal static Guid? Ticket(HostResponse reply, NoiseProtectionState state)

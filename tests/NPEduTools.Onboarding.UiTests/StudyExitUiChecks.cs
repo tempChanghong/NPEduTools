@@ -45,7 +45,7 @@ internal static partial class Program
         var state=new StudyExitState(id,"Waiting",null,30,0,"Suppressed","NotRequired");
         var target=new HostRequest(1,id,"host.stop");var type=typeof(NoiseWindow).Assembly.GetType("NPEduTools.App.NoiseManagementDialog")!;
         Func<Task<StudyExitState?>> read=()=>Task.FromResult<StudyExitState?>(state);
-        var dialog=(Window)type.GetConstructors(flags).Single().Invoke([owner,pipe,protection,target,state,read]);
+        var dialog=new NoiseManagementDialog(owner,pipe,protection,target,state,read);
         dialog.WindowStartupLocation=WindowStartupLocation.Manual;dialog.Left=5000;dialog.Top=5000;dialog.ShowActivated=false;
         async Task<HostRequest> Incoming(){await server.WaitForConnectionAsync(deadline.Token);return await Protocol.ReadAsync<HostRequest>(server,deadline.Token);}
         var pending=Incoming();var ticket=Guid.NewGuid();

@@ -39,7 +39,7 @@ internal static partial class Program
         bool connectionOnly = args.Length == 2 && args[1] == "--school-connection";
         bool noiseOnly = args.Length == 2 && args[1] == "--noise-status";
         bool recordingOnly = args.Length == 2 && args[1] == "--automatic-recording";
-        bool manualOnly = args.Length == 2 && args[1] == "--manual-recording";
+        bool manualOnly = args.Length == 2 && args[1] is "--manual-recording" or "--manual-recording-start-policy";
         bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
         bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
         bool classroomOnly = args.Length == 2 && args[1] == "--classroom-status";
@@ -159,6 +159,7 @@ internal static partial class Program
             }
             if (manualOnly)
             {
+                if (args[1] == "--manual-recording-start-policy") { RunManualRecordingStartPolicyChecks(); WriteResult("PASSED", null); return 0; }
                 RunManualRecordingChecks();
                 WriteResult("PASSED", null); return 0;
             }

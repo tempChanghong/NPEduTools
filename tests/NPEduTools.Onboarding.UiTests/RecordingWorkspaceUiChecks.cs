@@ -42,6 +42,11 @@ internal static partial class Program
                         PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                     await channel.WaitForConnectionAsync(stop.Token);
                     var request = await Protocol.ReadAsync<HostRequest>(channel, stop.Token);
+                    if (request.Capability == ClassroomActionAccess.ManualRecordingStatusCapability)
+                    {
+                        await Protocol.WriteAsync(channel, new HostResponse(1, request.RequestId, "Rejected", "UnknownCapability", "Older fixture Host"), stop.Token);
+                        continue;
+                    }
                     requests.Enqueue(request);
                     Assert(Protocol.Validate(request) is null, "workspace sent invalid protocol parameters");
                     if (offline) continue;

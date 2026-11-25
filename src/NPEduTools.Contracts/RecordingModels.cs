@@ -3,7 +3,8 @@ using System.Text.Json;
 namespace NPEduTools.Contracts;
 
 public sealed record RecordingDisplay(string Id, string Label, int Left, int Top, int Width, int Height, bool Primary);
-public sealed record RecordingDevice(string Id, string Label);
+public sealed record RecordingDevice(string Id, string Label,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] bool IsDefault = false);
 public sealed record RecordingEnvironment(bool Ready, string? Error, RecordingDisplay[] Displays,
     RecordingDevice[] Microphones, RecordingDevice[] Speakers);
 public sealed record RecordingOptions(string Display, string OutputDirectory, int FramesPerSecond = 8,

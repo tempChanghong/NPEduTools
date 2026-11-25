@@ -21,21 +21,30 @@ public partial class RecordingWindow : Window
     }
     private readonly RecordingClient _client;
     private readonly Func<Task<RecordingEnvironment>> _probe;
+    private readonly string _endpoint;
     private readonly string _preferencesPath;
     private bool _shutdown, _readable = true, _probing, _viewReady, _editing, _probeWhenIdle;
     internal Action? WorkspaceReturn { get; init; }
     private string? _stateError;
+    private string? _lastVisiblePhase;
     private string? _deviceSelectionError;
     private RecordingEnvironment? _environment;
     private RecordingOptions? _saved;
+    private bool _preparingStart;
+    private long _startGeneration;
     internal RecordingWindow(RecordingClient client, string endpoint)
         : this(client, endpoint, RecordingClient.ProbeAsync) { }
     internal RecordingWindow(RecordingClient client, string endpoint, Func<Task<RecordingEnvironment>> probe)
     {
         _client = client;
         _probe = probe;
+        _endpoint = endpoint;
         _preferencesPath = StartupPreferencesStore.PathFor(endpoint).Replace(".startup.json", ".recording.json", StringComparison.Ordinal);
         InitializeComponent();
+        ((FrameworkElement)Content).IsVisibleChanged += (_, args) =>
+        {
+            if (args.NewValue is false) _startGeneration++;
+        };
         OutputDirectory.TextChanged += (_, _) => { if (_viewReady) { RecordingPreferenceFeedback.Text = ""; UpdateReadySummary(); } };
         DesktopDialogSizing.Attach(this, endpoint);
         OutputDirectory.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "NPEduTools");
@@ -123,10 +132,55 @@ public partial class RecordingWindow : Window
     }
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
+        if (_preparingStart || !RecordStart.IsEnabled) return;
         var options = OptionsFromForm(); if (options is null) return;
-        SavePreferences(options);
+        var sources = RecordingSources.Resolve(options, _environment);
+        long generation = ++_startGeneration;
+        bool Current() => !_shutdown && generation == _startGeneration && WorkspacePanel.Visible(this) &&
+            _client.StateAvailable && !_client.State.Active;
+        _preparingStart = true;
+        Apply(_client.State);
         RecordingPreferenceFeedback.Text = "";
-        await _client.SendAsync("start", options);
+        RecordingError.Text = "";
+        try
+        {
+            var original = _client.CreateManualStart(options);
+            string? blocked = null;
+            var request = await NoiseManagementDialog.AuthorizeAsync(WorkspacePanel.DialogOwner(this), _endpoint, original,
+                reportBlocked: message => blocked = message, stillCurrent: Current, recordingSources: sources);
+            if (!Current()) return;
+            if (request is null)
+            {
+                RecordingError.Text = blocked ?? "已取消，未提交录制请求。";
+                return;
+            }
+            await _client.StartPreparedAsync(request, async () =>
+            {
+                if (!Current()) return false;
+                if (request.NoiseAuthorization.HasValue)
+                {
+                    await ProbeAsync();
+                    if (!Current()) return false;
+                    if (sources?.Matches(RecordingSources.Resolve(options, _environment)) != true)
+                    {
+                        RecordingError.Text = "录制来源已变化或暂时无法核实。请核对屏幕和声音设备，再重新开始。";
+                        return false;
+                    }
+                }
+                if (options != OptionsFromForm())
+                {
+                    RecordingError.Text = "录制选项已变化，请按当前选项重新开始。";
+                    return false;
+                }
+                SavePreferences(options);
+                return true;
+            });
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
+        {
+            if (Current()) RecordingError.Text = "无法核实录制权限。请检查后台连接后重新开始。";
+        }
+        finally { _preparingStart = false; Apply(_client.State); }
     }
     private RecordingOptions? OptionsFromForm()
     {
@@ -179,7 +233,19 @@ public partial class RecordingWindow : Window
             if (RecordingError.Text == _deviceSelectionError) RecordingError.Text = deviceError ?? "";
             _deviceSelectionError = deviceError;
         }
-        ReadySummary.Text = deviceError ?? CaptureSummary.Text + " · " + (MicrophoneSound.IsChecked == true && SystemSound.IsChecked == true ? "麦克风＋系统声音" : MicrophoneSound.IsChecked == true ? "麦克风" : SystemSound.IsChecked == true ? "系统声音" : "无音频");
+        string AudioSource(bool enabled, ComboBox choice, RecordingDevice[] devices)
+        {
+            if (!enabled) return "关闭";
+            if (choice.SelectedValue is not string id) return "待选择";
+            return RecordingSources.Find(devices, id) is { } resolved ? RecordingSources.DeviceName(resolved) :
+                (choice.SelectedItem as RecordingDevice)?.Label ?? "待核实";
+        }
+        var display = DisplayChoice.SelectedItem as RecordingDisplay;
+        ReadySummary.Text = deviceError ?? (display is null ? "正在读取录制来源…" :
+            $"屏幕　{(string.IsNullOrWhiteSpace(display.Label) ? display.Id : display.Label)}\n" +
+            $"系统声音　{AudioSource(SystemSound.IsChecked == true, SpeakerChoice, _environment?.Speakers ?? [])}\n" +
+            $"麦克风　{AudioSource(MicrophoneSound.IsChecked == true, MicrophoneChoice, _environment?.Microphones ?? [])}\n" +
+            CaptureSummary.Text);
         ReadyDirectory.Text = "保存到 " + OutputDirectory.Text;
     }
     private async void PauseClicked(object sender, RoutedEventArgs e) => await _client.SendAsync(_client.State.Phase == "Paused" ? "resume" : "pause");
@@ -187,6 +253,10 @@ public partial class RecordingWindow : Window
     private void Apply(RecordingState state)
     {
         bool available = _client.StateAvailable;
+        string? visiblePhase = available ? state.Phase : null;
+        bool phaseChanged = visiblePhase != _lastVisiblePhase;
+        _lastVisiblePhase = visiblePhase;
+        if (_preparingStart && (!available || state.Active)) _startGeneration++;
         if (_viewReady && _probeWhenIdle && !state.Active && available && !_probing)
         { _probeWhenIdle = false; _ = ProbeAsync(); }
         RecordingHeading.Text = !available ? "录制状态未确认" : state.Active ? state.Control?.Owner == "Automatic" ? "自动录课进行中" : "当前录课" : "立即录制";
@@ -204,16 +274,19 @@ public partial class RecordingWindow : Window
         if (!available || state.Active || state.Error is not null) RecordingPreferenceFeedback.Text = "";
         RecordingMessage.Text = available ? state.Message : "录制后台未确认当前状态，等待重新连接；不能据此判断录制已经停止。";
         if (state.Error is not null) RecordingError.Text = state.Error;
-        else if (state.Active || state.Phase == "Saved" || _stateError is not null && RecordingError.Text == _stateError) RecordingError.Text = "";
+        else if (phaseChanged && (state.Active || state.Phase == "Saved") ||
+            _stateError is not null && RecordingError.Text == _stateError) RecordingError.Text = "";
         // A fresh state clears its old error without hiding unrelated form/device feedback.
         _stateError = state.Error;
         RecordingMetrics.Text = !available ? "旧时长和统计不代表当前状态；恢复连接后重新读取。" : state.Phase == "Idle"
             ? "低帧率适合课件与讲解，快速视频和动画会不够流畅。"
             : $"{state.Frames:N0} 帧 · {state.Bytes / 1048576.0:F1} MB · 丢帧 {state.DroppedFrames} · 音频缓冲异常 {state.AudioOverruns}";
-        RecordingSettings.IsEnabled = available && !state.Active && !_probing;
+        RecordingSettings.IsEnabled = available && !state.Active && !_probing && !_preparingStart;
+        EditSettings.IsEnabled = !_preparingStart;
         UpdateSound();
         RecordStart.Visibility = state.Active ? Visibility.Collapsed : Visibility.Visible;
-        RecordStart.IsEnabled = available && !state.Active && !_probing && _environment?.Ready == true;
+        RecordStart.IsEnabled = available && !state.Active && !_probing && !_preparingStart && _environment?.Ready == true;
+        RecordStart.Content = _preparingStart ? "正在核对录制…" : "开始录制";
         SaveSettings.IsEnabled = RecordStart.IsEnabled;
         RecordPause.Visibility = RecordStop.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
         RecordPause.IsEnabled = RecordStop.IsEnabled = available && !state.Busy;

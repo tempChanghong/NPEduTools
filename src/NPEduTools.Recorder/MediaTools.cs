@@ -29,9 +29,17 @@ internal static class MediaTools
     private static RecordingDevice[] Devices(MMDeviceEnumerator enumerator, DataFlow flow)
     {
         var result = new List<RecordingDevice>();
+        string? defaultId = null;
+        try
+        {
+            using var current = enumerator.GetDefaultAudioEndpoint(flow, Role.Console);
+            defaultId = current.ID;
+        }
+        catch (Exception error) when (error is System.Runtime.InteropServices.COMException or InvalidOperationException)
+        { /* This role currently has no default. Explicit active endpoints are still usable. */ }
         foreach (var device in enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active))
         {
-            using (device) result.Add(new(device.ID, device.FriendlyName));
+            using (device) result.Add(new(device.ID, device.FriendlyName, device.ID == defaultId));
         }
         return result.ToArray();
     }

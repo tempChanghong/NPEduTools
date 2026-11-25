@@ -30,7 +30,7 @@ internal sealed class NoiseManagementDialog : Window
     private bool _completed,_reading,_submitting;
     public StudyExitState? FailedExit {get;private set;}
     public Guid? Ticket { get; private set; }
-    private NoiseManagementDialog(Window owner, string pipe, NoiseProtectionState state, HostRequest? target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null)
+    internal NoiseManagementDialog(Window owner, string pipe, NoiseProtectionState state, HostRequest? target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null, RecordingSources? recordingSources = null)
     {
         Owner = PrepareOwner(owner); _pipe = pipe; _state = state; _target = target;
         _exit=exit;_exitRead=exitRead;
@@ -40,6 +40,7 @@ internal sealed class NoiseManagementDialog : Window
             null => "本机管理口令",
             "host.stop" => "退出后台 · 管理验证",
             "manual.study.command" => target.ManualStudy?.StartUtc is null ? "开始手动自习 · 管理验证" : "预约手动自习 · 管理验证",
+            "recording.command" => "开始手动录课 · 管理验证",
             "classroom.set" or "classroom.retry" => target.ClassroomMode?.Target == "Exam" ? "切换到考试模式 · 管理验证" : "切换到日常模式 · 管理验证",
             "classroom.restore" => "恢复课堂模式配置 · 管理验证",
             _ => "定时监测 · 管理验证"
@@ -54,18 +55,18 @@ internal sealed class NoiseManagementDialog : Window
         string sourceHint = state.ManagementSource == "School"
             ? "使用学校管理员为本班设置的口令，原本机口令已停用。" : "";
         var reservationStart = target?.ManualStudy?.StartUtc;
-        var body = new StackPanel { Margin = reservationStart.HasValue ? new(26, 18, 26, 16) : new(26) };
+        bool fitContent = reservationStart.HasValue || recordingSources is not null;
+        var body = new StackPanel { Margin = fitContent ? new(26, 18, 26, 16) : new(26) };
         body.Children.Add(new TextBlock { Text = Title, FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new(0,0,0,14) });
+        if (recordingSources is not null)
+            body.Children.Add(new TextBlock { Text = recordingSources.Summary, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 12) });
         _message.Text = target is null
             ? "用于本机停止定时监测和维护退出，与学校 PIN 分开。请使用 8–128 字符口令；Host 只保存加盐摘要。"
             : $"本场定时监测正在运行。请输入{secretName}。{sourceHint}本次验证只授权当前会话的这一项操作，关闭窗口不会停止采集。";
         body.Children.Add(_message);
         if (_mode != "default") _message.Text = ClassroomActionAccess.Describe(_mode);
-        if (reservationStart is { } start)
-        {
-            if (_mode == "both") _message.Text = "请同时验证本班管理口令和已登记的教师 U 盘。";
-            _message.Text += $"\n预约开始时间　{start.ToLocalTime():yyyy-MM-dd HH:mm}";
-        }
+        if (_mode == "both" && fitContent) _message.Text = "请同时验证本班管理口令和已登记的教师 U 盘。";
+        if (reservationStart is { } start) _message.Text += $"\n预约开始时间　{start.ToLocalTime():yyyy-MM-dd HH:mm}";
         if(exit is not null)
         {
             _message.Text += "\n请在倒计时结束前完成本次退出验证。";
@@ -91,8 +92,9 @@ internal sealed class NoiseManagementDialog : Window
             body.Children.Add(new TextBlock { Text = target is null ? "原管理口令" : _mode == "default" ? secretName : "本班管理口令" });
             body.Children.Add(_old);
         }
-        if (_mode is "usb" or "both" || reservationStart.HasValue && _mode == "either")
-            body.Children.Add(new TextBlock { Text = reservationStart.HasValue ? "如使用 U 盘，预约受理后即可拔出。" : "请保持 U 盘插入，直至操作完成。",
+        if (_mode is "usb" or "both" || fitContent && _mode == "either")
+            body.Children.Add(new TextBlock { Text = reservationStart.HasValue ? "如使用 U 盘，预约受理后即可拔出。" :
+                recordingSources is not null ? "如使用 U 盘，开始录制后即可拔出。" : "请保持 U 盘插入，直至操作完成。",
                 TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 10) });
         if (target is null)
         {
@@ -102,7 +104,7 @@ internal sealed class NoiseManagementDialog : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         if(exit is null)buttons.Children.Add(new Button { Content = "取消", IsCancel = true, Margin = new(0,0,12,0), MinWidth = 80 });
         buttons.Children.Add(_submit); body.Children.Add(buttons); Content = body;
-        DesktopDialogSizing.Attach(this, pipe, useContentHeight: reservationStart.HasValue);
+        DesktopDialogSizing.Attach(this, pipe, useContentHeight: fitContent);
         _submit.Click += Submit;
         Closed += (_, _) => { _old.Clear(); _new.Clear(); _confirm.Clear(); };
         Loaded += (_, _) =>
@@ -185,20 +187,22 @@ internal sealed class NoiseManagementDialog : Window
         try
         {
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var reply = purpose == "start-manual-study"
-                ? await HostClient.RequestAsync(pipe, ClassroomActionAccess.ManualStudyStatusCapability, deadline.Token)
-                : purpose is "stop" or "maintenance" or "switch-classroom-mode"
-                ? await ClassroomActionAccess.ReadAsync(pipe, deadline.Token, purpose == "switch-classroom-mode") :
-                await HostClient.RequestAsync(pipe, "noise.management.status", deadline.Token);
+            var reply = purpose switch
+            {
+                "start-manual-recording" => await HostClient.RequestAsync(pipe, ClassroomActionAccess.ManualRecordingStatusCapability, deadline.Token),
+                "start-manual-study" => await HostClient.RequestAsync(pipe, ClassroomActionAccess.ManualStudyStatusCapability, deadline.Token),
+                "stop" or "maintenance" or "switch-classroom-mode" => await ClassroomActionAccess.ReadAsync(pipe, deadline.Token, purpose == "switch-classroom-mode"),
+                _ => await HostClient.RequestAsync(pipe, "noise.management.status", deadline.Token)
+            };
             // IsLoaded can remain true until WPF processes unloading after Closed.
             return closed ? null : reply;
         }
         finally { owner.Closed -= OwnerClosed; }
     }
-    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null, NoiseProtectionState? expectedAccess = null, Action<string>? reportBlocked = null, Func<bool>? stillCurrent = null)
+    internal static async Task<HostRequest?> AuthorizeAsync(Window owner, string pipe, HostRequest target,StudyExitState? exit=null,Func<Task<StudyExitState?>>? exitRead=null,Action<StudyExitState>? failed=null, Guid? expectedSession = null, NoiseProtectionState? expectedAccess = null, Action<string>? reportBlocked = null, Func<bool>? stillCurrent = null, RecordingSources? recordingSources = null)
     {
         var purpose = Protocol.NoisePurpose(target);
-        bool manualStart = purpose == "start-manual-study";
+        bool manualStart = purpose is "start-manual-study" or "start-manual-recording";
         if (!manualStart && !Protocol.NoiseInterruption(target)) return target;
         owner = PrepareOwner(owner);
         var reply = await ReadStateAsync(owner, pipe, purpose);
@@ -224,6 +228,15 @@ internal sealed class NoiseManagementDialog : Window
             return null;
         }
         if (mode == "default" && !state.Protected) return target;
+        if (purpose == "start-manual-recording" && target.Recording is { Options: { } selected } commandTarget)
+        {
+            if (recordingSources is null)
+            {
+                reportBlocked?.Invoke("无法确认本次录制的设备。请在录制设置中重新检测，或明确选择录制屏幕和已开启的音源。");
+                return null;
+            }
+            target = target with { Recording = commandTarget with { Options = recordingSources.Pin(selected) } };
+        }
         if (mode == "allow")
         {
             var command = ClassroomActionAccess.AuthorizeCommand(state, target, mode, null);
@@ -232,7 +245,7 @@ internal sealed class NoiseManagementDialog : Window
             reportBlocked?.Invoke(grant.Outcome == "Succeeded" ? "本次授权结果与原请求不符，请重新核对。" : grant.Message);
             return null;
         }
-        var dialog = new NoiseManagementDialog(owner, pipe, state, target,exit,exitRead);
+        var dialog = new NoiseManagementDialog(owner, pipe, state, target,exit,exitRead, recordingSources);
         bool succeeded=dialog.ShowDialog()==true;
         if(dialog.FailedExit is {} denied)failed?.Invoke(denied);
         return succeeded && dialog.Ticket is { } ticket ? target with { NoiseAuthorization = ticket } : null;
