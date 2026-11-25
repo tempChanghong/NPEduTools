@@ -72,6 +72,12 @@ internal static partial class Program
                 Assert(Text("BridgeStateLabel") == "桥接未连接" && Text("NextActionText").Contains("上次退出") &&
                     Text("NextActionText").Contains("打开考试看板"),
                     "exit receipt must stay historical when current process state has not been verified");
+                ShowExamAware(window, ReadyExamAware() with
+                {
+                    Quit = new(Guid.NewGuid(), "Exited", "已确认目标 ExamAware 进程退出。", 42)
+                });
+                Assert(Text("BridgeStateLabel").Contains("已连接") && Text("QuitStatus").StartsWith("上次退出：", StringComparison.Ordinal) &&
+                    Button(owner, "QuitButton").IsEnabled, "a past exit must not describe or disable the reconnected program");
 
                 ShowExamAware(window, ReadyExamAware() with { BridgeState = "Disconnected", Message = "尚未连接桥接插件", AppVersion = null, Quit = null, PreparedPlan = null });
                 ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();

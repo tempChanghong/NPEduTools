@@ -201,7 +201,11 @@ public partial class ExamAwareWindow : Window
         AutoStartMessage.Text = state?.AutoStartChange is { } change ?
             (change.State == "Sending" ? change.Message : "上次设置结果：" + change.Message) :
             (state?.BridgeState == "Connected" && !state.CanSetAutoStart ? "修改自启动需要桥接 0.3.0 或兼容版本，并授权设置权限。" : "连接桥接并保存程序位置后，可设置当前程序的登录自启动。");
-        QuitStatus.Text = state?.Quit?.Message ?? (ready ? "退出前请保存并关闭编辑器、结束放映。" : "连接桥接并保存程序位置后可用。");
+        QuitStatus.Text = state?.Quit is { } quit
+            ? state.BridgeState == "Connected" && quit.State is not ("Sending" or "AwaitingExit")
+                ? "上次退出：" + quit.Message
+                : quit.Message
+            : ready ? "退出前请保存并关闭编辑器、结束放映。" : "连接桥接并保存程序位置后可用。";
         if (state is null)
         {
             Connection.Text = _protocolMismatch ? "后台协议不匹配或回执无效，连接未确认。" : "后台连接未确认，等待重新连接。";
