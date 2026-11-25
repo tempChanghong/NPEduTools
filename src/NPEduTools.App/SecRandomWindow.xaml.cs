@@ -15,13 +15,14 @@ public partial class SecRandomWindow : Window
     private SecRandomState? _lastKnownState;
     private SecRandomOperation? _lastDrawOperation;
     private SecRandomOperation? _pendingReconciliation;
+    private Guid? _openRequest, _floatRequest;
     private long _generation;
-    private bool _loaded, _busy, _closing, _configurationPresented;
+    private bool _loaded, _busy, _closing, _configurationPresented, _floatToggledByUser, _applyingFloatLayout;
     public SecRandomWindow(string pipe)
     {
         _pipe = pipe; InitializeComponent();
         DesktopDialogSizing.Attach(this, pipe);
-        PageScroll.SizeChanged += (_, e) => UpdateDrawLayout(e.NewSize.Width);
+        PageScroll.SizeChanged += (_, e) => UpdateResponsiveLayout(e.NewSize.Width);
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => _lifetime.Cancel();
         Render(null);
@@ -29,13 +30,35 @@ public partial class SecRandomWindow : Window
     }
     public void Shutdown() { _closing = true; Close(); }
 
-    private void UpdateDrawLayout(double width)
+    private void UpdateResponsiveLayout(double width)
     {
         bool stacked = width < 650;
+        PageStack.Margin = stacked ? new Thickness(12, 10, 12, 12) : new Thickness(16, 12, 16, 16);
+        Grid.SetRow(Actions, stacked ? 1 : 0);
+        Grid.SetColumn(Actions, stacked ? 0 : 1);
+        Actions.Margin = stacked ? new Thickness(0, 8, 0, 0) : new Thickness(14, 0, 0, 0);
+
         Grid.SetRow(DrawResult, stacked ? 1 : 0);
         Grid.SetColumn(DrawResult, stacked ? 0 : 1);
         DrawLayout.ColumnDefinitions[1].Width = stacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-        DrawResult.Margin = stacked ? new Thickness(0, 8, 0, 0) : new Thickness(20, 0, 0, 0);
+        DrawResult.Margin = stacked ? new Thickness(0, 8, 0, 0) : new Thickness(16, 0, 0, 0);
+
+        if (!_floatToggledByUser)
+        {
+            _applyingFloatLayout = true;
+            try { FloatConfiguration.IsExpanded = !stacked; }
+            finally { _applyingFloatLayout = false; }
+        }
+    }
+    private void FloatConfigurationChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_applyingFloatLayout && IsLoaded) _floatToggledByUser = true;
+    }
+    private void SetBadge(string text, string brushKey)
+    {
+        Connection.Text = text;
+        Connection.SetResourceReference(TextBlock.ForegroundProperty, brushKey);
+        StatusBadge.SetResourceReference(Border.BorderBrushProperty, brushKey);
     }
     private string ShowGuidance(string message)
     {
@@ -90,14 +113,7 @@ public partial class SecRandomWindow : Window
         if (state?.Operation is { State: "Unknown" } pending) _pendingReconciliation = pending;
         else if (state is not null && state.Operation is not { Action: "check", State: "Running" }) _pendingReconciliation = null;
         if (state?.Operation is { Action: "quick-draw" } draw) _lastDrawOperation = draw;
-        NextActionText.Text = state switch
-        {
-            { Error: not null } => "核对程序位置与错误详情，恢复后再操作。",
-            { Operation: { Action: "check", State: "Running" } } => "正在检查接口…",
-            { Operation: { Action: "check", State: "Failed" } failed } => failed.Message,
-            { ExecutablePath: not (null or ""), Connection: "Unchecked" } => "打开 SecRandom 后检查接口。",
-            _ => ""
-        };
+
         if (state is not null && !_configurationPresented)
         {
             _configurationPresented = true;
@@ -106,50 +122,94 @@ public partial class SecRandomWindow : Window
         }
         if (state is not null) _lastKnownState = state;
         if (!_loaded && state is not null) { Executable.Text = state.ExecutablePath ?? ""; _loaded = true; }
-        Connection.Text = state?.Error ?? state?.Connection switch
-        {
-            "Ready" => "接口已就绪", "Unavailable" => "接口未就绪",
-            _ => state is null ? "后台连接未确认，等待重新连接。" : "尚未检查 SecRandom 接口"
-        };
+
         var display = state ?? _lastKnownState;
         var savedPath = display?.ExecutablePath;
         bool hasPath = !string.IsNullOrWhiteSpace(savedPath);
+        bool running = state?.Operation?.State == "Running", uncertain = _pendingReconciliation is not null;
+        bool ready = state is { Error: null, Connection: "Ready" };
+
+        if (state is null) SetBadge("后台连接未确认，等待重新连接", "TeacherWarningBrush");
+        else if (state.Error is { } error) SetBadge(error, "TeacherErrorBrush");
+        else if (!hasPath) SetBadge("待设置程序位置", "TeacherWarningBrush");
+        else if (ready) SetBadge("接口已就绪", "TeacherSuccessBrush");
+        else if (state.Connection == "Unavailable") SetBadge("接口未就绪", "TeacherErrorBrush");
+        else SetBadge("待检查接口", "TeacherWarningBrush");
+
         ProgramSummary.Text = string.IsNullOrWhiteSpace(savedPath)
             ? state is null ? "程序位置待核对" : "尚未设置程序位置"
-            : (state is null ? "上次保存 · " : "程序位置 · ") + Path.GetFileName(savedPath);
+            : (state is null ? "上次保存 · " : "") + Path.GetFileName(savedPath);
         ProgramSummary.ToolTip = savedPath;
+        ProgramSummary.Visibility = hasPath || state is null ? Visibility.Visible : Visibility.Collapsed;
         CheckedAt.Text = display?.CheckedAt is { } at ? $"上次检查 {at.ToLocalTime():MM-dd HH:mm}" : "";
         CheckedAt.Visibility = CheckedAt.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        bool running = state?.Operation?.State == "Running", uncertain = _pendingReconciliation is not null;
+
+        bool hasConfigMessage = !uncertain && !string.IsNullOrWhiteSpace(ConfigurationMessage.Text);
+        NextActionText.Text = uncertain || hasConfigMessage ? "" : state switch
+            {
+                { Error: not null } => "核对程序位置与错误详情，恢复后再操作。",
+                { Operation: { Action: "check", State: "Running" } } => "正在检查接口…",
+                { Operation: { Action: "check", State: "Failed" } failed } => failed.Message,
+                { ExecutablePath: not (null or ""), Connection: "Unchecked" } => "打开 SecRandom 后检查接口。",
+                _ => ""
+            };
+
         Actions.Visibility = hasPath ? Visibility.Visible : Visibility.Collapsed;
-        Connection.Visibility = hasPath || state is null || state.Error is not null ? Visibility.Visible : Visibility.Collapsed;
         ConfigureButton.Visibility = uncertain ? Visibility.Collapsed : Visibility.Visible;
-        ConfigureButton.Content = ProgramConfiguration.IsExpanded ? "收起位置" : "程序位置";
+        ConfigureButton.Content = ProgramConfiguration.IsExpanded ? "收起位置" : "更改位置";
         ConfigSection.Visibility = ProgramConfiguration.IsExpanded && !uncertain ? Visibility.Visible : Visibility.Collapsed;
         if (uncertain) ConfigurationMessage.Visibility = Visibility.Collapsed;
         else ConfigurationMessage.ClearValue(VisibilityProperty);
+
         ConfigActions.IsEnabled = !_busy && !running && !uncertain && state is { Error: null };
         bool available = !_busy && !running && !uncertain && state is { ExecutablePath: not null, Error: null };
         OpenButton.IsEnabled = ShowFloatButton.IsEnabled = available;
-        HideFloatButton.IsEnabled = DrawButton.IsEnabled = available && state?.Connection == "Ready";
+        HideFloatButton.IsEnabled = DrawButton.IsEnabled = available && ready;
         CheckButton.IsEnabled = !_busy && !running && state is { ExecutablePath: not null, Error: null };
-        CheckButton.Style = (Style)FindResource(CheckButton.IsEnabled && !uncertain && !ProgramConfiguration.IsExpanded && state?.Connection != "Ready"
-            ? "TeacherPrimary" : "TeacherButton");
+
+        bool editorOpen = ProgramConfiguration.IsExpanded && !uncertain;
+        bool checkIsPrimary = CheckButton.IsEnabled && !uncertain && !editorOpen && !ready;
+        bool openIsPrimary = OpenButton.IsEnabled && !uncertain && !editorOpen && ready;
+        CheckButton.Content = ready ? "重新检查" : "检查接口";
+        Grid.SetColumn(CheckButton, ready ? 1 : 0);
+        Grid.SetColumn(OpenButton, ready ? 0 : 1);
+        CheckButton.TabIndex = Grid.GetColumn(CheckButton);
+        OpenButton.TabIndex = Grid.GetColumn(OpenButton);
+        CheckButton.Style = (Style)FindResource(checkIsPrimary ? "TeacherPrimary" : ready ? "TeacherQuiet" : "TeacherButton");
+        OpenButton.Style = (Style)FindResource(openIsPrimary ? "TeacherPrimary" : "TeacherQuiet");
+        OpenButton.Visibility = uncertain ? Visibility.Collapsed : Visibility.Visible;
+
         AcknowledgeButton.Visibility = uncertain ? Visibility.Visible : Visibility.Collapsed;
         AcknowledgeButton.IsEnabled = !_busy && state is { Error: null, Operation.State: "Unknown" };
-        var operation = _pendingReconciliation ?? (display?.Operation is { Action: "check" } ? _lastDrawOperation : display?.Operation);
+
+        var operation = _pendingReconciliation ?? _lastDrawOperation;
+        if (state?.Operation is { } latest)
+        {
+            if (latest.RequestId == _openRequest) ConfigurationMessage.Text = latest.Message;
+            if (latest.RequestId == _floatRequest) FloatMessage.Text = latest.Message;
+        }
         DrawCard.Visibility = hasPath || operation is not null ? Visibility.Visible : Visibility.Collapsed;
+        FloatSection.Visibility = hasPath && !uncertain ? Visibility.Visible : Visibility.Collapsed;
+
         OperationText.Text = _pendingReconciliation is { } unresolved
             ? "结果待核实\n" + (unresolved.Action == "quick-draw"
                 ? "到 SecRandom 核对窗口和抽取历史。系统不会自动重抽。" : unresolved.Message) +
                 (state is null ? "\n后台恢复后可确认。" : "")
             : operation is { } op
             ? (state is null ? "上次已确认的回执（仅供核对，不代表本次结果）：\n" : "") +
-                $"{op.UpdatedAt.ToLocalTime():MM-dd HH:mm:ss} · {StateName(op.State)}\n{op.Message}" +
+                $"{op.UpdatedAt.ToLocalTime():MM-dd HH:mm:ss} · {StateName(op.State)}" +
+                (op is { State: "Succeeded", Winner: not null } ? "" : "\n" + op.Message) +
                 (op.ErrorCode is null ? "" : $"（{op.ErrorCode}）")
             : state is null ? "当前执行结果未知，请等待连接恢复。" : "尚未执行操作。";
         OperationText.SetResourceReference(TextBlock.ForegroundProperty, uncertain ? "TeacherWarningBrush" : "TeacherMutedBrush");
         WinnerText.Text = operation?.Winner is { } winner ? (state is null ? "上次回执：" : "") + $"{winner.Name} · {winner.Id}" : "";
+
+        bool quietIdle = !uncertain && operation is null && state is not null && string.IsNullOrWhiteSpace(Message.Text);
+        ResultHeading.Visibility = quietIdle || operation?.Winner is not null || uncertain ? Visibility.Collapsed : Visibility.Visible;
+        DrawResult.BorderThickness = quietIdle ? new Thickness(0) : new Thickness(1);
+        DrawResult.Padding = quietIdle ? new Thickness(0, 2, 0, 2) : new Thickness(12, 8, 12, 8);
+        DrawResult.SetResourceReference(Border.BackgroundProperty, quietIdle ? "TeacherSurfaceBrush" : "TeacherPageBrush");
+        DrawResult.SetResourceReference(Border.BorderBrushProperty, uncertain ? "TeacherWarningBrush" : "TeacherLineBrush");
     }
     private static string StateName(string state) => state switch
     { "Running" => "正在执行", "Succeeded" => "已完成", "Failed" => "未完成", "Unknown" => "结果待核实", "Acknowledged" => "已核实", _ => "未知" };
@@ -182,7 +242,13 @@ public partial class SecRandomWindow : Window
     {
         if (_closing || _busy || _state is null) return;
         string? submittedPath = save ? Executable.Text.Trim() : null;
-        var feedback = save || action == "check" ? ConfigurationMessage : Message;
+        var feedback = action switch {
+            "show-float" or "hide-float" => FloatMessage,
+            "open" or "check" => ConfigurationMessage,
+            _ => save ? ConfigurationMessage : Message
+        };
+        if (feedback == FloatMessage) _floatRequest = null;
+        if (feedback == ConfigurationMessage) _openRequest = null;
         if (action == "check") feedback.Text = "";
         _generation++;
         _busy = true; Render(_state);
@@ -190,16 +256,22 @@ public partial class SecRandomWindow : Window
         {
             var response = await RequestAsync(save ? "secrandom.config.set" : "secrandom.command", submittedPath,
                 save ? null : new(action!, acknowledge));
-            Render(response.SecRandom);
+            if (response.Outcome is "Accepted" or "Succeeded")
+            {
+                if (action == "open") _openRequest = response.RequestId;
+                if (feedback == FloatMessage) _floatRequest = response.RequestId;
+            }
             if (save && response.Outcome == "Succeeded" && response.SecRandom?.ExecutablePath is not null && submittedPath == Executable.Text.Trim())
                 ProgramConfiguration.IsExpanded = false;
             feedback.Text = (action is "check" or "quick-draw") && response.Outcome == "Accepted" ? "" : response.Message;
+            Render(response.SecRandom);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
         {
-            Render(null);
-            feedback.Text = save || action == "check" ? "未收到配置回执，请等后台恢复后核对当前状态。" :
+            feedback.Text = action is "show-float" or "hide-float" ? "未收到回执，请核对 SecRandom 浮窗。" :
+                save || action is "check" or "open" ? "未收到回执，请等后台恢复后核对当前状态。" :
                 "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。";
+            Render(null);
         }
         finally { _busy = false; Render(_state); }
     }

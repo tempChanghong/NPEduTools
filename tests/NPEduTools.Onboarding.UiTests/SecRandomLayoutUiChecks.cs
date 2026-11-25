@@ -3,11 +3,15 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Runtime.InteropServices;
 using NPEduTools.App;
 using NPEduTools.Contracts;
 
 internal static partial class Program
 {
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(nint window, nint dc, uint flags);
+
     private static void RunSecRandomLayoutChecks()
     {
         string pipe = "NPEduTools.Test.secrandom-layout." + Guid.NewGuid().ToString("N");
@@ -19,6 +23,7 @@ internal static partial class Program
         var ready = new SecRandomState(savedExecutable, 7, "Ready", DateTimeOffset.Now, null);
         SecRandomState current = new(null, 6, "Unchecked", null, null);
         bool readStatus = true;
+        bool rejectFloat = false;
         var server = Task.Run(() => WorkspaceProxy(pipe, request =>
         {
             if (request.Capability == "secrandom.status")
@@ -46,7 +51,7 @@ internal static partial class Program
             string outcome = "Accepted";
             switch (command.Action)
             {
-                case "quick-draw" or "check":
+                case "quick-draw" or "check" or "open":
                     state = state with { Operation = new(request.RequestId, command.Action, "Running", "正在执行", DateTimeOffset.Now) };
                     break;
                 case "acknowledge":
@@ -56,6 +61,11 @@ internal static partial class Program
                     outcome = "Succeeded";
                     break;
                 case "show-float" or "hide-float":
+                    if (Volatile.Read(ref rejectFloat))
+                    {
+                        commands.Enqueue(request);
+                        return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Rejected", null, "当前浮窗命令已拒绝", SecRandom: state));
+                    }
                     state = state with { Operation = new(request.RequestId, command.Action, "Succeeded", "浮窗操作已确认", DateTimeOffset.Now) };
                     outcome = "Succeeded";
                     break;
@@ -78,9 +88,11 @@ internal static partial class Program
             var operationText = (TextBlock)window.FindName("OperationText");
             var winner = (TextBlock)window.FindName("WinnerText");
             var program = (TextBlock)window.FindName("ProgramSummary");
+            var configurationFeedback = (TextBlock)window.FindName("ConfigurationMessage");
             var path = (TextBox)window.FindName("Executable");
             var save = Button(window, "SaveProgramButton");
             var check = Button(window, "CheckButton");
+            var open = Button(window, "OpenButton");
             var editor = (FrameworkElement)window.FindName("ConfigSection");
 
             Assert(!draw.IsVisible && !draw.IsEnabled && !save.IsEnabled && ReferenceEquals(browse.Style, window.FindResource("TeacherPrimary")),
@@ -90,18 +102,22 @@ internal static partial class Program
                 Resize(width, height);
                 VerifyInViewport(browse);
                 VerifyInViewport(save);
-                Snapshot(window, $"secrandom-first-setup-{width}-{height}.png");
+                CaptureWindow($"secrandom-first-setup-{width}-{height}.png");
             }
             path.Text = savedExecutable;
             Click(window, "SaveProgramButton");
             PumpUntil(() => savedPath.Task.IsCompleted && check.IsEnabled && !editor.IsVisible, "saving the path did not expose the check as the next step");
-            Assert(program.Text.Contains(savedExecutable) && !draw.IsEnabled && ReferenceEquals(check.Style, window.FindResource("TeacherPrimary")),
+            Assert(program.Text.Contains(savedExecutable) && !draw.IsEnabled &&
+                ReferenceEquals(check.Style, window.FindResource("TeacherPrimary")),
                 "saved path is missing from the configuration card or enabled drawing before an interface check");
+            Assert((open.IsVisible && open.IsEnabled) || ((TextBlock)window.FindName("NextActionText")).Text.Contains("启动") ||
+                ((TextBlock)window.FindName("NextActionText")).Text.Contains("打开"), "unchecked setup has no path to starting SecRandom");
             Resize(520, 440);
             VerifyInViewport(check);
-            Snapshot(window, "secrandom-awaiting-check-520-440.png");
+            CaptureWindow("secrandom-awaiting-check-520-440.png");
             Click(window, "CheckButton");
             PumpUntil(() => firstCheck.Task.IsCompleted && draw.IsEnabled, "the explicit interface check did not enable the tool");
+            Assert(open.IsVisible && open.IsEnabled, "the checked program cannot be opened from its configuration section");
 
             Click(window, "DrawButton");
             PumpUntil(() => commands.Count == 1, "draw did not reach the isolated backend");
@@ -111,9 +127,47 @@ internal static partial class Program
             PumpUntil(() => winner.IsVisible && winner.Text.Contains("周同学") && draw.IsEnabled, "draw did not display the winner in the visible workspace");
             CaptureSizes("winner", winner);
 
+            var showFloat = Button(window, "ShowFloatButton");
+            var hideFloat = Button(window, "HideFloatButton");
+            Resize(780, 640);
+            Assert(showFloat.IsVisible && hideFloat.IsVisible, "wide layout hid the two floating-window commands");
+            Resize(520, 440);
+            var floatSection = (Expander)window.FindName("FloatConfiguration");
+            Assert(!floatSection.IsExpanded && !showFloat.IsVisible && !hideFloat.IsVisible,
+                "the compact floating-window section did not start collapsed");
+            floatSection.IsExpanded = true;
+            window.UpdateLayout();
+            floatSection.BringIntoView();
+            window.UpdateLayout();
+            VerifyInViewport(showFloat);
+            VerifyInViewport(hideFloat);
+            CaptureWindow("secrandom-float-expanded-520-440.png");
+            Assert(showFloat.IsVisible && hideFloat.IsVisible && showFloat.IsEnabled && hideFloat.IsEnabled,
+                "the two distinct floating-window actions were removed");
+            Click(window, "ShowFloatButton");
+            PumpUntil(() => commands.Count == 2 && hideFloat.IsEnabled, "show float did not finish");
+            Click(window, "HideFloatButton");
+            PumpUntil(() => commands.Count == 3 && showFloat.IsEnabled, "hide float did not finish");
+            Assert(commands.Skip(1).Select(x => x.SecRandom!.Action).SequenceEqual(new[] { "show-float", "hide-float" }),
+                "the two floating-window buttons dispatched the wrong action");
+
+            Assert(winner.IsVisible && winner.Text.Contains("周同学") &&
+                ((TextBlock)window.FindName("FloatMessage")).Text.Contains("浮窗操作已确认"),
+                "floating-window feedback is missing or erased the last confirmed draw");
+            Volatile.Write(ref rejectFloat, true);
+            Click(window, "ShowFloatButton");
+            var floatFeedback = (TextBlock)window.FindName("FloatMessage");
+            PumpUntil(() => floatFeedback.Text.Contains("当前浮窗命令已拒绝"), "old floating-window success hid a newer rejection");
+            Click(window, "OpenButton");
+            PumpUntil(() => commands.Count == 5 && !open.IsEnabled, "open command did not start");
+            var opening = commands.Last();
+            Volatile.Write(ref current, ready with { Operation = new(opening.RequestId, "open", "Failed", "本次启动失败", DateTimeOffset.Now) });
+            PumpUntil(() => configurationFeedback.Text.Contains("本次启动失败") && open.IsEnabled, "accepted open did not show its final failure in the configuration section");
+            Assert(winner.Text.Contains("周同学") && floatFeedback.Text.Contains("当前浮窗命令已拒绝"), "opening SecRandom replaced another section's feedback");
+
             Click(window, "DrawButton");
-            PumpUntil(() => commands.Count == 2, "second explicit draw did not reach the fixture");
-            var timedOut = commands.ToArray()[1];
+            PumpUntil(() => commands.Count == 6, "second explicit draw did not reach the fixture");
+            var timedOut = commands.Last();
             Click(window, "ConfigureButton");
             path.Text = "unsaved-second-program.exe";
             Assert(editor.IsVisible, "the path editor could not be opened before the timeout");
@@ -128,8 +182,8 @@ internal static partial class Program
 
             Click(window, "DrawButton"); // Even a queued click must not dispatch a second draw.
             Click(window, "CheckButton");
-            PumpUntil(() => commands.Count >= 3 && !acknowledge.IsEnabled, "checking the interface did not start");
-            Assert(commands.Count == 3 && commands.Last().SecRandom?.Action == "check", "the uncertain state dispatched another draw");
+            PumpUntil(() => commands.Count >= 7 && !acknowledge.IsEnabled, "checking the interface did not start");
+            Assert(commands.Count == 7 && commands.Last().SecRandom?.Action == "check", "the uncertain state dispatched another draw");
             Assert(acknowledge.IsVisible && operationText.Text.Contains("结果待核实"), "a pending interface check displaced the unresolved draw");
             Volatile.Write(ref readStatus, false);
             PumpUntil(() => ((TextBlock)window.FindName("Connection")).Text.Contains("未确认"), "lost status was not surfaced");
@@ -147,7 +201,7 @@ internal static partial class Program
             using var dialogDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var decline = Task.Run(() => RespondToDrawAcknowledgement(hwnd, accept: false, dialogDeadline.Token));
             Click(window, "AcknowledgeButton");
-            Assert(decline.GetAwaiter().GetResult() && commands.Count == 3 && acknowledge.IsVisible && !draw.IsEnabled,
+            Assert(decline.GetAwaiter().GetResult() && commands.Count == 7 && acknowledge.IsVisible && !draw.IsEnabled,
                 "cancel cleared the pending draw or sent a command");
             var confirm = Task.Run(() => RespondToDrawAcknowledgement(hwnd, accept: true, dialogDeadline.Token));
             Click(window, "AcknowledgeButton");
@@ -155,23 +209,29 @@ internal static partial class Program
             PumpUntil(() => draw.IsEnabled && !acknowledge.IsVisible, "confirming the original request did not restore the draw action");
             Assert(editor.IsVisible && path.Text == "unsaved-second-program.exe" && program.Text.Contains(savedExecutable),
                 "recovery failed to restore the path draft or changed the saved summary");
-            Assert(commands.Count == 4 && commands.Last().SecRandom?.AcknowledgeOperation == timedOut.RequestId &&
+            Assert(commands.Count == 8 && commands.Last().SecRandom?.AcknowledgeOperation == timedOut.RequestId &&
                 commands.Count(x => x.SecRandom?.Action == "quick-draw") == 2, "acknowledgement replayed a draw or used another request");
-
-            var showFloat = Button(window, "ShowFloatButton");
-            var hideFloat = Button(window, "HideFloatButton");
-            Assert(showFloat.IsVisible && hideFloat.IsVisible && showFloat.IsEnabled && hideFloat.IsEnabled,
-                "the two distinct floating-window actions were removed");
-            Click(window, "ShowFloatButton");
-            PumpUntil(() => commands.Count == 5 && hideFloat.IsEnabled, "show float did not finish");
-            Click(window, "HideFloatButton");
-            PumpUntil(() => commands.Count == 6 && showFloat.IsEnabled, "hide float did not finish");
-            Assert(commands.Skip(4).Select(x => x.SecRandom!.Action).SequenceEqual(new[] { "show-float", "hide-float" }),
-                "the two floating-window buttons dispatched the wrong action");
 
             Checks.Add("Point-name Windows wide and 520x440 minimum: the winner/uncertain status follows the draw, with the acknowledgement fully visible before scrolling");
             Checks.Add("Timeout, interface check and transport loss retain the original draw; native cancel and acknowledge do not repeat it; show/hide float send distinct actions");
             Checks.Add("First run exposes the path controls; saving moves to explicit interface check, and draw reconciliation preserves an open path draft");
+            Checks.Add("Verified setup offers a direct program shortcut; float controls remain separate and expand on demand in compact layout");
+            Checks.Add("Late open failures and rejected floating-window commands report in their own section and preserve the confirmed winner");
+
+            void CaptureWindow(string file)
+            {
+                window.UpdateLayout();
+                var handle = new WindowInteropHelper(window).Handle;
+                Assert(GetWindowRect(handle, out var rect), "native window bounds unavailable");
+                using var bitmap = new System.Drawing.Bitmap(rect.Right - rect.Left, rect.Bottom - rect.Top);
+                using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+                {
+                    var dc = graphics.GetHdc();
+                    try { Assert(PrintWindow(handle, dc, 2), "full window capture failed"); }
+                    finally { graphics.ReleaseHdc(dc); }
+                }
+                bitmap.Save(System.IO.Path.Combine(_output, file), System.Drawing.Imaging.ImageFormat.Png);
+            }
 
             void CaptureSizes(string phase, FrameworkElement resultAction)
             {
@@ -183,7 +243,7 @@ internal static partial class Program
                     VerifyInViewport(draw);
                     VerifyInViewport(operationText);
                     VerifyInViewport(resultAction);
-                    Snapshot(window, $"secrandom-{phase}-{width}-{height}.png");
+                    CaptureWindow($"secrandom-{phase}-{width}-{height}.png");
                 }
             }
 
@@ -199,7 +259,9 @@ internal static partial class Program
             void VerifyInViewport(FrameworkElement item)
             {
                 Rect bounds = item.TransformToAncestor(viewport).TransformBounds(new Rect(item.RenderSize));
-                Assert(item.IsVisible && bounds.Top >= 0 && bounds.Bottom <= viewport.ViewportHeight + 1,
+                Assert(item.IsVisible && bounds.Width > 0 && bounds.Height > 0 &&
+                    bounds.Left >= -1 && bounds.Right <= viewport.ViewportWidth + 1 &&
+                    bounds.Top >= -1 && bounds.Bottom <= viewport.ViewportHeight + 1,
                     $"{item.Name} is outside the default viewport at {window.Width}x{window.Height}: {bounds.Bottom:0.0}/{viewport.ViewportHeight:0.0}");
             }
         }
