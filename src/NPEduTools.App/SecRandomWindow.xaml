@@ -4,19 +4,14 @@
   <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"
                 AutomationProperties.Name="课堂点名与 SecRandom 配置">
     <StackPanel x:Name="PageStack" Margin="16,12,16,16">
-      <!-- 紧凑页眉：标题与连接配置入口同行 -->
-      <DockPanel Margin="0,0,0,8">
-        <Button x:Name="ConfigureButton" DockPanel.Dock="Right" Content="连接配置" Click="ConfigureClicked"
-                Style="{StaticResource TeacherQuiet}" VerticalAlignment="Center" Padding="10,0"
-                AutomationProperties.AutomationId="SecRandomConfigure" />
-        <WrapPanel VerticalAlignment="Center">
-          <TextBlock Text="课堂点名" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"
-                     AutomationProperties.HeadingLevel="Level1" />
-          <TextBlock Text="SecRandom V3" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" VerticalAlignment="Center" />
-        </WrapPanel>
-      </DockPanel>
+      <!-- 紧凑页眉 -->
+      <WrapPanel VerticalAlignment="Center" Margin="0,0,0,8">
+        <TextBlock Text="课堂点名" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"
+                   AutomationProperties.HeadingLevel="Level1" />
+        <TextBlock Text="SecRandom V3" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" VerticalAlignment="Center" />
+      </WrapPanel>
 
-      <!-- 顶部状态与接口／浮窗操作 -->
+      <!-- 首屏配置主卡：程序摘要、接口状态、配置操作与卡内路径编辑 -->
       <Border x:Name="TopCard" Style="{StaticResource SettingsGroupSurface}" Padding="14,10" Margin="0,0,0,10">
         <StackPanel>
           <WrapPanel Margin="0,0,0,2">
@@ -25,7 +20,9 @@
             <TextBlock x:Name="CheckedAt" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12"
                        VerticalAlignment="Center" Margin="0,0,0,2" />
           </WrapPanel>
-          <TextBlock x:Name="NextActionText" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,2,0,6"
+          <TextBlock x:Name="ProgramSummary" Text="程序：尚未登记" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}"
+                     TextWrapping="Wrap" Margin="0,2,0,2" AutomationProperties.AutomationId="SecRandomProgramSummary" />
+          <TextBlock x:Name="NextActionText" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,2,0,4"
                      AutomationProperties.AutomationId="SecRandomNextAction" AutomationProperties.LiveSetting="Polite">
             <TextBlock.Style>
               <Style TargetType="TextBlock">
@@ -33,25 +30,56 @@
               </Style>
             </TextBlock.Style>
           </TextBlock>
+          <TextBlock x:Name="ConfigurationMessage" TextWrapping="Wrap" Foreground="{DynamicResource TeacherAccentBrush}" FontSize="13" Margin="0,2,0,4"
+                     AutomationProperties.AutomationId="SecRandomConfigurationMessage" AutomationProperties.LiveSetting="Polite">
+            <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+              <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger>
+            </Style.Triggers></Style></TextBlock.Style>
+          </TextBlock>
 
-          <WrapPanel x:Name="Actions" Margin="0,4,0,0">
-            <Button x:Name="OpenButton" Content="打开点名页" Style="{StaticResource TeacherButton}" Click="OpenClicked"
-                    Margin="0,0,8,4" AutomationProperties.AutomationId="SecRandomOpen" />
+          <WrapPanel x:Name="Actions" Margin="0,6,0,0">
             <Button x:Name="CheckButton" Content="检查接口" Style="{StaticResource TeacherButton}" Click="CheckClicked"
                     Margin="0,0,8,4" AutomationProperties.AutomationId="SecRandomCheck" />
+            <Button x:Name="ConfigureButton" Content="程序位置" Style="{StaticResource TeacherButton}" Click="ConfigureClicked"
+                    Margin="0,0,8,4" AutomationProperties.AutomationId="SecRandomConfigure" />
+            <Button x:Name="OpenButton" Content="打开点名页" Style="{StaticResource TeacherQuiet}" Click="OpenClicked"
+                    Margin="0,0,8,4" AutomationProperties.AutomationId="SecRandomOpen" />
             <StackPanel x:Name="UtilityDetails" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,4">
-              <Border Width="1" Height="20" Background="{DynamicResource TeacherLineBrush}" Margin="2,0,10,0" VerticalAlignment="Center" />
+              <Border Width="1" Height="20" Background="{DynamicResource TeacherLineBrush}" Margin="2,0,8,0" VerticalAlignment="Center" />
               <Button x:Name="ShowFloatButton" Content="显示浮窗" Style="{StaticResource TeacherQuiet}" Click="ShowFloatClicked"
                       Margin="0,0,4,0" AutomationProperties.AutomationId="SecRandomShowFloat" />
               <Button x:Name="HideFloatButton" Content="隐藏浮窗" Style="{StaticResource TeacherQuiet}" Click="HideFloatClicked"
                       AutomationProperties.AutomationId="SecRandomHideFloat" />
             </StackPanel>
           </WrapPanel>
+
+          <!-- 卡内路径配置：未设路径时由 C# 自动展开，已配置默认收合 -->
+          <Border x:Name="ConfigSection" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Margin="0,6,0,0" Padding="0,8,0,0" Visibility="Collapsed">
+            <Expander x:Name="ProgramConfiguration" Header="程序位置与查找" Style="{DynamicResource TeacherExpander}" IsExpanded="False"
+                      AutomationProperties.AutomationId="SecRandomConfiguration" AutomationProperties.Name="程序位置与查找">
+              <Expander.Template><ControlTemplate TargetType="Expander"><ContentPresenter ContentSource="Content" /></ControlTemplate></Expander.Template>
+              <StackPanel Margin="0,4,0,2">
+                <TextBlock Text="支持 SecRandomLauncher.exe 或 SecRandom.Desktop.exe。" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,0,0,8" />
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                  <TextBox Style="{StaticResource TeacherInput}" x:Name="Executable" MinHeight="44" VerticalContentAlignment="Center" TextChanged="ExecutableChanged"
+                           AutomationProperties.AutomationId="SecRandomExecutable" AutomationProperties.Name="SecRandom 程序位置" />
+                  <Button x:Name="BrowseProgramButton" Style="{StaticResource TeacherPrimary}" Content="选择程序…" Grid.Column="1" Click="BrowseClicked" Margin="8,0,0,0"
+                          AutomationProperties.AutomationId="SecRandomBrowse" />
+                </Grid>
+                <WrapPanel x:Name="ConfigActions" Margin="0,8,0,0">
+                  <Button x:Name="SaveProgramButton" Style="{StaticResource TeacherButton}" Content="保存位置" IsEnabled="False" Click="SaveClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="SecRandomSave" />
+                  <Button Style="{StaticResource TeacherButton}" Content="从 URL 登记查找" Click="DiscoverClicked" Margin="0,0,0,4" AutomationProperties.AutomationId="SecRandomDiscover" />
+                </WrapPanel>
+              </StackPanel>
+            </Expander>
+          </Border>
         </StackPanel>
       </Border>
 
-      <!-- 独立可扫描闪抽区：宽窗左右相邻，窄窗由 C# 切换为上下单列 -->
-      <Border x:Name="DrawCard" Style="{StaticResource SettingsGroupSurface}" Padding="14,12" Margin="0,0,0,12">
+      <!-- 独立可扫描闪抽区：宽窗左右相邻，窄窗由 C# 切换为上下单列（常驻不折叠） -->
+      <Border x:Name="DrawCard" Style="{StaticResource SettingsGroupSurface}" Padding="14,12">
         <Grid x:Name="DrawLayout">
           <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="DrawActionColumn" Width="*" />
@@ -63,7 +91,7 @@
           </Grid.RowDefinitions>
 
           <DockPanel x:Name="DrawAction" Grid.Row="0" Grid.Column="0" VerticalAlignment="Top">
-            <Button x:Name="DrawButton" Content="闪抽一人" Style="{StaticResource TeacherPrimary}" Click="DrawClicked"
+            <Button x:Name="DrawButton" Content="闪抽一人" Style="{StaticResource TeacherButton}" Click="DrawClicked"
                     DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0" AutomationProperties.AutomationId="SecRandomQuickDraw" />
             <StackPanel VerticalAlignment="Center">
               <TextBlock Text="闪抽" FontSize="16" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2" />
@@ -100,28 +128,6 @@
             </StackPanel>
           </Border>
         </Grid>
-      </Border>
-
-      <!-- 底部轻量折叠：程序位置与查找 -->
-      <Border x:Name="ConfigSection" Background="Transparent" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
-        <Expander x:Name="ProgramConfiguration" Header="程序位置与查找" Style="{DynamicResource TeacherExpander}" IsExpanded="False"
-                  AutomationProperties.AutomationId="SecRandomConfiguration" AutomationProperties.Name="程序位置与查找">
-          <StackPanel Margin="0,4,0,2">
-            <TextBlock Text="选择 SecRandomLauncher.exe 或 SecRandom.Desktop.exe（无需桥接插件）。" TextWrapping="Wrap"
-                       Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,0,0,8" />
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-              <TextBox Style="{StaticResource TeacherInput}" x:Name="Executable" MinHeight="44" VerticalContentAlignment="Center"
-                       AutomationProperties.AutomationId="SecRandomExecutable" AutomationProperties.Name="SecRandom 程序位置" />
-              <Button Style="{StaticResource TeacherButton}" Content="浏览…" Grid.Column="1" Click="BrowseClicked" Margin="8,0,0,0"
-                      AutomationProperties.AutomationId="SecRandomBrowse" />
-            </Grid>
-            <WrapPanel x:Name="ConfigActions" Margin="0,8,0,0">
-              <Button Style="{StaticResource TeacherButton}" Content="保存位置" Click="SaveClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="SecRandomSave" />
-              <Button Style="{StaticResource TeacherButton}" Content="从 URL 登记查找" Click="DiscoverClicked" Margin="0,0,0,4" AutomationProperties.AutomationId="SecRandomDiscover" />
-            </WrapPanel>
-          </StackPanel>
-        </Expander>
       </Border>
     </StackPanel>
   </ScrollViewer>

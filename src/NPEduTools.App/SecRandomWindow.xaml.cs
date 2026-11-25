@@ -13,6 +13,7 @@ public partial class SecRandomWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private SecRandomState? _state;
     private SecRandomState? _lastKnownState;
+    private SecRandomOperation? _lastDrawOperation;
     private SecRandomOperation? _pendingReconciliation;
     private long _generation;
     private bool _loaded, _busy, _closing, _configurationPresented;
@@ -88,10 +89,13 @@ public partial class SecRandomWindow : Window
         // A read-only check may temporarily take the snapshot's operation slot.
         if (state?.Operation is { State: "Unknown" } pending) _pendingReconciliation = pending;
         else if (state is not null && state.Operation is not { Action: "check", State: "Running" }) _pendingReconciliation = null;
+        if (state?.Operation is { Action: "quick-draw" } draw) _lastDrawOperation = draw;
         NextActionText.Text = state switch
         {
             { Error: not null } => "核对程序位置与错误详情，恢复后再操作。",
-            { ExecutablePath: null or "" } => "先选择并保存 SecRandom 程序位置。",
+            { Operation: { Action: "check", State: "Running" } } => "正在检查接口…",
+            { Operation: { Action: "check", State: "Failed" } failed } => failed.Message,
+            { ExecutablePath: not (null or ""), Connection: "Unchecked" } => "打开 SecRandom 后检查接口。",
             _ => ""
         };
         if (state is not null && !_configurationPresented)
@@ -108,16 +112,33 @@ public partial class SecRandomWindow : Window
             _ => state is null ? "后台连接未确认，等待重新连接。" : "尚未检查 SecRandom 接口"
         };
         var display = state ?? _lastKnownState;
+        var savedPath = display?.ExecutablePath;
+        bool hasPath = !string.IsNullOrWhiteSpace(savedPath);
+        ProgramSummary.Text = string.IsNullOrWhiteSpace(savedPath)
+            ? state is null ? "程序位置待核对" : "尚未设置程序位置"
+            : (state is null ? "上次保存 · " : "程序位置 · ") + Path.GetFileName(savedPath);
+        ProgramSummary.ToolTip = savedPath;
         CheckedAt.Text = display?.CheckedAt is { } at ? $"上次检查 {at.ToLocalTime():MM-dd HH:mm}" : "";
+        CheckedAt.Visibility = CheckedAt.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         bool running = state?.Operation?.State == "Running", uncertain = _pendingReconciliation is not null;
+        Actions.Visibility = hasPath ? Visibility.Visible : Visibility.Collapsed;
+        Connection.Visibility = hasPath || state is null || state.Error is not null ? Visibility.Visible : Visibility.Collapsed;
+        ConfigureButton.Visibility = uncertain ? Visibility.Collapsed : Visibility.Visible;
+        ConfigureButton.Content = ProgramConfiguration.IsExpanded ? "收起位置" : "程序位置";
+        ConfigSection.Visibility = ProgramConfiguration.IsExpanded && !uncertain ? Visibility.Visible : Visibility.Collapsed;
+        if (uncertain) ConfigurationMessage.Visibility = Visibility.Collapsed;
+        else ConfigurationMessage.ClearValue(VisibilityProperty);
         ConfigActions.IsEnabled = !_busy && !running && !uncertain && state is { Error: null };
         bool available = !_busy && !running && !uncertain && state is { ExecutablePath: not null, Error: null };
         OpenButton.IsEnabled = ShowFloatButton.IsEnabled = available;
         HideFloatButton.IsEnabled = DrawButton.IsEnabled = available && state?.Connection == "Ready";
         CheckButton.IsEnabled = !_busy && !running && state is { ExecutablePath: not null, Error: null };
+        CheckButton.Style = (Style)FindResource(CheckButton.IsEnabled && !uncertain && !ProgramConfiguration.IsExpanded && state?.Connection != "Ready"
+            ? "TeacherPrimary" : "TeacherButton");
         AcknowledgeButton.Visibility = uncertain ? Visibility.Visible : Visibility.Collapsed;
         AcknowledgeButton.IsEnabled = !_busy && state is { Error: null, Operation.State: "Unknown" };
-        var operation = _pendingReconciliation ?? display?.Operation;
+        var operation = _pendingReconciliation ?? (display?.Operation is { Action: "check" } ? _lastDrawOperation : display?.Operation);
+        DrawCard.Visibility = hasPath || operation is not null ? Visibility.Visible : Visibility.Collapsed;
         OperationText.Text = _pendingReconciliation is { } unresolved
             ? "结果待核实\n" + (unresolved.Action == "quick-draw"
                 ? "到 SecRandom 核对窗口和抽取历史。系统不会自动重抽。" : unresolved.Message) +
@@ -160,24 +181,43 @@ public partial class SecRandomWindow : Window
     private async Task RunAsync(string? action = null, bool save = false, Guid? acknowledge = null)
     {
         if (_closing || _busy || _state is null) return;
+        string? submittedPath = save ? Executable.Text.Trim() : null;
+        var feedback = save || action == "check" ? ConfigurationMessage : Message;
+        if (action == "check") feedback.Text = "";
         _generation++;
         _busy = true; Render(_state);
         try
         {
-            var response = await RequestAsync(save ? "secrandom.config.set" : "secrandom.command", save ? Executable.Text.Trim() : null,
+            var response = await RequestAsync(save ? "secrandom.config.set" : "secrandom.command", submittedPath,
                 save ? null : new(action!, acknowledge));
             Render(response.SecRandom);
-            Message.Text = action == "quick-draw" && response.Outcome == "Accepted" ? "" : response.Message;
+            if (save && response.Outcome == "Succeeded" && response.SecRandom?.ExecutablePath is not null && submittedPath == Executable.Text.Trim())
+                ProgramConfiguration.IsExpanded = false;
+            feedback.Text = (action is "check" or "quick-draw") && response.Outcome == "Accepted" ? "" : response.Message;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
-        { Render(null); Message.Text = "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。"; }
+        {
+            Render(null);
+            feedback.Text = save || action == "check" ? "未收到配置回执，请等后台恢复后核对当前状态。" :
+                "未收到后台回执。请刷新执行记录并核实 SecRandom；不要立即重复抽取。";
+        }
         finally { _busy = false; Render(_state); }
     }
     private void ConfigureClicked(object sender, RoutedEventArgs e)
     {
-        ProgramConfiguration.IsExpanded = true;
+        ProgramConfiguration.IsExpanded = !ProgramConfiguration.IsExpanded;
         _configurationPresented = true;
-        Executable.BringIntoView(); Executable.Focus();
+        Render(_state);
+        if (ProgramConfiguration.IsExpanded) { Executable.BringIntoView(); Executable.Focus(); }
+    }
+
+    private void ExecutableChanged(object sender, TextChangedEventArgs e)
+    {
+        if (BrowseProgramButton is null || SaveProgramButton is null) return;
+        bool hasInput = !string.IsNullOrWhiteSpace(Executable.Text);
+        BrowseProgramButton.Style = (Style)FindResource(hasInput ? "TeacherButton" : "TeacherPrimary");
+        SaveProgramButton.Style = (Style)FindResource(hasInput ? "TeacherPrimary" : "TeacherButton");
+        SaveProgramButton.IsEnabled = hasInput;
     }
     private void BrowseClicked(object sender, RoutedEventArgs e)
     {
@@ -191,11 +231,11 @@ public partial class SecRandomWindow : Window
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Classes\secrandom\shell\open\command");
             string? line = key?.GetValue("") as string;
             int end = line?.StartsWith('"') == true ? line.IndexOf('"', 1) : -1;
-            if (end <= 1) { Message.Text = "没有找到带引号的 SecRandom URL 登记，请浏览选择程序。"; return; }
-            Executable.Text = line![1..end]; Message.Text = "已填入 URL 登记位置；请核对后保存。";
+            if (end <= 1) { ConfigurationMessage.Text = "没有找到带引号的 SecRandom URL 登记，请浏览选择程序。"; return; }
+            Executable.Text = line![1..end]; ConfigurationMessage.Text = "已填入 URL 登记位置；请核对后保存。";
         }
         catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
-        { Message.Text = "无法读取 URL 登记，请浏览选择程序。"; }
+        { ConfigurationMessage.Text = "无法读取 URL 登记，请浏览选择程序。"; }
     }
     private async void SaveClicked(object sender, RoutedEventArgs e) => await RunAsync(save: true);
     private async void OpenClicked(object sender, RoutedEventArgs e) => await RunAsync("open");

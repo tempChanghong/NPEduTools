@@ -13,18 +13,36 @@ internal static partial class Program
         string pipe = "NPEduTools.Test.secrandom-layout." + Guid.NewGuid().ToString("N");
         using var stop = new CancellationTokenSource();
         var commands = new ConcurrentQueue<HostRequest>();
-        var ready = new SecRandomState("fixture.exe", 7, "Ready", DateTimeOffset.Now, null);
-        SecRandomState current = ready;
+        const string savedExecutable = "SecRandomLauncher.exe";
+        var savedPath = new TaskCompletionSource<HostRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCheck = new TaskCompletionSource<HostRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ready = new SecRandomState(savedExecutable, 7, "Ready", DateTimeOffset.Now, null);
+        SecRandomState current = new(null, 6, "Unchecked", null, null);
         bool readStatus = true;
         var server = Task.Run(() => WorkspaceProxy(pipe, request =>
         {
             if (request.Capability == "secrandom.status")
                 return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId,
                     "Succeeded", null, "隔离状态", SecRandom: Volatile.Read(ref readStatus) ? Volatile.Read(ref current) : null));
+            if (request.Capability == "secrandom.config.set")
+            {
+                Assert(request.ExecutablePath == savedExecutable && request.ExpectedRevision == 6, "first configuration saved the wrong path or revision");
+                Volatile.Write(ref current, ready with { Connection = "Unchecked", CheckedAt = null });
+                savedPath.TrySetResult(request);
+                return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null,
+                    "已保存 SecRandom 程序位置，请检查接口。", SecRandom: Volatile.Read(ref current)));
+            }
 
             Assert(request.Capability == "secrandom.command" && request.ExpectedRevision == 7, "unexpected operation or revision in point-name UI fixture");
             var command = request.SecRandom!;
             var state = Volatile.Read(ref current);
+            if (command.Action == "check" && state.Connection == "Unchecked")
+            {
+                Volatile.Write(ref current, ready);
+                firstCheck.TrySetResult(request);
+                return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Accepted", null,
+                    "正在检查接口", SecRandom: ready));
+            }
             string outcome = "Accepted";
             switch (command.Action)
             {
@@ -52,12 +70,38 @@ internal static partial class Program
         try
         {
             window.Show();
-            PumpUntil(() => window.IsLoaded && Button(window, "DrawButton").IsEnabled, "point-name window did not open with a ready status");
+            var browse = Button(window, "BrowseProgramButton");
+            PumpUntil(() => window.IsLoaded && browse.IsVisible && browse.IsEnabled, "first use did not open the program editor in the main card");
             var viewport = (ScrollViewer)window.FindName("PageScroll");
             var draw = Button(window, "DrawButton");
             var acknowledge = Button(window, "AcknowledgeButton");
             var operationText = (TextBlock)window.FindName("OperationText");
             var winner = (TextBlock)window.FindName("WinnerText");
+            var program = (TextBlock)window.FindName("ProgramSummary");
+            var path = (TextBox)window.FindName("Executable");
+            var save = Button(window, "SaveProgramButton");
+            var check = Button(window, "CheckButton");
+            var editor = (FrameworkElement)window.FindName("ConfigSection");
+
+            Assert(!draw.IsVisible && !draw.IsEnabled && !save.IsEnabled && ReferenceEquals(browse.Style, window.FindResource("TeacherPrimary")),
+                "first use did not prioritize selecting a program");
+            foreach (var (width, height) in new[] { (780, 640), (520, 440) })
+            {
+                Resize(width, height);
+                VerifyInViewport(browse);
+                VerifyInViewport(save);
+                Snapshot(window, $"secrandom-first-setup-{width}-{height}.png");
+            }
+            path.Text = savedExecutable;
+            Click(window, "SaveProgramButton");
+            PumpUntil(() => savedPath.Task.IsCompleted && check.IsEnabled && !editor.IsVisible, "saving the path did not expose the check as the next step");
+            Assert(program.Text.Contains(savedExecutable) && !draw.IsEnabled && ReferenceEquals(check.Style, window.FindResource("TeacherPrimary")),
+                "saved path is missing from the configuration card or enabled drawing before an interface check");
+            Resize(520, 440);
+            VerifyInViewport(check);
+            Snapshot(window, "secrandom-awaiting-check-520-440.png");
+            Click(window, "CheckButton");
+            PumpUntil(() => firstCheck.Task.IsCompleted && draw.IsEnabled, "the explicit interface check did not enable the tool");
 
             Click(window, "DrawButton");
             PumpUntil(() => commands.Count == 1, "draw did not reach the isolated backend");
@@ -70,12 +114,16 @@ internal static partial class Program
             Click(window, "DrawButton");
             PumpUntil(() => commands.Count == 2, "second explicit draw did not reach the fixture");
             var timedOut = commands.ToArray()[1];
+            Click(window, "ConfigureButton");
+            path.Text = "unsaved-second-program.exe";
+            Assert(editor.IsVisible, "the path editor could not be opened before the timeout");
             var uncertain = ready with { Connection = "Unavailable", Operation = new(timedOut.RequestId, "quick-draw", "Unknown",
                 "操作等待已结束，请核实 SecRandom 中的结果。", DateTimeOffset.Now, "timeout") };
             Volatile.Write(ref current, uncertain);
             PumpUntil(() => acknowledge.IsVisible && acknowledge.IsEnabled, "timeout did not show the acknowledgement action");
             Assert(!draw.IsEnabled && !winner.IsVisible && operationText.Text.Contains("结果待核实") && operationText.Text.Contains("抽取历史"),
                 "timed-out draw shows a previous winner or does not explain reconciliation");
+            Assert(!editor.IsVisible && path.Text == "unsaved-second-program.exe", "the path editor obscured recovery or discarded the draft");
             CaptureSizes("uncertain", acknowledge);
 
             Click(window, "DrawButton"); // Even a queued click must not dispatch a second draw.
@@ -105,6 +153,8 @@ internal static partial class Program
             Click(window, "AcknowledgeButton");
             Assert(confirm.GetAwaiter().GetResult(), "native acknowledgement did not have a safe default");
             PumpUntil(() => draw.IsEnabled && !acknowledge.IsVisible, "confirming the original request did not restore the draw action");
+            Assert(editor.IsVisible && path.Text == "unsaved-second-program.exe" && program.Text.Contains(savedExecutable),
+                "recovery failed to restore the path draft or changed the saved summary");
             Assert(commands.Count == 4 && commands.Last().SecRandom?.AcknowledgeOperation == timedOut.RequestId &&
                 commands.Count(x => x.SecRandom?.Action == "quick-draw") == 2, "acknowledgement replayed a draw or used another request");
 
@@ -121,23 +171,29 @@ internal static partial class Program
 
             Checks.Add("Point-name Windows wide and 520x440 minimum: the winner/uncertain status follows the draw, with the acknowledgement fully visible before scrolling");
             Checks.Add("Timeout, interface check and transport loss retain the original draw; native cancel and acknowledge do not repeat it; show/hide float send distinct actions");
+            Checks.Add("First run exposes the path controls; saving moves to explicit interface check, and draw reconciliation preserves an open path draft");
 
             void CaptureSizes(string phase, FrameworkElement resultAction)
             {
                 var result = (FrameworkElement)window.FindName("DrawResult");
                 foreach (var (width, height, row) in new[] { (780, 640, 0), (520, 440, 1) })
                 {
-                    viewport.LayoutTransform = Transform.Identity;
-                    window.Width = width;
-                    window.Height = height;
-                    viewport.ScrollToTop();
-                    window.UpdateLayout();
+                    Resize(width, height);
                     Assert(Grid.GetRow(result) == row && Grid.GetColumn(result) == 1 - row, "point-name result is not next to/below the draw at this width");
                     VerifyInViewport(draw);
                     VerifyInViewport(operationText);
                     VerifyInViewport(resultAction);
                     Snapshot(window, $"secrandom-{phase}-{width}-{height}.png");
                 }
+            }
+
+            void Resize(int width, int height)
+            {
+                viewport.LayoutTransform = Transform.Identity;
+                window.Width = width;
+                window.Height = height;
+                viewport.ScrollToTop();
+                window.UpdateLayout();
             }
 
             void VerifyInViewport(FrameworkElement item)
