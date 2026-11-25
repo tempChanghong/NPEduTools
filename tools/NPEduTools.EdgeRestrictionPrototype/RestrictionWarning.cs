@@ -47,6 +47,7 @@ internal sealed class RestrictionWarning : Window
         Closing += (_, args) => args.Cancel = !_done;
         Closed += (_, _) =>
         {
+            ElapsedSecondsAtClose = ElapsedSeconds;
             _timer.Stop();
             _player?.Dispose();
         };
@@ -65,6 +66,7 @@ internal sealed class RestrictionWarning : Window
     }
 
     internal bool AudioStarted { get; private set; }
+    internal double? ElapsedSecondsAtClose { get; private set; }
     internal double ElapsedSeconds => _shownAt == 0 ? 0 : Stopwatch.GetElapsedTime(_shownAt).TotalSeconds;
 
     internal static FrameworkElement CreateView(string host, string policy, TextBlock countdown)
@@ -90,7 +92,7 @@ internal sealed class RestrictionWarning : Window
     {
         int remaining = (int)Math.Ceiling(Seconds - ElapsedSeconds);
         if (remaining <= 0) Finish();
-        else _countdown.Text = $"将在 {remaining} 秒后返回课堂";
+        else _countdown.Text = $"警告将在 {remaining} 秒后收起";
     }
 
     private void PlayWarning()

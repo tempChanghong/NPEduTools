@@ -17,7 +17,7 @@ internal sealed class ForegroundPolicyGate(Uri deniedUrl)
             observation.BrowserFailure != "net::ERR_BLOCKED_BY_ADMINISTRATOR" ||
             observation.CommittedUrl != "chrome-error://chromewebdata/" ||
             string.IsNullOrWhiteSpace(observation.TargetId) || string.IsNullOrWhiteSpace(observation.LoaderId) ||
-            !Uri.TryCreate(observation.Url, UriKind.Absolute, out var attempted) || attempted != deniedUrl)
+            !Uri.TryCreate(observation.Url, UriKind.Absolute, out var attempted) || !MatchesWatchTarget(attempted, deniedUrl))
             return false;
         var navigation = (observation.TargetId, observation.LoaderId);
         if (!_shown.Add(navigation)) return false;
@@ -26,4 +26,12 @@ internal sealed class ForegroundPolicyGate(Uri deniedUrl)
             _shown.Remove(_shownOrder.Dequeue());
         return true;
     }
+
+    internal static bool IsSiteScope(Uri target) => target.PathAndQuery == "/" && target.Fragment.Length == 0;
+
+    internal static bool MatchesWatchTarget(Uri attempted, Uri target) =>
+        attempted.UserInfo.Length == 0 && (IsSiteScope(target)
+            ? attempted.Scheme == target.Scheme && attempted.Port == target.Port &&
+                string.Equals(attempted.IdnHost, target.IdnHost, StringComparison.OrdinalIgnoreCase)
+            : attempted == target && attempted.Fragment == target.Fragment);
 }

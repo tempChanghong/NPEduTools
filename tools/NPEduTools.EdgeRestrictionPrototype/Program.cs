@@ -19,9 +19,10 @@ internal static class Program
     [STAThread]
     private static int Main(string[] arguments)
     {
-        if (arguments is not ["--self-test", _] and not ["--watch-foreground", _] and not ["--probe-foreground", _, _, _])
+        if (arguments is not ["--self-test", _] and not ["--watch-foreground", _] and
+            not ["--probe-foreground", _, _, _] and not ["--probe-foreground", _, _, _, _])
         {
-            Console.Error.WriteLine("Use --self-test <evidence-dir>, --watch-foreground <exact-url>, or --probe-foreground <pid> <exact-url> <evidence-dir>.");
+            Console.Error.WriteLine("Use --self-test <evidence-dir>, --watch-foreground <exact-url>, or --probe-foreground <pid> <exact-url> <evidence-dir> [seconds].");
             return 2;
         }
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -32,9 +33,14 @@ internal static class Program
                 if (arguments is ["--self-test", var output]) await VerifyAsync(output);
                 else if (arguments is ["--watch-foreground", var url])
                     await WatchForegroundAsync(ParseTarget(url));
-                else if (arguments is ["--probe-foreground", var process, var probeUrl, var path] &&
-                    int.TryParse(process, out int pid) && pid > 0)
-                    await WatchForegroundAsync(ParseTarget(probeUrl), pid, path);
+                else if (arguments[0] == "--probe-foreground" &&
+                    int.TryParse(arguments[1], out int pid) && pid > 0)
+                {
+                    int duration = 8;
+                    if (arguments.Length == 5 && (!int.TryParse(arguments[4], out duration) || duration is < 1 or > 90))
+                        throw new InvalidDataException("Probe duration must be between 1 and 90 seconds.");
+                    await WatchForegroundAsync(ParseTarget(arguments[2]), pid, arguments[3], duration);
+                }
                 else throw new InvalidDataException("The test Edge process ID is invalid.");
                 app.Shutdown(0);
             }
@@ -57,6 +63,16 @@ internal static class Program
             !EdgeForegroundUia.Matches("douyin.com", target) &&
             !EdgeForegroundUia.Matches("douyin.com.example.org/__npeptest_synthetic", target),
             "Normalize the HTTPS address and root slash without broadening the target.");
+        Check(EdgeForegroundUia.HasAdminMarker(["已阻止此页面", "你的组织不允许你查看此网站"]) &&
+            !EdgeForegroundUia.HasAdminMarker(["已阻止此页面"]) &&
+            !EdgeForegroundUia.HasAdminMarker(["你的组织不允许你查看此网站"]),
+            "The localized error template requires both exact strings inside the protected document.");
+        var site = new Uri("https://douyin.com/");
+        Check(ForegroundPolicyGate.MatchesWatchTarget(target, site) &&
+            !ForegroundPolicyGate.MatchesWatchTarget(new Uri("https://www.douyin.com/"), site) &&
+            !ForegroundPolicyGate.MatchesWatchTarget(new Uri("https://douyin.com:8443/"), site) &&
+            !ForegroundPolicyGate.MatchesWatchTarget(new Uri("https://douyin.com/another-path"), target),
+            "Site scope matches one origin and exact URL scope never matches sibling paths.");
         var proof = new BrowserObservation("test-tab", "blocked-1", target.AbsoluteUri, "chrome-error://chromewebdata/",
             "net::ERR_BLOCKED_BY_ADMINISTRATOR", MainDocument: true, ActiveTab: true);
         var backdrop = new Window
@@ -105,7 +121,7 @@ internal static class Program
         foreach (var (width, height, dpi) in new[] { (1280, 720, 96.0), (1280, 720, 144.0), (900, 1200, 96.0) })
         {
             var surface = RestrictionWarning.CreateView(target.IdnHost, "当前生效：高一年级网站访问规则",
-                new TextBlock { Text = "将在 30 秒后返回课堂", Foreground = Brushes.White, FontSize = 30 });
+                new TextBlock { Text = "警告将在 30 秒后收起", Foreground = Brushes.White, FontSize = 30 });
             surface.Measure(new Size(width, height));
             surface.Arrange(new Rect(0, 0, width, height));
             Capture(surface, Path.Combine(output, $"layout-{width}x{height}-{dpi}.png"), dpi);
@@ -136,10 +152,10 @@ internal static class Program
         throw new InvalidDataException("An exact HTTP(S) URL without credentials is required.");
     }
 
-    private static async Task WatchForegroundAsync(Uri exactUrl, int? testPid = null, string? output = null)
+    private static async Task WatchForegroundAsync(Uri exactUrl, int? testPid = null, string? output = null, int seconds = 8)
     {
         using var stopping = new CancellationTokenSource();
-        if (testPid is not null) stopping.CancelAfter(TimeSpan.FromSeconds(8));
+        if (testPid is not null) stopping.CancelAfter(TimeSpan.FromSeconds(seconds));
         ConsoleCancelEventHandler stop = (_, args) => { args.Cancel = true; stopping.Cancel(); };
         Console.CancelKeyPress += stop;
         var gate = new ForegroundPolicyGate(exactUrl);
@@ -172,7 +188,9 @@ internal static class Program
                     {
                         Directory.CreateDirectory(output);
                         await warning.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-                        Capture(warning, Path.Combine(output, "edge-policy-warning.png"));
+                        var handle = new WindowInteropHelper(warning).Handle;
+                        if (GetWindowRect(handle, out var bounds))
+                            CaptureWarningWindow(handle, bounds, Path.Combine(output, $"edge-policy-warning-{warningsShown}.png"));
                     }
                 }
                 await Task.Delay(450, stopping.Token);
@@ -192,7 +210,8 @@ internal static class Program
             Directory.CreateDirectory(output);
             File.WriteAllText(Path.Combine(output, "foreground-uia.json"), JsonSerializer.Serialize(new
             {
-                proofSource = "foreground-window-uia", testPid, outcomes, msaaOutcomes, warningsShown
+                proofSource = "foreground-window-uia", testPid, outcomes, msaaOutcomes, warningsShown,
+                warningSeconds = warning?.ElapsedSecondsAtClose, audioStartRequested = warning?.AudioStarted ?? false
             }, Json));
         }
     }
