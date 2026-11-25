@@ -7,13 +7,16 @@ public interface INpepSchoolManagement
     void BindSchool(string? scope);
     // The durable pairing identity is available before the first online school poll.
     void ObserveActionBinding(string? scope) { }
+    void ObserveWebsiteBinding(string? scope) { }
+    bool SupportsWebsitePolicyAutomation => false;
     void ApplySchool(JsonObject policy);
     JsonObject ObserveSchool();
 }
 
 public sealed partial class NpepApi
 {
-    internal async Task<JsonObject> SchoolManagementAsync(string? bearer, string path, JsonObject? body, CancellationToken token)
+    internal async Task<JsonObject> SchoolManagementAsync(string? bearer, string path, JsonObject? body, CancellationToken token,
+        bool websitePolicyAutomation = false)
     {
         bool replacement = path == "pairings/replacement";
         if(!replacement && path is not ("admission/catalog" or "admission/catalog/lookup" or "device/school-management" or "device/school-management/receipt")) throw new NpepException("INVALID_REQUEST");
@@ -27,6 +30,7 @@ public sealed partial class NpepApi
             request.Headers.Add("X-NPEP-Manual-Study-Policy", "1");
             request.Headers.Add("X-NPEP-Manual-Recording-Policy", "1");
             request.Headers.Add("X-NPEP-Website-Policy", "1");
+            if (websitePolicyAutomation) request.Headers.Add("X-NPEP-Website-Policy-Automation", "1");
         }
         if(bearer is not null) request.Headers.Authorization = new("Bearer", bearer);
         if(body is not null)
@@ -70,10 +74,10 @@ public sealed partial class NpepDevice
         var approval=_saved["approval"]!.AsObject();
         await ConfirmAsync(approval.Text("approvalId"),token);
     }
-    internal async Task<JsonObject> SchoolManagementAsync(JsonObject? receipt,CancellationToken token)
+    internal async Task<JsonObject> SchoolManagementAsync(JsonObject? receipt,CancellationToken token,bool websitePolicyAutomation = false)
     {
         await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api=Api();return await api.SchoolManagementAsync(DeviceBearer,receipt is null?"device/school-management":"device/school-management/receipt",receipt,token); }
+        try { RequireNotificationConnection(); using var api=Api();return await api.SchoolManagementAsync(DeviceBearer,receipt is null?"device/school-management":"device/school-management/receipt",receipt,token,websitePolicyAutomation); }
         catch(NpepException error){if(error.Status==401)SuspendIfTerminal(error);throw;}
         finally{_gate.Release();}
     }
@@ -86,6 +90,8 @@ public sealed partial class NpepRuntime
     private readonly object _actionBindingSync = new();
     private string? _observedActionScope;
     private bool _observedActionBinding;
+    private string? _observedWebsiteScope;
+    private bool _observedWebsiteBinding;
 
     private void SynchronizeActionBinding()
     {
@@ -97,6 +103,13 @@ public sealed partial class NpepRuntime
             string? scope = view?["state"]?.GetValue<string>() == "ACTIVE" &&
                 view["suspended"]?.GetValue<bool>() != true && view["registration"] is JsonObject registration
                 ? NpepDevice.RegistrationIdentity(registration).ToJsonString() : null;
+            // A damaged or temporarily locked credentials file cannot prove an unpair.
+            if (view is not null && view["pairingError"] is null && (!_observedWebsiteBinding || _observedWebsiteScope != scope))
+            {
+                _schoolManagement.ObserveWebsiteBinding(scope);
+                _observedWebsiteScope = scope;
+                _observedWebsiteBinding = true;
+            }
             if (_observedActionBinding && _observedActionScope == scope) return;
             _schoolManagement.ObserveActionBinding(scope);
             _observedActionScope = scope;
@@ -108,7 +121,7 @@ public sealed partial class NpepRuntime
         if(_schoolManagement is null) return;
         var context=await StudyContextAsync(token);
         string scope=context["identity"]!.ToJsonString(); _schoolManagement.BindSchool(scope);
-        var policy=await _device!.SchoolManagementAsync(null,token);
+        var policy=await _device!.SchoolManagementAsync(null,token,_schoolManagement.SupportsWebsitePolicyAutomation);
         await RequireStudyContextAsync(context,token);
         if(!JsonNode.DeepEquals(context["identity"],policy["identity"]))throw new NpepException("SESSION_SUPERSEDED");
         _schoolManagement.ApplySchool(policy);

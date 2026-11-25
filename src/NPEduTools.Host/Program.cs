@@ -161,7 +161,9 @@ await using var classroom = new ClassroomModeService(classroomStore, new Classro
 var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
     ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
-var schoolManagement=new SchoolManagementService(noise,studyDevices,Path.Combine(dataDirectory,"npep"));
+var edgeWebsitePolicy = OperatingSystem.IsWindows() ? new EdgeWebsitePolicy(dataDirectory, () =>
+    OperatingSystem.IsWindows() ? new EdgeWebsitePolicyStore() : throw new PlatformNotSupportedException()) : null;
+var schoolManagement=new SchoolManagementService(noise,studyDevices,Path.Combine(dataDirectory,"npep"),edgeWebsitePolicy);
 var studyClock = new StudyModeClock(() => classroom.Snapshot.Mode, schoolClock.Snapshot);
 Func<bool> studyPaused = () => classroom.Snapshot.Phase != "Idle" || runtimeGate.Switching || runtimeGate.ExamRequested;
 Func<bool> projecting = () => StudyProjection.Active(examAware.Snapshot());
@@ -271,7 +273,7 @@ var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads,updates).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads,updates,schoolManagement).RunAsync(shutdown.Token);
     // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
     if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
     await serving;

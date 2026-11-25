@@ -16,6 +16,12 @@ internal static class EdgeForegroundUia
       .Select(directory => Path.Combine(directory, @"Microsoft\Edge\Application\msedge.exe")).ToArray();
 
     internal static (nint Window, string Result, BrowserObservation? Proof) Read(Uri target, int? testPid)
+        => Read(target, null, testPid);
+
+    internal static (nint Window, string Result, BrowserObservation? Proof) Read(IReadOnlySet<string> blockedHosts)
+        => Read(null, blockedHosts, null);
+
+    private static (nint Window, string Result, BrowserObservation? Proof) Read(Uri? target, IReadOnlySet<string>? blockedHosts, int? testPid)
     {
         nint hwnd = GetForegroundWindow();
         GetWindowThreadProcessId(hwnd, out uint pid);
@@ -58,7 +64,7 @@ internal static class EdgeForegroundUia
                 if (testPid is not null && documentUrl == "edge://network-error/-22")
                     return (hwnd, "diagnostic-document-url", null);
                 return (hwnd, documentUrl is null ? "document-url-not-exposed" :
-                    Matches(documentUrl, target) ? "external-document-at-target" : "no-internal-error-document", null);
+                    target is not null && Matches(documentUrl, target) ? "external-document-at-target" : "no-internal-error-document", null);
             }
 
             // Read only the confirmed browser error document, never ordinary webpage content.
@@ -75,9 +81,10 @@ internal static class EdgeForegroundUia
                     new PropertyCondition(AutomationElement.NameProperty, "Address and search bar"),
                     new PropertyCondition(AutomationElement.NameProperty, "地址和搜索栏"))));
             if (address is null || !IsTopLevelVisible(address, root) || address.Current.HasKeyboardFocus ||
-                ReadAddress(ReadValue(address), target) is not { } attempted ||
-                !ForegroundPolicyGate.MatchesWatchTarget(attempted, target))
+                ReadAddress(ReadValue(address), target?.Scheme ?? "https") is not { } attempted ||
+                (target is null ? blockedHosts?.Contains(attempted.IdnHost) != true : !ForegroundPolicyGate.MatchesWatchTarget(attempted, target)))
                 return (hwnd, "destination-not-confirmed-by-address-bar", null);
+            target ??= new Uri(attempted.GetLeftPart(UriPartial.Authority));
 
             bool confirmedPath = details.Any(detail => Matches(detail, target));
             // Edge's administrator error template may print no URL. Its trusted
@@ -89,7 +96,7 @@ internal static class EdgeForegroundUia
             var current = ReadDocuments(documentRoot);
             if (GetForegroundWindow() != hwnd || current.Length != 1 || !activeDocument.Equals(current[0]) ||
                 ReadValue(activeDocument) != documentUrl || address.Current.HasKeyboardFocus ||
-                ReadAddress(ReadValue(address), target) is not { } addressNow ||
+                ReadAddress(ReadValue(address), target.Scheme) is not { } addressNow ||
                 addressNow != attempted || addressNow.Fragment != attempted.Fragment)
                 return (0, "foreground-changed", null);
 
@@ -173,14 +180,14 @@ internal static class EdgeForegroundUia
         element.TryGetCurrentPattern(ValuePattern.Pattern, out var value) ? ((ValuePattern)value).Current.Value : null;
 
     internal static bool Matches(string? value, Uri target) =>
-        ReadAddress(value, target) is { } address && address == target && address.Fragment == target.Fragment;
+        ReadAddress(value, target.Scheme) is { } address && address == target && address.Fragment == target.Fragment;
 
-    private static Uri? ReadAddress(string? value, Uri target)
+    private static Uri? ReadAddress(string? value, string scheme)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         {
-            if (!Uri.TryCreate(target.Scheme + "://" + value, UriKind.Absolute, out uri))
+            if (!Uri.TryCreate(scheme + "://" + value, UriKind.Absolute, out uri))
                 return null;
         }
         return string.IsNullOrEmpty(uri.UserInfo) ? uri : null;

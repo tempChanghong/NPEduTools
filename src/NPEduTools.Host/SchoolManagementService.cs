@@ -26,7 +26,11 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
     private sealed record Saved(string? Scope,long Revision,bool Locked,long Applied,string? Microphone,string? Camera,bool Unlocked,
         bool AllowLocalMicrophoneChange = false, string? LocalMicrophoneOverride = null);
     public SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory)
+        : this(noise, cameras, directory, null) { }
+
+    internal SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory, EdgeWebsitePolicy? edgeWebsitePolicy)
     {
+        _edgeWebsitePolicy = edgeWebsitePolicy;
         _noise=noise;_cameras=cameras;_path=Path.Combine(directory,"school-equipment.json");
         _classroomPolicy = new ClassroomPolicyStore(directory, noise);
         try
@@ -130,7 +134,7 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
             {
                 if(_saved.Scope is null || !JsonNode.DeepEquals(policy["identity"],JsonNode.Parse(_saved.Scope)))throw new NpepException("SESSION_SUPERSEDED");
                 if (_tracksRegistration && _saved.Scope != _registeredScope) throw new NpepException("SESSION_SUPERSEDED");
-                ReceiveWebsitePolicy(policy["websitePolicy"]);
+                ReceiveWebsitePolicy(_saved.Scope, policy["websitePolicy"]);
                 // Credential and equipment acknowledgements are independent; a durable
                 // equipment write cannot erase a rejected credential update.
                 _error = null;
@@ -236,7 +240,13 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
                 receipt["localMicrophoneOverride"] = _saved.LocalMicrophoneOverride == _saved.Microphone ? null : _saved.LocalMicrophoneOverride;
             }
             if (_classroomPolicy.Observe() is { } actionReceipt) receipt["actionPolicyReceipt"] = actionReceipt;
-            if (_websitePolicyReceipt is { } websiteReceipt) receipt["websitePolicyReceipt"] = websiteReceipt.DeepClone();
+            if (_websitePolicyReceipt is { } websiteReceipt)
+            {
+                var data = (JsonObject)websiteReceipt.DeepClone();
+                if (data["schemaVersion"]?.GetValue<int>() == 2 && _edgeWebsitePolicy is not null)
+                    data["status"] = _edgeWebsitePolicy.Status;
+                receipt["websitePolicyReceipt"] = data;
+            }
             // Inventory budgets alone omit the selected IDs repeated in this receipt.
             // Keep the whole observation under 60,000 bytes, reserving >5 KiB for
             // the fixed-schema context, request ID and sequence added by the runtime.

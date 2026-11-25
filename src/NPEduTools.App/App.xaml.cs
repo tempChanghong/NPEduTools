@@ -9,6 +9,7 @@ public partial class App : Application
     private Mutex? _instance;
     private EventWaitHandle? _activation;
     private RegisteredWaitHandle? _activationWait;
+    private DesktopWebsitePolicy? _websitePolicy;
     private static readonly Uri TeacherContrastSource = new("/NPEduTools.App;component/Resources/TeacherControls.HighContrast.xaml", UriKind.Relative);
 
     private void TeacherSystemSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -75,12 +76,15 @@ public partial class App : Application
         _activationWait = ThreadPool.RegisterWaitForSingleObject(_activation, (_, _) =>
             Dispatcher.BeginInvoke(() => ((MainWindow)MainWindow).RestoreWindow()), null, Timeout.Infinite, false);
         ((MainWindow)MainWindow).Start(options.AtLogin, options.GuardRecovery);
+        _websitePolicy = new DesktopWebsitePolicy(pipe);
+        _websitePolicy.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         // App exit never stops the persistent guardian. Verified Host exit suppresses only this window.
         SystemParameters.StaticPropertyChanged -= TeacherSystemSettingsChanged;
+        _websitePolicy?.Dispose();
         _activationWait?.Unregister(null); _activation?.Dispose(); _instance?.Dispose();
         base.OnExit(e);
     }

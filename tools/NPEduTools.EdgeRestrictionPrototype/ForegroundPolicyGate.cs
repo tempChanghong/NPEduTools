@@ -11,6 +11,8 @@ internal sealed class ForegroundPolicyGate(Uri deniedUrl)
     private readonly HashSet<(string Target, string Loader)> _shown = [];
     private readonly Queue<(string Target, string Loader)> _shownOrder = new();
 
+    internal bool HasShown(BrowserObservation observation) => _shown.Contains((observation.TargetId, observation.LoaderId));
+
     internal bool TryOpen(BrowserObservation observation, nint browserWindow, nint foregroundWindow)
     {
         if (browserWindow == 0 || browserWindow != foregroundWindow || !observation.ActiveTab || !observation.MainDocument ||

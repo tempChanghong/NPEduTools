@@ -39,7 +39,8 @@ public sealed record HostRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoundMeterCommand? SoundMeter = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ManualStudyCommand? ManualStudy = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudySeatingUploadCommand? SeatingUpload = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoftwareUpdateConsent? SoftwareUpdateConsent = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoftwareUpdateConsent? SoftwareUpdateConsent = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WebsitePolicyBrowserEvidence? WebsitePolicyEvidence = null);
 
 public sealed record LessonStatusDto(
     DateTimeOffset SampleStartedAt,
@@ -92,7 +93,11 @@ public sealed record HostResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NpepConnectionHistory? ConnectionHistory = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoiseCalibrationStatus? NoiseCalibrationStatus = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StudyPresentationEpoch? PresentationEpoch = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoftwareUpdateStatus? SoftwareUpdate = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoftwareUpdateStatus? SoftwareUpdate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WebsitePolicyDesktopState? WebsitePolicy = null);
+
+public sealed record WebsitePolicyDesktopState(Guid ObservationId, string Source, string[] BlockedHosts);
+public sealed record WebsitePolicyBrowserEvidence(Guid ObservationId, string Host);
 
 public sealed record SoftwareUpdateConsent(Guid EnrollmentId, bool Accepted);
 public sealed record SoftwareUpdateStatus(string Enrollment, Guid? EnrollmentId, bool LocalConsent, string RunningVersion,
@@ -143,6 +148,14 @@ public static class Protocol
 
     public static string? Validate(HostRequest request)
     {
+        if (request.Capability == "website.policy.observed")
+        {
+            if (request.WebsitePolicyEvidence is not { ObservationId: var observation, Host.Length: > 0 and <= 253 } || observation == Guid.Empty)
+                return "InvalidWebsitePolicyEvidence";
+            return Validate(request with { Capability = "host.ping", WebsitePolicyEvidence = null });
+        }
+        if (request.WebsitePolicyEvidence is not null) return "InvalidWebsitePolicyEvidence";
+        if (request.Capability == "website.policy.status") return Validate(request with { Capability = "host.ping" });
         if (request.Capability == "software.update.consent")
         {
             if (request.SoftwareUpdateConsent is not { Accepted: true } consent || consent.EnrollmentId == Guid.Empty)

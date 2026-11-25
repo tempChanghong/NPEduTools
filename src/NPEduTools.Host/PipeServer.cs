@@ -17,7 +17,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
     Func<bool>? prepareStop = null, StudySettingsService? study = null, StudyDisplayService? studyDisplay = null, StudyDeviceService? studyDevices = null,
     SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null, ManualStudyService? manualStudy=null, StudyRecoveryService? studyRecovery=null, StudySeatingUploadService? seatingUploads=null,
-    SchoolUpdateMaintenance? updates = null)
+    SchoolUpdateMaintenance? updates = null, SchoolManagementService? schoolManagement = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -85,6 +85,18 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                         response = new(1, request.RequestId, "Succeeded", null, "本机学校软件维护状态。",
                             SoftwareUpdate: current?.ForStatusReply(request.Capability));
                     }
+                }
+                else if (request.Capability is "website.policy.status" or "website.policy.observed")
+                {
+                    string app = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "NPEduTools.App.exe"));
+                    if (!IsClientExecutable(pipe, app))
+                        response = new(1, request.RequestId, "Rejected", "WEBSITE_OBSERVER_UNAVAILABLE", "请使用配套的教室端观察器。");
+                    else if (request.WebsitePolicyEvidence is { } evidence)
+                        response = schoolManagement?.ObserveWebsitePolicyDesktop(evidence) == true
+                            ? new(1, request.RequestId, "Succeeded", null, "已记录当前 Edge 前台观察。")
+                            : new(1, request.RequestId, "Rejected", "WEBSITE_POLICY_CHANGED", "教室策略已变更。");
+                    else
+                        response = new(1, request.RequestId, "Succeeded", null, "当前教室网站规则。", WebsitePolicy: schoolManagement?.ReadWebsitePolicyDesktop());
                 }
                 else if (request.Capability == "host.ping")
                     response = new(Protocol.Version, request.RequestId, "Succeeded", null, "Host 已就绪。");
