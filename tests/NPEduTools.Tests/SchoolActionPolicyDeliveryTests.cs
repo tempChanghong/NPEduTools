@@ -115,6 +115,39 @@ public sealed class SchoolActionPolicyDeliveryTests
     }
 
     [Fact]
+    public async Task Same_revision_upgrade_reveals_a_class_key_used_only_for_manual_study()
+    {
+        await using var screen = new Screen();
+        var original = Policy(8, FirstId, "LEGACY");
+        original["schemaVersion"] = 3;
+        original["actions"] = new JsonObject
+        {
+            ["stopScheduledMonitoring"] = null, ["exitBackground"] = null, ["switchClassroomMode"] = null
+        };
+        screen.School.ApplySchool(screen.Envelope(original));
+
+        var full = original.DeepClone().AsObject();
+        full["schemaVersion"] = 4;
+        full["policyId"] = SecondId;
+        full["source"] = "CLASS";
+        full["actions"]!["startManualStudy"] = Rule("VERIFY", "USB");
+        full["usbKeys"]!.AsArray().Add(new JsonObject
+        {
+            ["keyId"] = Guid.NewGuid().ToString("D"), ["mediaHash"] = FirstId, ["secretHash"] = SecondId
+        });
+        screen.School.ApplySchool(screen.Envelope(full));
+        Assert.Equal(4, screen.Receipt()["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(SecondId, screen.Receipt()["policyId"]!.GetValue<string>());
+        Assert.Null(screen.Receipt()["error"]);
+
+        screen.School.ApplySchool(screen.Envelope(original));
+        Assert.False(screen.School.ObserveSchool().ContainsKey("actionPolicyReceipt"));
+        await screen.ReloadOffline();
+        var reply = screen.Noise.ManagementHandle(new(1, Guid.NewGuid(), "noise.management.status.classroom-policy.v4"));
+        Assert.Equal("usb", reply.NoiseProtection!.ClassroomPolicy!.StartManualStudy);
+    }
+
+    [Fact]
     public async Task Upgrading_the_same_policy_revision_protects_local_mode_after_restart()
     {
         await using var screen = new Screen();
