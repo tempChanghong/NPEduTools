@@ -6,6 +6,8 @@
     <StackPanel x:Name="PageStack" Margin="16,12,16,16">
       <!-- 紧凑页眉 -->
       <WrapPanel VerticalAlignment="Center" Margin="0,0,0,8">
+        <Button x:Name="BackButton" Content="← 返回" Visibility="Collapsed" Click="BackClicked" Style="{StaticResource TeacherQuiet}"
+                Margin="0,0,10,0" Padding="8,4" AutomationProperties.AutomationId="SecRandomBack" AutomationProperties.Name="返回上一页" />
         <TextBlock Text="课堂点名" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"
                    AutomationProperties.HeadingLevel="Level1" />
         <TextBlock Text="SecRandom V3" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" VerticalAlignment="Center" />

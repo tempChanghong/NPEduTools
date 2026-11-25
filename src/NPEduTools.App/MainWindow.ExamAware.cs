@@ -15,7 +15,7 @@ public partial class MainWindow
     private void OpenExamAwareClicked(object sender, RoutedEventArgs e) => ShowExamAwareFrom(sender as FrameworkElement);
     private void ShowExamAware() => ShowExamAwareFrom();
 
-    private void ShowExamAwareFrom(FrameworkElement? anchor = null, Action? returnTo = null)
+    private void ShowExamAwareFrom(FrameworkElement? anchor = null, Action? returnTo = null, Action? origin = null)
     {
         if (_lifetime.IsCancellationRequested) return;
         if (ExamAwareWorkspaceHost.Visibility == Visibility.Visible)
@@ -25,16 +25,11 @@ public partial class MainWindow
         }
 
         bool keepCalibration = WorkspaceCalibration.Visibility == Visibility.Visible;
-        if (keepCalibration && _workspaceCalibrationController is NoiseReferenceWindow { HasActiveSample: true })
-        {
-            RestoreWindow();
-            if (MessageBox.Show(this, "当前校准仍在进行。切换后可返回查看这次采样，自动续采可能暂停。现在切到考试看板吗？",
-                "校准进行中", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
-        }
-        var previousPage = ExamAwareOrigin();
+        if (!ConfirmLeaveWorkspaceCalibration("考试看板")) return;
+        var previousPage = origin ?? CaptureWorkspaceOrigin();
         if (anchor is null && keepCalibration && WorkspaceCalibration.IsKeyboardFocusWithin)
             anchor = Keyboard.FocusedElement as FrameworkElement;
-        SelectPageCore(false, keepCalibration);
+        SelectPageCore(false, keepCalibration || SecRandomWorkspaceHost.Visibility == Visibility.Visible);
         _examAwareReturn = returnTo is null ? previousPage : () => { previousPage(); returnTo(); };
         _examAwareReturnFocus = anchor;
         if (_examAwareWindow is null)
@@ -52,8 +47,28 @@ public partial class MainWindow
         _examAwareWindow.FocusWorkspaceEntry();
     }
 
-    private Action ExamAwareOrigin()
+    private bool ConfirmLeaveWorkspaceCalibration(string destination)
     {
+        if (WorkspaceCalibration.Visibility != Visibility.Visible || _workspaceCalibrationController is not NoiseReferenceWindow { HasActiveSample: true }) return true;
+        RestoreWindow();
+        return MessageBox.Show(this, $"当前校准仍在进行。切换后可返回查看这次采样，自动续采可能暂停。现在切到{destination}吗？",
+            "校准进行中", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+    }
+
+    private Action CaptureWorkspaceOrigin()
+    {
+        if (ExamAwareWorkspaceHost.Visibility == Visibility.Visible)
+        {
+            var origin = _examAwareReturn;
+            var anchor = _examAwareReturnFocus;
+            return () => ShowExamAwareFrom(anchor, origin: origin);
+        }
+        if (SecRandomWorkspaceHost.Visibility == Visibility.Visible)
+        {
+            var origin = _secRandomReturn;
+            var anchor = _secRandomReturnFocus;
+            return () => ShowSecRandomFrom(anchor, origin: origin);
+        }
         if (SettingsPage.Visibility == Visibility.Visible)
         {
             string category = ConnectionsSettingsPanel.Visibility == Visibility.Visible ? "Connections" :

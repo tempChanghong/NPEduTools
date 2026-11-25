@@ -95,7 +95,7 @@
           </Button>
           <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,8" />
           <Button x:Name="ExamAwareNav" Content="ExamAware2" ToolTip="ExamAware2 连接" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
-          <Button Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
+          <Button x:Name="SecRandomNav" Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
           <Button Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
         </StackPanel></ScrollViewer>
         <StackPanel Grid.Row="2">
@@ -150,6 +150,7 @@
       </Grid>
       <Grid x:Name="Pages" Grid.Row="1" Margin="28,12,28,22">
         <ContentControl x:Name="ExamAwareWorkspaceHost" Visibility="Collapsed" AutomationProperties.AutomationId="ExamAwareWorkspace" />
+        <ContentControl x:Name="SecRandomWorkspaceHost" Visibility="Collapsed" AutomationProperties.AutomationId="SecRandomWorkspace" />
         <Grid x:Name="RecordingWorkspace" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,12">
             <Button x:Name="RecordingManualTab" Content="立即录制" Style="{DynamicResource TeacherTab}" Click="RecordingManualTabClicked" AutomationProperties.AutomationId="RecordingManualTab" Margin="0,0,8,0"/>

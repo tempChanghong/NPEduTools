@@ -15,6 +15,7 @@ internal static partial class Program
         try
         {
             RunSecRandomLayoutChecks();
+            RunEmbeddedSecRandomWorkspaceCheck();
             RunSecRandomAccessChecks();
             RunSecRandomRequestOrderingCheck();
             RunSecRandomLostReplyCheck();

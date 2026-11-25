@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using NPEduTools.Contracts;
 
@@ -16,6 +17,7 @@ public partial class SecRandomWindow : Window
     private SecRandomOperation? _lastDrawOperation;
     private SecRandomOperation? _pendingReconciliation;
     private Guid? _openRequest, _floatRequest;
+    private Action? _returnToWorkspace, _showWorkspace;
     private long _generation;
     private bool _loaded, _busy, _closing, _configurationPresented, _floatToggledByUser, _applyingFloatLayout;
     public SecRandomWindow(string pipe)
@@ -28,11 +30,40 @@ public partial class SecRandomWindow : Window
         Render(null);
         _ = PollAsync();
     }
-    public void Shutdown() { _closing = true; Close(); }
+    public void Shutdown()
+    {
+        if (_closing) return;
+        _closing = true;
+        _lifetime.Cancel();
+        Close();
+    }
+
+    internal void SetWorkspaceNavigation(Action returnTo, Action show)
+    {
+        _returnToWorkspace = returnTo;
+        _showWorkspace = show;
+        BackButton.Visibility = Visibility.Visible;
+    }
+
+    internal void FocusWorkspaceEntry() => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+    {
+        if (_closing || !WorkspacePanel.Visible(this) || !WorkspacePanel.DialogOwner(this).IsActive) return;
+        PageScroll.ScrollToTop();
+        BackButton.Focus();
+    });
+
+    internal void WorkspaceVisibilityChanged(bool visible)
+    {
+        if (_closing) return;
+        _generation++;
+        if (visible && !_busy) Render(null);
+    }
+
+    private void BackClicked(object sender, RoutedEventArgs e) => _returnToWorkspace?.Invoke();
 
     private void UpdateResponsiveLayout(double width)
     {
-        bool stacked = width < 650;
+        bool stacked = width < (WorkspacePanel.Embedded(this) ? 840 : 650);
         PageStack.Margin = stacked ? new Thickness(12, 10, 12, 12) : new Thickness(16, 12, 16, 16);
         Grid.SetRow(Actions, stacked ? 1 : 0);
         Grid.SetColumn(Actions, stacked ? 0 : 1);
@@ -52,7 +83,7 @@ public partial class SecRandomWindow : Window
     }
     private void FloatConfigurationChanged(object sender, RoutedEventArgs e)
     {
-        if (!_applyingFloatLayout && IsLoaded) _floatToggledByUser = true;
+        if (!_applyingFloatLayout && sender is Expander { IsLoaded: true }) _floatToggledByUser = true;
     }
     private void SetBadge(string text, string brushKey)
     {
@@ -65,9 +96,13 @@ public partial class SecRandomWindow : Window
         Message.Text = message;
         if (!_closing)
         {
-            if (!IsVisible) Show();
-            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-            Activate();
+            if (_showWorkspace is not null) _showWorkspace();
+            else
+            {
+                if (!IsVisible) Show();
+                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+                Activate();
+            }
         }
         return message;
     }
@@ -224,20 +259,22 @@ public partial class SecRandomWindow : Window
     {
         while (!_lifetime.IsCancellationRequested)
         {
-            if (IsVisible && !_busy)
+            if (CanPoll())
             {
                 long generation = _generation;
                 try
                 {
                     var response = await RequestAsync("secrandom.status");
-                    if (!_closing && !_busy && generation == _generation) Render(response.SecRandom);
+                    if (generation == _generation && CanPoll()) Render(response.SecRandom);
                 }
                 catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
-                { if (!_closing && !_busy && generation == _generation) Render(null); }
+                { if (generation == _generation && CanPoll()) Render(null); }
             }
             try { await Task.Delay(800, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
     }
+    private bool CanPoll() => !_closing && !_busy && WorkspacePanel.Visible(this) &&
+        WorkspacePanel.DialogOwner(this).WindowState != WindowState.Minimized;
     private async Task RunAsync(string? action = null, bool save = false, Guid? acknowledge = null)
     {
         if (_closing || _busy || _state is null) return;
@@ -294,7 +331,7 @@ public partial class SecRandomWindow : Window
     private void BrowseClicked(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog { Title = "选择 SecRandom V3", Filter = "SecRandom V3|SecRandomLauncher.exe;SecRandom.Desktop.exe", CheckFileExists = true };
-        if (dialog.ShowDialog(this) == true) Executable.Text = dialog.FileName;
+        if (dialog.ShowDialog(WorkspacePanel.DialogOwner(this)) == true) Executable.Text = dialog.FileName;
     }
     private void DiscoverClicked(object sender, RoutedEventArgs e)
     {
@@ -321,7 +358,7 @@ public partial class SecRandomWindow : Window
     private async void AcknowledgeClicked(object sender, RoutedEventArgs e)
     {
         if (!AcknowledgeButton.IsEnabled || _state?.Operation is not { State: "Unknown" } op) return;
-        if (MessageBox.Show(this, "请先在 SecRandom 核实窗口和抽取历史，确认上次请求是否完成。\n解除后可以发起新的操作，但不会重新执行旧请求。确认已经核实？",
+        if (MessageBox.Show(WorkspacePanel.DialogOwner(this), "请先在 SecRandom 核实窗口和抽取历史，确认上次请求是否完成。\n解除后可以发起新的操作，但不会重新执行旧请求。确认已经核实？",
             "核实操作结果", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK &&
             AcknowledgeButton.IsEnabled && _state?.Operation?.RequestId == op.RequestId)
             await RunAsync("acknowledge", acknowledge: op.RequestId);

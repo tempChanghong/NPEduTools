@@ -46,7 +46,7 @@ public partial class MainWindow
                 new(() => ShowSettingsCategory("General"), ShowClassIslandPathSettings, ShowRecordingSettings, ShowShortcutManager,
                     ShowClassroomMode, () => ShowExamAwareFrom(returnTo: ShowOnboarding),
                     () => ShowSettingsCategory("Npep"),
-                    () => OpenNoiseClicked(this, new RoutedEventArgs()), ShowSecRandom),
+                    () => OpenNoiseClicked(this, new RoutedEventArgs()), () => ShowSecRandomFrom(returnTo: ShowOnboarding)),
                 automatic => { if (automatic) ShowRecordingPlan(); else { SelectPage(false); RestoreWindow(); } },
                 _onboardingError);
             _onboardingWindow.Closed += (_, _) => _onboardingWindow = null;
