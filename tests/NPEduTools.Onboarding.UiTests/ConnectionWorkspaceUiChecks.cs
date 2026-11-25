@@ -19,19 +19,21 @@ internal static partial class Program
             var exam = new ExamAwareWindow("NPEduTools.Test.connection-layout." + Guid.NewGuid().ToString("N"));
             Exercise(exam, window => {
                 ShowExamAware(exam, ReadyExamAware()); window.UpdateLayout();
-                var config = (Expander)window.FindName("ConnectionConfiguration");
-                Assert(!config.IsExpanded, "configured connected ExamAware opens setup before daily actions");
+                var config = (FrameworkElement)window.FindName("ConnectionSteps");
+                Assert(!config.IsVisible, "configured connected ExamAware opens setup before daily actions");
                 Reachable(window, (FrameworkElement)Find(window, "ExamAwareStart"));
                 Snapshot(window, "examaware-ready.png");
                 Click(window, "ExamAwareConfigure", true);
                 ((TextBox)window.FindName("Executable")).Text = "edited-fixture.exe";
                 ShowExamAware(exam, ReadyExamAware() with { Revision = 8 }); window.UpdateLayout();
-                Assert(config.IsExpanded && ((TextBox)window.FindName("Executable")).Text == "edited-fixture.exe", "polling folded ExamAware configuration or replaced the draft");
+                Assert(config.IsVisible && ((TextBox)window.FindName("Executable")).Text == "edited-fixture.exe", "polling folded ExamAware configuration or replaced the draft");
                 ShowExamAware(exam, null);
                 Assert(!((WrapPanel)window.FindName("RuntimeActions")).IsEnabled && !Button(window, "QuitButton").IsEnabled,
                     "new ExamAware actions bypass unknown-state gating");
-                Assert(config.IsExpanded && ((TextBlock)window.FindName("NextActionText")).Text.Contains("等待后台"), "disconnect hid repair or retained ready guidance");
+                Assert(!config.IsVisible && ((TextBlock)window.FindName("NextActionText")).Text.Contains("等待 NPEduTools 后台"), "unknown state exposes repair commands or retains ready guidance");
                 ((ScrollViewer)window.Content).ScrollToTop(); Snapshot(window, "examaware-unknown.png");
+                ShowExamAware(exam, ReadyExamAware() with { Revision = 8 });
+                Assert(config.IsVisible && ((TextBox)window.FindName("Executable")).Text == "edited-fixture.exe", "recovering the backend lost the original path editor or draft");
                 exam.Shutdown();
             });
             var sec = new SecRandomWindow("NPEduTools.Test.connection-layout." + Guid.NewGuid().ToString("N"));

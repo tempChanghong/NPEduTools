@@ -19,7 +19,7 @@ public partial class ExamAwareWindow : Window
     private string? _savedExecutablePath;
     private Action? _returnToWorkspace;
     private bool _workspaceAwaitingStatus;
-    private bool _loadedPath, _busy, _closing, _configurationPresented, _planPresented, _wasConnected, _protocolMismatch;
+    private bool _loadedPath, _busy, _closing, _wasConnected, _protocolMismatch;
     public ExamAwareWindow(string pipe)
     {
         _pipe = pipe;
@@ -63,17 +63,13 @@ public partial class ExamAwareWindow : Window
     }
 
     private void BackClicked(object sender, RoutedEventArgs e) => _returnToWorkspace?.Invoke();
-    private void WindowSizeChanged(object sender, SizeChangedEventArgs e) => UpdatePageLayout(e.NewSize.Width);
-
     private void UpdatePageLayout(double contentWidth)
     {
         bool compact = contentWidth > 0 && contentWidth < 600;
         PageStack.Margin = compact ? new Thickness(12, 10, 12, 14) : new Thickness(18, 14, 18, 18);
         PageTitle.FontSize = compact ? 21 : 24;
-        PageSubtitle.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         OverviewCard.Padding = compact ? new Thickness(12, 10, 12, 10) : new Thickness(16, 12, 16, 12);
-        PlanCard.Padding = compact ? new Thickness(12, 10, 12, 10) : new Thickness(16, 12, 16, 12);
-        SetupCard.Padding = compact ? new Thickness(12, 10, 12, 10) : new Thickness(16, 12, 16, 12);
+        UpdateConnectionColumns(contentWidth);
     }
     private async Task<HostResponse> RequestAsync(string capability, bool save = false, bool? autoStartEnabled = null, long? expectedRevision = null, ExamAwarePlanInput? plan = null)
     {
@@ -108,8 +104,8 @@ public partial class ExamAwareWindow : Window
             }
             else
             {
-                SetBadge("后台未连接", "TeacherWarningBrush");
-                NextActionText.Text = "等待后台连接后再操作；旧回执不代表当前状态。";
+                SetBadge("暂无法核对", "TeacherMutedBrush");
+                NextActionText.Text = "正在等待 NPEduTools 后台。原配对和路径草稿仍保留。";
             }
             return;
         }
@@ -159,12 +155,15 @@ public partial class ExamAwareWindow : Window
             if (state.Quit?.State == "Exited")
             {
                 SetBadge("桥接未连接", "TeacherMutedBrush");
-                NextActionText.Text = "已确认上次退出。当前未收到桥接心跳，可打开考试看板后再核对连接。";
+                NextActionText.Text = "上次已正常退出。打开 ExamAware2 后会自动核对连接。";
             }
             else
             {
-                SetBadge("未运行或未配对", "TeacherWarningBrush");
-                NextActionText.Text = "未收到桥接心跳（软件未运行，或尚未安装插件／完成配对）。可先点击“打开考试看板”；首次配对请在“连接配置”导出文件，若软件进入快速开始向导请先退出，再到主窗口点击“连接 NPEduTools”导入。";
+                SetBadge(_wasConnected ? "连接已断开" : "等待桥接连接", "TeacherWarningBrush");
+                NextActionText.Text = _wasConnected
+                    ? "先打开 ExamAware2 核对连接。需要时可检查原配对。"
+                    : _firstSetup ? (_pairingExported ? "" : "按下方步骤完成桥接配对。")
+                    : "先打开 ExamAware2 核对连接。首次配对可从「管理连接」开始。";
             }
             return;
         }
@@ -196,50 +195,38 @@ public partial class ExamAwareWindow : Window
             NextActionText.Text = "桥接已连接（开发环境）。放映与自启动按当前授权判断；课堂模式切换需使用正式打包版本。";
             return;
         }
-        SetBadge("已连接 · 就绪", "TeacherSuccessBrush");
-        NextActionText.Text = _allowPreparedPlan && state.PreparedPlan is { } plan
-            ? $"已校验 {plan.ExamName}（{plan.Exams.Length} 场），请核对下方摘要。"
-            : "选择 ExamAware 编辑器导出的考试方案。";
+        SetBadge("已连接", "TeacherSuccessBrush");
+        NextActionText.Text = "";
     }
     private void Render(ExamAwareStatus? state)
     {
         if (state is not null) _protocolMismatch = false;
         _state = state;
-        Connection.Visibility = state?.BridgeState == "Connected" ? Visibility.Collapsed : Visibility.Visible;
-        RuntimeActions.IsEnabled = Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled =
-            !_busy && !_workspaceAwaitingStatus && state is not null;
+        VersionText.Visibility = StepVisibility(!_workspaceAwaitingStatus && state?.AppVersion is not null);
         bool missingLocal = IsMissingLocalExecutable(state?.ExecutablePath);
         bool needsExecutable = state is not null && (string.IsNullOrWhiteSpace(state.ExecutablePath) || missingLocal);
-        StartButton.IsEnabled = SettingsButton.IsEnabled = !needsExecutable;
-        StartButton.Style = (Style)FindResource(needsExecutable || state is { BridgeState: "Connected", CanPresent: true }
-            ? "TeacherQuiet" : "TeacherPrimary");
-        ConfigureButton.Content = needsExecutable ? "登记程序位置" : "连接配置";
-        ConfigureButton.Style = (Style)FindResource(needsExecutable ? "TeacherPrimary" : "TeacherQuiet");
+        ProgramSummaryText.Visibility = StepVisibility(!string.IsNullOrWhiteSpace(state?.ExecutablePath));
+        if (needsExecutable && !_workspaceAwaitingStatus && state is { BridgeState: not "Unavailable" }) _firstSetup = true;
+        bool canChange = !_busy && !_workspaceAwaitingStatus && state is { BridgeState: not "Unavailable" };
+        RuntimeActions.IsEnabled = Actions.IsEnabled = AutoStartActions.IsEnabled = MaintenanceActions.IsEnabled = canChange;
+        BrowseProgramButton.IsEnabled = canChange;
+        PairingActions.IsEnabled = PluginStepBody.IsEnabled = canChange && !needsExecutable;
+        StartButton.IsEnabled = SettingsButton.IsEnabled = state is not null && !needsExecutable;
         RenderOverview(state, missingLocal);
         if (_workspaceAwaitingStatus && state is not null)
         {
             SetBadge("正在核对连接", "TeacherMutedBrush");
             NextActionText.Text = "正在读取当前桥接状态，已输入的内容会保留。";
         }
-        if (state is not null && !_configurationPresented)
-        {
-            _configurationPresented = true;
-            if (!ConnectionConfiguration.IsKeyboardFocusWithin)
-                ConnectionConfiguration.IsExpanded = string.IsNullOrWhiteSpace(state.ExecutablePath) || state.BridgeState != "Connected";
-        }
         bool connected = state?.BridgeState == "Connected";
-        if (state is not null && !_planPresented)
+        if (connected && !needsExecutable && !_workspaceAwaitingStatus)
         {
-            _planPresented = true;
-            if (!PlanConfiguration.IsKeyboardFocusWithin)
-                PlanConfiguration.IsExpanded = connected || state.PreparedPlan is not null || state.PlanOperation is not null;
+            _firstSetup = false;
+            if (_pairingExported && Message.Text == PairingExportedMessage) Message.Text = "";
+            _pairingExported = false;
         }
-        else if (connected && (!_wasConnected || state!.PreparedPlan is not null || state.PlanOperation is not null) &&
-            !PlanConfiguration.IsExpanded && !PlanConfiguration.IsKeyboardFocusWithin)
-        {
-            PlanConfiguration.IsExpanded = true;
-        }
-        if (connected) _wasConnected = true;
+        RenderConnectionSteps(state, needsExecutable);
+        if (connected && !_workspaceAwaitingStatus) _wasConnected = true;
         bool ready = !_busy && !_workspaceAwaitingStatus && !needsExecutable && state?.BridgeState == "Connected" &&
             state.Quit?.State is not ("Sending" or "AwaitingExit") && state.AutoStartChange?.State != "Sending" && state.PlanOperation?.State != "Sending";
         RenderPlan(state, ready);
@@ -310,6 +297,8 @@ public partial class ExamAwareWindow : Window
             if (_closing) return;
             if (plan?.Action == "prepare") _allowPreparedPlan = response.Outcome == "Accepted";
             _protocolMismatch = false;
+            if (response.Outcome == "Succeeded" && (capability is "examaware.config.set" or "examaware.pairing.reset"))
+                ConnectionChanged(capability);
             Render(response.ExamAware); Message.Text = response.Message;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
@@ -327,12 +316,6 @@ public partial class ExamAwareWindow : Window
     {
         var dialog = new OpenFileDialog { Title = "选择 ExamAware2", Filter = "ExamAware 程序|ExamAware.exe", CheckFileExists = true };
         if (dialog.ShowDialog(WorkspacePanel.DialogOwner(this)) == true) Executable.Text = dialog.FileName;
-    }
-    private void ConfigureClicked(object sender, RoutedEventArgs e)
-    {
-        ConnectionConfiguration.IsExpanded = true;
-        _configurationPresented = true;
-        Executable.BringIntoView(); Executable.Focus();
     }
     private async void SaveClicked(object sender, RoutedEventArgs e) => await RunAsync("examaware.config.set", true);
     private async void StartClicked(object sender, RoutedEventArgs e) => await RunAsync("examaware.start");
@@ -388,7 +371,9 @@ public partial class ExamAwareWindow : Window
             if (response.ExamAwarePairing is not { } pairing) { Message.Text = response.Message; return; }
             await File.WriteAllTextAsync(fileName, JsonSerializer.Serialize(pairing, Protocol.Json), _lifetime.Token);
             if (_closing) return;
-            Message.Text = "已导出。请在 ExamAware 中导入；配对文件含连接凭据，导入后可删除。";
+            _pairingExported = _state?.BridgeState != "Connected";
+            if (_pairingExported) _selectedConnectionStep = ConnectionStep.Verify;
+            Message.Text = PairingExportedMessage;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {

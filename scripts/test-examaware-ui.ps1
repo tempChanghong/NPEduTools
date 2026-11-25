@@ -56,30 +56,26 @@ try {
     Click 'OobeLater' 'NPEduTools · 初始设置'
     $mainHandle = (Window).Current.NativeWindowHandle
     Click 'OpenExamAware' 'NPEduTools'
-    $null = Wait-Control 'ExamAwareConnection' '尚未连接'
-    if ((Window).Current.NativeWindowHandle -ne $mainHandle -or (Window '考试看板 · ExamAware2')) { throw 'ExamAware management did not stay in the original window.' }
-    $null = Wait-Control 'ExamAwareAutoStart' '未知'
+    $null = Wait-Control 'ExamAwareBridgeState' '待登记程序'
+    if ((Window).Current.NativeWindowHandle -ne $mainHandle) { throw 'ExamAware management did not stay in the original window.' }
+    $plan = Wait-Control 'ExamAwarePlanSection'
+    if ($plan.GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Current.ExpandCollapseState -ne 'Collapsed') {
+        throw 'Local playback tools must start folded.'
+    }
     $quit = Control 'ExamAwareQuit'
-    if (-not $quit -or $quit.Current.IsEnabled) { throw 'Quit must be disabled while disconnected.' }
-    $null = Wait-Control 'ExamAwareQuitStatus' '连接桥接'
-    $checks.Add('Normal quit is unavailable without a connected bridge and saved executable')
+    if ($quit -and -not $quit.Current.IsOffscreen -and $quit.Current.IsEnabled) { throw 'Quit must be unavailable before setup.' }
+    $checks.Add('First setup stays in the original window with playback folded and no runnable quit action')
     (Wait-Control 'ExamAwareAutoStartConfiguration').GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+    $null = Wait-Control 'ExamAwareAutoStart' '未知'
     foreach ($id in @('ExamAwareAutoStartEnable','ExamAwareAutoStartDisable')) {
         $item = Control $id
         if (-not $item -or $item.Current.IsEnabled) { throw 'Auto-start controls must be disabled while disconnected.' }
     }
     $null = Wait-Control 'ExamAwareAutoStartMessage' '连接桥接'
     $checks.Add('Explicit enable/disable controls stay disabled while disconnected; unknown is not off')
-    Click 'ExamAwareResetPairing'
-    $deadline = [DateTime]::UtcNow.AddSeconds(5)
-    do { $confirm = Window '撤销当前配对'; if (-not $confirm) { Start-Sleep -Milliseconds 100 } } while (-not $confirm -and [DateTime]::UtcNow -lt $deadline)
-    if (-not $confirm) { throw 'Pairing revocation must ask for confirmation.' }
-    $confirm.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
-    $null = Wait-Control 'ExamAwareResetPairing'
-    $checks.Add('Pairing revocation shows a cancellable confirmation')
     $startExamAware = Control 'ExamAwareStart'
-    if (-not $startExamAware -or $startExamAware.Current.IsEnabled) { throw 'Start must stay disabled until an executable is registered.' }
-    Click 'ExamAwareConfigure'
+    if ($startExamAware -and -not $startExamAware.Current.IsOffscreen -and $startExamAware.Current.IsEnabled) { throw 'Start must stay unavailable until an executable is registered.' }
+    Click 'ExamAwareStepPath'
     $null = Wait-Control 'ExamAwarePath'
     $checks.Add('The initial primary action opens path registration; disconnected auto-start remains unknown')
     (Wait-Control 'ExamAwarePath').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('C:\不存在的中文 目录\ExamAware.exe')
@@ -91,7 +87,7 @@ try {
     Click 'OpenQuick'
     Click 'RailTools' 'NPEduTools 快捷工具'
     Click 'QuickExamAware' 'NPEduTools 快捷工具'
-    $null = Wait-Control 'ExamAwareConnection' '尚未连接'
+    $null = Wait-Control 'ExamAwareBridgeState' '待登记程序'
     $draft = (Wait-Control 'ExamAwarePath').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).Current.Value
     if ($draft -notlike '*不存在的中文*' -or (Window).Current.NativeWindowHandle -ne $mainHandle) { throw 'Sidebar fallback lost the draft or opened another window.' }
     $checks.Add('Sidebar launch fallback restores the original management page and its path draft')

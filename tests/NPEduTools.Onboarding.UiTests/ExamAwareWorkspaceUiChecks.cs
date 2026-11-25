@@ -17,21 +17,32 @@ internal static partial class Program
         using var stop = new CancellationTokenSource();
         var saveReceived = new TaskCompletionSource<HostRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var prepared = ReadyExamAware("月考安排");
-        var state = prepared with { PreparedPlan = null };
+        var prepared = ReadyExamAware("月考安排") with { AppVersion = "1.6.1", ExecutablePath = "ExamAware.exe" };
+        var state = new ExamAwareStatus(null, 6, "Disconnected", "尚未连接桥接插件", null, null, null, 12345);
+        string pairingFile = System.IO.Path.Combine(_output, "pairing-" + Guid.NewGuid().ToString("N") + ".json");
         int saves = 0, starts = 0;
+        bool reportStatus = true;
         var server = Task.Run(() => WorkspaceProxy(pipe, async request =>
         {
             if (request.Capability == "examaware.status")
-                return new(1, request.RequestId, "Succeeded", null, "隔离状态", ExamAware: state);
+                return new(1, request.RequestId, "Succeeded", null, "隔离状态", ExamAware: Volatile.Read(ref reportStatus) ? state : null);
             if (request.Capability == "examaware.config.set")
             {
                 Interlocked.Increment(ref saves);
+                if (request.ExecutablePath == "ExamAware.exe")
+                {
+                    Assert(request.ExpectedRevision == 6, "first setup did not use the current revision");
+                    state = state with { Revision = 7, ExecutablePath = request.ExecutablePath };
+                    return new(1, request.RequestId, "Succeeded", null, "程序位置已保存。", ExamAware: state);
+                }
                 saveReceived.TrySetResult(request);
                 await releaseSave.Task.WaitAsync(stop.Token);
                 state = state with { Revision = 8, ExecutablePath = request.ExecutablePath };
                 return new(1, request.RequestId, "Succeeded", null, "原路径保存回执", ExamAware: state);
             }
+            if (request.Capability == "examaware.pairing.get")
+                return new(1, request.RequestId, "Succeeded", null, "隔离配对材料", ExamAware: state,
+                    ExamAwarePairing: new(2, "127.0.0.1", 12345, "synthetic-exam-key"));
             if (request.Capability == "examaware.start") Interlocked.Increment(ref starts);
             return new(1, request.RequestId, "Rejected", "Fixture", "隔离 Host 不执行外部启动");
         }, stop.Token));
@@ -52,16 +63,56 @@ internal static partial class Program
                 var panel = (ContentControl)main.FindName("ExamAwareWorkspaceHost");
                 var exam = (ExamAwareWindow)((WorkspacePanel)panel.Content).Controller;
                 var path = (TextBox)exam.FindName("Executable");
-                PumpUntil(() => Button(exam, "StartButton").IsEnabled, "embedded ExamAware did not poll status");
+                var steps = (FrameworkElement)exam.FindName("ConnectionSteps");
+                var plans = (Expander)exam.FindName("PlanConfiguration");
+                TextBlock Status() => (TextBlock)exam.FindName("BridgeStateLabel");
+                PumpUntil(() => Button(exam, "BrowseProgramButton").IsVisible && Button(exam, "BrowseProgramButton").IsEnabled,
+                    "first setup did not expose the program picker");
                 Assert(panel.IsVisible && WorkspacePanel.DialogOwner(exam) == main && new WindowInteropHelper(exam).Handle == 0 &&
                     Window.GetWindow(path) == main && new WindowInteropHelper(main).Handle == hwnd,
                     "ExamAware management created another native window or used it as a dialog owner");
 
-                CaptureWorkspaceSizes("choose", Button(exam, "PreparePlanButton"));
-                Assert(!Button(exam, "PresentPlanButton").IsVisible, "the unchecked plan offers a present button");
+                CaptureWorkspaceSizes("first-setup", Button(exam, "BrowseProgramButton"));
+                Assert(!Button(exam, "SaveProgramButton").IsEnabled && Status().Text == "待登记程序", "blank first setup allows saving or reports connection");
+                path.Text = "ExamAware.exe";
+                Click(main, "ExamAwareSave", true);
+                PumpUntil(() => ((FrameworkElement)exam.FindName("PluginStepBody")).IsVisible, "first save did not expose plugin setup");
+                Assert(Status().Text == "等待桥接连接", "saving a path falsely confirms pairing");
+                Click(main, "ExamAwareStepPairing", true);
+                Assert(((FrameworkElement)exam.FindName("PairingStepBody")).IsVisible &&
+                    !((FrameworkElement)exam.FindName("PluginStepBody")).IsVisible, "more than one setup step is expanded");
+                var export = (Task)typeof(ExamAwareWindow).GetMethod("ExportPairingAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(exam, [pairingFile])!;
+                PumpUntil(() => export.IsCompleted, "export did not finish");
+                export.GetAwaiter().GetResult();
+                Assert(System.IO.File.Exists(pairingFile) && Status().Text == "等待桥接连接" &&
+                    ((TextBlock)exam.FindName("Message")).Text.Contains("连接 NPEduTools") &&
+                    ((FrameworkElement)exam.FindName("VerifyStepBody")).IsVisible,
+                    "export did not expose the import instructions or incorrectly claimed a verified bridge");
+                AssertNoCredentialText(main, "synthetic-exam-key");
                 state = prepared;
-                PumpUntil(() => Button(exam, "PresentPlanButton").IsEnabled, "confirmed plan did not expose presentation");
-                CaptureWorkspaceSizes("prepared", Button(exam, "PresentPlanButton"));
+                PumpUntil(() => Status().Text.StartsWith("已连接", StringComparison.Ordinal) && !steps.IsVisible, "fresh bridge did not fold first-time setup");
+                CaptureWorkspaceSizes("connected", Button(exam, "StartButton"));
+                plans.IsExpanded = true;
+                main.UpdateLayout();
+                Assert(Button(exam, "PresentPlanButton").IsVisible && Button(exam, "PresentPlanButton").IsEnabled, "explicit expansion did not preserve the operational plan");
+                plans.IsExpanded = false;
+
+                state = prepared with { BridgeState = "Disconnected", AppVersion = null, PreparedPlan = null, CanPresent = false };
+                PumpUntil(() => Status().Text == "连接已断开", "a previously connected bridge did not show the disconnected state");
+                CaptureWorkspaceSizes("disconnected", Button(exam, "StartButton"));
+                Assert(path.Text == "ExamAware.exe" && !steps.IsVisible && !Button(exam, "PresentPlanButton").IsEnabled,
+                    "disconnect discarded the configured path, forced re-pairing, or allowed local playback");
+                Volatile.Write(ref reportStatus, false);
+                PumpUntil(() => Status().Text == "暂无法核对", "missing backend status was reported as a bridge disconnect");
+                Assert(path.Text == "ExamAware.exe" && !Button(exam, "StartButton").IsEnabled && !Button(exam, "ConfigureButton").IsVisible,
+                    "unavailable backend left connection mutations actionable or discarded the saved path");
+                state = prepared;
+                Volatile.Write(ref reportStatus, true);
+                PumpUntil(() => Status().Text.StartsWith("已连接", StringComparison.Ordinal), "bridge did not recover from disconnect");
+                main.Width = 1040;
+                main.Height = 760;
+                main.UpdateLayout();
 
                 void CaptureWorkspaceSizes(string phase, Button primary)
                 {
@@ -73,12 +124,16 @@ internal static partial class Program
                         main.Width = size.Width;
                         main.Height = size.Height;
                         main.UpdateLayout();
-                        foreach (string id in new[] { "ExamAwareBack", "ExamAwareVersion", "ExamAwareStart", "CollapseToSideRail", "MinimizeWindow", "MaximizeRestoreWindow", "CloseWindow" })
+                        foreach (string id in new[] { "ExamAwareBack", "ExamAwareBridgeState", "CollapseToSideRail", "MinimizeWindow", "MaximizeRestoreWindow", "CloseWindow" })
                             Reachable(main, (FrameworkElement)Find(main, id));
                         var bounds = primary.TransformToAncestor(scroll).TransformBounds(new Rect(primary.RenderSize));
                         Assert(primary.IsEnabled && ReferenceEquals(primary.Style, exam.FindResource("TeacherPrimary")) &&
-                            !ReferenceEquals(Button(exam, "StartButton").Style, primary.Style) && bounds.Top >= 0 && bounds.Bottom <= scroll.ViewportHeight,
-                            "the only primary action must be fully visible without scrolling");
+                            bounds.Top >= 0 && bounds.Bottom <= scroll.ViewportHeight && !plans.IsExpanded && !Button(exam, "PresentPlanButton").IsVisible,
+                            "the connection action must be fully visible and optional playback folded");
+                        Rect planHeaderBounds = plans.TransformToAncestor(scroll).TransformBounds(new Rect(plans.RenderSize));
+                        Assert(planHeaderBounds.Bottom <= scroll.ViewportHeight, "collapsed playback header is cut off in the default viewport");
+                        var summaryActions = (FrameworkElement)exam.FindName("ConnectionSummaryActions");
+                        Assert(Grid.GetRow(summaryActions) == (size.Width == 840 ? 1 : 0), "connection summary did not stack only at the narrow size");
                         CheckCaptionHitTargets(main, hwnd);
                         Snapshot(main, $"examaware-main-{phase}-{size.Width}-{size.Height}.png");
                     }
@@ -109,7 +164,7 @@ internal static partial class Program
                 Click(main, "HomeTab", true);
                 releaseSave.TrySetResult();
                 PumpUntil(() => ((TextBlock)exam.FindName("Message")).Text == "原路径保存回执", "readback was dropped while the work area was hidden");
-                Assert(!panel.IsVisible && Volatile.Read(ref saves) == 1, "the late save response navigated or triggered another write");
+                Assert(!panel.IsVisible && Volatile.Read(ref saves) == 2, "the late save response navigated or triggered another write");
                 Click(main, "HomeOpenExamAware", true);
                 PumpUntil(() => Button(exam, "StartButton").IsEnabled, "visible page did not confirm its state again");
                 Assert(path.Text == "unsaved-exam-path.exe" && ((TextBlock)exam.FindName("Message")).Text == "原路径保存回执",
@@ -160,7 +215,7 @@ internal static partial class Program
                 }
                 Checks.Add("ExamAware same HWND from home, settings and sidebar; original focus, path draft and in-flight receipt survive switching; quick fallback keeps calibration");
                 Checks.Add("Active calibration prompts before switching; the native default decline retains the pending sample and current workspace");
-                Checks.Add("ExamAware choose and present are the sole primary action for their stage and fully visible at both widths");
+                Checks.Add("ExamAware first setup, connected and disconnected at both sizes: path save and export never claim a verified bridge; optional playback stays folded");
                 Checks.Add("Title bar: native hit targets, 44-DIP controls, Windows minimize/maximize/restore retain manual size, and navigation fold is distinct from collapsing to the desktop rail");
             }
         }
@@ -170,6 +225,7 @@ internal static partial class Program
             releaseSave.TrySetResult();
             stop.Cancel();
             try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
+            System.IO.File.Delete(pairingFile);
         }
     }
 

@@ -94,7 +94,7 @@
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设备与连接" /></StackPanel>
           </Button>
           <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,8" />
-          <Button x:Name="ExamAwareNav" Content="考试看板" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
+          <Button x:Name="ExamAwareNav" Content="ExamAware2" ToolTip="ExamAware2 连接" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
           <Button Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
           <Button Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
         </StackPanel></ScrollViewer>
@@ -271,9 +271,9 @@
                 </StackPanel>
               </Button>
               <Button Style="{StaticResource HomeAction}" Click="OpenExamAwareClicked"
-                      AutomationProperties.AutomationId="HomeOpenExamAware" AutomationProperties.Name="考试看板" ToolTip="ExamAware2 连接与管理">
+                      AutomationProperties.AutomationId="HomeOpenExamAware" AutomationProperties.Name="ExamAware2 连接" ToolTip="ExamAware2 连接与管理">
                 <StackPanel Orientation="Horizontal">
-                  <TextBlock Text="&#xE7C3;" Style="{StaticResource HomeIcon}" /><TextBlock Text="考试看板" />
+                  <TextBlock Text="&#xE7C3;" Style="{StaticResource HomeIcon}" /><TextBlock Text="ExamAware2 连接" />
                 </StackPanel>
               </Button>
             </WrapPanel>
@@ -740,7 +740,7 @@
             <Border Style="{StaticResource SettingsGroupSurface}" Margin="0,0,0,10">
               <local:SettingsRow Style="{StaticResource SettingsRow}" Icon="M4,5 L20,5 20,19 4,19 Z M8,9 L16,9 M8,13 L13,13">
                 <local:SettingsRow.Header><StackPanel>
-                  <TextBlock Text="ExamAware2 · 考试看板" Style="{StaticResource SettingsLabel}" />
+                  <TextBlock Text="ExamAware2 连接" Style="{StaticResource SettingsLabel}" />
                   <TextBlock Text="查看连接状态，配置程序位置、桥接配对与自启动。" Style="{StaticResource SettingsHint}" />
                 </StackPanel></local:SettingsRow.Header>
                 <Button Content="打开连接管理" Style="{StaticResource TeacherButton}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="SettingsExamAware" />

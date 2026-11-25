@@ -46,7 +46,7 @@ public partial class MainWindow
         HomePage.Visibility = Visibility.Collapsed;
         HomeNav.Tag = null;
         ExamAwareNav.Tag = "active";
-        PageBreadcrumb.Text = "考试看板";
+        PageBreadcrumb.Text = "ExamAware2 连接";
         ExamAwareWorkspaceHost.Visibility = Visibility.Visible;
         RestoreWindow();
         _examAwareWindow.FocusWorkspaceEntry();

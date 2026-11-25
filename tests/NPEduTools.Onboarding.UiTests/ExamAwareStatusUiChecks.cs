@@ -35,7 +35,7 @@ internal static partial class Program
             Exercise(window, owner =>
             {
                 string Text(string name) => ((TextBlock)owner.FindName(name)).Text;
-                var config = (Expander)owner.FindName("ConnectionConfiguration");
+                var config = (FrameworkElement)owner.FindName("ConnectionSteps");
                 var plans = (Expander)owner.FindName("PlanConfiguration");
                 ((FrameworkElement)owner.Content).LayoutTransform = new System.Windows.Media.ScaleTransform(1, 1);
                 owner.Width = 520; owner.Height = 440;
@@ -44,11 +44,11 @@ internal static partial class Program
                 var unregistered = new ExamAwareStatus(null, 1, "Disconnected", "尚未登记程序位置", null, null, null, 12345);
                 ShowExamAware(window, unregistered);
                 ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
-                Assert(Text("BridgeStateLabel").Contains("待登记程序") && config.IsExpanded && !plans.IsExpanded &&
+                Assert(Text("BridgeStateLabel").Contains("待登记程序") && config.IsVisible && !plans.IsExpanded &&
                     !Button(owner, "StartButton").IsEnabled && !Button(owner, "SettingsButton").IsEnabled &&
-                    (string)Button(owner, "ConfigureButton").Content == "登记程序位置",
+                    Button(owner, "BrowseProgramButton").IsVisible,
                     "unregistered state did not distinguish missing setup or fold local plan section");
-                foreach (string id in new[] { "ExamAwareVersion", "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareStart", "ExamAwareSettings", "ExamAwareQuit", "ExamAwareConfigure" })
+                foreach (string id in new[] { "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareBrowse" })
                     Reachable(owner, (FrameworkElement)Find(owner, id));
                 Snapshot(owner, "examaware-narrow-unregistered.png");
 
@@ -69,8 +69,8 @@ internal static partial class Program
                     AppVersion = null,
                     Quit = new(Guid.NewGuid(), "Exited", "已确认目标 ExamAware 进程退出。", 42)
                 });
-                Assert(Text("BridgeStateLabel") == "桥接未连接" && Text("NextActionText").Contains("上次退出") &&
-                    Text("NextActionText").Contains("打开考试看板"),
+                Assert(Text("BridgeStateLabel") == "桥接未连接" && Text("NextActionText").Contains("上次已正常退出") &&
+                    Text("NextActionText").Contains("打开 ExamAware2"),
                     "exit receipt must stay historical when current process state has not been verified");
                 ShowExamAware(window, ReadyExamAware() with
                 {
@@ -81,10 +81,9 @@ internal static partial class Program
 
                 ShowExamAware(window, ReadyExamAware() with { BridgeState = "Disconnected", Message = "尚未连接桥接插件", AppVersion = null, Quit = null, PreparedPlan = null });
                 ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
-                Assert(Text("BridgeStateLabel").Contains("未运行") && Text("BridgeStateLabel").Contains("未配对") &&
-                    Text("NextActionText").Contains("快速开始向导"),
-                    "disconnected state did not distinguish not-running/unpaired or first-run wizard guidance");
-                foreach (string id in new[] { "ExamAwareVersion", "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareStart", "ExamAwareSettings", "ExamAwareQuit", "ExamAwareConfigure" })
+                Assert(Text("BridgeStateLabel") == "连接已断开" && Text("NextActionText").Contains("原配对") && !config.IsVisible,
+                    "a disconnected bridge replaced its original setup with first-run guidance");
+                foreach (string id in new[] { "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareStart", "ExamAwareConfigure" })
                     Reachable(owner, (FrameworkElement)Find(owner, id));
 
                 // 4. Version / protocol mismatch from Host.
@@ -93,18 +92,18 @@ internal static partial class Program
                     !Button(owner, "PreparePlanButton").IsEnabled && !Button(owner, "QuitButton").IsEnabled,
                     "unsupported version did not clearly distinguish mismatch or block actions");
 
-                // 5. First transition to Connected (even without prepared plan) opens local plan section and shows authenticated version; restricted permissions remain gated.
+                // 5. A connected bridge keeps optional tools closed and enforces existing capabilities.
                 ShowExamAware(window, ReadyExamAware() with { AppVersion = "1.6.1", CanPresent = false, CanSetAutoStart = false, PreparedPlan = null });
                 Assert(Text("BridgeStateLabel").Contains("部分功能不可用") && Text("VersionText").Contains("1.6.1") && Text("VersionText").Contains("已认证") &&
-                    plans.IsExpanded && !Button(owner, "PreparePlanButton").IsEnabled && !Button(owner, "EnableAutoStartButton").IsEnabled,
-                    "permission-limited bridge did not show authenticated version, expand plan section, or restrict permissions");
+                    !plans.IsExpanded && !Button(owner, "PreparePlanButton").IsEnabled && !Button(owner, "EnableAutoStartButton").IsEnabled,
+                    "permission-limited bridge lost authenticated version, opened optional plan tools, or enabled restricted operations");
 
                 // 6. Connected and ready on 1.6.1 at 520x440: authenticated version and primary actions reachable.
                 ShowExamAware(window, ReadyExamAware() with { AppVersion = "1.6.1" });
                 ((ScrollViewer)owner.Content).ScrollToTop(); owner.UpdateLayout();
-                Assert(Text("BridgeStateLabel").Contains("已连接") && Text("VersionText").Contains("1.6.1") && Text("VersionText").Contains("已认证") && plans.IsExpanded,
-                    "connected 1.6.1 state did not show authenticated version or expand local plan section");
-                foreach (string id in new[] { "ExamAwareVersion", "ExamAwareBridgeState", "ExamAwareNextAction", "ExamAwareStart", "ExamAwareSettings", "ExamAwareQuit", "ExamAwareConfigure" })
+                Assert(Text("BridgeStateLabel").Contains("已连接") && Text("VersionText").Contains("1.6.1") && Text("VersionText").Contains("已认证") && !plans.IsExpanded && !config.IsVisible,
+                    "connected 1.6.1 state did not show authenticated version or fold optional tools and setup");
+                foreach (string id in new[] { "ExamAwareVersion", "ExamAwareBridgeState", "ExamAwareStart", "ExamAwareConfigure" })
                     Reachable(owner, (FrameworkElement)Find(owner, id));
                 Snapshot(owner, "examaware-narrow-ready.png");
 
