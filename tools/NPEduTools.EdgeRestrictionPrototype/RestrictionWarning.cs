@@ -142,6 +142,8 @@ internal sealed class RestrictionWarning : Window
         return stream.ToArray();
     }
 
+    internal void DismissForInactivePolicy() => Finish();
+
     private void Finish()
     {
         if (_done) return;

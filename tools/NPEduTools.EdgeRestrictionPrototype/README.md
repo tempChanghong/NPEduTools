@@ -60,3 +60,7 @@ powershell.exe -NoProfile -File .\Set-GuestEdgeTestPolicy.ps1 -RunDirectory 'C:\
 按 `fixture.json` 的阶段运行 `guest-product-pairing.ps1`，指定同一个隔离管道名 `NPEduTools.EdgeProduct.<唯一标记>` 与证据目录。`pair-N` 用 `Begin`，`finish-pair-N` 用 `Confirm`，`unpair-N` 用 `Unpair`。浏览器阶段用独立测试配置的普通 Edge 核对，完成后写对应阶段名的 JSON 标记；Test-GuestEdgePolicy 的管理员策略桥只供上节原型试验使用。产品用例的目标网址必须由正式 Host 下发。用例结束先确证按原绑定解绑后产品值消失，再移除测试专用计划任务、浏览器配置和任意独立哨兵值。只保留去密的截图、阶段和逐屏状态证据。
 
 已有可信的一班放行证据时，可在原测试配对已解除后用 `-NeighborOnly` 在新隔离库通过 Console 重建年级与一班例外，定向复验二班继承、告警和解绑。复验不读取前一库的回执。
+
+分时用例可以用 `-Timed -NaturalClassIsland` 观察正在运行的 ClassIsland 从上课到课间再回到上课，无需修改原课表。配对后分别保存真实源时段、Windows 清单和当前绑定的服务端回执。`timed-native-return` 阶段先记录运行中 Edge 是否对新导航采用，再以同名 JSON 通知夹具继续解绑。手动重读 Edge 策略的试验应单独记录。
+
+`-TimingHold` 用隔离的 ClassIsland TestPeer 定向复验监听中断。在 `timed-hold-short` 阶段保持 TestPeer 运行，仅终止本轮 Host 的监控子进程，观察既有名单未撤除并等待恢复，再写同名 JSON。到 `timed-hold-long` 时停止该隔离 TestPeer 进程，等待服务器回报无法核对并按本次范围配置撤除。到 `timed-hold-recover` 时重启同一 TestPeer，等待规则恢复并用 `timed-hold-recovered.json` 确认。最后仍走产品解绑。

@@ -7,7 +7,7 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.Host;
 
-internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsitePolicyStore> open)
+internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsitePolicyStore> open, Func<WebsitePhaseObservation>? readPhase = null)
 {
     private const string Pending = "WRITTEN_PENDING";
     private const string Cleared = "CLEARED_PENDING";
@@ -25,6 +25,12 @@ internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsiteP
     private string[] _desired = [];
     private string _status = Failed;
     private long _lastCheck;
+    private long _lastTimingWrite;
+    private EdgeWebsiteTiming? _timing;
+    private string _source = "NONE";
+    private readonly WebsitePhaseContinuity _phaseContinuity = new();
+    internal string SchedulePhase { get; private set; } = "UNAVAILABLE";
+    internal bool SchedulePhaseHeld { get; private set; }
 
     internal static bool IsDigest(string? value) => value is { Length: 64 } && Digest.IsMatch(value);
     internal static bool ValidHost(string? host)
@@ -37,6 +43,7 @@ internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsiteP
     internal WebsitePolicyDesktopState? ReadDesktop()
     {
         if (!_knownScope) return null;
+        RefreshTiming();
         long now = Environment.TickCount64;
         if (now - _lastCheck >= 3000)
         {
@@ -90,7 +97,13 @@ internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsiteP
             _desired = [];
             _desktop = null;
             _proofs.Clear();
+            _timing = null;
+            _source = "NONE";
+            SchedulePhase = "UNAVAILABLE";
+            SchedulePhaseHeld = false;
+            _phaseContinuity.Reset();
         }
+        EdgeWebsiteJournal? saved = null;
         WithStore((store, journal) =>
         {
             if (journal is null || journal.Owner != _owner) return;
@@ -103,16 +116,51 @@ internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsiteP
             // exact durable pairing. An unconfirmed journal is never a warning source.
             if (_policyId is null)
             {
+                if (journal.Timing is not null) { saved = journal; return; }
                 _desired = journal.Desired;
                 var (status, installed) = Verify(store, journal, _desired);
                 Publish(journal.PolicyId, journal.Source, installed, status);
             }
         });
+        if (saved?.Timing is { } timing && scope is not null)
+            ApplyTiming(scope, saved.PolicyId, saved.Source, timing);
     }
 
-    internal void Apply(string scope, string policyId, string source, string[] hosts)
+    internal bool Apply(string scope, string policyId, string source, string[] hosts)
     {
-        if (_scope != scope) return;
+        if (_scope != scope || _timing is not null) return false;
+        Reconcile(scope, policyId, source, hosts);
+        return true;
+    }
+
+    internal bool ApplyTiming(string scope, string policyId, string source, EdgeWebsiteTiming timing)
+    {
+        if (_scope != scope || _timing is { } current && timing.Revision < current.Revision) return false;
+        _timing = timing;
+        _source = source;
+        if (!timing.HasSchedule) _phaseContinuity.Reset();
+        (SchedulePhase, SchedulePhaseHeld) = timing.HasSchedule ? ReadPhase() : ("UNAVAILABLE", false);
+        _lastTimingWrite = Environment.TickCount64;
+        Reconcile(scope, policyId, source, timing.ForPhase(SchedulePhase));
+        return true;
+    }
+
+    internal void RefreshTiming()
+    {
+        if (_scope is not { } scope || _policyId is not { } policyId || _timing is not { HasSchedule: true } timing) return;
+        var (phase, held) = ReadPhase();
+        SchedulePhaseHeld = held;
+        long now = Environment.TickCount64;
+        if (phase == SchedulePhase && (_status != Failed || now - _lastTimingWrite < 3000)) return;
+        SchedulePhase = phase;
+        _lastTimingWrite = now;
+        Reconcile(scope, policyId, _source, timing.ForPhase(phase));
+    }
+
+    private (string Phase, bool Held) ReadPhase() => _phaseContinuity.Resolve(readPhase?.Invoke() ?? default, Environment.TickCount64);
+
+    private void Reconcile(string scope, string policyId, string source, string[] hosts)
+    {
         _desired = hosts;
         string status = Failed;
         string[] installed = [];
@@ -130,7 +178,7 @@ internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsiteP
                 if (!removed) { status = Conflict; return; }
             }
 
-            if (journal is null && hosts.Length == 0) { status = Cleared; return; }
+            if (journal is null && hosts.Length == 0 && _timing is null) { status = Cleared; return; }
 
             var rules = journal?.Rules.ToList() ?? [];
             bool separateAuthority = hosts.Length != 0 && store.HasSeparatePolicyAuthority();
@@ -155,9 +203,9 @@ internal sealed class EdgeWebsitePolicy(string dataDirectory, Func<IEdgeWebsiteP
                 changed |= missing.Length > 0;
             }
 
-            if (journal is null || journal.PolicyId != policyId || changed)
+            if (journal is null || journal.PolicyId != policyId || journal.Timing?.Revision != _timing?.Revision || changed)
             {
-                journal = new(_owner, scope, policyId, source, hosts, rules.ToArray());
+                journal = new(_owner, scope, policyId, source, hosts, rules.ToArray(), _timing);
                 store.SaveJournal(journal);
             }
             if (!separateAuthority)

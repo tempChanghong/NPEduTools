@@ -66,7 +66,7 @@ if (monitorMode || bridgeMode)
             while (input.ReadByte() != -1) Interlocked.Exchange(ref lastLease, Stopwatch.GetTimestamp());
         }
         catch (IOException) { }
-        Environment.Exit(124);
+        Environment.Exit(125); // The parent lease pipe closed, rather than timing out.
     }) { IsBackground = true, Name = "Host lease reader" };
     leaseReader.Start();
     var output = Console.OpenStandardOutput();
@@ -163,7 +163,8 @@ var studyDevices = new StudyDeviceService(() => OperatingSystem.IsWindows()
     ? WindowsStudyCameras.Enumerate() : [], dataDirectory, () => noise.CaptureBusy);
 var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep"));
 var edgeWebsitePolicy = OperatingSystem.IsWindows() ? new EdgeWebsitePolicy(dataDirectory, () =>
-    OperatingSystem.IsWindows() ? new EdgeWebsitePolicyStore() : throw new PlatformNotSupportedException()) : null;
+    OperatingSystem.IsWindows() ? new EdgeWebsitePolicyStore() : throw new PlatformNotSupportedException(),
+    monitor.WebsitePhase) : null;
 var schoolManagement=new SchoolManagementService(noise,studyDevices,Path.Combine(dataDirectory,"npep"),edgeWebsitePolicy);
 var studyClock = new StudyModeClock(() => classroom.Snapshot.Mode, schoolClock.Snapshot);
 Func<bool> studyPaused = () => classroom.Snapshot.Phase != "Idle" || runtimeGate.Switching || runtimeGate.ExamRequested;
@@ -271,6 +272,7 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
     new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement, updates);
 var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync, npep.PublishSeatingAsync);
+var websiteClock = schoolManagement.RunWebsitePolicyClockAsync(shutdown.Token);
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
@@ -284,4 +286,9 @@ catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 {
     Console.Error.WriteLine($"Host transport failed: {ex.GetType().Name}");
     return 1;
+}
+finally
+{
+    await shutdown.CancelAsync();
+    await websiteClock;
 }

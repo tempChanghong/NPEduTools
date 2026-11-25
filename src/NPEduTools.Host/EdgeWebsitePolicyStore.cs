@@ -5,7 +5,8 @@ using System.Runtime.Versioning;
 namespace NPEduTools.Host;
 
 internal sealed record EdgeWebsiteRule(int Slot, string Filter, bool Prepared);
-internal sealed record EdgeWebsiteJournal(string Owner, string Scope, string PolicyId, string Source, string[] Desired, EdgeWebsiteRule[] Rules);
+internal sealed record EdgeWebsiteJournal(string Owner, string Scope, string PolicyId, string Source, string[] Desired, EdgeWebsiteRule[] Rules,
+    EdgeWebsiteTiming? Timing = null);
 
 internal interface IEdgeWebsitePolicyStore : IDisposable
 {
@@ -31,12 +32,13 @@ internal sealed class EdgeWebsitePolicyStore : IEdgeWebsitePolicyStore
         using var key = _machine.OpenSubKey(Ledger);
         if (key is null || !Present(key, "Ownership")) return null;
         object? value = key.GetValue("Ownership");
-        if (value is not string { Length: <= 32768 } json ||
+        if (value is not string { Length: <= 49152 } json ||
             JsonSerializer.Deserialize<EdgeWebsiteJournal>(json) is not { } journal ||
             !EdgeWebsitePolicy.IsDigest(journal.Owner) || !EdgeWebsitePolicy.IsDigest(journal.PolicyId) ||
             journal.Source is not ("NONE" or "GRADE" or "CLASS") ||
             journal.Scope is not { Length: > 0 and <= 4096 } || journal.Rules is not { Length: <= 24 } ||
             journal.Desired is not { Length: <= 24 } || journal.Desired.Any(host => !EdgeWebsitePolicy.ValidHost(host)) ||
+            journal.Timing is { } timing && (!timing.Valid || !journal.Desired.All(host => timing.Rules.Any(rule => rule.Host == host))) ||
             journal.Desired.Distinct(StringComparer.Ordinal).Count() != journal.Desired.Length ||
             journal.Rules.Any(rule => rule is null || rule.Slot is < 1 or > 1000 ||
                 rule.Filter is not { Length: > 1 } filter || filter[0] != '.' || !journal.Desired.Contains(filter[1..], StringComparer.Ordinal)) ||

@@ -9,6 +9,7 @@ public interface INpepSchoolManagement
     void ObserveActionBinding(string? scope) { }
     void ObserveWebsiteBinding(string? scope) { }
     bool SupportsWebsitePolicyAutomation => false;
+    bool SupportsWebsitePolicyTiming => false;
     void ApplySchool(JsonObject policy);
     JsonObject ObserveSchool();
 }
@@ -16,7 +17,7 @@ public interface INpepSchoolManagement
 public sealed partial class NpepApi
 {
     internal async Task<JsonObject> SchoolManagementAsync(string? bearer, string path, JsonObject? body, CancellationToken token,
-        bool websitePolicyAutomation = false)
+        bool websitePolicyAutomation = false, bool websitePolicyTiming = false)
     {
         bool replacement = path == "pairings/replacement";
         if(!replacement && path is not ("admission/catalog" or "admission/catalog/lookup" or "device/school-management" or "device/school-management/receipt")) throw new NpepException("INVALID_REQUEST");
@@ -31,6 +32,7 @@ public sealed partial class NpepApi
             request.Headers.Add("X-NPEP-Manual-Recording-Policy", "1");
             request.Headers.Add("X-NPEP-Website-Policy", "1");
             if (websitePolicyAutomation) request.Headers.Add("X-NPEP-Website-Policy-Automation", "1");
+            if (websitePolicyTiming) request.Headers.Add("X-NPEP-Website-Policy-Timing", "1");
         }
         if(bearer is not null) request.Headers.Authorization = new("Bearer", bearer);
         if(body is not null)
@@ -74,10 +76,11 @@ public sealed partial class NpepDevice
         var approval=_saved["approval"]!.AsObject();
         await ConfirmAsync(approval.Text("approvalId"),token);
     }
-    internal async Task<JsonObject> SchoolManagementAsync(JsonObject? receipt,CancellationToken token,bool websitePolicyAutomation = false)
+    internal async Task<JsonObject> SchoolManagementAsync(JsonObject? receipt,CancellationToken token,
+        bool websitePolicyAutomation = false, bool websitePolicyTiming = false)
     {
         await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api=Api();return await api.SchoolManagementAsync(DeviceBearer,receipt is null?"device/school-management":"device/school-management/receipt",receipt,token,websitePolicyAutomation); }
+        try { RequireNotificationConnection(); using var api=Api();return await api.SchoolManagementAsync(DeviceBearer,receipt is null?"device/school-management":"device/school-management/receipt",receipt,token,websitePolicyAutomation,websitePolicyTiming); }
         catch(NpepException error){if(error.Status==401)SuspendIfTerminal(error);throw;}
         finally{_gate.Release();}
     }
@@ -121,7 +124,8 @@ public sealed partial class NpepRuntime
         if(_schoolManagement is null) return;
         var context=await StudyContextAsync(token);
         string scope=context["identity"]!.ToJsonString(); _schoolManagement.BindSchool(scope);
-        var policy=await _device!.SchoolManagementAsync(null,token,_schoolManagement.SupportsWebsitePolicyAutomation);
+        var policy=await _device!.SchoolManagementAsync(null,token,_schoolManagement.SupportsWebsitePolicyAutomation,
+            _schoolManagement.SupportsWebsitePolicyTiming);
         await RequireStudyContextAsync(context,token);
         if(!JsonNode.DeepEquals(context["identity"],policy["identity"]))throw new NpepException("SESSION_SUPERSEDED");
         _schoolManagement.ApplySchool(policy);

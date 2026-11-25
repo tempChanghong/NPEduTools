@@ -13,6 +13,7 @@ public sealed class StatusMonitor(Func<ProcessStartInfo> startInfo, Action<strin
     private readonly Guid _streamId = Guid.NewGuid();
     private Task? _run;
     private long _sequence;
+    private long _publishedAt = Stopwatch.GetTimestamp();
     private WatchSnapshot _current = new(Protocol.Version, Guid.Empty, Guid.Empty, 0, Guid.Empty,
         DateTimeOffset.UtcNow, "Connecting", null, "正在连接 ClassIsland…", null);
 
@@ -25,14 +26,26 @@ public sealed class StatusMonitor(Func<ProcessStartInfo> startInfo, Action<strin
         }
     }
 
+    internal WebsitePhaseObservation WebsitePhase()
+    {
+        lock (_sync)
+        {
+            _run ??= Task.Run(() => RunAsync(_lifetime.Token));
+            return WebsiteSchedulePhase.Read(_current, Stopwatch.GetElapsedTime(_publishedAt).TotalMilliseconds, DateTimeOffset.UtcNow);
+        }
+    }
+
     private void Publish(StatusResult result, Guid connection)
     {
         var s = result.Status;
         lock (_sync)
+        {
+            _publishedAt = Stopwatch.GetTimestamp();
             _current = new(Protocol.Version, Guid.Empty, _streamId, ++_sequence, connection,
                 DateTimeOffset.UtcNow, result.Outcome, result.ErrorCode, result.Message,
                 s is null ? null : new(s.SampleStartedAt, s.SampleCompletedAt, s.State, s.Subject,
                     s.IsTimerRunning, s.IsClassPlanLoaded, s.IsClassPlanEnabled, s.CurrentSelectedIndex, s.ObservedEvents));
+        }
     }
 
     private async Task RunAsync(CancellationToken token)
@@ -45,6 +58,8 @@ public sealed class StatusMonitor(Func<ProcessStartInfo> startInfo, Action<strin
             using var connectionLifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
             Task? lease = null, drain = null;
             bool started = false;
+            string? cause = null;
+            int? workerExitCode = null;
             try
             {
                 started = worker.Start();
@@ -57,18 +72,24 @@ public sealed class StatusMonitor(Func<ProcessStartInfo> startInfo, Action<strin
                     deadline.CancelAfter(TimeSpan.FromSeconds(8));
                     var result = await Protocol.ReadAsync<StatusResult>(worker.StandardOutput.BaseStream, deadline.Token);
                     Publish(result, connection);
-                    if (result.Outcome != "Succeeded") break;
+                    if (result.Outcome != "Succeeded")
+                    {
+                        cause = result.ErrorCode ?? result.Outcome;
+                        break;
+                    }
                     delaySeconds = 1;
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
             catch (OperationCanceledException)
             {
+                cause = "WorkerReadDeadline";
                 Publish(new("TimedOut", "ClassIslandMonitorDeadlineExceeded",
                     "ClassIsland 未及时响应，正在自动重连。"), connection);
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or InvalidOperationException or System.ComponentModel.Win32Exception)
             {
+                cause = ex.GetType().Name;
                 Publish(new("Unavailable", "ClassIslandMonitorDisconnected",
                     "ClassIsland 连接不可用，正在自动重连。"), connection);
             }
@@ -79,7 +100,19 @@ public sealed class StatusMonitor(Func<ProcessStartInfo> startInfo, Action<strin
                 {
                     try
                     {
-                        if (!worker.HasExited) worker.Kill(entireProcessTree: true);
+                        if (worker.HasExited) workerExitCode = worker.ExitCode;
+                        else if (cause == nameof(EndOfStreamException))
+                        {
+                            // Standard output may close an instant before the worker exits.
+                            using var exitDeadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+                            try
+                            {
+                                await worker.WaitForExitAsync(exitDeadline.Token);
+                                workerExitCode = worker.ExitCode;
+                            }
+                            catch (OperationCanceledException) { worker.Kill(entireProcessTree: true); }
+                        }
+                        else worker.Kill(entireProcessTree: true);
                         await worker.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
                     }
                     catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or TimeoutException)
@@ -93,7 +126,8 @@ public sealed class StatusMonitor(Func<ProcessStartInfo> startInfo, Action<strin
                 if (drain is not null) await drain;
             }
             log(JsonSerializer.Serialize(new { timestamp = DateTimeOffset.UtcNow,
-                component = "ClassIslandMonitor", retrySeconds = delaySeconds }, Protocol.Json));
+                component = "ClassIslandMonitor", connectionId = connection, cause, workerExitCode,
+                retrySeconds = delaySeconds }, Protocol.Json));
             try { await Task.Delay(TimeSpan.FromSeconds(delaySeconds), token); }
             catch (OperationCanceledException) { break; }
             delaySeconds = Math.Min(delaySeconds * 2, 15);

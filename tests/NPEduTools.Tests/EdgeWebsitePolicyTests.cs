@@ -87,6 +87,55 @@ public sealed class EdgeWebsitePolicyTests
         Assert.Equal("FAILED", denied.Status);
     }
 
+    [Fact]
+    public void OfflineFallbackPersistsAndRejectsOlderOrDowngradedLists()
+    {
+        var store = new MemoryStore();
+        var policy = Start(store, Room);
+        var schedule = new EdgeWebsiteTiming(2, [new(A, "LESSON"), new(B, "ALWAYS")], "ALLOW");
+        Assert.True(policy.ApplyTiming(Room, Second, "GRADE", schedule));
+        Assert.Equal(new[] {B}, policy.ReadDesktop()!.BlockedHosts);
+        Assert.Equal("UNAVAILABLE", policy.SchedulePhase);
+        Assert.False(policy.ApplyTiming(Room, First, "GRADE", schedule with {Revision = 1, UnavailableBehavior = "BLOCK"}));
+        Assert.False(policy.Apply(Room, First, "GRADE", [A]));
+        var offline = Start(store, Room);
+        Assert.Equal(new[] {B}, offline.ReadDesktop()!.BlockedHosts);
+        Assert.True(offline.ApplyTiming(Room, First, "CLASS", schedule with {Revision = 3, UnavailableBehavior = "BLOCK"}));
+        Assert.Equal(new[] {A, B}, offline.ReadDesktop()!.BlockedHosts.Order(StringComparer.Ordinal));
+        offline.Bind(NextRoom);
+        Assert.Empty(store.Slots);
+    }
+
+    [Fact]
+    public void SamePublicationUpdatesOnlyTheActiveSetAndInvalidatesAnEarlierObservation()
+    {
+        var store = new MemoryStore();
+        WebsitePhaseObservation phase = new("LESSON");
+        var policy = new EdgeWebsitePolicy(Path.Combine(Path.GetTempPath(), "edge-test"), () => store, () => phase);
+        policy.Bind(Room);
+        Assert.True(policy.ApplyTiming(Room, First, "GRADE", new(1, [new(A, "LESSON|AFTER_SCHOOL"), new(B, "ALWAYS")], "ALLOW")));
+        var lesson = policy.ReadDesktop()!;
+        Assert.Equal(new[] {A, B}, lesson.BlockedHosts);
+        int alwaysSlot = store.Slots.Single(row => row.Value == "." + B).Key;
+        phase = default;
+        policy.RefreshTiming();
+        Assert.True(policy.SchedulePhaseHeld);
+        Assert.Equal(lesson.ObservationId, policy.ReadDesktop()!.ObservationId);
+        Assert.Equal(new[] {A, B}, policy.ReadDesktop()!.BlockedHosts);
+        phase = new("BREAK");
+        policy.RefreshTiming();
+        Assert.False(policy.SchedulePhaseHeld);
+        Assert.Equal(new[] {B}, policy.ReadDesktop()!.BlockedHosts);
+        Assert.False(policy.Observe(new(lesson.ObservationId, A)));
+        Assert.Equal("." + B, store.Slots[alwaysSlot]);
+        phase = new("AFTER_SCHOOL");
+        policy.RefreshTiming();
+        Assert.Equal(new[] {A, B}, policy.ReadDesktop()!.BlockedHosts.Order(StringComparer.Ordinal));
+        phase = new(null, true);
+        policy.RefreshTiming();
+        Assert.Equal(new[] {B}, policy.ReadDesktop()!.BlockedHosts);
+    }
+
     private static EdgeWebsitePolicy Start(MemoryStore store, string bind)
     {
         var result = new EdgeWebsitePolicy(Path.Combine(Path.GetTempPath(), "edge-test"), () => store);

@@ -243,8 +243,16 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
             if (_websitePolicyReceipt is { } websiteReceipt)
             {
                 var data = (JsonObject)websiteReceipt.DeepClone();
-                if (data["schemaVersion"]?.GetValue<int>() == 2 && _edgeWebsitePolicy is not null)
-                    data["status"] = _edgeWebsitePolicy.Status;
+                if (_websitePolicyApplied && _edgeWebsitePolicy is { } edge)
+                {
+                    edge.RefreshTiming();
+                    data["status"] = edge.Status;
+                    if (data["schemaVersion"]?.GetValue<int>() == 3)
+                    {
+                        data["schedulePhase"] = edge.SchedulePhase;
+                        if (edge.SchedulePhaseHeld) data["phaseHeld"] = true;
+                    }
+                }
                 receipt["websitePolicyReceipt"] = data;
             }
             // Inventory budgets alone omit the selected IDs repeated in this receipt.

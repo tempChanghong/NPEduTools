@@ -10,7 +10,7 @@ using NPEduTools.ClassIsland.Bridge.Contracts;
 
 // Test-only server. Never occupy the real ClassIsland endpoint.
 if (args.Length != 2 || !args[0].StartsWith("NPEduTools.Test.", StringComparison.Ordinal) ||
-    args[1] is not ("bridge" or "healthy" or "hang" or "drop" or "error" or "empty" or "schedule" or "schedule-clock" or "schedule-switch" or "schedule-undefined")) return 2;
+    args[1] is not ("bridge" or "healthy" or "hang" or "drop" or "error" or "empty" or "schedule" or "schedule-clock" or "schedule-switch" or "schedule-undefined" or "website")) return 2;
 using var provider = new IpcProvider(args[0]);
 var routed = new JsonIpcDirectRoutedProvider(provider);
 var clients = new ConcurrentBag<string>();
@@ -32,7 +32,7 @@ provider.StartServer();
 routed.StartServer();
 Console.WriteLine("READY");
 // Safety net for interrupted test runners; parents normally dispose this process immediately.
-using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(args[1] == "bridge" ? 180 : 60));
+using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(args[1] == "website" ? 480 : args[1] == "bridge" ? 180 : 60));
 try
 {
     while (!lifetime.IsCancellationRequested)
@@ -54,7 +54,13 @@ return 0;
 
 internal sealed class FakeLessons(string mode) : IPublicLessonsService
 {
-    public bool IsTimerRunning => mode != "empty";
+    private readonly string? _websiteControl = Environment.GetEnvironmentVariable("NPEEDUTOOLS_TEST_WEBSITE_STATE");
+    private string WebsiteState()
+    {
+        try { return _websiteControl is { } path ? File.ReadAllText(path).Trim() : "Paused"; }
+        catch (IOException) { return "Paused"; }
+    }
+    public bool IsTimerRunning => mode != "empty" && (mode != "website" || WebsiteState() != "Paused");
     public ClassPlan? CurrentClassPlan { get; set; }
     public int CurrentSelectedIndex { get; set; } = mode == "empty" ? -1 : 2;
     public Subject NextClassSubject { get; set; } = new();
@@ -69,6 +75,13 @@ internal sealed class FakeLessons(string mode) : IPublicLessonsService
             if (mode == "hang") Thread.Sleep(Timeout.Infinite);
             if (mode == "drop") Environment.Exit(0);
             if (mode == "error") throw new InvalidOperationException("Simulated service failure");
+            if (mode == "website") return WebsiteState() switch
+            {
+                "Lesson" => TimeState.OnClass,
+                "Break" => TimeState.Breaking,
+                "AfterSchool" => TimeState.AfterSchool,
+                _ => TimeState.None
+            };
             return mode == "empty" ? TimeState.None : TimeState.OnClass;
         }
         set => throw new NotSupportedException();
