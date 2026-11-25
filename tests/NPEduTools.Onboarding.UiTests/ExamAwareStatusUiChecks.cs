@@ -21,7 +21,7 @@ internal static partial class Program
     {
         var previous = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
-        try { RunExamAwareLayoutAndStatesCheck(); RunExamAwareConfirmationChecks(); RunExamAwareProtocolChecks(); RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareOrderingCheck(true); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
+        try { RunEmbeddedExamAwareWorkspaceCheck(); RunExamAwareLayoutAndStatesCheck(); RunExamAwareConfirmationChecks(); RunExamAwareProtocolChecks(); RunExamAwareQuickChecks(); RunExamAwareOrderingCheck(); RunExamAwareOrderingCheck(true); RunExamAwareLostReplyCheck(); RunExamAwareExportCheck(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     private static void RunExamAwareLayoutAndStatesCheck()

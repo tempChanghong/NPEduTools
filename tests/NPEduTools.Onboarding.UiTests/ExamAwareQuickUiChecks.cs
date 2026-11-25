@@ -60,7 +60,8 @@ internal static partial class Program
                     PumpUntil(() => idle.IsCompleted, "quick access error dispatch did not settle");
                     Assert(eventError is null, "access-denied quick entry raised an unhandled " + eventError?.GetType().Name + ": " + eventError?.Message);
                     var fallback = Fallback();
-                    Assert(fallback?.IsVisible == true, "access denial did not open the examination management window");
+                    Assert(fallback is not null && WorkspacePanel.Visible(fallback) && WorkspacePanel.DialogOwner(fallback) == window,
+                        "access denial did not open examination management in the main window");
                     Assert(((TextBlock)fallback!.FindName("Connection")).Text.Contains("未确认") &&
                         !Button(fallback, "PresentPlanButton").IsEnabled && !Button(fallback, "EnableAutoStartButton").IsEnabled,
                         "access denial presented an actionable bridge or startup state");
@@ -161,14 +162,14 @@ internal static partial class Program
                     PumpUntil(() => idle.IsCompleted, "quick event exception dispatch did not settle");
                     Assert(eventError is null, scenario + ": quick event raised an unhandled exception: " + eventError?.Message);
                     bool shouldOpen = scenario is not ("accepted" or "stopped");
-                    Assert(shouldOpen ? Fallback()?.IsVisible == true : Fallback() is null,
+                    Assert(shouldOpen ? Fallback() is { } view && WorkspacePanel.Visible(view) && WorkspacePanel.DialogOwner(view) == window : Fallback() is null,
                         scenario + ": fallback visibility ignored the response or the stopped lifetime");
                     if (shouldOpen)
                     {
                         var fallback = Fallback()!;
                         Assert(((TextBlock)fallback.FindName("Connection")).Text.Contains("未确认"),
                             "unconfirmed quick receipt appeared connected");
-                        if (scenario == "request-id") Snapshot(fallback, "examaware-quick-unconfirmed.png");
+                        if (scenario == "request-id") Snapshot(window, "examaware-quick-unconfirmed.png");
                         if (server.IsConnected) server.Disconnect();
                         stage = "status recovery";
                         var query = Read();
@@ -181,7 +182,7 @@ internal static partial class Program
                             ((TextBlock)fallback.FindName("Connection")).Text == "隔离桥接已连接",
                             "fallback did not recover on fresh status");
                         restored.GetAwaiter().GetResult();
-                        if (scenario == "request-id") Snapshot(fallback, "examaware-quick-recovered.png");
+                        if (scenario == "request-id") Snapshot(window, "examaware-quick-recovered.png");
                     }
                     Checks.Add("ExamAware quick " + scenario + ": event settles without a crash; fallback recovery is read-only and stopped windows stay closed");
                 }

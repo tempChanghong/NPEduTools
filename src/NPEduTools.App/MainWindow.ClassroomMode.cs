@@ -17,7 +17,7 @@ public partial class MainWindow
         {
             _classroomModeWindow = new ClassroomModeWindow(_pipe,
                 ShowClassIslandPathSettings,
-                () => AdminPanelClicked(this, new RoutedEventArgs()), ShowExamAware);
+                () => AdminPanelClicked(this, new RoutedEventArgs()), () => ShowExamAwareFrom(returnTo: ShowClassroomMode));
             Closed += (_, _) => _classroomModeWindow.Shutdown();
         }
         _classroomModeWindow.Show();

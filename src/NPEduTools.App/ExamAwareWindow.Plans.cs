@@ -13,28 +13,23 @@ public partial class ExamAwareWindow
     private void RenderPlan(ExamAwareStatus? state, bool ready)
     {
         _prepared = _allowPreparedPlan ? state?.PreparedPlan : null;
+        bool canChoose = state is { BridgeState: "Connected", CanPresent: true };
         PreparePlanButton.IsEnabled = ready && state?.CanPresent == true;
         PresentPlanButton.IsEnabled = ready && _prepared is not null && state?.Player is { Known: true, Sessions.Length: 0 };
-        PlanReadinessHint.Text = state is null
-            ? "后台连接未确认；恢复连接后再校验或开始放映。"
-            : state.BridgeState == "Connected" && state.CanPresent
-                ? "先校验编辑器导出的方案，核对摘要后开始放映。已有放映不会被替换。"
-                : state.BridgeState == "UnsupportedVersion"
-                    ? "当前软件版本不在支持范围（1.5.2–1.x），暂不能校验或放映方案。"
-                    : state.BridgeState != "Connected"
-                        ? "完成软件启动与桥接配对后，可在此校验并开始本地考试放映。"
-                        : "当前桥接未开放放映权限；需要桥接 0.4.0 及以上并授权放映与状态读取。";
-        PlanOperationText.Text = state is null
-            ? "后台状态未知，恢复连接后重新核对方案和放映状态。"
-            : state.PlanOperation?.Message ?? (state.BridgeState == "Connected" && state.CanPresent
-                ? _prepared is null ? "先选择并校验方案，再核对摘要后开始放映。" : "请核对已校验的方案摘要后开始放映。"
-                : state.BridgeState == "UnsupportedVersion"
-                    ? "当前版本与支持范围（Windows 正式版 1.5.2–1.x）不匹配，暂不放行方案校验与放映。"
-                    : state.BridgeState != "Connected"
-                        ? string.IsNullOrWhiteSpace(state.ExecutablePath)
-                            ? "请先登记 ExamAware.exe 位置并完成桥接配对后再校验方案。"
-                            : "桥接未连接（软件未运行或尚未配对），连接后可校验并放映方案。"
-                        : "需要桥接插件 0.4.0 或兼容版本，并授权放映与状态读取权限。");
+        PlanActions.Visibility = canChoose ? Visibility.Visible : Visibility.Collapsed;
+        PresentPlanButton.Visibility = _prepared is null ? Visibility.Collapsed : Visibility.Visible;
+        PreparePlanButton.Style = (Style)FindResource(PresentPlanButton.IsEnabled ? "TeacherQuiet" : "TeacherPrimary");
+        PresentPlanButton.Style = (Style)FindResource(PresentPlanButton.IsEnabled ? "TeacherPrimary" : "TeacherQuiet");
+        PlanReadinessHint.Text = state switch
+        {
+            null => "后台连接未确认，恢复后需重新核对方案与放映状态。",
+            { BridgeState: "UnsupportedVersion" } => "当前软件版本不在支持范围（1.5.2–1.x）。",
+            { BridgeState: not "Connected" } => "启动软件并完成桥接配对后，即可校验方案。",
+            { CanPresent: false } => "需要桥接 0.4.0 及以上，并授权放映与状态读取。",
+            _ => "已有放映不会被替换。"
+        };
+        PlanOperationText.Text = state?.PlanOperation?.Message ?? "";
+        PlanOperationText.Visibility = string.IsNullOrEmpty(PlanOperationText.Text) ? Visibility.Collapsed : Visibility.Visible;
         PlanIdentityText.Text = _prepared is { } identity ? "文件 SHA-256：" + identity.Sha256 : "";
         PlanSummaryText.Text = _prepared is { } p
             ? $"{p.ExamName} · {p.Exams.Length} 场考试\n" + string.Join("\n", p.Exams.Select(x => $"{x.Name}　{x.Start} → {x.End}　提前 {x.AlertTime} 分钟提醒")) +
@@ -61,7 +56,7 @@ public partial class ExamAwareWindow
     {
         if (_busy) return;
         var dialog = new OpenFileDialog { Title = "选择 ExamAware 考试方案", Filter = "考试方案 JSON|*.json|所有文件|*.*", CheckFileExists = true };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(WorkspacePanel.DialogOwner(this)) != true) return;
         // Drop the old start button immediately, including when the new file fails to read.
         _allowPreparedPlan = false; _prepared = null; PresentPlanButton.IsEnabled = false;
         try
@@ -83,7 +78,7 @@ public partial class ExamAwareWindow
     {
         if (_busy || _prepared is not { } plan) return;
         long revision = _revision;
-        if (MessageBox.Show(this, $"开始放映“{plan.ExamName}”（{plan.Exams.Length} 场）吗？\n将使用刚才校验的文件内容；如文件已修改，请取消并重新校验。\n已有放映不会被替换。",
+        if (MessageBox.Show(WorkspacePanel.DialogOwner(this), $"开始放映“{plan.ExamName}”（{plan.Exams.Length} 场）吗？\n将使用刚才校验的文件内容；如文件已修改，请取消并重新校验。\n已有放映不会被替换。",
             "开始考试放映", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
         await RunAsync("examaware.plan", expectedRevision: revision, plan: new("start", PreparationId: plan.PreparationId));
     }

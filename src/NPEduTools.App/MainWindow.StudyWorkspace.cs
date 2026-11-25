@@ -64,12 +64,12 @@ public partial class MainWindow
     private void SchoolWorkspaceClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace("School");
     private void ReportWorkspaceClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace("Reports");
 
-    private void HideStudyWorkspace()
+    private void HideStudyWorkspace(bool keepCalibration)
     {
         CancelWorkspaceReports();
         StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = Visibility.Collapsed;
         StudyNav.Tag = null;
-        CloseWorkspaceCalibration();
+        if (!keepCalibration) CloseWorkspaceCalibration();
     }
     private void ShowStudyWorkspace(string tab)
     {
@@ -141,6 +141,13 @@ public partial class MainWindow
         var meter = new SoundMeterWindow(_pipe) { OpenWorkspaceReference = ShowWorkspaceReference };
         SetWorkspaceCalibration(meter);
         RestoreWindow();
+    }
+    private void RestoreWorkspaceCalibration()
+    {
+        SelectPageCore(false, keepCalibration: true);
+        HomePage.Visibility = Visibility.Collapsed;
+        HomeNav.Tag = null; StudyNav.Tag = "active"; PageBreadcrumb.Text = "自习 / 联机校准 (Beta)";
+        WorkspaceCalibration.Visibility = Visibility.Visible;
     }
     private void ShowWorkspaceReference(NoiseReferenceWindow reference)
     { SetWorkspaceCalibration(reference); }

@@ -3,6 +3,14 @@
  Background="{DynamicResource TeacherPageBrush}" Foreground="{DynamicResource TeacherTextBrush}" FontFamily="{DynamicResource TeacherFont}" Icon="/Assets/npedutools.ico" UseLayoutRounding="True">
  <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" AutomationProperties.Name="考试看板与 ExamAware2 配置">
   <StackPanel x:Name="PageStack" Margin="18,14,18,18">
+   <Button x:Name="ExamAwareBackButton" Visibility="Collapsed" Click="BackClicked" Style="{StaticResource TeacherQuiet}"
+           HorizontalAlignment="Left" Padding="8,4" Margin="0,0,0,4"
+           AutomationProperties.AutomationId="ExamAwareBack" AutomationProperties.Name="返回">
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+     <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+     <TextBlock Text="返回" FontSize="13" VerticalAlignment="Center"/>
+    </StackPanel>
+   </Button>
    <!-- 页眉：标题与桥接状态徽标 -->
    <DockPanel Margin="0,0,0,4">
     <Border x:Name="BridgeBadge" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0" Padding="10,4" CornerRadius="6"
@@ -27,19 +35,17 @@
      <TextBlock x:Name="Connection" Text="正在读取…" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap"
                 AutomationProperties.AutomationId="ExamAwareConnection" AutomationProperties.LiveSetting="Polite"/>
 
-     <Border x:Name="NextActionSurface" Background="{DynamicResource TeacherPageBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
-             BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,8,0,10">
-      <StackPanel>
-       <TextBlock Text="下一步" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TeacherMutedBrush}"/>
-       <TextBlock x:Name="NextActionText" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherTextBrush}" Margin="0,2,0,0"
-                  AutomationProperties.AutomationId="ExamAwareNextAction" AutomationProperties.LiveSetting="Polite"/>
-      </StackPanel>
-     </Border>
+     <TextBlock x:Name="NextActionText" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,8"
+                AutomationProperties.AutomationId="ExamAwareNextAction" AutomationProperties.LiveSetting="Polite"/>
 
+     <WrapPanel x:Name="PlanActions" Visibility="Collapsed">
+      <Button Style="{StaticResource TeacherPrimary}" x:Name="PreparePlanButton" Content="选择并校验方案…" Click="PreparePlanClicked" IsEnabled="False" Margin="0,0,8,8" AutomationProperties.AutomationId="ExamAwarePreparePlan"/>
+      <Button Style="{StaticResource TeacherPrimary}" x:Name="PresentPlanButton" Content="开始放映" Click="PresentPlanClicked" IsEnabled="False" Visibility="Collapsed" Margin="0,0,0,8" AutomationProperties.AutomationId="ExamAwarePresentPlan"/>
+     </WrapPanel>
      <WrapPanel x:Name="RuntimeActions">
       <Button x:Name="StartButton" Content="打开考试看板" Style="{StaticResource TeacherPrimary}" Click="StartClicked" AutomationProperties.AutomationId="ExamAwareStart" Margin="0,0,8,6"/>
-      <Button x:Name="SettingsButton" Style="{StaticResource TeacherButton}" Content="软件设置" Click="SettingsClicked" AutomationProperties.AutomationId="ExamAwareSettings" Margin="0,0,8,6"/>
-      <Button Style="{StaticResource TeacherButton}" x:Name="QuitButton" Content="正常退出" Click="QuitClicked" IsEnabled="False" AutomationProperties.AutomationId="ExamAwareQuit" Margin="0,0,8,6"/>
+      <Button x:Name="SettingsButton" Style="{StaticResource TeacherQuiet}" Content="软件设置" Click="SettingsClicked" AutomationProperties.AutomationId="ExamAwareSettings" Margin="0,0,8,6"/>
+      <Button Style="{StaticResource TeacherQuiet}" x:Name="QuitButton" Content="正常退出" Click="QuitClicked" IsEnabled="False" AutomationProperties.AutomationId="ExamAwareQuit" Margin="0,0,8,6"/>
       <Button x:Name="ConfigureButton" Content="连接配置" Click="ConfigureClicked" Style="{StaticResource TeacherQuiet}" Margin="0,0,0,6" AutomationProperties.AutomationId="ExamAwareConfigure"/>
      </WrapPanel>
 
@@ -65,16 +71,12 @@
    <!-- 任务组 1：本地考试方案与放映（可折叠） -->
    <Border x:Name="PlanCard" Style="{StaticResource SettingsGroupSurface}" Padding="16,12" Margin="0,0,0,10">
     <StackPanel>
-     <TextBlock Text="考试方案与放映" FontSize="16" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2"/>
+     <TextBlock Text="考试方案" FontSize="16" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2"/>
      <TextBlock x:Name="PlanReadinessHint" Text="先校验编辑器导出的方案，核对摘要后开始放映。已有放映不会被替换。"
                 TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,4,0,6"/>
-     <Expander x:Name="PlanConfiguration" Header="本地方案校验与手动放映" Style="{DynamicResource TeacherExpander}" IsExpanded="True"
-               AutomationProperties.AutomationId="ExamAwarePlanSection" AutomationProperties.Name="本地方案校验与手动放映">
+     <Expander x:Name="PlanConfiguration" Header="方案摘要" Style="{DynamicResource TeacherExpander}" IsExpanded="True"
+               AutomationProperties.AutomationId="ExamAwarePlanSection" AutomationProperties.Name="方案摘要">
       <StackPanel Margin="0,4,0,2">
-       <WrapPanel>
-        <Button Style="{StaticResource TeacherButton}" x:Name="PreparePlanButton" Content="选择并校验方案…" Click="PreparePlanClicked" IsEnabled="False" Margin="0,0,8,8" AutomationProperties.AutomationId="ExamAwarePreparePlan"/>
-        <Button x:Name="PresentPlanButton" Content="开始放映" Style="{StaticResource TeacherPrimary}" Click="PresentPlanClicked" IsEnabled="False" Margin="0,0,0,8" AutomationProperties.AutomationId="ExamAwarePresentPlan"/>
-       </WrapPanel>
        <TextBlock x:Name="PlanFileText" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,0,0,6">
         <TextBlock.Style>
          <Style TargetType="TextBlock">
@@ -108,16 +110,13 @@
    <!-- 任务组 2：路径、配对与启动（可折叠） -->
    <Border x:Name="SetupCard" Style="{StaticResource SettingsGroupSurface}" Padding="16,12">
     <StackPanel>
-     <TextBlock Text="路径、配对与启动" FontSize="16" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2"/>
-     <TextBlock Text="登记 ExamAware.exe 位置、安装并配对桥接插件，以及管理当前用户登录自启动。"
-                TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,4,0,6"/>
+     <TextBlock Text="路径、配对与启动" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,6" AutomationProperties.HeadingLevel="Level2"/>
 
      <Expander x:Name="ConnectionConfiguration" Header="程序位置与桥接配对" Style="{DynamicResource TeacherExpander}" IsExpanded="True"
                AutomationProperties.AutomationId="ExamAwareConfiguration" AutomationProperties.Name="程序位置与桥接配对">
       <StackPanel Margin="0,4,0,4">
-       <TextBlock Text="1. 程序位置" FontSize="14" FontWeight="SemiBold"/>
-       <TextBlock Text="选择安装目录中的 ExamAware.exe，核对后保存。适配 Windows 正式版 1.5.2 及以上 1.x（低于 2.0.0）。"
-                  Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" FontSize="13" Margin="0,3,0,8"/>
+       <TextBlock Text="选择 ExamAware.exe 后保存（适配 Windows 1.5.2 及以上 1.x 正式版）。"
+                  Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" FontSize="13" Margin="0,0,0,8"/>
        <Grid>
         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <TextBox Style="{StaticResource TeacherInput}" x:Name="Executable" MinHeight="44" VerticalContentAlignment="Center" Padding="8"
@@ -130,9 +129,8 @@
 
        <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="0,0,0,12"/>
 
-       <TextBlock Text="2. 桥接插件与配对（v2）" FontSize="14" FontWeight="SemiBold"/>
-       <TextBlock Text="首次连接：打开插件设置安装并启用 NPEduTools 桥接插件 → 导出配对文件 → 若首次启动进入快速开始向导请先退出，在 ExamAware 主页面点击“连接 NPEduTools”并导入。配对凭据仅写入导出的 JSON 文件，不在界面明文展示。"
-                  TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,3,0,10"/>
+       <TextBlock Text="首次连接：安装并启用桥接插件 → 导出配对文件 → 退出首次快速开始向导后，在 ExamAware 主页点击“连接 NPEduTools”导入（凭据仅写入文件，不展示明文）。"
+                  TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,0,0,10"/>
        <WrapPanel x:Name="PairingActions">
         <Button Style="{StaticResource TeacherButton}" Content="打开插件设置" Click="PluginsClicked" AutomationProperties.AutomationId="ExamAwarePlugins" Margin="0,0,8,8"/>
         <Button Style="{StaticResource TeacherButton}" Content="导出配对文件" Click="ExportClicked" AutomationProperties.AutomationId="ExamAwareExport" Margin="0,0,8,8"/>
@@ -145,7 +143,7 @@
 
      <TextBlock x:Name="AutoStartText" Text="登录自启动登记：未知" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"
                 AutomationProperties.AutomationId="ExamAwareAutoStart" AutomationProperties.LiveSetting="Polite"/>
-     <Expander x:Name="AutoStartConfiguration" Header="登录自启动设置" Style="{DynamicResource TeacherExpander}" AutomationProperties.Name="登录自启动设置" Margin="0,6,0,0">
+     <Expander x:Name="AutoStartConfiguration" Header="登录自启动设置" Style="{DynamicResource TeacherExpander}" AutomationProperties.AutomationId="ExamAwareAutoStartConfiguration" AutomationProperties.Name="登录自启动设置" Margin="0,6,0,0">
       <StackPanel Margin="0,4,0,0">
        <TextBlock Text="针对当前 Windows 用户的启动登记；任务管理器仍可能禁用该启动项。日常／考试环境请优先通过课堂模式统一切换。"
                   Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,10"/>

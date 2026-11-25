@@ -15,7 +15,7 @@ $pipe = 'NPEduTools.Test.examaware-ui.' + [Guid]::NewGuid().ToString('N')
 & (Join-Path $PSScriptRoot 'initialize-test-agreements.ps1') -Pipe $pipe
 $out = Join-Path $root ('.artifacts/examaware-ui/' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $out -Force | Out-Null
-$title = '考试看板 · ExamAware2'
+$title = 'NPEduTools'
 $checks = [Collections.Generic.List[string]]::new()
 function Window([string]$name = $title) {
     [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,
@@ -54,13 +54,16 @@ try {
     foreach ($arg in @('--pipe',$pipe,'--classisland-pipe',($pipe + '.absent'))) { $start.ArgumentList.Add($arg) }
     $app = [Diagnostics.Process]::Start($start)
     Click 'OobeLater' 'NPEduTools · 初始设置'
+    $mainHandle = (Window).Current.NativeWindowHandle
     Click 'OpenExamAware' 'NPEduTools'
     $null = Wait-Control 'ExamAwareConnection' '尚未连接'
+    if ((Window).Current.NativeWindowHandle -ne $mainHandle -or (Window '考试看板 · ExamAware2')) { throw 'ExamAware management did not stay in the original window.' }
     $null = Wait-Control 'ExamAwareAutoStart' '未知'
     $quit = Control 'ExamAwareQuit'
     if (-not $quit -or $quit.Current.IsEnabled) { throw 'Quit must be disabled while disconnected.' }
     $null = Wait-Control 'ExamAwareQuitStatus' '连接桥接'
     $checks.Add('Normal quit is unavailable without a connected bridge and saved executable')
+    (Wait-Control 'ExamAwareAutoStartConfiguration').GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
     foreach ($id in @('ExamAwareAutoStartEnable','ExamAwareAutoStartDisable')) {
         $item = Control $id
         if (-not $item -or $item.Current.IsEnabled) { throw 'Auto-start controls must be disabled while disconnected.' }
@@ -84,13 +87,15 @@ try {
     $null = Wait-Control 'ExamAwareMessage' '不存在'
     $checks.Add('Invalid path is rejected without launching another application')
     Snapshot 'management.png'
-    (Window).GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
+    Click 'ExamAwareBack'
+    Click 'OpenQuick'
     Click 'RailTools' 'NPEduTools 快捷工具'
     Click 'QuickExamAware' 'NPEduTools 快捷工具'
     $null = Wait-Control 'ExamAwareConnection' '尚未连接'
-    $checks.Add('Sidebar entry opens setup when no path is configured; management window can reopen')
-    (Window).GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
-    Click 'RailSettings' 'NPEduTools 快捷工具'
+    $draft = (Wait-Control 'ExamAwarePath').GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).Current.Value
+    if ($draft -notlike '*不存在的中文*' -or (Window).Current.NativeWindowHandle -ne $mainHandle) { throw 'Sidebar fallback lost the draft or opened another window.' }
+    $checks.Add('Sidebar launch fallback restores the original management page and its path draft')
+    Click 'ExamAwareBack'
     Click 'StopHost' 'NPEduTools'
     if (-not $app.WaitForExit(20000)) { throw 'App did not exit.' }
     @{passed=$true;checks=$checks.ToArray();completedAt=[DateTimeOffset]::Now} | ConvertTo-Json -Depth 4 |

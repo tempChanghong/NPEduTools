@@ -82,19 +82,16 @@ try {
     $null = Wait-Control 'ClassroomDaily'
     $checks.Add('Management window reopens after closing')
     Click 'ClassroomSetupClassIsland'
-    $null = Wait-Control 'PageBreadcrumb' '偏好设置' 'NPEduTools'
+    $null = Wait-Control 'PageBreadcrumb' '设备与连接' 'NPEduTools'
     Click 'OpenClassroomMode' 'NPEduTools'
     $null = Wait-Control 'ClassroomSetupSummary' '还有配置需要处理'
     Click 'ClassroomSetupAdmin'
-    $null = Wait-Control 'PageBreadcrumb' '偏好设置' 'NPEduTools'
+    $null = Wait-Control 'PageBreadcrumb' '设备与连接' 'NPEduTools'
     Click 'OpenClassroomMode' 'NPEduTools'
     $null = Wait-Control 'ClassroomSetupSummary' '还有配置需要处理'
     Click 'ClassroomSetupExamAware'
-    $end = [DateTime]::UtcNow.AddSeconds(10)
-    do { $examWindow = Window '考试看板 · ExamAware2'; if (-not $examWindow) { Start-Sleep -Milliseconds 100 } } while (-not $examWindow -and [DateTime]::UtcNow -lt $end)
-    if (-not $examWindow) { throw 'ExamAware setup entry did not open settings' }
-    $examWindow.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()
-    Click 'OpenClassroomMode' 'NPEduTools'
+    $null = Wait-Control 'ExamAwareBack' '返回' 'NPEduTools'
+    Click 'ExamAwareBack' 'NPEduTools'
     $null = Wait-Control 'ClassroomSetupSummary' '还有配置需要处理'
     $checks.Add('All three setup links open existing settings and returning rechecks prerequisites')
     (Window).GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()

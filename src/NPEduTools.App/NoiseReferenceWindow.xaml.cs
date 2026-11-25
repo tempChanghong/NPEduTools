@@ -54,6 +54,7 @@ public partial class NoiseReferenceWindow : Window
     private bool _busy, _reading, _connected, _closing, _allowClose, _verifying;
     private TaskCompletionSource? _pendingUsbStart;
     private Guid? _autoFieldDraft;
+    internal bool HasActiveSample => _pendingUsbStart is not null || _autoFieldDraft is not null || _state?.State == "Sampling";
     private long? _autoPrimaryRevision;
     private bool _autoCheckQueued, _autoCheckStarted, _renderingPreferences;
     private int _step = 1;

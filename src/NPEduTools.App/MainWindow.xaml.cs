@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         InitializeDensity(initializeServices);
         InitializeStudyWorkspace();
         InitializeBridgeClock();
+        StateChanged += (_, _) => UpdateExamAwareWindowState();
         Closed += (_, _) => ShutdownExitWarning();
         DataContext = _model;
         if (initializeServices)
@@ -161,7 +162,8 @@ public partial class MainWindow : Window
     public void RestoreWindow()
     {
         _quick?.Collapse(false);
-        if (!IsVisible) Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        if (!IsVisible) Show();
+        if (WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(this);
         Activate();
     }
 
@@ -174,10 +176,12 @@ public partial class MainWindow : Window
     }
     private void HomeNavClicked(object sender, RoutedEventArgs e) => SelectPage(false);
     private void SettingsNavClicked(object sender, RoutedEventArgs e) => ShowSettings();
-    private void SelectPage(bool settings)
+    private void SelectPage(bool settings) => SelectPageCore(settings);
+    private void SelectPageCore(bool settings, bool keepCalibration = false)
     {
-        HideStudyWorkspace();
+        HideStudyWorkspace(keepCalibration);
         HideRecordingWorkspace();
+        HideExamAwareWorkspace();
         AboutPageView.Visibility = Visibility.Collapsed;
         AboutNav.Tag = null;
         if (!settings) PageBreadcrumb.Text = "主页";
@@ -190,7 +194,17 @@ public partial class MainWindow : Window
     }
     private void RefreshToday() => TodayText.Text = DateTime.Now.ToString("M月d日 dddd", System.Globalization.CultureInfo.GetCultureInfo("zh-CN"));
     private void OpenQuickClicked(object sender, RoutedEventArgs e) { Hide(); _quick?.OpenPanel(); }
-    private void MinimizeClicked(object sender, RoutedEventArgs e) => HideToEdge();
+    private void MinimizeClicked(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
+    private void MaximizeRestoreClicked(object sender, RoutedEventArgs e)
+    {
+        if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this);
+        else SystemCommands.MaximizeWindow(this);
+    }
+    private void CollapseToSideRailClicked(object sender, RoutedEventArgs e)
+    {
+        if (_quick is not null) HideToEdge();
+        else if (_tray is not null) Hide();
+    }
     private void DockLeftClicked(object sender, RoutedEventArgs e) => _quick?.SetSide(true);
     private void DockRightClicked(object sender, RoutedEventArgs e) => _quick?.SetSide(false);
 

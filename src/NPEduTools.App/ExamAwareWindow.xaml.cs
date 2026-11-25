@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using NPEduTools.Contracts;
 
@@ -16,21 +17,57 @@ public partial class ExamAwareWindow : Window
     private long _generation;
     private ExamAwareStatus? _state;
     private string? _savedExecutablePath;
+    private Action? _returnToWorkspace;
+    private bool _workspaceAwaitingStatus;
     private bool _loadedPath, _busy, _closing, _configurationPresented, _planPresented, _wasConnected, _protocolMismatch;
     public ExamAwareWindow(string pipe)
     {
         _pipe = pipe;
         InitializeComponent();
         DesktopDialogSizing.Attach(this, pipe);
+        PageScroll.SizeChanged += (_, e) => UpdatePageLayout(e.NewSize.Width);
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Hide(); } };
-        Closed += (_, _) => _lifetime.Cancel();
+        Closed += (_, _) => { _closing = true; _lifetime.Cancel(); };
         Render(null);
         _ = PollAsync();
     }
-    public void Shutdown() { _closing = true; Close(); }
-    private void WindowSizeChanged(object sender, SizeChangedEventArgs e)
+    public void Shutdown()
     {
-        bool compact = ActualWidth > 0 && ActualWidth < 600;
+        if (_closing) return;
+        _closing = true;
+        _lifetime.Cancel();
+        Close();
+    }
+
+    internal void SetWorkspaceReturn(Action returnTo)
+    {
+        _returnToWorkspace = returnTo;
+        ExamAwareBackButton.Visibility = Visibility.Visible;
+    }
+
+    internal void FocusWorkspaceEntry() => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+    {
+        if (!_closing && WorkspacePanel.Visible(this) && WorkspacePanel.DialogOwner(this).IsActive)
+        {
+            PageScroll.ScrollToTop();
+            ExamAwareBackButton.Focus();
+        }
+    });
+
+    internal void WorkspaceVisibilityChanged(bool visible)
+    {
+        if (_closing) return;
+        _generation++;
+        _workspaceAwaitingStatus = true;
+        if (visible) Render(_state);
+    }
+
+    private void BackClicked(object sender, RoutedEventArgs e) => _returnToWorkspace?.Invoke();
+    private void WindowSizeChanged(object sender, SizeChangedEventArgs e) => UpdatePageLayout(e.NewSize.Width);
+
+    private void UpdatePageLayout(double contentWidth)
+    {
+        bool compact = contentWidth > 0 && contentWidth < 600;
         PageStack.Margin = compact ? new Thickness(12, 10, 12, 14) : new Thickness(18, 14, 18, 18);
         PageTitle.FontSize = compact ? 21 : 24;
         PageSubtitle.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
@@ -160,19 +197,30 @@ public partial class ExamAwareWindow : Window
             return;
         }
         SetBadge("已连接 · 就绪", "TeacherSuccessBrush");
-        NextActionText.Text = "可选择并校验考试方案，核对摘要后开始放映。";
+        NextActionText.Text = _allowPreparedPlan && state.PreparedPlan is { } plan
+            ? $"已校验 {plan.ExamName}（{plan.Exams.Length} 场），请核对下方摘要。"
+            : "选择 ExamAware 编辑器导出的考试方案。";
     }
     private void Render(ExamAwareStatus? state)
     {
         if (state is not null) _protocolMismatch = false;
         _state = state;
-        RuntimeActions.IsEnabled = Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled = !_busy && state is not null;
+        Connection.Visibility = state?.BridgeState == "Connected" ? Visibility.Collapsed : Visibility.Visible;
+        RuntimeActions.IsEnabled = Actions.IsEnabled = PairingActions.IsEnabled = AutoStartActions.IsEnabled =
+            !_busy && !_workspaceAwaitingStatus && state is not null;
         bool missingLocal = IsMissingLocalExecutable(state?.ExecutablePath);
         bool needsExecutable = state is not null && (string.IsNullOrWhiteSpace(state.ExecutablePath) || missingLocal);
         StartButton.IsEnabled = SettingsButton.IsEnabled = !needsExecutable;
+        StartButton.Style = (Style)FindResource(needsExecutable || state is { BridgeState: "Connected", CanPresent: true }
+            ? "TeacherQuiet" : "TeacherPrimary");
         ConfigureButton.Content = needsExecutable ? "登记程序位置" : "连接配置";
         ConfigureButton.Style = (Style)FindResource(needsExecutable ? "TeacherPrimary" : "TeacherQuiet");
         RenderOverview(state, missingLocal);
+        if (_workspaceAwaitingStatus && state is not null)
+        {
+            SetBadge("正在核对连接", "TeacherMutedBrush");
+            NextActionText.Text = "正在读取当前桥接状态，已输入的内容会保留。";
+        }
         if (state is not null && !_configurationPresented)
         {
             _configurationPresented = true;
@@ -192,7 +240,7 @@ public partial class ExamAwareWindow : Window
             PlanConfiguration.IsExpanded = true;
         }
         if (connected) _wasConnected = true;
-        bool ready = !_busy && !needsExecutable && state?.BridgeState == "Connected" &&
+        bool ready = !_busy && !_workspaceAwaitingStatus && !needsExecutable && state?.BridgeState == "Connected" &&
             state.Quit?.State is not ("Sending" or "AwaitingExit") && state.AutoStartChange?.State != "Sending" && state.PlanOperation?.State != "Sending";
         RenderPlan(state, ready);
         QuitButton.IsEnabled = ready;
@@ -224,7 +272,7 @@ public partial class ExamAwareWindow : Window
     {
         while (!_lifetime.IsCancellationRequested)
         {
-            if (IsVisible && !_busy)
+            if (WorkspacePanel.Visible(this) && WorkspacePanel.DialogOwner(this).WindowState != WindowState.Minimized && !_busy)
             {
                 long generation = _generation;
                 try
@@ -232,6 +280,7 @@ public partial class ExamAwareWindow : Window
                     var response = await RequestAsync("examaware.status");
                     if (!_closing && !_busy && generation == _generation)
                     {
+                        _workspaceAwaitingStatus = false;
                         _protocolMismatch = false;
                         Render(response.ExamAware);
                     }
@@ -240,6 +289,7 @@ public partial class ExamAwareWindow : Window
                 {
                     if (!_closing && !_busy && generation == _generation)
                     {
+                        _workspaceAwaitingStatus = false;
                         _protocolMismatch = ex is InvalidDataException or JsonException;
                         Render(null);
                     }
@@ -250,31 +300,33 @@ public partial class ExamAwareWindow : Window
     }
     private async Task RunAsync(string capability, bool save = false, bool? autoStartEnabled = null, long? expectedRevision = null, ExamAwarePlanInput? plan = null)
     {
-        if (_closing || _busy || _state is null) return;
+        if (_closing || _busy || _workspaceAwaitingStatus || _state is null) return;
         _generation++;
         _busy = true; Render(_state);
         Message.Text = "正在等待后台确认…";
         try
         {
             var response = await RequestAsync(capability, save, autoStartEnabled, expectedRevision, plan);
+            if (_closing) return;
             if (plan?.Action == "prepare") _allowPreparedPlan = response.Outcome == "Accepted";
             _protocolMismatch = false;
             Render(response.ExamAware); Message.Text = response.Message;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
+            if (_closing) return;
             _protocolMismatch = ex is InvalidDataException or JsonException;
             Render(null);
             Message.Text = _protocolMismatch
                 ? "未收到有效后台回执（协议不匹配或回执无效），请先检查软件窗口及连接状态，再决定是否重试。"
                 : "未收到后台结果，请先检查软件窗口及连接状态，再决定是否重试。";
         }
-        finally { _busy = false; Render(_state); }
+        finally { _busy = false; if (!_closing) Render(_state); }
     }
     private void BrowseClicked(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog { Title = "选择 ExamAware2", Filter = "ExamAware 程序|ExamAware.exe", CheckFileExists = true };
-        if (dialog.ShowDialog(this) == true) Executable.Text = dialog.FileName;
+        if (dialog.ShowDialog(WorkspacePanel.DialogOwner(this)) == true) Executable.Text = dialog.FileName;
     }
     private void ConfigureClicked(object sender, RoutedEventArgs e)
     {
@@ -293,35 +345,35 @@ public partial class ExamAwareWindow : Window
         if (_busy) return;
         string action = enabled ? "开启" : "关闭";
         long confirmedRevision = _revision;
-        if (MessageBox.Show(this, $"确定{action}以下程序的登录自启动吗？\n{_savedExecutablePath}\n\n设置针对当前 Windows 用户；结果以软件读回的登记状态为准。",
+        if (MessageBox.Show(WorkspacePanel.DialogOwner(this), $"确定{action}以下程序的登录自启动吗？\n{_savedExecutablePath}\n\n设置针对当前 Windows 用户；结果以软件读回的登记状态为准。",
             "设置登录自启动", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
             await RunAsync("examaware.autostart.set", autoStartEnabled: enabled, expectedRevision: confirmedRevision);
     }
     private async Task ConfirmRevisionActionAsync(string capability, Func<bool> confirm)
     {
-        if (_closing || _busy || _state is null) return;
+        if (_closing || _busy || _workspaceAwaitingStatus || _state is null) return;
         // A modal dialog keeps dispatching status polls; bind consent before it opens.
         long confirmedRevision = _revision;
         if (confirm()) await RunAsync(capability, expectedRevision: confirmedRevision);
     }
     private async void QuitClicked(object sender, RoutedEventArgs e) =>
-        await ConfirmRevisionActionAsync("examaware.quit", () => MessageBox.Show(this,
+        await ConfirmRevisionActionAsync("examaware.quit", () => MessageBox.Show(WorkspacePanel.DialogOwner(this),
             "请确认已保存并关闭考试编辑器、结束放映。\nExamAware 在编辑器仍打开时可能无法正常退出。现在继续退出吗？",
             "正常退出 ExamAware", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK);
     private async void ResetPairingClicked(object sender, RoutedEventArgs e) =>
-        await ConfirmRevisionActionAsync("examaware.pairing.reset", () => MessageBox.Show(this,
+        await ConfirmRevisionActionAsync("examaware.pairing.reset", () => MessageBox.Show(WorkspacePanel.DialogOwner(this),
             "撤销后，现有配对文件会失效，需要重新导出并在 ExamAware 中导入。",
             "撤销当前配对", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK);
     private async void ExportClicked(object sender, RoutedEventArgs e)
     {
-        if (_closing || _busy || _state is null) return;
+        if (_closing || _busy || _workspaceAwaitingStatus || _state is null) return;
         var dialog = new SaveFileDialog { Title = "导出本机配对文件", FileName = "NPEduTools-ExamAware-pairing.json", Filter = "配对文件|*.json" };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(WorkspacePanel.DialogOwner(this)) != true) return;
         await ExportPairingAsync(dialog.FileName);
     }
     private async Task ExportPairingAsync(string fileName)
     {
-        if (_closing || _busy || _state is null) return;
+        if (_closing || _busy || _workspaceAwaitingStatus || _state is null) return;
         _generation++;
         _busy = true; Render(_state);
         Message.Text = "正在等待后台并导出配对文件…";
@@ -329,15 +381,18 @@ public partial class ExamAwareWindow : Window
         try
         {
             var response = await RequestAsync("examaware.pairing.get");
+            if (_closing) return;
             received = true;
             _protocolMismatch = false;
             Render(response.ExamAware);
             if (response.ExamAwarePairing is not { } pairing) { Message.Text = response.Message; return; }
             await File.WriteAllTextAsync(fileName, JsonSerializer.Serialize(pairing, Protocol.Json), _lifetime.Token);
+            if (_closing) return;
             Message.Text = "已导出。请在 ExamAware 中导入；配对文件含连接凭据，导入后可删除。";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
         {
+            if (_closing) return;
             if (!received)
             {
                 _protocolMismatch = ex is InvalidDataException or JsonException;
@@ -347,6 +402,6 @@ public partial class ExamAwareWindow : Window
                 ? "未能导出：后台协议不匹配或回执无效，未写入配对文件。"
                 : "未能导出，请检查后台连接与保存位置。";
         }
-        finally { _busy = false; Render(_state); }
+        finally { _busy = false; if (!_closing) Render(_state); }
     }
 }
