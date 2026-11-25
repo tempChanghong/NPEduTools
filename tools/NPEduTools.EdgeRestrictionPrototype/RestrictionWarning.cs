@@ -4,6 +4,7 @@ using System.Media;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -74,13 +75,15 @@ internal sealed class RestrictionWarning : Window
         var right = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 40, 62, 40) };
         right.Children.Add(WhiteText(29, "本教室大屏已限制访问此网站"));
         var site = WhiteText(57, host);
-        site.FontWeight = FontWeights.SemiBold;
         site.Margin = new(0, 30, 0, 20);
         right.Children.Add(site);
         right.Children.Add(WhiteText(29, policy));
         countdown.Margin = new(0, 52, 0, 0);
         right.Children.Add(countdown);
-        return ClassroomWarningSurface.Create(Translations, right, emphasizedLine: 4);
+        var surface = ClassroomWarningSurface.Create(Translations, right, emphasizedLine: 4);
+        TextElement.SetFontFamily(surface, new FontFamily("Microsoft YaHei, Yu Gothic, Malgun Gothic, Segoe UI"));
+        TextElement.SetFontWeight(surface, FontWeights.Bold);
+        return surface;
     }
 
     private static TextBlock WhiteText(double size, string? value = null) => new()

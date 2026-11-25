@@ -16,11 +16,15 @@ internal static class ClassroomWarningSurface
         panel.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         var left = new TextBlock
         {
-            FontFamily = new("Segoe UI"), FontSize = 49, LineHeight = 91, Foreground = Brushes.White,
+            FontSize = 49, LineHeight = 91, Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center, Margin = new(64, 40, 40, 40),
             TextAlignment = TextAlignment.Left
         };
-        if (emphasizedLine < 0) left.Text = translations;
+        if (emphasizedLine < 0)
+        {
+            left.FontFamily = new("Segoe UI");
+            left.Text = translations;
+        }
         else
         {
             var lines = translations.Split('\n');
@@ -31,7 +35,7 @@ internal static class ClassroomWarningSurface
                 if (i == emphasizedLine)
                 {
                     row.FontSize = 64;
-                    row.FontWeight = FontWeights.SemiBold;
+                    row.FontWeight = FontWeights.Bold;
                 }
                 left.Inlines.Add(row);
             }
