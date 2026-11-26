@@ -5,9 +5,9 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.App;
 
-internal enum SidebarDrawState { Running, Succeeded, Pending, Failed, SetupRequired, Reconciled }
+internal enum SidebarDrawState { Succeeded, Pending, Failed, SetupRequired, Reconciled }
 
-internal sealed record SidebarDrawReceipt(SidebarDrawState State, string Detail, Guid? RequestId = null, string? WinnerName = null);
+internal sealed record SidebarDrawReceipt(SidebarDrawState State, string Detail, Guid? RequestId = null);
 
 public partial class SecRandomWindow
 {
@@ -65,9 +65,11 @@ public partial class SecRandomWindow
                 operation = lookup.Operation;
                 if (operation is null) return PendingSidebarDraw(id);
             }
-            return operation.State is "Succeeded" or "Failed" or "Acknowledged"
-                ? ConfirmedSidebarDraw(operation)
-                : PendingSidebarDraw(id, operation);
+            if (operation.State is not ("Succeeded" or "Failed" or "Acknowledged")) return PendingSidebarDraw(id, operation);
+            // The workspace can still show this exact result even if the general status
+            // snapshot has already moved on to a different operation.
+            _sidebarVerifiedDraw = operation;
+            return ConfirmedSidebarDraw(operation);
         }
         catch (Exception error) when (IsSidebarConnectionError(error))
         {
@@ -128,12 +130,12 @@ public partial class SecRandomWindow
         _sidebarPendingDraw = id;
         _sidebarObservedDraw = operation;
         _sidebarReceiptAbsent = false;
-        return new(SidebarDrawState.Pending, "回执未确认，请在课堂点名核对这次抽取。", id);
+        return new(SidebarDrawState.Pending, "回执未确认，请到课堂点名核实。", id);
     }
 
     private static SidebarDrawReceipt ConfirmedSidebarDraw(SecRandomOperation operation) => operation.State switch
     {
-        "Succeeded" => new(SidebarDrawState.Succeeded, "本次闪抽已完成。", operation.RequestId, operation.Winner?.Name),
+        "Succeeded" => new(SidebarDrawState.Succeeded, "本次闪抽已完成。", operation.RequestId),
         "Acknowledged" => new(SidebarDrawState.Reconciled, "已核实这次闪抽。", operation.RequestId),
         _ => new(SidebarDrawState.Failed, "本次闪抽未完成，请在课堂点名查看。", operation.RequestId)
     };

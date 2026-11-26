@@ -8,10 +8,12 @@ namespace NPEduTools.App;
 public partial class QuickAccessWindow
 {
     private const double DrawReceiptWidth = 263;
+    private const long FlashDrawRepeatDelayMs = 450;
     private Func<Task<SidebarDrawReceipt>>? _secRandomQuickDraw;
     private Func<Task>? _verifySecRandomDraw;
     private SidebarDrawReceipt? _drawReceipt;
-    private bool _drawReceiptOpen, _drawNameRevealed;
+    private bool _drawReceiptOpen, _drawInFlight;
+    private long _nextDrawAllowedTick;
     private TouchDevice? _drawTouch;
     private Button? _drawTouchButton;
     private bool _drawTouchCancelled;
@@ -22,7 +24,7 @@ public partial class QuickAccessWindow
         {
             button.PreviewTouchDown += (_, e) =>
             {
-                if (_drawTouch is null && button.IsEnabled)
+                if (_drawTouch is null && button.IsEnabled && CanPressDrawButton(button))
                 {
                     _drawTouch = e.TouchDevice;
                     _drawTouchButton = button;
@@ -48,10 +50,22 @@ public partial class QuickAccessWindow
             {
                 if (_drawTouch == e.TouchDevice) CancelDrawTouch();
             };
-            button.PreviewMouseLeftButtonDown += (_, e) => { if (IsPromotedTouch(e) || _drawTouch is not null) e.Handled = true; };
+            button.PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                if (IsPromotedTouch(e) || _drawTouch is not null || !CanPressDrawButton(button)) e.Handled = true;
+            };
             button.PreviewMouseLeftButtonUp += (_, e) => { if (IsPromotedTouch(e) || _drawTouch is not null) e.Handled = true; };
+            button.PreviewKeyDown += (_, e) =>
+            {
+                if ((button == RailSecRandom || button == DrawNext) && e.IsRepeat && e.Key is Key.Enter or Key.Space)
+                    e.Handled = true;
+            };
         }
     }
+
+    private bool CanPressDrawButton(Button button) =>
+        !(button == RailSecRandom || button == DrawNext) || _drawReceipt?.State == SidebarDrawState.Pending ||
+        !_drawInFlight && Environment.TickCount64 >= _nextDrawAllowedTick;
 
     private bool DrawButtonContains(Button button, TouchEventArgs e) =>
         new Rect(button.RenderSize).Contains(button.PointFromScreen(PointToScreen(e.GetTouchPoint(this).Position)));
@@ -74,9 +88,9 @@ public partial class QuickAccessWindow
 
     private async void RailSecRandomClicked(object sender, RoutedEventArgs e)
     {
-        if (_closing || _autoHidden || _moveOrigin is not null || _placement.Compact) return;
+        if (_closing || _autoHidden || _moveOrigin is not null || _placement.Compact || !CanPressDrawButton(RailSecRandom)) return;
         if (_drawReceipt is null) await StartSidebarDrawAsync();
-        else if (_drawReceipt.State != SidebarDrawState.Running)
+        else
         {
             if (_expanded) Collapse();
             _drawReceiptOpen = true;
@@ -86,38 +100,45 @@ public partial class QuickAccessWindow
 
     private async Task StartSidebarDrawAsync()
     {
-        if (_secRandomQuickDraw is null || _closing || _autoHidden || _placement.Compact ||
-            _drawReceipt?.State is SidebarDrawState.Running or SidebarDrawState.Pending) return;
+        if (_secRandomQuickDraw is null || _closing || _autoHidden || _placement.Compact || _moveOrigin is not null ||
+            _drawInFlight || _drawReceipt?.State == SidebarDrawState.Pending || Environment.TickCount64 < _nextDrawAllowedTick) return;
         Collapse();
-        _drawReceipt = new(SidebarDrawState.Running, "正在等待 SecRandom 回执。");
-        _drawReceiptOpen = true;
+        _drawInFlight = true;
+        _drawReceipt = null;
         RenderDrawReceipt();
-        var receipt = await _secRandomQuickDraw();
-        if (_closing) return;
-        _drawReceipt = receipt;
-        RenderDrawReceipt();
+        _drawReceiptOpen = true; // A later collapse or protected display revokes this intent.
+        try
+        {
+            var receipt = await _secRandomQuickDraw();
+            if (!_closing) ApplyDrawReceipt(receipt);
+        }
+        finally { _drawInFlight = false; }
     }
 
     internal void ApplyVerifiedSidebarDraw(SidebarDrawReceipt receipt)
     {
         if (_drawReceipt is not { State: SidebarDrawState.Pending } pending ||
             pending.RequestId != receipt.RequestId || _closing) return;
-        _drawReceipt = receipt;
-        _drawNameRevealed = false;
+        ApplyDrawReceipt(receipt);
+    }
+
+    private void ApplyDrawReceipt(SidebarDrawReceipt receipt)
+    {
+        if (receipt.State is SidebarDrawState.Succeeded or SidebarDrawState.Reconciled)
+        {
+            _drawReceipt = null;
+            _nextDrawAllowedTick = Environment.TickCount64 + FlashDrawRepeatDelayMs;
+        }
+        else _drawReceipt = receipt;
         RenderDrawReceipt();
     }
 
     private async void DrawReceiptActionClicked(object sender, RoutedEventArgs e)
     {
         if (_drawReceipt is not { } receipt || !_drawReceiptOpen || _autoHidden) return;
-        if (receipt.State == SidebarDrawState.Succeeded)
-        {
-            _drawNameRevealed = true;
-            RenderDrawReceipt();
-            return;
-        }
         DismissDrawReceipt();
-        Position();
+        if (receipt.State is SidebarDrawState.Failed or SidebarDrawState.SetupRequired) _drawReceipt = null;
+        RenderDrawReceipt();
         if (receipt.State == SidebarDrawState.Pending && _verifySecRandomDraw is not null)
             await _verifySecRandomDraw();
         else if (receipt.State is SidebarDrawState.Failed or SidebarDrawState.SetupRequired)
@@ -131,14 +152,15 @@ public partial class QuickAccessWindow
 
     private void DrawReceiptDismissClicked(object sender, RoutedEventArgs e)
     {
+        if (_drawReceipt?.State is SidebarDrawState.Failed or SidebarDrawState.SetupRequired) _drawReceipt = null;
         DismissDrawReceipt();
-        Position();
+        RenderDrawReceipt();
     }
 
     private void DismissDrawReceipt()
     {
         CancelDrawTouch();
-        _drawReceiptOpen = _drawNameRevealed = false;
+        _drawReceiptOpen = false;
         DrawReceiptCard.Visibility = Visibility.Collapsed;
         DrawReceiptDetail.Text = "";
     }
@@ -147,21 +169,13 @@ public partial class QuickAccessWindow
     {
         CancelDrawTouch();
         var receipt = _drawReceipt;
-        var (label, glyph, title) = receipt?.State switch
-        {
-            SidebarDrawState.Running => ("抽取中", "…", "正在闪抽"),
-            SidebarDrawState.Succeeded => ("已抽取", "✓", "闪抽完成"),
-            SidebarDrawState.Pending => ("待核实", "!", "闪抽待核实"),
-            SidebarDrawState.Reconciled => ("已核实", "✓", "闪抽已核实"),
-            SidebarDrawState.SetupRequired => ("待配置", "抽", "先配置课堂点名"),
-            SidebarDrawState.Failed => ("未完成", "抽", "闪抽未完成"),
-            _ => ("闪抽", "抽", "闪抽一人")
-        };
-        RailSecRandomGlyph.Text = glyph;
-        RailSecRandomLabel.Text = label;
-        RailSecRandom.IsEnabled = _secRandomQuickDraw is not null && receipt?.State != SidebarDrawState.Running;
-        RailSecRandom.ToolTip = title;
-        AutomationProperties.SetName(RailSecRandom, title);
+        bool pending = receipt?.State == SidebarDrawState.Pending;
+        RailSecRandomGlyph.Text = pending ? "!" : "抽";
+        RailSecRandomLabel.Text = pending ? "待核实" : "闪抽";
+        RailSecRandom.IsEnabled = _secRandomQuickDraw is not null;
+        string railLabel = pending ? "闪抽待核实" : "闪抽一人";
+        RailSecRandom.ToolTip = railLabel;
+        AutomationProperties.SetName(RailSecRandom, railLabel);
         if (!_drawReceiptOpen || _autoHidden || _expanded || _moveOrigin is not null || _placement.Compact || receipt is null)
         {
             DismissDrawReceipt();
@@ -170,25 +184,17 @@ public partial class QuickAccessWindow
         }
 
         DrawReceiptCard.Visibility = Visibility.Visible;
-        DrawReceiptTitle.Text = title;
-        DrawReceiptDetail.Text = receipt.State == SidebarDrawState.Succeeded
-            ? _drawNameRevealed && receipt.WinnerName is { Length: > 0 } winner ? $"本次抽中：{winner}" : ""
-            : receipt.Detail;
-        DrawReceiptDetail.Visibility = DrawReceiptDetail.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        string? primary = receipt.State switch
+        var (title, action) = receipt.State switch
         {
-            SidebarDrawState.Succeeded when !_drawNameRevealed && receipt.WinnerName is { Length: > 0 } => "查看结果",
-            SidebarDrawState.Pending => "核实",
-            SidebarDrawState.SetupRequired => "去配置",
-            SidebarDrawState.Failed => "查看课堂点名",
-            _ => null
+            SidebarDrawState.Pending => ("闪抽待核实", "核实"),
+            SidebarDrawState.SetupRequired => ("先配置课堂点名", "去配置"),
+            _ => ("闪抽未完成", "打开课堂点名")
         };
-        DrawReceiptAction.Content = primary;
-        DrawReceiptAction.Visibility = primary is null ? Visibility.Collapsed : Visibility.Visible;
-        DrawNext.Content = receipt.State is SidebarDrawState.Succeeded or SidebarDrawState.Reconciled
-            ? "再抽一位" : "重新检查并闪抽";
-        DrawNext.Visibility = receipt.State is SidebarDrawState.Succeeded or SidebarDrawState.Reconciled or
-            SidebarDrawState.SetupRequired or SidebarDrawState.Failed ? Visibility.Visible : Visibility.Collapsed;
+        DrawReceiptTitle.Text = title;
+        DrawReceiptDetail.Text = receipt.Detail;
+        DrawReceiptAction.Content = action;
+        DrawNext.Content = receipt.State == SidebarDrawState.SetupRequired ? "重新检查并闪抽" : "重试闪抽";
+        DrawNext.Visibility = pending ? Visibility.Collapsed : Visibility.Visible;
         Position();
     }
 }

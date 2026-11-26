@@ -49,7 +49,12 @@ internal static partial class Program
                 accepted.TrySetResult(request.RequestId);
                 return Task.FromResult(Reply("Accepted", ready with { Operation = operation }));
             }
-            Assert(call == 2, "an extra gesture submitted another draw");
+            if (call == 2)
+            {
+                receipts[request.RequestId] = Successful(operation, "第二次抽中同学");
+                return Task.FromResult(Reply("Succeeded", ready with { Operation = receipts[request.RequestId] }));
+            }
+            Assert(call == 3, "an extra gesture submitted another draw");
             receipts[request.RequestId] = Successful(operation, "断线本次同学");
             throw new IOException("Drop the reply after executing this exact draw.");
         }, stop.Token));
@@ -77,6 +82,8 @@ internal static partial class Program
             var next = Button(quick, "DrawNext");
             var dismiss = Button(quick, "DrawReceiptDismiss");
             var pointerEvents = new Queue<string>();
+            var inFlight = typeof(QuickAccessWindow).GetField("_drawInFlight", flags)!;
+            bool DrawInFlight() => (bool)inFlight.GetValue(quick)!;
             quick.AddHandler(UIElement.PreviewTouchDownEvent, new EventHandler<TouchEventArgs>((_, e) => TracePointer("down", e)), true);
             quick.AddHandler(UIElement.PreviewTouchUpEvent, new EventHandler<TouchEventArgs>((_, e) => TracePointer("up", e)), true);
             Assert(InitializeTouchInjection(1, 3), "Windows touch injection unavailable: " + Marshal.GetLastWin32Error());
@@ -85,55 +92,57 @@ internal static partial class Program
             Tap(flash, Button(quick, "RailSettings"));
             Assert(draws.IsEmpty && !card.IsVisible && slideNumber() == 1, "sliding out of Flash Draw invoked a button or advanced the show");
             Tap(flash);
-            PumpUntil(() => accepted.Task.IsCompleted && label.Text == "抽取中" && card.IsVisible, "first touch did not show progress");
-            quick.UpdateLayout();
-            Assert(label.ActualWidth >= 40 && label.TextTrimming == TextTrimming.None && label.IsVisible,
-                "the three-character busy label can be clipped at compact density");
-            Snapshot(quick, "01-flash-running-right.png");
+            PumpUntil(() => accepted.Task.IsCompleted, "first touch did not reach the background");
+            Assert(label.Text == "闪抽" && flash.IsEnabled && Equals(flash.ToolTip, "闪抽一人") && !card.IsVisible,
+                "an ordinary in-flight draw changed the sidebar or opened a card");
+            Snapshot(quick, "01-flash-quiet-during-draw.png");
             Tap(flash); Tap(flash);
-            Assert(draws.Count == 1 && !flash.IsEnabled, $"repeated touch did not stay busy: draws={draws.Count}, enabled={flash.IsEnabled}");
+            Assert(draws.Count == 1 && DrawInFlight(), "repeated touch did not stay on the original in-flight draw");
             var shift = flash.PointToScreen(new Point()) - originalPoint;
             Assert(shift.Length <= 2, $"opening the receipt moved the rail beyond native pixel rounding: {shift}");
-            Checks.Add("Native touch sliding out is inert; valid touch shows progress at the same coordinates and repeated touches submit once.");
+            Checks.Add("Native touch sliding out is inert. During an ordinary draw the rail stays visually unchanged and repeated touches submit once.");
 
             quick.SetAutoHidden(true);
             Guid first = accepted.Task.GetAwaiter().GetResult();
             receipts[first] = Successful(receipts[first], "成功本次同学");
-            PumpUntil(() => label.Text == "已抽取", "successful receipt did not settle while suppressed");
+            PumpUntil(() => !DrawInFlight(), "successful receipt did not settle while suppressed");
             Assert(!quick.IsVisible && !card.IsVisible && !main.IsVisible, "a late receipt overrode protected presentation");
             quick.SetAutoHidden(false);
-            Assert(!card.IsVisible && label.Text == "已抽取", "return from protected display lost the badge or reopened the card");
+            Assert(!card.IsVisible && label.Text == "闪抽", "return from protected display announced a completed draw");
 
             quick.SetSide(true);
             // Let Windows reestablish the injection target after hiding, showing,
             // and moving the layered HWND in the same programmatic transaction.
-            Pause(450);
+            Pause(520);
             Tap(flash);
-            PumpUntil(() => card.IsVisible, $"left receipt did not reopen, state={label.Text}, enabled={flash.IsEnabled}, events={string.Join("|", pointerEvents)}");
-            Assert(card.IsVisible && !detail.Text.Contains("同学") && !((string)flash.ToolTip).Contains("同学") && draws.Count == 1,
-                $"reopening disclosed a name or drew again: draws={draws.Count}, detail={detail.Text}");
+            PumpUntil(() => draws.Count == 2 && !DrawInFlight(),
+                $"later touch did not complete a new draw, events={string.Join("|", pointerEvents)}");
+            var cooldown = typeof(QuickAccessWindow).GetField("_nextDrawAllowedTick", flags)!;
+            Assert(Environment.TickCount64 + 160 < (long)cooldown.GetValue(quick)!, "fixture missed the fast-success double-tap window");
+            Tap(flash);
+            Assert(draws.Count == 2 && !card.IsVisible && label.Text == "闪抽" && detail.Text.Length == 0 && Equals(flash.ToolTip, "闪抽一人"),
+                "fast success announced a result or allowed the second half of a double-tap");
+            var pointName = (SecRandomWindow)typeof(MainWindow).GetField("_secRandomWindow", flags)!.GetValue(main)!;
+            Assert(((TextBlock)pointName.FindName("WinnerText")).Text.Contains("第二次抽中同学") && !main.IsVisible,
+                "ordinary success did not retain the exact result privately for the classroom roll-call workspace");
+            Snapshot(quick, "02-flash-quiet-after-success.png");
+            Checks.Add("Completion while hidden stays silent after return. An intentional later touch draws again, while a double-tap immediately after a fast success is suppressed.");
+
+            Pause(520);
+            Tap(flash);
+            PumpUntil(() => label.Text == "待核实" && card.IsVisible, "lost command reply did not retain a visible pending disposition");
+            Assert(draws.Count == 3 && !next.IsVisible && !main.IsVisible &&
+                !detail.Text.Contains("旧抽取姓名") && !detail.Text.Contains("断线本次同学"), "lost reply enabled redraw, disclosed a name or navigated automatically");
             Assert(card.TranslatePoint(new Point(), quick).X > flash.TranslatePoint(new Point(), quick).X,
                 "left-side card opened toward the screen edge");
-            foreach (var button in new[] { action, next, dismiss })
+            foreach (var button in new[] { action, dismiss })
             {
                 var hit = button.TransformToAncestor(quick).TransformBounds(new Rect(button.RenderSize));
                 Assert(hit.Width >= 43.5 && hit.Height >= 43.5 && hit.Bottom <= quick.ActualHeight + 1,
                     "receipt touch action clipped or is smaller than 44 DIP: " + button.Name);
             }
-            Snapshot(quick, "02-flash-success-private-left.png");
-            Tap(action);
-            Assert(detail.Text.Contains("成功本次同学") && !detail.Text.Contains("旧抽取姓名"), "explicit view showed a different winner");
-            Tap(dismiss);
-            Assert(!card.IsVisible && label.Text == "已抽取" && detail.Text.Length == 0, "dismissal erased the state or retained a disclosed name");
-            Checks.Add("Completion arriving while hidden preserves only a badge on return. On the opposite edge, inward controls are 44 DIP and only an explicit action reveals the matched winner.");
-
-            Tap(flash);
-            Tap(next);
-            PumpUntil(() => label.Text == "待核实" && card.IsVisible, "lost command reply did not retain a visible pending disposition");
-            Assert(draws.Count == 2 && !next.IsVisible && !main.IsVisible &&
-                !detail.Text.Contains("旧抽取姓名") && !detail.Text.Contains("断线本次同学"), "lost reply enabled redraw, disclosed a name or navigated automatically");
             Tap(dismiss); Tap(flash); Tap(flash);
-            Assert(label.Text == "待核实" && draws.Count == 2 && card.IsVisible && QuickForeground() == slideHandle,
+            Assert(label.Text == "待核实" && draws.Count == 3 && card.IsVisible && QuickForeground() == slideHandle,
                 "tapping the outstanding receipt redrew or took PowerPoint focus");
             Snapshot(quick, "03-flash-pending-over-powerpoint.png");
             Assert(PostSlideKey(slideHandle, 0x100, 0x27, 0x014D0001) &&
@@ -143,11 +152,11 @@ internal static partial class Program
             Guid original = draws.Last();
             Tap(action, staysOnSlide: false);
             var workspace = (ContentControl)main.FindName("SecRandomWorkspaceHost");
-            PumpUntil(() => workspace.IsVisible && label.Text == "已抽取", "explicit verification did not recover the original completed draw");
+            PumpUntil(() => workspace.IsVisible && label.Text == "闪抽", "explicit verification did not recover the original completed draw");
             var controller = (SecRandomWindow)((WorkspacePanel)workspace.Content).Controller;
             var winner = (TextBlock)controller.FindName("WinnerText");
             Assert(winner.Text.Contains("断线本次同学") && !winner.Text.Contains("旧抽取姓名") &&
-                lookedUp.LastOrDefault() == original && draws.Count == 2 && !card.IsVisible,
+                lookedUp.LastOrDefault() == original && draws.Count == 3 && !card.IsVisible,
                 "verification showed the snapshot's previous draw, reopened the card, or resent a mutation");
             Snapshot(main, "04-flash-original-verified.png");
             Checks.Add("Lost command reply kept PowerPoint in foreground and usable; explicit verification opened the same main workspace and performed a read for the exact completed draw.");
