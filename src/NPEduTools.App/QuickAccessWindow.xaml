@@ -59,34 +59,62 @@
           <Button x:Name="ToolsTab" Style="{DynamicResource TeacherTab}" Content="课堂工具" Padding="8" Click="ToolsTabClicked" AutomationProperties.AutomationId="QuickToolsTab" Margin="0,0,3,0" />
           <Button x:Name="ShortcutsTab" Style="{DynamicResource TeacherTab}" Grid.Column="1" Content="我的快捷" Padding="8" Click="ShortcutsTabClicked" AutomationProperties.AutomationId="QuickShortcutsTab" Margin="3,0,0,0" />
         </Grid></Border>
-        <Border x:Name="PptQuickStrip" Grid.Row="2" Style="{DynamicResource SettingsGroupSurface}" Padding="10,8" Margin="0,0,0,8"
-                AutomationProperties.AutomationId="QuickPptStrip">
-          <StackPanel>
-            <DockPanel>
-              <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
-                <Ellipse x:Name="RailStatusDot" Fill="#A5B3AB" Width="6" Height="6" Margin="0,0,6,0" VerticalAlignment="Center" />
-                <TextBlock Text="PPT 触摸翻页" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-              </StackPanel>
-              <TextBlock x:Name="StatusText" Text="正在连接后台…" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
-                         TextTrimming="CharacterEllipsis" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"
-                         AutomationProperties.AutomationId="QuickTouchStatus" />
-            </DockPanel>
-            <Grid x:Name="PptActionLayout" Margin="0,8,0,0">
+        <Grid Grid.Row="2">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <Border x:Name="PptQuickStrip" Style="{DynamicResource SettingsGroupSurface}" Padding="10,8" Margin="0,0,6,8"
+                  AutomationProperties.AutomationId="QuickPptStrip">
+            <Grid x:Name="PptStripLayout">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition x:Name="PptActionGapColumn" Width="6" />
-                <ColumnDefinition x:Name="PptActionSecondaryColumn" Width="Auto" />
+                <ColumnDefinition x:Name="PptInlineActionColumn" Width="Auto" />
               </Grid.ColumnDefinitions>
-              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-              <Button x:Name="PauseButton" Style="{DynamicResource TeacherPrimary}" Content="暂停辅助" Padding="10,0"
-                      Visibility="Hidden" IsEnabled="False" Click="PauseClicked" AutomationProperties.AutomationId="QuickTouchPause" />
-              <Button x:Name="PowerButton" Grid.Column="2" Style="{DynamicResource TeacherButton}" Content="开启辅助" Padding="12,0"
-                      IsEnabled="False" Click="PowerClicked" AutomationProperties.AutomationId="QuickTouchPower" />
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <Grid x:Name="PptHeaderLayout" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition x:Name="PptTitleColumn" Width="*" />
+                  <ColumnDefinition x:Name="PptStatusColumn" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <Ellipse x:Name="RailStatusDot" Fill="#A5B3AB" Width="6" Height="6" Margin="0,0,6,0" VerticalAlignment="Center" />
+                  <TextBlock Text="PPT 触摸翻页" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock x:Name="StatusText" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Text="正在连接后台…" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
+                           TextTrimming="CharacterEllipsis" TextAlignment="Left" VerticalAlignment="Center" Margin="0,2,0,0"
+                           AutomationProperties.AutomationId="QuickTouchStatus" />
+              </Grid>
+              <Grid x:Name="PptActionLayout" Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition x:Name="PptActionPrimaryColumn" Width="0" />
+                  <ColumnDefinition x:Name="PptActionGapColumn" Width="0" />
+                  <ColumnDefinition x:Name="PptActionSecondaryColumn" Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <Button x:Name="PauseButton" Style="{DynamicResource TeacherPrimary}" Content="暂停辅助" Padding="10,0"
+                        Visibility="Collapsed" IsEnabled="False" Click="PauseClicked" AutomationProperties.AutomationId="QuickTouchPause" />
+                <Button x:Name="PowerButton" Grid.Column="2" Style="{DynamicResource TeacherButton}" Content="开启辅助" Padding="12,0"
+                        IsEnabled="False" Click="PowerClicked" AutomationProperties.AutomationId="QuickTouchPower" />
+              </Grid>
             </Grid>
-          </StackPanel>
-        </Border>
-        <ScrollViewer x:Name="ToolsPage" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
-          <Button x:Name="OnboardingEntry" Content="初始设置待完成 · 继续设置  →" Visibility="Collapsed" Click="OnboardingClicked" Style="{DynamicResource TeacherButton}" Margin="0,0,0,12" AutomationProperties.AutomationId="QuickOnboarding" />
+          </Border>
+          <Border Grid.Column="1" Width="{DynamicResource {x:Static SystemParameters.VerticalScrollBarWidthKey}}" IsHitTestVisible="False" />
+        </Grid>
+        <ScrollViewer x:Name="ToolsPage" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,6,0">
+          <Button x:Name="OnboardingEntry" Content="初始设置待完成 · 继续设置  →" Visibility="Collapsed" Click="OnboardingClicked" Style="{DynamicResource TeacherButton}" Margin="0,0,0,8" AutomationProperties.AutomationId="QuickOnboarding" />
           <StackPanel x:Name="TaskStack">
             <Border x:Name="StudyCard" Style="{DynamicResource SettingsGroupSurface}" Padding="10,8" Margin="0,0,0,8">
               <StackPanel>
@@ -138,7 +166,7 @@
                 </WrapPanel>
               </Grid>
               <Expander x:Name="AutomaticRecordingDetails" Style="{DynamicResource TeacherExpander}" IsExpanded="False"
-                        Header="自动录课与计划" AutomationProperties.AutomationId="QuickAutomaticRecordingDetails">
+                        Margin="0,6,0,0" Header="自动录课与计划" AutomationProperties.AutomationId="QuickAutomaticRecordingDetails">
                 <StackPanel>
                   <TextBlock x:Name="AutomaticStatus" Text="自动录制状态待确认" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" AutomationProperties.AutomationId="QuickAutomaticStatus" />
                   <Button x:Name="AutomaticSkipDay" Style="{DynamicResource TeacherButton}" Content="今天不再自动录制" Click="AutomaticSkipDayClicked" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickAutoSkipDay" />
@@ -159,7 +187,20 @@
             <TextBlock x:Name="ClassIslandStatus" Text="正在连接…" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
           </StackPanel></Border>
           <Button x:Name="SettingsFooter" Content="管理与设置  →" Margin="0,10,0,0" HorizontalAlignment="Stretch" Style="{DynamicResource TeacherQuiet}" Click="SettingsClicked" AutomationProperties.AutomationId="QuickOpenSettings" />
-        </StackPanel></ScrollViewer>
+        </StackPanel>
+          <Border Grid.Column="1" Width="{DynamicResource {x:Static SystemParameters.VerticalScrollBarWidthKey}}" IsHitTestVisible="False">
+            <Border.Style>
+              <Style TargetType="Border">
+                <Setter Property="Visibility" Value="Visible" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding ComputedVerticalScrollBarVisibility, ElementName=ToolsPage}" Value="Visible">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+          </Border>
+        </Grid></ScrollViewer>
         <ScrollViewer x:Name="ShortcutsPage" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
           <StackPanel x:Name="ShortcutsEmpty" Margin="0,10">
             <TextBlock Text="暂无快捷项" Style="{DynamicResource SettingsLabel}" Margin="0,0,0,8" />

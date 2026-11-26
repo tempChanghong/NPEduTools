@@ -12,7 +12,9 @@ public partial class QuickAccessWindow
     private TouchDevice? _pptTouch;
     private bool _pptPressOutside;
     private long _pptRevision, _pptKeyboardRevision;
-    private bool? _pptActionsStacked;
+    private enum PptLayoutMode { SingleInline, SingleWrapped, DualHorizontal, DualStacked }
+    private const double PptSingleWrapThreshold = 220, PptDualStackThreshold = 240;
+    private PptLayoutMode? _pptLayoutMode;
 
     private void InitializePptStrip()
     {
@@ -79,23 +81,51 @@ public partial class QuickAccessWindow
                 if (_pptKeyboardButton == button) _pptKeyboardButton = null;
             };
         }
-        PptActionLayout.SizeChanged += (_, _) => ArrangePptActions();
+        PptStripLayout.SizeChanged += (_, _) => ArrangePptActions();
     }
 
     private void ArrangePptActions()
     {
         double density = ((FrameworkElement)Content).LayoutTransform is System.Windows.Media.ScaleTransform transform
             ? transform.ScaleX : 1;
-        if (PptActionLayout.ActualWidth <= 0) return;
-        bool stacked = PptActionLayout.ActualWidth * density < 280;
-        if (_pptActionsStacked == stacked) return;
-        _pptActionsStacked = stacked;
+        double width = PptStripLayout.ActualWidth;
+        bool narrow = width > 0 && width * density < (_pptActions.Running ? PptDualStackThreshold : PptSingleWrapThreshold);
+        var mode = _pptActions.Running
+            ? (narrow ? PptLayoutMode.DualStacked : PptLayoutMode.DualHorizontal)
+            : (narrow ? PptLayoutMode.SingleWrapped : PptLayoutMode.SingleInline);
+        if (_pptLayoutMode == mode) return;
+        _pptLayoutMode = mode;
         InvalidatePptPress();
-        PptActionGapColumn.Width = new GridLength(stacked ? 0 : 6);
-        PptActionSecondaryColumn.Width = stacked ? new GridLength(0) : GridLength.Auto;
-        Grid.SetRow(PowerButton, stacked ? 1 : 0);
-        Grid.SetColumn(PowerButton, stacked ? 0 : 2);
-        PowerButton.Margin = stacked ? new Thickness(0, 6, 0, 0) : new Thickness();
+
+        bool inlineSingle = mode == PptLayoutMode.SingleInline;
+        bool stackedDual = mode == PptLayoutMode.DualStacked;
+        bool dual = mode is PptLayoutMode.DualHorizontal or PptLayoutMode.DualStacked;
+        bool rightPower = mode is PptLayoutMode.SingleInline or PptLayoutMode.DualHorizontal;
+
+        PptInlineActionColumn.Width = inlineSingle ? GridLength.Auto : new GridLength(0);
+        Grid.SetColumnSpan(PptHeaderLayout, inlineSingle ? 1 : 2);
+
+        PptTitleColumn.Width = dual ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+        PptStatusColumn.Width = dual ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        Grid.SetRow(StatusText, dual ? 0 : 1);
+        Grid.SetColumn(StatusText, dual ? 1 : 0);
+        Grid.SetColumnSpan(StatusText, dual ? 1 : 2);
+        StatusText.TextAlignment = dual ? TextAlignment.Right : TextAlignment.Left;
+        StatusText.Margin = dual ? new Thickness(8, 0, 0, 0) : new Thickness(0, 2, 0, 0);
+
+        Grid.SetRow(PptActionLayout, inlineSingle ? 0 : 1);
+        Grid.SetColumn(PptActionLayout, inlineSingle ? 1 : 0);
+        Grid.SetColumnSpan(PptActionLayout, inlineSingle ? 1 : 2);
+        PptActionLayout.Margin = inlineSingle ? new Thickness(8, 0, 0, 0) : new Thickness(0, 6, 0, 0);
+        PptActionLayout.VerticalAlignment = inlineSingle ? VerticalAlignment.Center : VerticalAlignment.Stretch;
+
+        PptActionPrimaryColumn.Width = inlineSingle ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        PptActionGapColumn.Width = new GridLength(mode == PptLayoutMode.DualHorizontal ? 6 : 0);
+        PptActionSecondaryColumn.Width = rightPower ? GridLength.Auto : new GridLength(0);
+
+        Grid.SetRow(PowerButton, stackedDual ? 1 : 0);
+        Grid.SetColumn(PowerButton, rightPower ? 2 : 0);
+        PowerButton.Margin = stackedDual ? new Thickness(0, 6, 0, 0) : new Thickness();
     }
 
     private void UpdatePptStrip(TouchAssistState? state, string status, bool available)
@@ -111,9 +141,10 @@ public partial class QuickAccessWindow
         PowerButton.Content = _pptActions.Running ? "停止辅助" : "开启辅助";
         PowerButton.IsEnabled = _pptActions.Available;
         PauseButton.Content = _pptActions.Paused ? "继续辅助" : "暂停辅助";
-        PauseButton.Visibility = _pptActions.Running ? Visibility.Visible : Visibility.Hidden;
+        PauseButton.Visibility = _pptActions.Running ? Visibility.Visible : Visibility.Collapsed;
         PauseButton.IsEnabled = _pptActions.Available && _pptActions.Running;
         PowerButton.SetResourceReference(StyleProperty, _pptActions.Running ? "TeacherButton" : "TeacherPrimary");
+        ArrangePptActions();
     }
 
     private bool CanUsePptAction(Button button) =>

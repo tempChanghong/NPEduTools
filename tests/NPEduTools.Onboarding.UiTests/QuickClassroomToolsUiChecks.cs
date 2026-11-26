@@ -61,9 +61,10 @@ internal static partial class Program
 
             quick.SetSide(false);
             quick.SetDensity(.9);
-            quick.UpdateStudy("自习空闲", "可以查看学校安排", "", "查看自习", false);
+            quick.UpdateStudy("当前没有自习任务", "可以即刻开始手动自习，或查看学校定时自习安排", "下一次定时自习：正在等待学校下发安排", "开始自习", false);
             quick.UpdateRecording(new("Idle", "当前未录制"));
-            Apply(running);
+            quick.SetOnboardingAction(() => { }, pending: true);
+            Apply(off);
             quick.ShowEntry(); quick.UpdateLayout();
             var hwnd = new WindowInteropHelper(quick).Handle;
             var pause = Button(quick, "PauseButton");
@@ -75,10 +76,20 @@ internal static partial class Program
             var plan = (Expander)quick.FindName("AutomaticRecordingDetails");
             var recordingControls = (FrameworkElement)quick.FindName("RecordingControls");
             var taskStack = (Panel)quick.FindName("TaskStack");
+            var status = (TextBlock)quick.FindName("StatusText");
+            var onboarding = Button(quick, "OnboardingEntry");
+            var study = Button(quick, "StudyButton");
+            var record = Button(quick, "RecordingButton");
             ClickFixturePoint(hwnd, quick.PointToScreen(QuickHandleCenter(quick)), slide,
                 () => PumpUntil(() => panel.IsVisible && HasForeground(quick), "the normal screen-edge handle did not open over PowerPoint"));
             Assert(InitializeTouchInjection(1, 3), "Windows touch injection unavailable: " + Marshal.GetLastWin32Error());
             quick.UpdateLayout();
+            AssertClosedPpt();
+            Assert(Bounds(status).Bottom <= Bounds(power).Bottom && Bounds(status).Bottom > Bounds(power).Top,
+                "the wide panel did not place the single PPT action beside its status");
+            Snapshot(quick, "00-ppt-off-wide.png");
+
+            Apply(running); quick.UpdateLayout();
             Assert(Grid.GetRow(power) == 0 && strip.IsVisible && !plan.IsExpanded, "wide tools did not show the PPT actions inline and keep automatic plans folded");
             Snapshot(quick, "01-classroom-tools-wide.png");
 
@@ -90,9 +101,56 @@ internal static partial class Program
             int y = Math.Clamp(before.Top, work.Top, work.Bottom - height);
             Assert(ResizeQuickTestWindow(hwnd, 0, before.Right - width, y, width, height, 0x14), "could not size the real panel to the short-screen cap");
             quick.UpdateLayout();
-            Assert(ReadQuickTestRect(hwnd, out var resized) && resized.Bottom - resized.Top == height && Grid.GetRow(power) == 1,
-                "the narrow native panel did not put the two PPT actions on separate rows");
+            Assert(ReadQuickTestRect(hwnd, out var resized) && resized.Bottom - resized.Top == height && Grid.GetRow(power) == 0,
+                "the short native panel stacked two PPT actions that fit side by side");
             Checks.Add($"Short native window {resized.Right - resized.Left}×{resized.Bottom - resized.Top} px under 840×600 cap; DPI={VisualTreeHelper.GetDpi(quick).PixelsPerInchX}.");
+            double runningStripHeight = Bounds(strip).Height;
+            AssertFirstUseToolsFit();
+            Snapshot(quick, "00-ppt-running-short-onboarding.png");
+            Apply(off); quick.UpdateLayout();
+            AssertClosedPpt();
+            Assert(runningStripHeight - Bounds(strip).Height >= 12, "the closed PPT strip did not move its only action beside the status");
+            AssertFirstUseToolsFit();
+            Assert(scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible, "the short fixture did not exercise a real scrollbar");
+            var header = (System.Windows.Controls.Primitives.ToggleButton)plan.Template.FindName("HeaderSite", plan);
+            Assert(!plan.IsExpanded && Bounds(header).Top - Bounds(record).Bottom >= 3,
+                "the recording plan still touched the row above it");
+            Snapshot(quick, "01-ppt-off-short-onboarding.png");
+            double setupRight = Bounds(onboarding).Right;
+            scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
+            quick.UpdateLayout();
+            AssertClosedPpt();
+            Assert(scroll.ComputedVerticalScrollBarVisibility != Visibility.Visible && Math.Abs(Bounds(onboarding).Right - setupRight) < 1.5,
+                "removing the scrollbar shifted the tools out of alignment");
+            scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+            quick.UpdateLayout();
+            Checks.Add("PPT off uses one action; fixed and scrollable cards align. First setup, study and recording all fit in the short viewport with assistance on or off.");
+
+            // Simulate a narrower work area by changing the panel allocation and its native bounds together.
+            var panelColumn = (ColumnDefinition)quick.FindName("LeftColumn");
+            var panelWidth = panelColumn.Width;
+            double scale = VisualTreeHelper.GetDpi(quick).DpiScaleX * ((ScaleTransform)((FrameworkElement)quick.Content).LayoutTransform).ScaleX;
+            int narrowWidth = width - (int)Math.Round(88 * scale);
+            panelColumn.Width = new GridLength(panelWidth.Value - 88);
+            Assert(ResizeQuickTestWindow(hwnd, 0, resized.Right - narrowWidth, resized.Top, narrowWidth, height, 0x14), "could not narrow the panel further");
+            Apply(running); quick.UpdateLayout();
+            Assert(Grid.GetRow(power) == 1 && Bounds(power).Top > Bounds(pause).Bottom && Bounds(strip).Contains(Bounds(power)),
+                "the two controls did not stack cleanly when their available width fell further");
+            Snapshot(quick, "04-ppt-running-extra-narrow.png");
+            Apply(off); quick.UpdateLayout();
+            AssertClosedPpt();
+            Assert(Bounds(power).Top >= Bounds(status).Bottom && Bounds(power).Top - Bounds(status).Bottom < 14,
+                "the wrapped single action left space for a hidden action row");
+            Snapshot(quick, "05-ppt-off-extra-narrow.png");
+
+            quick.Collapse();
+            PumpUntil(() => QuickForeground() == slide, "the first-use panel did not hand focus back to PowerPoint");
+            quick.SetOnboardingAction(() => { }, pending: false);
+            quick.UpdateStudy("自习空闲", "可以查看学校安排", "", "查看自习", false);
+            Apply(running);
+            quick.OpenPanel();
+            Assert(ResizeQuickTestWindow(hwnd, 0, resized.Left, resized.Top, width, height, 0x14), "could not restore the short panel after reopening");
+            quick.UpdateLayout();
             foreach (var item in new[] { pause, power })
             {
                 var bounds = item.TransformToAncestor(quick).TransformBounds(new Rect(item.RenderSize));
@@ -101,10 +159,10 @@ internal static partial class Program
                     "PPT action is clipped or below the first touch viewport");
             }
             var shortViewport = scroll.TransformToAncestor(quick).TransformBounds(new Rect(scroll.RenderSize));
-            foreach (var item in new[] { Button(quick, "StudyButton"), Button(quick, "RecordingButton") })
-                Assert(shortViewport.Contains(item.TransformToAncestor(quick).TransformBounds(new Rect(item.RenderSize))),
-                    "the idle classroom task action was clipped in the short first screen");
             Snapshot(quick, "02-classroom-tools-short.png");
+            foreach (var item in new[] { Button(quick, "StudyButton"), Button(quick, "RecordingButton") })
+                Assert(shortViewport.Contains(Bounds(item)),
+                    $"{item.Name} {Bounds(item)} was clipped in the short viewport {shortViewport}");
             var position = pause.PointToScreen(new Point());
             scroll.ScrollToEnd();
             PumpUntil(() => Math.Abs(scroll.VerticalOffset - scroll.ScrollableHeight) < .5,
@@ -168,12 +226,38 @@ internal static partial class Program
             PumpUntil(() => calls.Count == 4 && Equals(power.Content, "开启辅助") && power.IsEnabled,
                 "separate stop did not disable touch assistance");
             Assert(calls.Last() == "presentation.touch.disable", "stopping sent the wrong PPT action");
+            quick.UpdateLayout();
+            AssertClosedPpt();
+            Touch(power);
+            PumpUntil(() => calls.Count == 5 && calls.Last() == "presentation.touch.enable" && pause.IsVisible,
+                "the rearranged single action did not enable touch assistance");
             Click(quick, "ShortcutsTab");
             Assert(!strip.IsVisible, "PPT strip occupied the shortcuts page");
             quick.SetAutoHidden(true);
             Click(quick, "PowerButton");
-            Assert(!quick.IsVisible && calls.Count == 4, "protected full-screen suppression still allowed the PPT button");
+            Assert(!quick.IsVisible && calls.Count == 5, "protected full-screen suppression still allowed the PPT button");
             Checks.Add("Closing returns focus to the same Office slideshow and its next page. Reopening preserves the active recording's separate controls; protected full screen keeps the panel hidden.");
+
+            Rect Bounds(FrameworkElement element) => element.TransformToAncestor(quick).TransformBounds(new Rect(element.RenderSize));
+
+            void AssertFirstUseToolsFit()
+            {
+                var viewport = Bounds(scroll);
+                foreach (var item in new[] { onboarding, study, record })
+                    Assert(item.IsVisible && viewport.Contains(Bounds(item)), $"{item.Name} {Bounds(item)} was clipped in the first-use viewport {viewport}");
+            }
+
+            void AssertClosedPpt()
+            {
+                Assert(pause.Visibility == Visibility.Collapsed && power.IsVisible && power.IsEnabled && Equals(power.Content, "开启辅助"),
+                    "PPT off leaves an invisible pause slot in the layout or hides the start action");
+                var action = Bounds(power);
+                Assert(action.Width >= 43.5 && action.Height >= 43.5 && Bounds(strip).Contains(action),
+                    "the single PPT start control lost its touch target or became clipped");
+                foreach (var card in new[] { (FrameworkElement)quick.FindName("StudyCard"), (FrameworkElement)quick.FindName("RecordingCard") })
+                    Assert(Math.Abs(Bounds(strip).Left - Bounds(card).Left) < 1.5 && Math.Abs(Bounds(strip).Right - Bounds(card).Right) < 1.5,
+                        "the fixed PPT strip and scrolling cards do not share their left and right edges");
+            }
 
             void Touch(Button button)
             {
