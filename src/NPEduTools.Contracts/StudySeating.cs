@@ -11,4 +11,5 @@ public sealed record StudySeatingPulse(Guid InstanceId, Guid AppInstanceId, long
 public sealed record StudySeatingUploadCommand(Guid TicketId, Guid UploadId, string Version, int ExpectedRevision,
     string Hash, int ByteCount, int Width, int Height);
 public sealed record StudySeatingUploadState(Guid TicketId, string Version, string ClassId, string ClassName,
-    int Revision, string? Hash, string State);
+    int Revision, string? Hash, string State,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? BindingStamp = null);

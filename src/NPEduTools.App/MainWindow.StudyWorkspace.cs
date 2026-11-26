@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using NPEduTools.Contracts;
 using NPEduTools.Core;
 
@@ -13,13 +14,18 @@ public partial class MainWindow
     private string _workspaceTab = "Manual";
     private string _homeStudyTarget = "Manual";
     private Window? _workspaceCalibrationController;
+    private StudySeatingUploadWindow? _workspaceSeatingController;
     private long _workspaceReportGeneration;
     private CancellationTokenSource? _workspaceReportRead;
 
     private void InitializeStudyWorkspace()
     {
         InitializeWorkspaceSidebar();
-        Closed += (_, _) => CancelWorkspaceReports();
+        Closed += (_, _) =>
+        {
+            CancelWorkspaceReports();
+            _workspaceSeatingController?.Dismiss();
+        };
     }
     private void RefreshWorkspaceHome()
     {
@@ -67,7 +73,7 @@ public partial class MainWindow
     private void HideStudyWorkspace(bool keepCalibration)
     {
         CancelWorkspaceReports();
-        StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = Visibility.Collapsed;
+        StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = WorkspaceSeating.Visibility = Visibility.Collapsed;
         StudyNav.Tag = null;
         if (!keepCalibration) CloseWorkspaceCalibration();
     }
@@ -97,7 +103,7 @@ public partial class MainWindow
         if (tab == "School" && _studyMonitoringWindow is null)
         {
             _studyMonitoringWindow = new StudyMonitoringWindow(_pipe, () => ShowStudyWorkspace("Manual"))
-            { OpenCalibration = ShowWorkspaceCalibration };
+            { OpenCalibration = ShowWorkspaceCalibration, OpenSeatingWorkspace = ShowWorkspaceSeating };
             SchoolWorkspaceHost.Content = new WorkspacePanel(_studyMonitoringWindow, this, _studyMonitoringWindow.WorkspaceVisibilityChanged);
         }
         RestoreWindow();
@@ -133,6 +139,44 @@ public partial class MainWindow
         school.Devices.BringIntoView(new Rect(0, 0, 1, 1));
     }
     private void WorkspaceCalibrationClicked(object sender, RoutedEventArgs e) => ShowWorkspaceCalibration();
+    private void ShowWorkspaceSeating()
+    {
+        if (WorkspaceSeating.Visibility == Visibility.Visible) return;
+        SelectPage(false);
+        HomePage.Visibility = Visibility.Collapsed;
+        HomeNav.Tag = null;
+        StudyNav.Tag = "active";
+        PageBreadcrumb.Text = "自习 / 自习座位表";
+        if (_workspaceSeatingController is null)
+        {
+            var controller = new StudySeatingUploadWindow(_pipe)
+            {
+                ReturnToSchool = ReturnFromSeating,
+                WriteStateChanged = writing => WorkspaceSeatingBack.IsEnabled = !writing
+            };
+            _workspaceSeatingController = controller;
+            WorkspaceSeatingHost.Content = new WorkspacePanel(controller, this, controller.WorkspaceVisibilityChanged);
+        }
+        WorkspaceSeating.Visibility = Visibility.Visible;
+        RestoreWindow();
+        WorkspaceSeatingBack.Focus();
+    }
+
+    private void ReturnFromSeatingClicked(object sender, RoutedEventArgs e) => ReturnFromSeating();
+    private void ReturnFromSeating()
+    {
+        if (_workspaceSeatingController?.IsWriting == true) return;
+        ShowStudyWorkspace("School");
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (SchoolWorkspaceHost.IsVisible && _studyMonitoringWindow?.SchoolSeatingButton is { IsVisible: true } button)
+            {
+                button.BringIntoView();
+                button.Focus();
+            }
+        }, DispatcherPriority.Input);
+    }
+
     private void ShowWorkspaceCalibration()
     {
         SelectPage(false); HomePage.Visibility = Visibility.Collapsed;

@@ -125,7 +125,8 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 }
                 else if (request.Capability.StartsWith("study.devices.", StringComparison.Ordinal))
                     response = studyDevices?.Handle(request) ?? new(1, request.RequestId, "Rejected", "STUDY_UNSUPPORTED", "请更新后台以设置自习设备。");
-                else if (request.Capability is "study.seating.upload.status" or "study.seating.upload")
+                else if (request.Capability is "study.seating.upload.status" or "study.seating.upload" or
+                    "study.seating.upload.status.scoped" or "study.seating.upload.scoped")
                 {
                     using var seatingDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                     seatingDeadline.CancelAfter(request.TimeoutMs);

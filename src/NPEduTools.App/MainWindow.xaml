@@ -208,6 +208,13 @@
           </WrapPanel></Border>
         </Grid>
         <Grid x:Name="WorkspaceCalibration" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><Button Content="← 返回自习" Click="ReturnFromCalibrationClicked" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Margin="0,0,0,10"/><ContentControl x:Name="WorkspaceCalibrationHost" Grid.Row="1"/></Grid>
+        <Grid x:Name="WorkspaceSeating" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <Button x:Name="WorkspaceSeatingBack" Content="← 返回学校定时自习" Click="ReturnFromSeatingClicked"
+                  Style="{DynamicResource TeacherButton}" HorizontalAlignment="Left" Margin="0,0,0,8"
+                  AutomationProperties.AutomationId="StudySeatingWorkspaceBack"/>
+          <ContentControl x:Name="WorkspaceSeatingHost" Grid.Row="1"/>
+        </Grid>
         <ScrollViewer x:Name="HomePage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
           <StackPanel MaxWidth="1080" SizeChanged="HomeLayoutSizeChanged">
             <Grid Margin="0,0,0,18">

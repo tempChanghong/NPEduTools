@@ -271,7 +271,8 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
         Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
     new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement, updates);
-var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync, npep.PublishSeatingAsync);
+var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync,
+    npep.PublishSeatingAsync, verifyBinding: npep.VerifySeatingBindingAsync);
 var websiteClock = schoolManagement.RunWebsitePolicyClockAsync(shutdown.Token);
 try
 {

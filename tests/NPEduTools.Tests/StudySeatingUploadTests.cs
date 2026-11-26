@@ -45,6 +45,53 @@ public sealed partial class StudySeatingUploadTests
     private static byte[] Image() {byte[] b=new byte[24];new byte[]{137,80,78,71,13,10,26,10}.CopyTo(b,0);b[19]=2;b[23]=2;return b;}
     private static HostRequest Command(StudySeatingUploadState state,Guid id,byte[] png)=>new(1,Guid.NewGuid(),"study.seating.upload",
         SeatingUpload:new(state.TicketId,id,state.Version,state.Revision,Convert.ToHexStringLower(SHA256.HashData(png)),png.Length,2,2));
+
+    [Fact]
+    public async Task Scoped_receipt_requires_the_original_binding_and_legacy_replies_omit_the_binding_stamp()
+    {
+        string pipe = "NPEduTools.Test.seating-scoped." + Guid.NewGuid().ToString("N");
+        var id = Guid.NewGuid();
+        byte[] png = Image();
+        string binding = "original";
+        int publications = 0;
+        var service = new StudySeatingUploadService(pipe, Policy,
+            (_, _) => Task.FromResult(new NpepSeatingUploadScope(
+                new() { ["identity"] = new JsonObject { ["bindingId"] = binding } }, Scope())),
+            (_, _, revision, bytes, _) =>
+            {
+                publications++;
+                var saved = Scope(revision + 1);
+                saved["hash"] = Convert.ToHexStringLower(SHA256.HashData(bytes));
+                return Task.FromResult(saved);
+            },
+            verifyBinding: (scope, _) => scope.Context["identity"]?["bindingId"]?.GetValue<string>() == binding
+                ? Task.CompletedTask : Task.FromException(new NpepException("BINDING_CHANGED")));
+        try
+        {
+            var legacy = await service.HandleAsync(new(1, Guid.NewGuid(), "study.seating.upload.status"), default);
+            Assert.DoesNotContain("bindingStamp", System.Text.Json.JsonSerializer.Serialize(legacy, Protocol.Json));
+            var original = (await service.HandleAsync(new(1, Guid.NewGuid(), "study.seating.upload.status.scoped"), default)).SeatingUpload!;
+            Assert.NotNull(original.BindingStamp);
+            StudySeatingTransfer.Write(pipe, id, png);
+            var upload = Command(original, id, png) with { Capability = "study.seating.upload.scoped" };
+            var saved = (await service.HandleAsync(upload, default)).SeatingUpload!;
+            Assert.Equal(original.BindingStamp, saved.BindingStamp);
+            for (int i = 0; i < 9; i++)
+                Assert.Equal("Succeeded", (await service.HandleAsync(new(1, Guid.NewGuid(), "study.seating.upload.status.scoped"), default)).Outcome);
+            Assert.Equal(saved, (await service.HandleAsync(upload with { RequestId = Guid.NewGuid() }, default)).SeatingUpload);
+
+            binding = "replacement";
+            var replacement = (await service.HandleAsync(new(1, Guid.NewGuid(), "study.seating.upload.status.scoped"), default)).SeatingUpload!;
+            Assert.Equal(original.ClassId, replacement.ClassId);
+            Assert.NotEqual(original.BindingStamp, replacement.BindingStamp);
+            var rejected = await service.HandleAsync(upload with { RequestId = Guid.NewGuid() }, default);
+            Assert.Equal("BINDING_CHANGED", rejected.ErrorCode);
+            Assert.Null(rejected.SeatingUpload);
+            Assert.Equal(1, publications);
+        }
+        finally { StudySeatingTransfer.Delete(pipe, id); }
+    }
+
     [Fact]
     public async Task Uploaded_response_retries_without_republish_and_ticket_payload_cannot_change()
     {

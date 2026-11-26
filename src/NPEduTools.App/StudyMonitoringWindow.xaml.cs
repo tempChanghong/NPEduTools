@@ -230,7 +230,12 @@ public partial class StudyMonitoringWindow : Window
         { if (!_lifetime.IsCancellationRequested && generation == _viewGeneration) { Render(null); StudyPresentation.Text = "返回结果待确认，请刷新状态后重试；后台监测继续。"; } }
         finally { _returning = false; ReturnStudyButton.IsEnabled = _returnDisplay.Available; }
     }
-    private void SeatingClicked(object sender, RoutedEventArgs e) => new StudySeatingUploadWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
+    internal Action? OpenSeatingWorkspace { get; init; }
+    private void SeatingClicked(object sender, RoutedEventArgs e)
+    {
+        if (OpenSeatingWorkspace is { } open) open();
+        else new StudySeatingUploadWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
+    }
     private void CalibrationClicked(object sender, RoutedEventArgs e) => new NoiseCalibrationWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
     private void ReferenceClicked(object sender, RoutedEventArgs e) => new NoiseReferenceWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
     internal Action? OpenCalibration { get; set; }

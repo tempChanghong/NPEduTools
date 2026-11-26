@@ -6,7 +6,8 @@ namespace NPEduTools.Host;
 
 public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> policy,
     Func<string, CancellationToken, Task<NpepSeatingUploadScope>> prepare,
-    Func<NpepSeatingUploadScope, Guid, int, byte[], CancellationToken, Task<JsonObject>> publish, TimeProvider? time = null)
+    Func<NpepSeatingUploadScope, Guid, int, byte[], CancellationToken, Task<JsonObject>> publish, TimeProvider? time = null,
+    Func<NpepSeatingUploadScope, CancellationToken, Task>? verifyBinding = null)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly TimeProvider _time = time ?? TimeProvider.System;
@@ -18,8 +19,12 @@ public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> 
         public StudySeatingUploadState? Saved;
     }
     private readonly Dictionary<Guid, Ticket> _tickets = [];
-    private StudySeatingUploadState State(Guid id, JsonObject value, string state) => new(id, value.Text("version"), value.Text("classId"),
-        value.Text("className"), value["revision"]!.GetValue<int>(), value["hash"]?.GetValue<string>(), state);
+    private static StudySeatingUploadState State(Guid id, JsonObject value, string state, NpepSeatingUploadScope scope) =>
+        new(id, value.Text("version"), value.Text("classId"), value.Text("className"),
+            value["revision"]!.GetValue<int>(), value["hash"]?.GetValue<string>(), state,
+            scope.Context["identity"] is JsonObject identity
+                ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity.ToJsonString())))
+                : null);
     public async Task<HostResponse> HandleAsync(HostRequest request, CancellationToken token)
     {
         bool acquired = false, publicationAttempted = false;
@@ -32,11 +37,13 @@ public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> 
             var current = policy();
             if (current is not { PolicyState: "APPLIED", Version: { } version, Settings: not null }) throw new NpepException("STUDY_NOT_APPLIED");
             StudySeatingUploadState result;
-            if (request.Capability == "study.seating.upload.status")
+            bool scoped = request.Capability is "study.seating.upload.status.scoped" or "study.seating.upload.scoped";
+            if (request.Capability is "study.seating.upload.status" or "study.seating.upload.status.scoped")
             {
                 var scope = await prepare(version, token);
-                if (_tickets.Count >= 8) _tickets.Remove(_tickets.MinBy(p => p.Value.Created).Key);
-                var id = Guid.NewGuid(); _tickets[id] = new(scope, _time.GetTimestamp()); result = State(id, scope.State, "Ready");
+                if (_tickets.Count >= 8)
+                    _tickets.Remove(_tickets.MinBy(p => (p.Value.Command is not null, p.Value.Created)).Key);
+                var id = Guid.NewGuid(); _tickets[id] = new(scope, _time.GetTimestamp()); result = State(id, scope.State, "Ready", scope);
             }
             else
             {
@@ -45,7 +52,11 @@ public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> 
                 if (version != command.Version || ticket.Scope.State.Text("version") != version) throw new NpepException("POLICY_CHANGED");
                 if (command.ExpectedRevision != ticket.Scope.State["revision"]!.GetValue<int>()) throw new NpepException("SEATING_CHANGED");
                 if (ticket.Command is not null && ticket.Command != command) throw new NpepException("IDEMPOTENCY_CONFLICT");
-                if (ticket.Saved is { } saved) result = saved;
+                if (ticket.Saved is { } saved)
+                {
+                    if (scoped && verifyBinding is not null) await verifyBinding(ticket.Scope, token);
+                    result = saved;
+                }
                 else
                 {
                     var png = StudySeatingTransfer.Read(pipe, command.UploadId, command.ByteCount, command.Hash);
@@ -59,10 +70,12 @@ public sealed class StudySeatingUploadService(string pipe, Func<StudyHostState> 
                     if (value.Text("version") != version || value.Text("classId") != ticket.Scope.State.Text("classId") ||
                         value["revision"]!.GetValue<int>() != command.ExpectedRevision + 1 || value["hash"]?.GetValue<string>() != command.Hash)
                         throw new NpepException("INVALID_ENVELOPE");
-                    result = ticket.Saved = State(command.TicketId, value, "Saved");
+                    result = ticket.Saved = State(command.TicketId, value, "Saved", ticket.Scope);
                 }
             }
-            return new(1, request.RequestId, "Succeeded", null, result.State == "Saved" ? "自习座位表已保存到服务器。" : "已读取本班当前版本。", SeatingUpload: result);
+            // Old clients reject unknown IPC fields; only the scoped capability carries this proof.
+            return new(1, request.RequestId, "Succeeded", null, result.State == "Saved" ? "自习座位表已保存到服务器。" : "已读取本班当前版本。",
+                SeatingUpload: scoped ? result : result with { BindingStamp = null });
         }
         catch (Exception e) when (e is NpepException or HttpRequestException or OperationCanceledException or IOException or UnauthorizedAccessException or InvalidDataException or FormatException)
         {

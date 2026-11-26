@@ -5,67 +5,82 @@
         WindowStartupLocation="CenterOwner" Icon="/Assets/npedutools.ico" UseLayoutRounding="True"
         Background="{DynamicResource TeacherPageBrush}" Foreground="{DynamicResource TeacherTextBrush}"
         FontFamily="{DynamicResource TeacherFont}">
-  <Grid Margin="24" KeyboardNavigation.TabNavigation="Cycle">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition/>
-      <RowDefinition Height="Auto"/>
-    </Grid.RowDefinitions>
-    <StackPanel>
-      <TextBlock Text="自习座位表" FontSize="26" FontWeight="SemiBold"/>
-      <TextBlock Margin="0,6,0,16" FontSize="14" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}"
-                 Text="座位表只上传到本机绑定的班级，无需口令。学校自习开始前 5 分钟自动展示，开始后 2 分钟收起；之后可手动查看，不参与作业轮换。"/>
-    </StackPanel>
-
-    <Border Grid.Row="1" Style="{DynamicResource SettingsGroupSurface}" Padding="16">
-      <Grid>
+  <ScrollViewer x:Name="SeatingScroll" SizeChanged="SeatingLayoutChanged" VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+    <StackPanel Margin="16,12" KeyboardNavigation.TabNavigation="Cycle">
+      <Grid x:Name="SeatingLayout">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>
-          <RowDefinition/>
+          <RowDefinition Height="Auto"/>
           <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <TextBlock x:Name="ScopeText" Text="正在核对本班当前版本…" VerticalAlignment="Center"
-                     Margin="0,0,12,0" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
-          <Button x:Name="RefreshScope" Grid.Column="1" Content="核对当前版本" Click="RefreshClicked"
-                  Style="{DynamicResource TeacherQuiet}"/>
-        </Grid>
-        <Border Grid.Row="1" Background="{DynamicResource TeacherPageBrush}" CornerRadius="6" Margin="0,12,0,0" Padding="10">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <Border x:Name="SeatingScopePane" Grid.Row="0" Grid.Column="0" Style="{DynamicResource SettingsGroupSurface}" Padding="14,10" Margin="0,0,0,10" VerticalAlignment="Top">
           <Grid>
-            <Image x:Name="Preview" Stretch="Uniform" AutomationProperties.Name="所选座位表预览"/>
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-              <Border Width="48" Height="48" Margin="0,0,0,12" CornerRadius="24"
-                      BorderBrush="{DynamicResource TeacherSuccessBrush}" BorderThickness="2"
-                      Visibility="{Binding ElementName=FinishButton, Path=Visibility}">
-                <Path Data="M 2,10 L 8,16 L 21,3" StrokeThickness="2.5" StrokeLineJoin="Round"
-                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stroke="{DynamicResource TeacherSuccessBrush}"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Border>
-              <TextBlock x:Name="EmptyDraft" Text="尚未选择座位表图片" Foreground="{DynamicResource TeacherMutedBrush}"
-                         TextAlignment="Center" TextWrapping="Wrap" FontSize="16"/>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+              <TextBlock Text="上传目标" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"/>
+              <TextBlock x:Name="ScopeText" Text="正在核对本班当前版本…" Margin="0,2,0,0" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
             </StackPanel>
+            <Button x:Name="RefreshScope" Grid.Column="1" Content="核对当前版本" Click="RefreshClicked" VerticalAlignment="Center"
+                    Style="{DynamicResource TeacherQuiet}"/>
           </Grid>
         </Border>
-        <TextBlock x:Name="DraftInfo" Grid.Row="2" Margin="0,8,0,0" Visibility="Collapsed" FontSize="13"
-                   TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TeacherMutedBrush}"/>
-      </Grid>
-    </Border>
 
-    <StackPanel Grid.Row="2" Margin="0,16,0,0">
-      <TextBlock x:Name="ResultHeading" FontSize="17" FontWeight="SemiBold"
-                 AutomationProperties.LiveSetting="Polite"/>
-      <TextBlock x:Name="ResultText" Margin="0,4,0,0" FontSize="14" Foreground="{DynamicResource TeacherTextBrush}"
-                 TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
-      <Grid Margin="0,12,0,0">
-        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <Button x:Name="ChooseImage" Content="选择 PNG／JPEG 图片" HorizontalAlignment="Left"
-                Style="{DynamicResource TeacherButton}" Click="ChooseClicked"/>
-        <Button x:Name="SaveImage" Grid.Column="1" Content="确认上传" IsEnabled="False"
-                Style="{DynamicResource TeacherPrimary}" Click="SaveClicked"/>
-        <Button x:Name="FinishButton" Grid.Column="1" Content="完成" Visibility="Collapsed"
-                Style="{DynamicResource TeacherPrimary}" Click="FinishClicked"/>
+        <Border x:Name="SeatingPreviewPane" Grid.Row="1" Grid.Column="0" Style="{DynamicResource SettingsGroupSurface}" Padding="12,10" Margin="0,0,0,10" VerticalAlignment="Top">
+          <StackPanel>
+            <Border x:Name="PreviewFrame" Background="{DynamicResource TeacherPageBrush}" CornerRadius="6" Padding="8" Height="152">
+              <Grid>
+                <Image x:Name="Preview" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       AutomationProperties.Name="所选座位表预览"/>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Border x:Name="SavedMark" Width="44" Height="44" Margin="0,0,0,10" CornerRadius="22"
+                          BorderBrush="{DynamicResource TeacherSuccessBrush}" BorderThickness="2"
+                          Visibility="Collapsed">
+                    <Path Data="M 2,10 L 8,16 L 21,3" StrokeThickness="2.5" StrokeLineJoin="Round"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stroke="{DynamicResource TeacherSuccessBrush}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Border>
+                  <TextBlock x:Name="EmptyDraft" Text="尚未选择座位表图片" Foreground="{DynamicResource TeacherMutedBrush}"
+                             TextAlignment="Center" TextWrapping="Wrap" FontSize="15"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <TextBlock x:Name="DraftInfo" Margin="0,8,0,0" Visibility="Collapsed" FontSize="13"
+                       TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TeacherMutedBrush}"/>
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="SeatingActionsPane" Grid.Row="2" Grid.Column="0" Style="{DynamicResource SettingsGroupSurface}" Padding="14,12" Margin="0,0,0,10" VerticalAlignment="Top">
+          <StackPanel>
+            <TextBlock x:Name="ResultHeading" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"
+                       AutomationProperties.LiveSetting="Polite"/>
+            <TextBlock x:Name="ResultText" Margin="0,4,0,0" FontSize="13" Foreground="{DynamicResource TeacherTextBrush}"
+                       TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+            <WrapPanel Margin="0,12,0,0">
+              <Button x:Name="ChooseImage" Content="选择图片" Margin="0,0,8,4"
+                      Style="{DynamicResource TeacherButton}" Click="ChooseClicked"/>
+              <Button x:Name="SaveImage" Content="确认上传" IsEnabled="False" Margin="0,0,8,4"
+                      Style="{DynamicResource TeacherPrimary}" Click="SaveClicked"/>
+              <Button x:Name="FinishButton" Content="完成" Visibility="Collapsed" Margin="0,0,0,4"
+                      Style="{DynamicResource TeacherPrimary}" Click="FinishClicked"/>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
       </Grid>
+
+      <Expander Header="展示时机与文件说明" Style="{DynamicResource TeacherExpander}" IsExpanded="False" Margin="0,2,0,0"
+                AutomationProperties.Name="展示时机与文件说明">
+        <TextBlock Margin="0,6,0,2" FontSize="13" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}"
+                   Text="座位表只上传到本机绑定的班级，无需口令。学校自习开始前 5 分钟自动展示，开始后 2 分钟收起；之后可手动查看，不参与作业轮换。支持 PNG 或 JPEG 图片，上传时自动转为 PNG。"/>
+      </Expander>
     </StackPanel>
-  </Grid>
+  </ScrollViewer>
 </Window>

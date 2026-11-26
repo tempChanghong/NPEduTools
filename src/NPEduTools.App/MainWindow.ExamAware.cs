@@ -86,6 +86,7 @@ public partial class MainWindow
             };
         }
         if (WorkspaceCalibration.Visibility == Visibility.Visible) return RestoreWorkspaceCalibration;
+        if (WorkspaceSeating.Visibility == Visibility.Visible) return ShowWorkspaceSeating;
         if (StudyWorkspace.Visibility == Visibility.Visible)
         {
             string tab = _workspaceTab;

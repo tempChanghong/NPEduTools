@@ -24,6 +24,14 @@ public sealed partial class NpepRuntime
         if (result.Text("version") != scope.State.Text("version") || result.Text("classId") != scope.State.Text("classId")) throw new NpepException("POLICY_CHANGED");
         return result;
     }
+
+    public async Task VerifySeatingBindingAsync(NpepSeatingUploadScope scope, CancellationToken token)
+    {
+        var current = await StudyContextAsync(token);
+        if (Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } ||
+            !JsonNode.DeepEquals(scope.Context["identity"], current["identity"]))
+            throw new NpepException("BINDING_CHANGED");
+    }
 }
 public sealed partial class NpepApi
 {
