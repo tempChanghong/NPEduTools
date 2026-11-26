@@ -136,6 +136,9 @@
               </TextBlock>
               <TextBlock x:Name="OperationText" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}"
                          Margin="0,2,0,0" AutomationProperties.AutomationId="SecRandomOperation" AutomationProperties.LiveSetting="Polite" />
+              <Button x:Name="CheckSidebarDrawButton" Style="{StaticResource TeacherButton}" Content="核对原闪抽回执"
+                      Visibility="Collapsed" Click="CheckSidebarDrawClicked" HorizontalAlignment="Left" Margin="0,8,0,0"
+                      AutomationProperties.AutomationId="SecRandomCheckSidebarDraw" />
               <Button x:Name="AcknowledgeButton" Style="{StaticResource TeacherButton}" Content="已核实，解除待核实状态"
                       Visibility="Collapsed" Click="AcknowledgeClicked" HorizontalAlignment="Left" Margin="0,8,0,0"
                       AutomationProperties.AutomationId="SecRandomAcknowledge" />

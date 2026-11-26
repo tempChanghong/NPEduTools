@@ -22,17 +22,6 @@ public partial class QuickAccessWindow : Window
     private Action? _secRandom;
     public void SetSecRandomAction(Action action) => _secRandom = action;
     private void SecRandomClicked(object sender, RoutedEventArgs e) => _secRandom?.Invoke();
-    private Func<Task<string>>? _secRandomQuickDraw;
-    public void SetSecRandomQuickDrawAction(Func<Task<string>> action) => _secRandomQuickDraw = action;
-    private async void RailSecRandomClicked(object sender, RoutedEventArgs e)
-    {
-        if (_secRandomQuickDraw is null || !RailSecRandom.IsEnabled) return;
-        RailSecRandom.IsEnabled = false;
-        RailSecRandomGlyph.Text = "…";
-        RailSecRandom.ToolTip = "正在闪抽，请稍候；不会重复提交。";
-        try { RailSecRandom.ToolTip = await _secRandomQuickDraw(); }
-        finally { RailSecRandomGlyph.Text = "抽"; RailSecRandom.IsEnabled = true; }
-    }
     private Action? _classroomMode;
     public void SetClassroomModeAction(Action action) => _classroomMode = action;
     private void ClassroomModeClicked(object sender, RoutedEventArgs e) => _classroomMode?.Invoke();
@@ -93,6 +82,7 @@ public partial class QuickAccessWindow : Window
         try { _densityPreference = DesktopDensity.Read(endpoint); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
+        WireDrawTouch();
         SelectShortcutPage(false); RefreshCompact();
         _foregroundChanged = (_, _, window, _, _, _, _) => RememberExternalForeground(window);
         _idleTimer.Tick += (_, _) => RefreshHandleOpacity();
@@ -149,7 +139,7 @@ public partial class QuickAccessWindow : Window
         EdgeHandle.LostTouchCapture += (_, e) => { if (_handleTouch == e.TouchDevice) { _handleTouch = null; CancelHandlePress(); } };
         PreviewTouchDown += (_, e) =>
         {
-            if (_handleTouch is not null && _handleTouch != e.TouchDevice) e.Handled = true;
+            if ((_handleTouch ?? _drawTouch) is { } active && active != e.TouchDevice) e.Handled = true;
         };
         PreviewKeyDown += (_, e) =>
         {
@@ -172,7 +162,7 @@ public partial class QuickAccessWindow : Window
     private nint WindowHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
         // A collapsed handle must not take keyboard focus away from the slide show.
-        if (!_expanded && message == 0x21) // WM_MOUSEACTIVATE
+        if (!_expanded && message is 0x21 or 0x24B) // WM_MOUSEACTIVATE / WM_POINTERACTIVATE
         {
             RememberExternalForeground(GetForegroundWindow());
             handled = true;
@@ -219,7 +209,7 @@ public partial class QuickAccessWindow : Window
             // WPF handles WM_DPICHANGED; its DpiChanged event reapplies bounds on the new monitor.
             var screen = Screen; var area = screen.WorkingArea; double dpi = Scale();
             double density = Density(screen, dpi);
-            var content = (FrameworkElement)Content;
+            var content = (Grid)Content;
             if (content.LayoutTransform is not ScaleTransform transform || transform.ScaleX != density)
             {
                 content.LayoutTransform = new ScaleTransform(density, density);
@@ -237,26 +227,42 @@ public partial class QuickAccessWindow : Window
                 Rail.LayoutTransform = new ScaleTransform(railRatio, railRatio);
             if (MoveHint.LayoutTransform is not ScaleTransform hintTransform || hintTransform.ScaleX != railRatio)
                 MoveHint.LayoutTransform = new ScaleTransform(railRatio, railRatio);
+            if (DrawReceiptCard.LayoutTransform is not ScaleTransform receiptTransform || receiptTransform.ScaleX != railRatio)
+                DrawReceiptCard.LayoutTransform = new ScaleTransform(railRatio, railRatio);
             double scale = dpi * density;
-            double railWidth = (RailWidth - 12) * railRatio;
+            int railPixels = (int)Math.Round((RailWidth - 12) * railRatio * scale);
+            int gutterPixels = (int)Math.Round(6 * scale);
             double anchorHeight = AnchorHeight * railRatio * scale;
-            double insideWidth = _expanded ? PanelWidth - RailWidth : _moveOrigin is not null ? MoveHintWidth * railRatio : 0;
-            int width = Math.Min((int)Math.Round((railWidth + 12 + insideWidth) * scale), area.Width);
+            double insideWidth = _expanded ? PanelWidth - RailWidth :
+                _moveOrigin is not null ? MoveHintWidth * railRatio :
+                DrawReceiptCard.Visibility == Visibility.Visible ? DrawReceiptWidth * railRatio : 0;
+            // Round the fixed rail separately from the inside panel so a new card
+            // cannot move the rail by a physical pixel when it changes the window width.
+            int width = Math.Min(railPixels + 2 * gutterPixels + (int)Math.Round(insideWidth * scale), area.Width);
             int height = Math.Min((int)Math.Round(Math.Max(anchorHeight, _expanded ? PanelHeight * scale : 0)), area.Height);
             double anchor = area.Top + Math.Max(0, area.Height - anchorHeight) * _placement.RelativeY;
             int y = (int)Math.Clamp(anchor + anchorHeight - height, area.Top, area.Bottom - height);
             int x = _placement.LeftSide ? area.Left : area.Right - width;
-            var rail = new GridLength(railWidth);
-            var panel = insideWidth > 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            content.Margin = new Thickness(gutterPixels / scale, 6, gutterPixels / scale, 6);
+            var rail = new GridLength(railPixels / scale);
+            var panel = new GridLength(Math.Max(0, width - railPixels - 2 * gutterPixels) / scale);
             LeftColumn.Width = _placement.LeftSide ? rail : panel;
             RightColumn.Width = _placement.LeftSide ? panel : rail;
             Grid.SetColumn(Rail, _placement.LeftSide ? 0 : 1);
             Grid.SetColumn(PanelSurface, _placement.LeftSide ? 1 : 0);
             Grid.SetColumn(MoveHint, _placement.LeftSide ? 1 : 0);
+            Grid.SetColumn(DrawReceiptCard, _placement.LeftSide ? 1 : 0);
             // The panel can reach the top of the working area without moving the handle.
             Rail.Margin = new Thickness(0, 0, 0, Math.Max(0, (y + height - anchor - anchorHeight) / scale));
             PanelSurface.Margin = _placement.LeftSide ? new Thickness(8, 0, 0, 0) : new Thickness(0, 0, 8, 0);
             MoveHint.Margin = PanelSurface.Margin;
+            DrawReceiptCard.Margin = new Thickness(PanelSurface.Margin.Left, 0, PanelSurface.Margin.Right, 42 * railRatio);
+            // A touch on a passive rail must leave the actual foreground application in place.
+            // The full panel intentionally takes focus once explicitly opened.
+            const int extendedStyle = -20, noActivate = 0x08000000;
+            int style = GetWindowLong(_handle, extendedStyle);
+            int desiredStyle = _expanded ? style & ~noActivate : style | noActivate;
+            if (style != desiredStyle) SetWindowLong(_handle, extendedStyle, desiredStyle);
             SetWindowPos(_handle, new nint(-1), x, y, width, height, 0x10); // SWP_NOACTIVATE
             CollapseButton.Content = _placement.LeftSide ? "‹" : "›";
         }
@@ -267,6 +273,7 @@ public partial class QuickAccessWindow : Window
     {
         if (_closing || _autoHidden) return;
         if (_moveOrigin is not null) Collapse();
+        DismissDrawReceipt();
         if (!_expanded)
         {
             RememberExternalForeground(GetForegroundWindow());
@@ -285,6 +292,7 @@ public partial class QuickAccessWindow : Window
     {
         if (_closing) return;
         AbortHandleGesture();
+        DismissDrawReceipt();
         EndMove(save: false, restoreFocus);
         bool wasExpanded = _expanded;
         _expanded = false; RefreshCompact(); RefreshTaskOrder();
@@ -618,6 +626,8 @@ public partial class QuickAccessWindow : Window
     private void CollapseClicked(object sender, RoutedEventArgs e) => Collapse();
 
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(nint hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] private static extern int SetWindowLong(nint hwnd, int index, int value);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     private delegate void ForegroundCallback(nint hook, uint eventType, nint window, int objectId, int childId, uint thread, uint time);

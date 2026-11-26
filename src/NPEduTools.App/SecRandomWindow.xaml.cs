@@ -17,7 +17,7 @@ public partial class SecRandomWindow : Window
     private SecRandomOperation? _lastDrawOperation;
     private SecRandomOperation? _pendingReconciliation;
     private Guid? _openRequest, _floatRequest;
-    private Action? _returnToWorkspace, _showWorkspace;
+    private Action? _returnToWorkspace;
     private long _generation;
     private bool _loaded, _busy, _closing, _configurationPresented, _floatToggledByUser, _applyingFloatLayout;
     public SecRandomWindow(string pipe)
@@ -38,10 +38,9 @@ public partial class SecRandomWindow : Window
         Close();
     }
 
-    internal void SetWorkspaceNavigation(Action returnTo, Action show)
+    internal void SetWorkspaceNavigation(Action returnTo)
     {
         _returnToWorkspace = returnTo;
-        _showWorkspace = show;
         BackButton.Visibility = Visibility.Visible;
     }
 
@@ -91,56 +90,6 @@ public partial class SecRandomWindow : Window
         Connection.SetResourceReference(TextBlock.ForegroundProperty, brushKey);
         StatusBadge.SetResourceReference(Border.BorderBrushProperty, brushKey);
     }
-    private string ShowGuidance(string message)
-    {
-        Message.Text = message;
-        if (!_closing)
-        {
-            if (_showWorkspace is not null) _showWorkspace();
-            else
-            {
-                if (!IsVisible) Show();
-                if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-                Activate();
-            }
-        }
-        return message;
-    }
-    public async Task<string> QuickDrawFromSidebarAsync()
-    {
-        if (_closing || _busy) return ShowGuidance("正在处理 SecRandom 操作，请稍候再闪抽。");
-        _generation++;
-        _busy = true; Render(_state);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(45));
-        try
-        {
-            Render((await RequestAsync("secrandom.status")).SecRandom);
-            if (_state is null) return ShowGuidance("无法连接后台。请重启新版 NPEduTools 后再试。");
-            if (_state.Error is { } error) return ShowGuidance(error);
-            if (string.IsNullOrWhiteSpace(_state.ExecutablePath))
-                return ShowGuidance("尚未配置 SecRandom。请选择程序位置并保存，再使用侧栏闪抽。");
-            if (_state.Operation?.State == "Unknown")
-                return ShowGuidance("上次操作结果待核实。请先查看 SecRandom 窗口及历史，再解除待核实状态。");
-            if (_state.Operation?.State == "Running") return ShowGuidance("SecRandom 正在执行操作，请稍候再闪抽。");
-            var response = await RequestAsync("secrandom.command", command: new("quick-draw"));
-            Render(response.SecRandom);
-            if (response.Outcome != "Accepted") return ShowGuidance(response.Message);
-            while (_state?.Operation is { State: "Running" } operation && operation.RequestId == response.RequestId)
-            {
-                await Task.Delay(250, deadline.Token);
-                Render((await RequestAsync("secrandom.status")).SecRandom);
-            }
-            if (_state?.Operation is not { } result || result.RequestId != response.RequestId)
-                return ShowGuidance("未能确认本次闪抽回执。请查看 SecRandom 窗口及历史，勿立即重复抽取。");
-            Message.Text = result.Message;
-            if (result.State != "Succeeded") return ShowGuidance(result.Message);
-            return result.Winner is { } winner ? $"SecRandom 闪抽一人 · 上次抽中：{winner.Name}" : "SecRandom 闪抽一人 · 上次已完成";
-        }
-        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
-        { Render(null); return ShowGuidance("未收到可靠回执。请核实 SecRandom 窗口及历史，勿立即重复抽取。"); }
-        finally { _busy = false; Render(_state); }
-    }
     private void Render(SecRandomState? state)
     {
         _state = state;
@@ -161,7 +110,8 @@ public partial class SecRandomWindow : Window
         var display = state ?? _lastKnownState;
         var savedPath = display?.ExecutablePath;
         bool hasPath = !string.IsNullOrWhiteSpace(savedPath);
-        bool running = state?.Operation?.State == "Running", uncertain = _pendingReconciliation is not null;
+        bool sidebarPending = _sidebarPendingDraw is not null;
+        bool running = state?.Operation?.State == "Running", uncertain = sidebarPending || _pendingReconciliation is not null;
         bool ready = state is { Error: null, Connection: "Ready" };
 
         if (state is null) SetBadge("后台连接未确认，等待重新连接", "TeacherWarningBrush");
@@ -200,7 +150,7 @@ public partial class SecRandomWindow : Window
         bool available = !_busy && !running && !uncertain && state is { ExecutablePath: not null, Error: null };
         OpenButton.IsEnabled = ShowFloatButton.IsEnabled = available;
         HideFloatButton.IsEnabled = DrawButton.IsEnabled = available && ready;
-        CheckButton.IsEnabled = !_busy && !running && state is { ExecutablePath: not null, Error: null };
+        CheckButton.IsEnabled = !_busy && !running && !sidebarPending && state is { ExecutablePath: not null, Error: null };
 
         bool editorOpen = ProgramConfiguration.IsExpanded && !uncertain;
         bool checkIsPrimary = CheckButton.IsEnabled && !uncertain && !editorOpen && !ready;
@@ -214,19 +164,28 @@ public partial class SecRandomWindow : Window
         OpenButton.Style = (Style)FindResource(openIsPrimary ? "TeacherPrimary" : "TeacherQuiet");
         OpenButton.Visibility = uncertain ? Visibility.Collapsed : Visibility.Visible;
 
-        AcknowledgeButton.Visibility = uncertain ? Visibility.Visible : Visibility.Collapsed;
-        AcknowledgeButton.IsEnabled = !_busy && state is { Error: null, Operation.State: "Unknown" };
+        CheckSidebarDrawButton.Visibility = sidebarPending ? Visibility.Visible : Visibility.Collapsed;
+        CheckSidebarDrawButton.IsEnabled = !_busy;
+        bool canConfirmSidebar = _sidebarObservedDraw?.State == "Unknown" || _sidebarReceiptAbsent;
+        AcknowledgeButton.Visibility = (sidebarPending ? canConfirmSidebar : uncertain) ? Visibility.Visible : Visibility.Collapsed;
+        AcknowledgeButton.IsEnabled = !_busy && (sidebarPending
+            ? _sidebarReceiptAbsent || _sidebarObservedDraw?.State == "Unknown" && state is { Error: null } && !running
+            : state is { Error: null, Operation.State: "Unknown" });
 
-        var operation = _pendingReconciliation ?? _lastDrawOperation;
+        var operation = _pendingReconciliation ?? _sidebarVerifiedDraw ?? _lastDrawOperation;
         if (state?.Operation is { } latest)
         {
             if (latest.RequestId == _openRequest) ConfigurationMessage.Text = latest.Message;
             if (latest.RequestId == _floatRequest) FloatMessage.Text = latest.Message;
         }
-        DrawCard.Visibility = hasPath || operation is not null ? Visibility.Visible : Visibility.Collapsed;
+        DrawCard.Visibility = hasPath || operation is not null || sidebarPending ? Visibility.Visible : Visibility.Collapsed;
         FloatSection.Visibility = hasPath && !uncertain ? Visibility.Visible : Visibility.Collapsed;
 
-        OperationText.Text = _pendingReconciliation is { } unresolved
+        OperationText.Text = sidebarPending
+            ? "结果待核实\n" + (_sidebarObservedDraw?.State == "Running" ? "原请求仍在执行，请稍后重新核对。" :
+                _sidebarReceiptAbsent ? "后台当前没有原回执。请先在 SecRandom 核对抽取历史，再确认解除。" :
+                "请核对原闪抽回执，或在 SecRandom 查看抽取历史。")
+            : _pendingReconciliation is { } unresolved
             ? "结果待核实\n" + (unresolved.Action == "quick-draw"
                 ? "到 SecRandom 核对窗口和抽取历史。系统不会自动重抽。" : unresolved.Message) +
                 (state is null ? "\n后台恢复后可确认。" : "")
@@ -237,7 +196,8 @@ public partial class SecRandomWindow : Window
                 (op.ErrorCode is null ? "" : $"（{op.ErrorCode}）")
             : state is null ? "当前执行结果未知，请等待连接恢复。" : "尚未执行操作。";
         OperationText.SetResourceReference(TextBlock.ForegroundProperty, uncertain ? "TeacherWarningBrush" : "TeacherMutedBrush");
-        WinnerText.Text = operation?.Winner is { } winner ? (state is null ? "上次回执：" : "") + $"{winner.Name} · {winner.Id}" : "";
+        WinnerText.Text = !sidebarPending && operation?.Winner is { } winner
+            ? (state is null && _sidebarVerifiedDraw is null ? "上次回执：" : "") + $"{winner.Name} · {winner.Id}" : "";
 
         bool quietIdle = !uncertain && operation is null && state is not null && string.IsNullOrWhiteSpace(Message.Text);
         ResultHeading.Visibility = quietIdle || operation?.Winner is not null || uncertain ? Visibility.Collapsed : Visibility.Visible;
@@ -248,12 +208,14 @@ public partial class SecRandomWindow : Window
     }
     private static string StateName(string state) => state switch
     { "Running" => "正在执行", "Succeeded" => "已完成", "Failed" => "未完成", "Unknown" => "结果待核实", "Acknowledged" => "已核实", _ => "未知" };
-    private async Task<HostResponse> RequestAsync(string capability, string? path = null, SecRandomCommand? command = null)
+    private async Task<HostResponse> RequestAsync(string capability, string? path = null, SecRandomCommand? command = null,
+        Guid? requestId = null, Guid? operationId = null, CancellationToken cancellationToken = default)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
-        return await HostClient.RequestAsync(_pipe, new HostRequest(Protocol.Version, Guid.NewGuid(), capability,
-            ExecutablePath: path, ExpectedRevision: path is not null || command is not null ? _state?.Revision ?? 0 : null, SecRandom: command), deadline.Token);
+        return await HostClient.RequestAsync(_pipe, new HostRequest(Protocol.Version, requestId ?? Guid.NewGuid(), capability,
+            ExecutablePath: path, ExpectedRevision: path is not null || command is not null ? _state?.Revision ?? 0 : null,
+            OperationId: operationId, SecRandom: command), deadline.Token);
     }
     private async Task PollAsync()
     {
@@ -287,6 +249,7 @@ public partial class SecRandomWindow : Window
         if (feedback == FloatMessage) _floatRequest = null;
         if (feedback == ConfigurationMessage) _openRequest = null;
         if (action == "check") feedback.Text = "";
+        if (action == "quick-draw") _sidebarVerifiedDraw = null;
         _generation++;
         _busy = true; Render(_state);
         try
@@ -302,6 +265,8 @@ public partial class SecRandomWindow : Window
                 ProgramConfiguration.IsExpanded = false;
             feedback.Text = (action is "check" or "quick-draw") && response.Outcome == "Accepted" ? "" : response.Message;
             Render(response.SecRandom);
+            if (action == "acknowledge" && acknowledge is { } id && id == _sidebarPendingDraw && response.Outcome == "Succeeded")
+                MarkSidebarDrawReconciled(id);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or JsonException)
         {
@@ -357,10 +322,20 @@ public partial class SecRandomWindow : Window
     }
     private async void AcknowledgeClicked(object sender, RoutedEventArgs e)
     {
-        if (!AcknowledgeButton.IsEnabled || _state?.Operation is not { State: "Unknown" } op) return;
-        if (MessageBox.Show(WorkspacePanel.DialogOwner(this), "请先在 SecRandom 核实窗口和抽取历史，确认上次请求是否完成。\n解除后可以发起新的操作，但不会重新执行旧请求。确认已经核实？",
-            "核实操作结果", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK &&
-            AcknowledgeButton.IsEnabled && _state?.Operation?.RequestId == op.RequestId)
-            await RunAsync("acknowledge", acknowledge: op.RequestId);
+        if (!AcknowledgeButton.IsEnabled) return;
+        var sidebarId = _sidebarPendingDraw;
+        var id = sidebarId ?? _state?.Operation?.RequestId;
+        if (id is null || MessageBox.Show(WorkspacePanel.DialogOwner(this),
+            "请先在 SecRandom 核实窗口和抽取历史，确认上次请求是否完成。\n解除后可以发起新的操作，但不会重新执行旧请求。确认已经核实？",
+            "核实操作结果", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) != MessageBoxResult.OK ||
+            !AcknowledgeButton.IsEnabled) return;
+        if (sidebarId is not null && _sidebarPendingDraw == sidebarId)
+        {
+            if (_sidebarReceiptAbsent) await VerifySidebarDrawAsync(confirmMissing: true);
+            else if (_sidebarObservedDraw is { State: "Unknown" } observed && observed.RequestId == id)
+                await RunAsync("acknowledge", acknowledge: id);
+        }
+        else if (sidebarId is null && _sidebarPendingDraw is null && _state?.Operation is { State: "Unknown" } op && op.RequestId == id)
+            await RunAsync("acknowledge", acknowledge: id);
     }
 }

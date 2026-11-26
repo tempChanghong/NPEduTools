@@ -168,6 +168,7 @@ internal static partial class Program
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var window = new SecRandomWindow(pipe);
         int draws = 0;
+        Guid? submitted = null;
         async Task RespondUntilLoss()
         {
             SecRandomOperation? operation = null;
@@ -179,11 +180,14 @@ internal static partial class Program
                 {
                     Assert(request.SecRandom?.Action == "quick-draw" && request.ExpectedRevision == 7, "sidebar did not use the fresh draw configuration");
                     draws++;
+                    submitted = request.RequestId;
                     operation = new(request.RequestId, "quick-draw", "Running", "隔离闪抽处理中", DateTimeOffset.Now);
                 }
                 else
                 {
-                    Assert(request.Capability == "secrandom.status", "sidebar requested an unexpected capability");
+                    Assert(operation is null ? request.Capability == "secrandom.status" :
+                        request.Capability == "secrandom.receipt" && request.OperationId == submitted,
+                        "sidebar requested an unexpected capability or another draw's receipt");
                     if (operation is not null) { server.Disconnect(); return; }
                 }
                 await Protocol.WriteAsync(server, new HostResponse(Protocol.Version, request.RequestId,
@@ -200,8 +204,10 @@ internal static partial class Program
                 var command = window.QuickDrawFromSidebarAsync();
                 PumpUntil(() => command.IsCompleted && replies.IsCompleted, "sidebar request did not settle after polling loss");
                 replies.GetAwaiter().GetResult();
-                Assert(command.GetAwaiter().GetResult().Contains("未收到可靠回执") && draws == 1, "sidebar retries the draw or claims success without a final receipt");
-                Assert(!Button(owner, "DrawButton").IsEnabled && ((TextBlock)owner.FindName("OperationText")).Text.Contains("仅供核对"),
+                Assert(command.GetAwaiter().GetResult() is { State: SidebarDrawState.Pending } receipt &&
+                    receipt.RequestId == submitted && draws == 1, "sidebar retries the draw or claims success without a final receipt");
+                Assert(!Button(owner, "DrawButton").IsEnabled && ((TextBlock)owner.FindName("OperationText")).Text.Contains("结果待核实") &&
+                    string.IsNullOrEmpty(((TextBlock)owner.FindName("WinnerText")).Text),
                     "sidebar reconnect guidance presents an old operation as current or enables repeat draw");
                 Checks.Add("Sidebar uses a fresh revision, sends one draw and preserves its request receipt; a lost final status disables commands and never automatically redraws");
                 window.Shutdown();

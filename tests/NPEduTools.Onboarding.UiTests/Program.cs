@@ -27,7 +27,7 @@ internal static partial class Program
             catch (Exception error) { WriteResult("FAILED", error.ToString()); return 1; }
         }
         bool aboutVersionOnly = args.Length == 2 && args[1] == "--about-version";
-        bool quickBoundariesOnly = args.Length == 2 && args[1] is "--quick-boundaries" or "--quick-slideshow";
+        bool quickBoundariesOnly = args.Length == 2 && args[1] is "--quick-boundaries" or "--quick-slideshow" or "--secrandom-sidebar-receipt";
         bool quickWorkspaceOnly = args.Length == 2 && args[1] == "--quick-workspace";
         bool homeWorkspaceOnly = args.Length == 2 && args[1] == "--home-workspace";
         bool connectionWorkspaceOnly = args.Length == 2 && args[1] == "--connection-workspace";
@@ -86,7 +86,12 @@ internal static partial class Program
             if (schoolStudySeating) { RunSchoolStudySeatingAcceptance(args[2]); WriteResult("PASSED", null); return 0; }
             if (studyReliabilityOnly) { RunStudyReliabilityChecks(); WriteResult("PASSED", null); return 0; }
             if (aboutVersionOnly) { RunAboutVersionChecks(); WriteResult("PASSED", null); return 0; }
-            if (quickBoundariesOnly) { if (args[1] == "--quick-slideshow") RunQuickSlideShowChecks(); else RunQuickBoundaryChecks(); WriteResult("PASSED", null); return 0; }
+            if (quickBoundariesOnly)
+            {
+                if (args[1] == "--quick-boundaries") RunQuickBoundaryChecks();
+                else RunQuickSlideShowChecks(drawReceipt: args[1] == "--secrandom-sidebar-receipt");
+                WriteResult("PASSED", null); return 0;
+            }
             if (quickWorkspaceOnly) { RunQuickWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (connectionWorkspaceOnly) { RunConnectionWorkspaceChecks(); WriteResult("PASSED", null); return 0; }
             if (homeWorkspaceOnly) { RunHomeWorkspaceChecks(); WriteResult("PASSED", null); return 0; }

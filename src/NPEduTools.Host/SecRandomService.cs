@@ -59,6 +59,15 @@ public sealed class SecRandomService : IAsyncDisposable
         {
             HostResponse Reply(string outcome, string? code, string message) => new(Protocol.Version, request.RequestId, outcome, code, message, SecRandom: Snapshot());
             if (request.Capability == "secrandom.status") return Reply("Succeeded", null, "SecRandom 本机状态；接口状态以上次检查时间为准。");
+            if (request.Capability == "secrandom.receipt")
+            {
+                if (_error is not null) return Reply("Rejected", "SecRandomUnavailable", _error);
+                var draw = _saved.Receipts.FirstOrDefault(x => x.RequestId == request.OperationId && x.Action == "quick-draw");
+                return new(Protocol.Version, request.RequestId, draw is null ? "Rejected" : "Succeeded",
+                    draw is null ? "SecRandomReceiptNotFound" : null,
+                    draw is null ? "当前没有找到这次闪抽的回执。" : "已读取本次闪抽。",
+                    SecRandom: new(_saved.Path, _saved.Revision, _connection, _checked, draw));
+            }
             if (_stopping || _error is not null) return Reply("Rejected", "SecRandomUnavailable", _error ?? "后台正在停止。");
             if (request.ExpectedRevision != _saved.Revision) return Reply("Rejected", "RevisionConflict", "程序位置已变化，请刷新后再操作。");
             var existing = _saved.Receipts.FirstOrDefault(x => x.RequestId == request.RequestId);

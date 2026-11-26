@@ -106,8 +106,10 @@ internal static partial class Program
 
             Click(main, "HomeTab", true);
             Volatile.Write(ref state, pending);
-            var quick = (Task<string>)typeof(MainWindow).GetMethod("QuickDrawSecRandomAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, null)!;
-            PumpUntil(() => quick.IsCompleted && panel.IsVisible && acknowledge.IsEnabled, "side-rail guidance did not reopen the main workspace");
+            var quick = (Task<SidebarDrawReceipt>)typeof(MainWindow).GetMethod("QuickDrawSecRandomAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, null)!;
+            PumpUntil(() => quick.IsCompleted, "side-rail read did not finish");
+            Assert(!panel.IsVisible && quick.GetAwaiter().GetResult() is { State: SidebarDrawState.Pending } receipt && receipt.RequestId == original,
+                "side-rail guidance stole the current workspace or lost the original request");
             Assert(new WindowInteropHelper(controller).Handle == 0 && Volatile.Read(ref draws) == 0,
                 "side-rail guidance opened a separate window or resent the original draw");
 

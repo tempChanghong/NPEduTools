@@ -149,6 +149,33 @@ public sealed class SecRandomTests
         Assert.Equal("Succeeded", f.Service.Handle(request).Outcome); Assert.Equal(1, f.Draws);
         Assert.Equal("RequestIdReuse", f.Service.Handle(request with { SecRandom = new("show-float") }).ErrorCode);
     }
+    [Fact] public async Task ExactReceiptReadsOriginalDrawAfterItsSnapshotWasReplaced()
+    {
+        await using var f = new Fixture();
+        f.Configure();
+        var draw = f.Command("quick-draw");
+        f.Service.Handle(draw);
+        await f.Wait();
+        var check = f.Command("check");
+        f.Service.Handle(check);
+        await f.Wait();
+        Assert.Equal(check.RequestId, f.Service.Snapshot().Operation!.RequestId);
+
+        var read = new HostRequest(Protocol.Version, Guid.NewGuid(), "secrandom.receipt", OperationId: draw.RequestId);
+        Assert.Null(Protocol.Validate(read));
+        Assert.NotNull(Protocol.Validate(read with { OperationId = null }));
+        Assert.NotNull(Protocol.Validate(read with { OperationId = Guid.Empty }));
+        Assert.NotNull(Protocol.Validate(read with { SecRandom = new("quick-draw") }));
+        var receipt = f.Service.Handle(read);
+        Assert.Equal("Succeeded", receipt.Outcome);
+        Assert.Equal(draw.RequestId, receipt.SecRandom!.Operation!.RequestId);
+        Assert.Equal("Succeeded", receipt.SecRandom.Operation.State);
+        var missing = f.Service.Handle(read with { OperationId = check.RequestId });
+        Assert.Equal("SecRandomReceiptNotFound", missing.ErrorCode);
+        Assert.Null(missing.SecRandom!.Operation);
+        Assert.Equal(check.RequestId, f.Service.Snapshot().Operation!.RequestId);
+        Assert.Equal(1, f.Draws);
+    }
     [Fact] public async Task ConcurrentCommandsAreRejectedAndGateHeld()
     {
         var pending = new TaskCompletionSource<SecRandomReply>(TaskCreationOptions.RunContinuationsAsynchronously);

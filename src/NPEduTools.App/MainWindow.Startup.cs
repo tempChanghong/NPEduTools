@@ -44,7 +44,7 @@ public partial class MainWindow
         _quick.SetShortcuts(_shortcuts);
         _quick.SetExamAwareAction(OpenExamAwareQuick);
         _quick.SetSecRandomAction(ShowSecRandom);
-        _quick.SetSecRandomQuickDrawAction(QuickDrawSecRandomAsync);
+        _quick.SetSecRandomQuickDrawAction(QuickDrawSecRandomAsync, VerifySidebarDrawAsync);
         _quick.SetClassroomModeAction(ShowClassroomMode);
         _quick.SetStudyAction(() => ShowStudyWorkspace(_homeStudyTarget));
         RefreshWorkspaceHome();

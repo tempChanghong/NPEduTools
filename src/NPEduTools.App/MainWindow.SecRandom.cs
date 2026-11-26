@@ -47,7 +47,8 @@ public partial class MainWindow
     {
         if (_secRandomWindow is not null) return _secRandomWindow;
         _secRandomWindow = new SecRandomWindow(_pipe);
-        _secRandomWindow.SetWorkspaceNavigation(ReturnFromSecRandom, ShowSecRandom);
+        _secRandomWindow.SetWorkspaceNavigation(ReturnFromSecRandom);
+        _secRandomWindow.SidebarDrawVerified += receipt => _quick?.ApplyVerifiedSidebarDraw(receipt);
         return _secRandomWindow;
     }
 
@@ -74,9 +75,11 @@ public partial class MainWindow
         });
     }
 
-    private Task<string> QuickDrawSecRandomAsync()
+    private Task<SidebarDrawReceipt> QuickDrawSecRandomAsync() => GetSecRandomController().QuickDrawFromSidebarAsync();
+
+    private async Task VerifySidebarDrawAsync()
     {
-        _quick?.Collapse(false);
-        return GetSecRandomController().QuickDrawFromSidebarAsync();
+        ShowSecRandom();
+        if (SecRandomWorkspaceHost.IsVisible) await GetSecRandomController().VerifySidebarDrawAsync();
     }
 }

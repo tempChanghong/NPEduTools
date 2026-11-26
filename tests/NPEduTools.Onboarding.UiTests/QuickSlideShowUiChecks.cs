@@ -78,7 +78,7 @@ internal static partial class Program
     }
 
     // Opt-in integration check. Only create and close our own unsaved presentation.
-    private static void RunQuickSlideShowChecks()
+    private static void RunQuickSlideShowChecks(bool drawReceipt = false)
     {
         var existing = Process.GetProcessesByName("POWERPNT");
         bool startedOffice = existing.Length == 0;
@@ -120,6 +120,12 @@ internal static partial class Program
             bool activated = ActivateSlide(slideHandle);
             Checks.Add($"PowerPoint initial activation={activated}, show={slideHandle:X}, foreground={QuickForeground():X}");
             PumpUntil(() => QuickForeground() == slideHandle, "PowerPoint show did not become foreground");
+
+            if (drawReceipt)
+            {
+                RunScreenEdgeDrawReceiptChecks(slideHandle, () => (int)show.View.CurrentShowPosition);
+                return;
+            }
 
             string pipe = "NPEduTools.Test.slide-focus." + Guid.NewGuid().ToString("N");
             int shortcutOpens = 0;
