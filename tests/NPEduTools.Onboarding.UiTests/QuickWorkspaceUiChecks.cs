@@ -21,7 +21,6 @@ internal static partial class Program
         T Control<T>(string name) where T : FrameworkElement => (T)quick.FindName(name);
         void Invoke(string name, params object?[] args) => typeof(QuickAccessWindow).GetMethod(name, flags)!.Invoke(quick, args);
         void Field(string name, object value) => typeof(QuickAccessWindow).GetField(name, flags)!.SetValue(quick, value);
-        bool Dragging() => (bool)typeof(QuickAccessWindow).GetField("_dragging", flags)!.GetValue(quick)!;
         var panel = Control<Border>("PanelSurface");
         try
         {
@@ -67,46 +66,44 @@ internal static partial class Program
                 "PPT status masquerades as overall health");
             Checks.Add("Main and sidebar share study presentation; clock/pipe loss withdraws live assertions; PPT dot is scoped to PPT only");
 
-            // Physical points are compared against logical distance multiplied by DPI/density.
-            foreach (double physicalScale in new[] { .8, 1d, 1.6, 2d })
+            foreach (double density in new[] { .8, .9, 1d })
             {
+                quick.SetDensity(density);
                 quick.Collapse(false); quick.SetCompact(false); quick.UpdateLayout();
-                var start = quick.PointToScreen(new Point(30, 30));
-                Invoke("BeginDrag", start); Field("_gestureScale", physicalScale);
-                Invoke("MoveHandle", new Point(start.X + 10 * physicalScale, start.Y));
-                Assert(!Dragging(), "ordinary jitter became a drag at scale " + physicalScale);
-                Invoke("FinishDrag"); PumpUntil(() => panel.IsVisible, "small jitter did not click at scale " + physicalScale);
-                quick.Collapse(false);
-                start = quick.PointToScreen(new Point(30, 30)); Invoke("BeginDrag", start); Field("_gestureScale", physicalScale);
-                Invoke("MoveHandle", new Point(start.X, start.Y - 15 * physicalScale)); Assert(Dragging(), "intentional drag did not cross threshold");
-                Invoke("FinishDrag"); Assert(panel.Visibility == Visibility.Collapsed, "drag release toggled panel");
+                foreach (string name in new[] { "EdgeHandle", "RailFold", "RailTools", "RailShortcuts", "RailSecRandom", "RailSettings" })
+                    CheckTouchTarget(name);
+                quick.OpenPanel(); Click(quick, "LayoutButton"); quick.UpdateLayout();
+                foreach (string name in new[] { "EdgeHandle", "CollapseButton", "ToolsTab", "ShortcutsTab", "LayoutButton", "LayoutShape", "LayoutMove" })
+                    CheckTouchTarget(name);
+                if (density == .8) Snapshot(quick, "screen-edge-layout-options.png");
             }
-            foreach (bool compact in new[] { false, true })
-            {
-                quick.SetCompact(compact); quick.OpenPanel(); quick.UpdateLayout();
-                var expandedStart = quick.PointToScreen(Control<Button>("EdgeHandle").TranslatePoint(new Point(20, 20), quick));
-                var handleTop = quick.PointToScreen(Control<Button>("EdgeHandle").TranslatePoint(new Point(), quick));
-                Invoke("BeginDrag", expandedStart); Invoke("MoveHandle", new Point(expandedStart.X, expandedStart.Y - 50)); quick.UpdateLayout();
-                Assert(Dragging() && panel.Visibility == Visibility.Collapsed, "expanded handle cannot drag or executes a click");
-                var movedTop = quick.PointToScreen(Control<Button>("EdgeHandle").TranslatePoint(new Point(), quick));
-                Assert(Math.Abs(movedTop.Y - (handleTop.Y - 50)) <= 2, "expanded-to-compact drag jumps away from finger");
-                Invoke("FinishDrag");
-            }
-            Invoke("BeginDrag", quick.PointToScreen(new Point(30, 30))); Invoke("CancelDrag"); Invoke("FinishDrag");
+            quick.Collapse(false);
+            var handle = quick.PointToScreen(QuickHandleCenter(quick));
+            Invoke("BeginHandlePress", handle); Invoke("CancelHandlePress"); Invoke("FinishHandlePress");
             Assert(panel.Visibility == Visibility.Collapsed, "cancelled capture executes click");
-            Invoke("BeginDrag", quick.PointToScreen(new Point(30, 30))); Invoke("FinishDrag");
-            Invoke("BeginDrag", quick.PointToScreen(new Point(30, 30))); Invoke("CancelDrag");
+            Invoke("BeginHandlePress", handle); Invoke("FinishHandlePress");
+            Invoke("BeginHandlePress", handle); Invoke("CancelHandlePress");
             var settled = System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             PumpUntil(() => settled.Task.IsCompleted, "queued tap cancellation did not settle");
             Assert(panel.Visibility == Visibility.Collapsed, "earlier queued tap survived newer cancelled gesture");
-            Checks.Add("12 logical-pixel dead zone at simulated 80/100/160/200-percent scales: jitter clicks, drag never clicks, expanded drag works, cancelled and superseded gestures cannot reopen");
+            Checks.Add("Actual transformed rail, tabs and layout buttons stay at least 44 DIP at each supported density; old or cancelled taps cannot reopen a panel");
+
+            void CheckTouchTarget(string name)
+            {
+                var button = Control<Button>(name);
+                var start = button.TranslatePoint(new Point(), quick);
+                var end = button.TranslatePoint(new Point(button.ActualWidth, button.ActualHeight), quick);
+                Assert(button.IsVisible && end.X - start.X >= 43.5 && end.Y - start.Y >= 43.5 &&
+                    start.X >= 0 && start.Y >= 0 && end.X <= quick.ActualWidth + 1 && end.Y <= quick.ActualHeight + 1,
+                    $"touch target is too small or clipped at the selected density: {name}, bounds={start} to {end}");
+            }
 
             quick.SetCompact(true); quick.SetSide(System.Windows.Forms.Cursor.Position.X > System.Windows.Forms.Screen.PrimaryScreen!.Bounds.Width / 2); quick.UpdateLayout();
             Field("_handleActivity", Stopwatch.GetTimestamp() - 5 * Stopwatch.Frequency);
             PumpUntil(() => Control<Border>("Rail").Opacity == .6, "idle timer did not fade compact handle");
             Assert(Control<Border>("Rail").Opacity == .6, "idle compact handle is not translucent");
             Snapshot(quick, "quick-idle-handle.png");
-            Invoke("BeginDrag", quick.PointToScreen(new Point(30, 30))); Assert(Control<Border>("Rail").Opacity == 1, "input starts with faded handle"); Invoke("CancelDrag");
+            Invoke("BeginHandlePress", quick.PointToScreen(new Point(30, 30))); Assert(Control<Border>("Rail").Opacity == 1, "input starts with faded handle"); Invoke("CancelHandlePress");
             quick.SetAutoHidden(true); quick.UpdateStudy("学校自习进行中", "新鲜状态", "", "查看学校自习", true); quick.UpdateRecording(active);
             Assert(!quick.IsVisible, "background refresh restored rail over fullscreen");
             quick.SetAutoHidden(false); quick.UpdateLayout();
