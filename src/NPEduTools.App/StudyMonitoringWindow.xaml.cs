@@ -237,7 +237,12 @@ public partial class StudyMonitoringWindow : Window
         else new StudySeatingUploadWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
     }
     private void CalibrationClicked(object sender, RoutedEventArgs e) => new NoiseCalibrationWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
-    private void ReferenceClicked(object sender, RoutedEventArgs e) => new NoiseReferenceWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
+    internal Action? OpenManualReference { get; init; }
+    private void ReferenceClicked(object sender, RoutedEventArgs e)
+    {
+        if (OpenManualReference is { } open) open();
+        else new NoiseReferenceWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog();
+    }
     internal Action? OpenCalibration { get; set; }
     private void MeterClicked(object sender, RoutedEventArgs e) { if (OpenCalibration is { } open) open(); else new SoundMeterWindow(_pipe) { Owner = WorkspacePanel.DialogOwner(this) }.ShowDialog(); }
 }

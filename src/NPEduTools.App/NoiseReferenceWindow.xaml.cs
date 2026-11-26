@@ -30,11 +30,15 @@ public partial class NoiseReferenceWindow : Window
     private async Task ReadAccessAsync(CancellationToken token, long stamp)
     {
         var reply = await HostClient.RequestAsync(_pipe, "noise.management.status", token);
-        if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
+        if (!_order.Current(stamp) || _lifetime.IsCancellationRequested || (_manualWorkspace && !_manualVisible)) return;
         ShowAccess(reply.NoiseProtection);
     }
     private void ShowAccess(NoiseProtectionState? state)
     {
+        if (_manualWorkspace && _access is { } previous && state is { } current &&
+            (previous.ManagementSource != current.ManagementSource || previous.CredentialRevision != current.CredentialRevision ||
+             previous.InstanceId != current.InstanceId))
+            ManagementSecret.Clear();
         if (_verifiedAccess is { } verified && (state?.ManagementSource != verified.ManagementSource ||
             state?.CredentialRevision != verified.CredentialRevision || state?.InstanceId != verified.InstanceId))
             RestoreCredentials(true);
@@ -63,6 +67,11 @@ public partial class NoiseReferenceWindow : Window
     public NoiseReferenceWindow(string pipe, string? meterPath = null)
     {
         _pipe = pipe; _meterPath = meterPath; InitializeComponent(); DesktopDialogSizing.Attach(this, pipe);
+        ReferenceSampleLayout.Children.Remove(ReferenceSampleReading);
+        LegacySampleDetailsBody.Children.Add(ReferenceSampleReading);
+        OptionalRangeInputs.IsExpanded = true;
+        OptionalRangeInputs.Template = (ControlTemplate)ReferenceRoot.FindResource("ManualFlatExpanderTemplate");
+        ManualReferenceInputs.Orientation = Orientation.Horizontal;
         if (meterPath is not null)
         {
             Title = "USB 同期校准 (Beta) · NPEduTools"; Heading.Text = "USB 同期校准 (Beta)";
@@ -81,7 +90,7 @@ public partial class NoiseReferenceWindow : Window
         RoleChoice.ItemsSource = new[] { new Choice("Primary", "第一电平"), new Choice("Check", "复核电平") };
         RoleChoice.SelectedIndex = 0;
         _timer.Tick += async (_, _) => await ReadAsync();
-        Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); };
+        Loaded += async (_, _) => { if (!_manualWorkspace) { _timer.Start(); await ReadAsync(); } };
         Closed += (_, _) => { _timer.Stop(); _order.Advance(); _lifetime.Cancel(); ManagementSecret.Clear(); };
         Closing += async (_, e) =>
         {
@@ -112,21 +121,23 @@ public partial class NoiseReferenceWindow : Window
     private Task ReadAsync() => ReadCoreAsync(false);
     private async Task ReadCoreAsync(bool force)
     {
-        if ((!force && (_reading || _busy)) || _closing || _lifetime.IsCancellationRequested) return;
+        if ((!force && (_reading || _busy)) || _closing || _lifetime.IsCancellationRequested ||
+            (_manualWorkspace && !_manualVisible)) return;
         long stamp = _order.Advance(); _activeRead = stamp; _reading = true;
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
             await ReadAccessAsync(deadline.Token, stamp);
-            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
+            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested || (_manualWorkspace && !_manualVisible)) return;
             var reply = await HostClient.RequestAsync(_pipe, "noise.reference.status", deadline.Token);
-            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
+            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested || (_manualWorkspace && !_manualVisible)) return;
             _connected = reply.Outcome == "Succeeded" && reply.NoiseReference is not null;
             if (_connected) Render(reply.NoiseReference!);
             else { _autoFieldDraft = null; OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access); }
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "后台连接不可用；已停止自动续采，请刷新，旧状态不能用于保存。"; } }
+        { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = _manualWorkspace
+                ? "后台连接不可用。重新连接后会核对原草稿和采样段。" : "后台连接不可用；已停止自动续采，请刷新，旧状态不能用于保存。"; } }
         finally { if (_activeRead == stamp) _reading = false; UpdateButtons(); }
     }
     private static string Number(double? value) => value?.ToString("F2", CultureInfo.CurrentCulture) ?? "—";
@@ -145,8 +156,9 @@ public partial class NoiseReferenceWindow : Window
                 incomingEvaluation.CheckErrorDb is not { } candidateError || !double.IsFinite(candidateError)))
             throw new InvalidDataException("参考校准状态格式不兼容，请刷新或更新后台。");
         bool finishedSample = _state?.State == "Sampling" && state.State != "Sampling";
-        bool changed = _state?.Revision != state.Revision || _state.InstanceId != state.InstanceId;
-        bool newDraft = _state?.Draft?.Id != state.Draft?.Id;
+        var previous = _state;
+        bool changed = previous?.Revision != state.Revision || previous.InstanceId != state.InstanceId;
+        bool newDraft = previous?.Draft?.Id != state.Draft?.Id;
         if (changed && !_busy && !_verifying) OperationMessage.Text = "";
         var previousSelected = (SampleList.SelectedItem as SampleRow)?.Id;
         _state = state;
@@ -154,11 +166,13 @@ public partial class NoiseReferenceWindow : Window
         bool field = state.Draft?.Workflow == "Field";
         if (changed) AcceptReferenceWarning.IsChecked=false;
         AcceptReferenceWarning.Visibility = state.Evaluation.Assessment?.WarningRequired == true ? Visibility.Visible : Visibility.Collapsed;
-        SamplingHeading.Text = field ? "2　自动采集两段现场统计" : usb ? "2　采样与自动取得同期读数" : "2　采样与填入同期读数";
+        SamplingHeading.Text = _manualWorkspace ? "本段采样与同期读数" :
+            field ? "2　自动采集两段现场统计" : usb ? "2　采样与自动取得同期读数" : "2　采样与填入同期读数";
         ManualReferenceInputs.Visibility = SameWindow.Visibility = AttachReference.Visibility = usb ? Visibility.Collapsed : Visibility.Visible;
         ReferenceInstructions.Text = usb ? "同期读数由 USB 自动取得，不能手动覆盖；预热、跨窗口、迟到和不完整数据不用于参考。模式、MAX、低电量、量程变化或断线会使本段作废。" :
             ManualReferenceInstructions;
         DeviceStatus.Text = state.DeviceId is null ? "请先保存监测麦克风" : state.DeviceName is { } name ? "监测麦克风：" + name : "监测麦克风已选择";
+        if (_manualWorkspace) DeviceStatus.ToolTip = DeviceStatus.Text;
         ReferenceHealth.Text = state.Error is not null || state.InvalidationReason is not null ? "参考不可用 · 请重新校准；原配置保留" :
             state.Profile is null ? "尚未保存估算参考" : state.FreshSignatureMatched ? "已保存估算参考 · 本次输入已核对" : "已保存估算参考 · 正式采样时核对输入设置";
         ReferenceHealth.ToolTip = state.Error ?? state.InvalidationReason;
@@ -168,7 +182,7 @@ public partial class NoiseReferenceWindow : Window
             (state.Error is not null || state.InvalidationReason is not null ? "参考不可用：" + (state.Error ?? state.InvalidationReason) + "；请新建草稿重新校准。" : "正式监测会核对所选设备、输入设置与格式；匹配后另行显示估算 dB(A)，原始 dBFS 保留。");
         DraftStatus.Text = state.Draft is { } d ? $"当前草稿：{d.Instrument} · A/{d.TimeWeighting} · 波动 ≤ {d.StabilityDb:F1} dB · " +
             (field?$"自动通过 ≤ {d.CheckToleranceDb:F1} dB，复核硬上限 5 dB":$"复核差值 ≤ {d.CheckToleranceDb:F1} dB") : "请先明确检查门槛并新建草稿。";
-        if (newDraft && state.Draft is { } draft)
+        if (newDraft && state.Draft is { } draft && (!_manualWorkspace || ManualDraft(state) is not null))
         {
             _renderingPreferences=true;
             WorkflowChoice.SelectedValue = draft.Workflow;
@@ -183,10 +197,12 @@ public partial class NoiseReferenceWindow : Window
         MeterStatus.Text = state.Meter?.Reading is { } reading ?
             $"USB {reading.Decibels:F1} dB(A) · {reading.TimeWeighting} · 往返 {reading.RoundTripMilliseconds:F0} ms · 读数年龄 {state.Meter.AgeSeconds:F2} 秒\n{state.Meter.Message}" : state.Meter?.Message ??
             (usb ? "USB 仅在明确开始本段采样时连接，到时／取消后释放；不会自动重连。" : "");
-        SamplingStatus.Text = state.State == "Sampling" ? (field ? state.Draft!.Samples.Any(s => s.Role == "Primary") ? "第二段复核 · " : "第一段参考 · " : "") + $"预热／采样中 · 已采有效统计 {state.MeasuredSeconds:F1} / {Progress.Maximum:g} 秒 · 总过程 {state.ProgressSeconds:F1} / 最多 {NoiseReferenceCalibration.CaptureLimit(state.Draft?.Workflow??"Stable"):g} 秒。关闭此窗口不会无限占用设备，到时自动释放。" :
+        SamplingStatus.Text = state.State == "Sampling" ? (field ? state.Draft!.Samples.Any(s => s.Role == "Primary") ? "第二段复核 · " : "第一段参考 · " : "") + $"预热／采样中 · 已采有效统计 {state.MeasuredSeconds:F1} / {Progress.Maximum:g} 秒 · 总过程 {state.ProgressSeconds:F1} / 最多 {NoiseReferenceCalibration.CaptureLimit(state.Draft?.Workflow??"Stable"):g} 秒。" +
+            (_manualWorkspace ? "返回后本段仍可完成，到时自动释放设备。" : "关闭此窗口不会无限占用设备，到时自动释放。") :
             state.State == "Busy" ? "当前采集占用或运行保护生效（准备／自习／考试、暂停或状态未确认），暂不可操作参考校准。" :
             state.State == "Unsupported" ? "当前后台尚不支持 A 加权参考采样，请更新后台。" : state.CaptureMessage ?? "请选择电平开始采样；重采同一电平会替换其旧统计和参考读数。";
-        if (changed)
+        if (_manualWorkspace) RenderManualSegments(previous, state, changed);
+        else if (changed)
         {
             var samples = state.Draft?.Samples ?? [];
             SampleList.ItemsSource = samples.Select(s => new SampleRow(s.Id,
@@ -201,7 +217,7 @@ public partial class NoiseReferenceWindow : Window
         EvaluationStatus.Text = evaluation.Message + (evaluation.OffsetDb is { } offset ?
             $"\n候选偏移 {offset:+0.00;-0.00;0.00} dB · {(field?"第二段偏移复核差值":"第二电平复核差值")} {Number(evaluation.CheckErrorDb)} dB" : "");
         if (state.Error is not null) OperationMessage.Text = "外部参考文件不可用，原文件已保留；未应用任何新值。";
-        if (_meterPath is not null)
+        if (!_manualWorkspace && _meterPath is not null)
         {
             if (state.Draft?.MeterDevicePath != _meterPath) _step = 1;
             else if (state.State == "Sampling") _step = 2;
@@ -215,9 +231,13 @@ public partial class NoiseReferenceWindow : Window
     {
         bool field=workflow=="Field";
         ToleranceLabel.Text=field?"自动通过差值（dB）":"复核允许差值（dB）";
-        LimitInstructions.Text=field ? "现场模式：允许声场波动 0.1–20 dB，默认 20；自动通过差值 0.1–3 dB，默认 3。超过自动门槛但不超过 5 dB 需明确确认，超过 5 dB 不能保存。这些是工程门槛，不是精度保证。修改后须新建草稿。" :
+        LimitInstructions.Text=_manualWorkspace ? "允许波动和复核允许差值均填 0.1–5 dB。修改门槛须新建草稿。" :
+            field ? "现场模式：允许声场波动 0.1–20 dB，默认 20；自动通过差值 0.1–3 dB，默认 3。超过自动门槛但不超过 5 dB 需明确确认，超过 5 dB 不能保存。这些是工程门槛，不是精度保证。修改后须新建草稿。" :
             "严格模式：允许波动与复核差值均为 0.1–5 dB，须明确填写。两段参考至少相差 6 dB；这些不是设备精度。修改后须新建草稿。";
-        SamplingInstructions.Text=field ? "一次点击，先预热约 5 秒并采第一段 30 秒；第一段有效后自动再预热并采第二段 30 秒，约 70 秒完成两段。保持仪表、麦克风位置与设置不变，使用自然环境，不必让学生配合或人为制造 6 dB 差距。失败、取消、连接中断或关闭窗口会停止自动续采；不会自动保存。" :
+        SamplingInstructions.Text=_manualWorkspace
+            ? $"仪表 A/{(_state?.Draft?.TimeWeighting == "Fast" ? "FAST" : "SLOW")}。两段同期读数至少相差 6 dB。"
+            :
+            field ? "一次点击，先预热约 5 秒并采第一段 30 秒；第一段有效后自动再预热并采第二段 30 秒，约 70 秒完成两段。保持仪表、麦克风位置与设置不变，使用自然环境，不必让学生配合或人为制造 6 dB 差距。失败、取消、连接中断或关闭窗口会停止自动续采；不会自动保存。" :
             "先采第一电平，再换一个稳定电平作复核。两段参考至少相差 6 dB；此间隔用于检查输入链路，不是精度承诺。每次先预热 5 秒，再收集约 10 秒统计，总过程最多 20 秒。";
         RoleChoice.Visibility=field?Visibility.Collapsed:Visibility.Visible;
         StartSample.Content=field?"开始现场校准（两段自动）":"开始本段采样";
@@ -284,7 +304,8 @@ public partial class NoiseReferenceWindow : Window
     }
     private void UpdateSteps()
     {
-        if (_meterPath is null) return; // Keep manual reference entry and all its controls available.
+        if (_manualWorkspace) { UpdateManualSteps(); return; }
+        if (_meterPath is null) return; // Keep the standalone manual entry and its controls available.
         PreparePanel.Visibility = _step == 1 ? Visibility.Visible : Visibility.Collapsed;
         SamplePanel.Visibility = _step == 2 ? Visibility.Visible : Visibility.Collapsed;
         ResultPanel.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
@@ -299,6 +320,14 @@ public partial class NoiseReferenceWindow : Window
     }
     private void Navigate(int step)
     {
+        if (_manualWorkspace)
+        {
+            if (step == 1 && SetupStep.IsEnabled ||
+                step == 2 && SamplingStep.IsEnabled ||
+                step == 3 && ResultStep.IsEnabled)
+            { _step = step; UpdateButtons(); }
+            return;
+        }
         if (_busy || _closing || _verifying || _connected && (_state?.State == "Sampling" || _autoFieldDraft is not null)) return;
         if (!_connected && step != 1) return;
         if (step != 1 && _state?.Draft?.MeterDevicePath != _meterPath) return;
@@ -310,7 +339,9 @@ public partial class NoiseReferenceWindow : Window
     private async Task SendAsync(string action, string? role = null, Guid? sample = null,
         double? reference = null, double? minimum = null, double? maximum = null, NoiseReferenceState? confirmedState = null)
     {
-        if (_busy || _closing || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
+        if (_busy || _closing || _verifying || _state is null || _lifetime.IsCancellationRequested ||
+            (_manualWorkspace && (!_manualVisible || !_connected || (action is not ("begin" or "clear") && ManualDraft(_state) is null))))
+            return;
         double? stability = null, tolerance = null;
         if (action == "begin")
         {
@@ -336,7 +367,7 @@ public partial class NoiseReferenceWindow : Window
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
             var reply = await HostClient.RequestAsync(_pipe, new HostRequest(1, Guid.NewGuid(), "noise.reference.command", NoiseReference: command), deadline.Token);
             if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
-            _connected = reply.NoiseReference is not null;
+            _connected = reply.NoiseReference is not null && (!_manualWorkspace || _manualVisible);
             if (reply.NoiseProtection is not null) ShowAccess(reply.NoiseProtection);
             if (action == "start" && reply.Outcome == "Accepted" && reply.NoiseReference is { State: "Sampling", Draft: { } owned } started)
             { _ownedSampleDraft = owned.Id; _ownedSamplingRevision = started.Revision;
@@ -347,10 +378,17 @@ public partial class NoiseReferenceWindow : Window
             if (action == "cancel" && reply.Outcome == "Succeeded")
             { _ownedSampleDraft = null; _ownedSamplingRevision = null; }
             if (reply.NoiseReference is { } state) Render(state);
+            if (_manualWorkspace && reply.Outcome == "Succeeded")
+            {
+                if (action == "begin" && ManualDraft(_state) is not null) _step = 2;
+                if (action == "reference" && ManualReviewReady(ManualDraft(_state))) _step = 3;
+            }
             OperationMessage.Text = CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = "操作结果未确认，已停止自动续采；请刷新核对，不会自动重复采样或保存。"; } }
+        { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) { _autoFieldDraft=null; _connected = false; OperationMessage.Text = _manualWorkspace
+                ? "操作结果未确认。正在核对原草稿，不会自动重复采样或保存。"
+                : "操作结果未确认，已停止自动续采；请刷新核对，不会自动重复采样或保存。"; } }
         finally
         {
             _busy = false;
@@ -361,6 +399,7 @@ public partial class NoiseReferenceWindow : Window
     }
     private void SampleSelected(object sender, SelectionChangedEventArgs e)
     {
+        if (_manualWorkspace) { ManualSampleSelected(); return; }
         var sample = _state?.Draft?.Samples.FirstOrDefault(s => s.Id == (SampleList.SelectedItem as SampleRow)?.Id);
         ReferenceValue.Text = sample?.ReferenceDbA?.ToString(CultureInfo.CurrentCulture) ?? "";
         ReferenceMinimum.Text = sample?.ReferenceMinimumDbA?.ToString(CultureInfo.CurrentCulture) ?? "";
@@ -370,14 +409,19 @@ public partial class NoiseReferenceWindow : Window
     private async void RefreshClicked(object sender, RoutedEventArgs e)
     {
         if (_busy || _closing || _verifying || _lifetime.IsCancellationRequested) return;
+        if (_manualWorkspace && (_step != 1 || string.IsNullOrEmpty(ManagementSecret.Password)))
+        { await ReadCoreAsync(true); return; }
+        string? manualSecret = _manualWorkspace ? ManagementSecret.Password : null;
         _busy = _verifying = true; _order.Advance(); UpdateButtons();
         await ReadCoreAsync(true);
+        if (_manualWorkspace && (!_manualVisible || manualSecret != ManagementSecret.Password))
+        { _busy = _verifying = false; UpdateButtons(); return; }
         long stamp = _order.Advance();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
         try
         {
             var reply = await CalibrationAccess.VerifyAsync(_pipe, ManagementSecret.Password, deadline.Token);
-            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested) return;
+            if (!_order.Current(stamp) || _lifetime.IsCancellationRequested || (_manualWorkspace && !_manualVisible)) return;
             ShowAccess(reply.NoiseProtection ?? _access);
             OperationMessage.Text = reply.Outcome == "Succeeded" ? _connected ? "管理口令验证通过；校准状态已刷新。" : "管理口令验证通过；采样状态仍待确认，请重试刷新。" :
                 CalibrationAccess.Message(reply.ErrorCode, reply.Message, _access);
@@ -402,17 +446,29 @@ public partial class NoiseReferenceWindow : Window
         if (_busy || _closing || _verifying || _state is null || _lifetime.IsCancellationRequested) return;
         // Status polls continue inside a modal dialog; consent belongs to this snapshot.
         var confirmedState = _state;
-        if (confirmedState.Draft?.Samples.Count > 0 && !confirm()) return;
+        if (confirmedState.Draft is { } draft &&
+            (draft.Samples.Count > 0 || _manualWorkspace && ManualDraft(confirmedState) is null) && !confirm()) return;
         await SendAsync("begin", confirmedState: confirmedState);
     }
     private async void BeginClicked(object sender, RoutedEventArgs e) =>
         await BeginDraftAsync(() => MessageBox.Show(WorkspacePanel.DialogOwner(this), "新草稿会替换已有参考统计，已确认参考保留。继续吗？",
             "新建外部参考草稿", MessageBoxButton.OKCancel) == MessageBoxResult.OK);
-    private async void StartClicked(object sender, RoutedEventArgs e) => await SendAsync("start", role: SelectedWorkflow=="Field"?"Primary":RoleChoice.SelectedValue as string);
+    private async void StartClicked(object sender, RoutedEventArgs e)
+    {
+        var role = SelectedWorkflow == "Field" ? "Primary" : RoleChoice.SelectedValue as string;
+        var snapshot = _state;
+        if (_manualWorkspace && ManualDraft(snapshot)?.Samples.Any(sample => sample.Role == role) == true &&
+            MessageBox.Show(WorkspacePanel.DialogOwner(this), "重新采样会替换该电平的原统计和同期读数。其他采样段保留。继续吗？",
+                "重新采样", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) != MessageBoxResult.OK)
+            return;
+        await SendAsync("start", role: role, confirmedState: snapshot);
+    }
     private async void CancelClicked(object sender, RoutedEventArgs e) => await SendAsync("cancel");
     private async void RemoveClicked(object sender, RoutedEventArgs e) => await SendAsync("remove", sample: (SampleList.SelectedItem as SampleRow)?.Id);
     private async void ReferenceClicked(object sender, RoutedEventArgs e)
     {
+        if (_manualWorkspace && (!AttachReference.IsEnabled || _manualInputSample?.Id != (SampleList.SelectedItem as SampleRow)?.Id))
+            return;
         bool ParseOptional(string text, out double? value)
         { value = null; if (string.IsNullOrWhiteSpace(text)) return true; if (!double.TryParse(text, out double v)) return false; value = v; return true; }
         if (!double.TryParse(ReferenceValue.Text, out double reference) || !ParseOptional(ReferenceMinimum.Text, out var minimum) ||

@@ -86,6 +86,7 @@ public partial class MainWindow
             };
         }
         if (WorkspaceCalibration.Visibility == Visibility.Visible) return RestoreWorkspaceCalibration;
+        if (WorkspaceManualReference.Visibility == Visibility.Visible) return ShowWorkspaceManualReference;
         if (WorkspaceSeating.Visibility == Visibility.Visible) return ShowWorkspaceSeating;
         if (StudyWorkspace.Visibility == Visibility.Visible)
         {

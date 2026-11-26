@@ -14,6 +14,7 @@ public partial class MainWindow
     private string _workspaceTab = "Manual";
     private string _homeStudyTarget = "Manual";
     private Window? _workspaceCalibrationController;
+    private NoiseReferenceWindow? _workspaceManualReferenceController;
     private StudySeatingUploadWindow? _workspaceSeatingController;
     private long _workspaceReportGeneration;
     private CancellationTokenSource? _workspaceReportRead;
@@ -25,6 +26,7 @@ public partial class MainWindow
         {
             CancelWorkspaceReports();
             _workspaceSeatingController?.Dismiss();
+            _workspaceManualReferenceController?.Close();
         };
     }
     private void RefreshWorkspaceHome()
@@ -73,7 +75,8 @@ public partial class MainWindow
     private void HideStudyWorkspace(bool keepCalibration)
     {
         CancelWorkspaceReports();
-        StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = WorkspaceSeating.Visibility = Visibility.Collapsed;
+        StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = WorkspaceSeating.Visibility =
+            WorkspaceManualReference.Visibility = Visibility.Collapsed;
         StudyNav.Tag = null;
         if (!keepCalibration) CloseWorkspaceCalibration();
     }
@@ -103,7 +106,11 @@ public partial class MainWindow
         if (tab == "School" && _studyMonitoringWindow is null)
         {
             _studyMonitoringWindow = new StudyMonitoringWindow(_pipe, () => ShowStudyWorkspace("Manual"))
-            { OpenCalibration = ShowWorkspaceCalibration, OpenSeatingWorkspace = ShowWorkspaceSeating };
+            {
+                OpenCalibration = ShowWorkspaceCalibration,
+                OpenManualReference = ShowWorkspaceManualReference,
+                OpenSeatingWorkspace = ShowWorkspaceSeating
+            };
             SchoolWorkspaceHost.Content = new WorkspacePanel(_studyMonitoringWindow, this, _studyMonitoringWindow.WorkspaceVisibilityChanged);
         }
         RestoreWindow();
@@ -170,6 +177,39 @@ public partial class MainWindow
         Dispatcher.InvokeAsync(() =>
         {
             if (SchoolWorkspaceHost.IsVisible && _studyMonitoringWindow?.SchoolSeatingButton is { IsVisible: true } button)
+            {
+                button.BringIntoView();
+                button.Focus();
+            }
+        }, DispatcherPriority.Input);
+    }
+
+    private void ShowWorkspaceManualReference()
+    {
+        if (WorkspaceManualReference.Visibility == Visibility.Visible) return;
+        SelectPage(false);
+        HomePage.Visibility = Visibility.Collapsed;
+        HomeNav.Tag = null;
+        StudyNav.Tag = "active";
+        PageBreadcrumb.Text = "自习 / 手动声级计参考";
+        if (_workspaceManualReferenceController is null)
+        {
+            var controller = new NoiseReferenceWindow(_pipe);
+            controller.EnableManualWorkspace();
+            _workspaceManualReferenceController = controller;
+            WorkspaceManualReferenceHost.Content = new WorkspacePanel(controller, this, controller.ManualWorkspaceVisibilityChanged);
+        }
+        WorkspaceManualReference.Visibility = Visibility.Visible;
+        RestoreWindow();
+        WorkspaceManualReferenceBack.Focus();
+    }
+
+    private void ReturnFromManualReferenceClicked(object sender, RoutedEventArgs e)
+    {
+        ShowStudyWorkspace("School");
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (SchoolWorkspaceHost.IsVisible && _studyMonitoringWindow?.ManualReferenceButton is { IsVisible: true } button)
             {
                 button.BringIntoView();
                 button.Focus();

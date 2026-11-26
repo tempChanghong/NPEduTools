@@ -34,7 +34,7 @@
      <WrapPanel>
       <Button x:Name="OpenMeterCalibration" Content="联机校准 (Beta)" Style="{StaticResource TeacherPrimary}" Click="MeterClicked" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="OpenMeterCalibration"/>
       <Button Style="{StaticResource TeacherButton}" Content="快速校准" Click="CalibrationClicked" Padding="14,8" Margin="0,0,10,6" AutomationProperties.AutomationId="OpenQuickCalibration"/>
-      <Button Style="{StaticResource TeacherButton}" Content="手动输入声级计参考" Click="ReferenceClicked" Padding="14,8" Margin="0,0,0,6" AutomationProperties.AutomationId="OpenReferenceCalibration"/>
+      <Button x:Name="ManualReferenceButton" Style="{StaticResource TeacherButton}" Content="手动输入声级计参考" Click="ReferenceClicked" Padding="14,8" Margin="0,0,0,6" AutomationProperties.AutomationId="OpenReferenceCalibration"/>
      </WrapPanel>
     </StackPanel>
    </Border>
