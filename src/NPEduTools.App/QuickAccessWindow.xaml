@@ -46,10 +46,10 @@
         <Button x:Name="RailSettings" Style="{StaticResource RailButton}" Click="SettingsClicked" ToolTip="管理与设置" AutomationProperties.AutomationId="RailSettings" AutomationProperties.Name="打开管理与设置"><StackPanel><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="19" HorizontalAlignment="Center" /><TextBlock Text="设置" FontSize="10" HorizontalAlignment="Center" Margin="0,3,0,0" /></StackPanel></Button>
       </StackPanel>
     </Border>
-    <Border x:Name="PanelSurface" Visibility="Collapsed" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,0">
+    <Border x:Name="PanelSurface" Visibility="Collapsed" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,8,0">
       <Grid>
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <StackPanel Margin="0,0,0,12">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,8">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <TextBlock Text="课堂快捷" Foreground="{DynamicResource TeacherTextBrush}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
             <Button x:Name="LayoutButton" Grid.Column="1" Content="布局" FontSize="13" Padding="10,6" Margin="0,0,4,0" Style="{DynamicResource TeacherQuiet}" Click="LayoutClicked" AutomationProperties.AutomationId="QuickLayout" AutomationProperties.Name="布局与位置选项" />
@@ -62,31 +62,75 @@
             </Grid>
           </Border>
         </StackPanel>
-        <Border Grid.Row="1" Background="{DynamicResource TeacherPageBrush}" CornerRadius="8" Padding="4" Margin="0,0,0,12"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+        <Border Grid.Row="1" Background="{DynamicResource TeacherPageBrush}" CornerRadius="8" Padding="3" Margin="0,0,0,8"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
           <Button x:Name="ToolsTab" Style="{DynamicResource TeacherTab}" Content="课堂工具" Padding="8" Click="ToolsTabClicked" AutomationProperties.AutomationId="QuickToolsTab" Margin="0,0,3,0" />
           <Button x:Name="ShortcutsTab" Style="{DynamicResource TeacherTab}" Grid.Column="1" Content="我的快捷" Padding="8" Click="ShortcutsTabClicked" AutomationProperties.AutomationId="QuickShortcutsTab" Margin="3,0,0,0" />
         </Grid></Border>
-        <ScrollViewer x:Name="ToolsPage" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
+        <Border x:Name="PptQuickStrip" Grid.Row="2" Style="{DynamicResource SettingsGroupSurface}" Padding="10,8" Margin="0,0,0,8"
+                AutomationProperties.AutomationId="QuickPptStrip">
+          <StackPanel>
+            <DockPanel>
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
+                <Ellipse x:Name="RailStatusDot" Fill="#A5B3AB" Width="6" Height="6" Margin="0,0,6,0" VerticalAlignment="Center" />
+                <TextBlock Text="PPT 触摸翻页" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock x:Name="StatusText" Text="正在连接后台…" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
+                         TextTrimming="CharacterEllipsis" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"
+                         AutomationProperties.AutomationId="QuickTouchStatus" />
+            </DockPanel>
+            <Grid x:Name="PptActionLayout" Margin="0,8,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="PptActionGapColumn" Width="6" />
+                <ColumnDefinition x:Name="PptActionSecondaryColumn" Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+              <Button x:Name="PauseButton" Style="{DynamicResource TeacherPrimary}" Content="暂停辅助" Padding="10,0"
+                      Visibility="Hidden" IsEnabled="False" Click="PauseClicked" AutomationProperties.AutomationId="QuickTouchPause" />
+              <Button x:Name="PowerButton" Grid.Column="2" Style="{DynamicResource TeacherButton}" Content="开启辅助" Padding="12,0"
+                      IsEnabled="False" Click="PowerClicked" AutomationProperties.AutomationId="QuickTouchPower" />
+            </Grid>
+          </StackPanel>
+        </Border>
+        <ScrollViewer x:Name="ToolsPage" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
           <Button x:Name="OnboardingEntry" Content="初始设置待完成 · 继续设置  →" Visibility="Collapsed" Click="OnboardingClicked" Style="{DynamicResource TeacherButton}" Margin="0,0,0,12" AutomationProperties.AutomationId="QuickOnboarding" />
           <StackPanel x:Name="TaskStack">
-            <Border x:Name="StudyCard" Style="{DynamicResource SettingsGroupSurface}" Padding="12" Margin="0,0,0,8">
+            <Border x:Name="StudyCard" Style="{DynamicResource SettingsGroupSurface}" Padding="10,8" Margin="0,0,0,8">
               <StackPanel>
-                <DockPanel><Button x:Name="StudyButton" Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" Content="查看自习" Padding="10,8" Margin="8,0,0,0" Click="StudyClicked" AutomationProperties.AutomationId="QuickOpenStudy" /><TextBlock x:Name="StudyTitle" Text="自习状态待确认" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" /></DockPanel>
-                <TextBlock x:Name="StudyStatus" Text="尚未收到后台状态，不能据此判断监测已经停止" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickStudyStatus" />
-                <TextBlock x:Name="StudyNext" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <DockPanel>
+                  <Button x:Name="StudyButton" Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" Content="查看自习" Padding="10,6"
+                          Margin="8,0,0,0" Click="StudyClicked" AutomationProperties.AutomationId="QuickOpenStudy" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="StudyTitle" Text="自习状态待确认" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="StudyStatus" Text="等待连接后台" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
+                               TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="QuickStudyStatus" />
+                  </StackPanel>
+                </DockPanel>
+                <TextBlock x:Name="StudyNext" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" Visibility="Collapsed" />
               </StackPanel>
             </Border>
-            <Border x:Name="RecordingCard" Style="{DynamicResource SettingsGroupSurface}" Padding="12" Margin="0,0,0,8"><StackPanel>
-              <DockPanel><Button x:Name="RecordingButton" Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" Content="录制" Padding="10,8" Margin="8,0,0,0" Click="RecordingClicked" AutomationProperties.AutomationId="QuickOpenRecording" /><TextBlock Text="录课" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel>
-              <DockPanel Margin="0,6,0,0">
-                <TextBlock x:Name="QuickRecordingPhaseMark" FontSize="13" VerticalAlignment="Top" Margin="0,0,5,0" />
-                <TextBlock x:Name="RecordingStatus" Text="录课状态待确认" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}"
-                 TextWrapping="Wrap" AutomationProperties.AutomationId="QuickRecordingStatus" />
+            <Border x:Name="RecordingCard" Style="{DynamicResource SettingsGroupSurface}" Padding="10,8" Margin="0,0,0,8"><StackPanel>
+              <DockPanel>
+                <Button x:Name="RecordingButton" Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" Content="录制" Padding="10,6"
+                        Margin="8,0,0,0" Click="RecordingClicked" AutomationProperties.AutomationId="QuickOpenRecording" />
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Text="录课" FontSize="14" FontWeight="SemiBold" />
+                  <DockPanel>
+                    <TextBlock x:Name="QuickRecordingPhaseMark" FontSize="12" VerticalAlignment="Center" Margin="0,0,5,0" />
+                    <TextBlock x:Name="RecordingStatus" Text="录课状态待确认" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
+                               TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="QuickRecordingStatus" />
+                  </DockPanel>
+                </StackPanel>
               </DockPanel>
               <WrapPanel x:Name="RecordingControls" Visibility="Collapsed" Margin="0,8,0,0"><Button x:Name="RecordingPause" MinWidth="98" Style="{DynamicResource TeacherButton}" Content="暂停" Padding="12,8" Click="RecordingPauseClicked" AutomationProperties.AutomationId="QuickRecordingPause" Margin="0,0,6,0" /><Button x:Name="RecordingStop" Style="{DynamicResource TeacherButton}" Content="停止并保存" Padding="12,8" Click="RecordingStopClicked" AutomationProperties.AutomationId="QuickRecordingStop" /></WrapPanel>
-              <TextBlock x:Name="AutomaticStatus" Text="自动录制状态待确认" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickAutomaticStatus" />
-              <Button x:Name="AutomaticSkipDay" Style="{DynamicResource TeacherButton}" Content="今天不再自动录制" Click="AutomaticSkipDayClicked" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickAutoSkipDay" />
-              <Button Content="自动录课计划  →" Click="RecordingPlanClicked" Style="{DynamicResource TeacherQuiet}" HorizontalAlignment="Left" Padding="8,6" AutomationProperties.AutomationId="QuickRecordingPlan" />
+              <Expander x:Name="AutomaticRecordingDetails" Style="{DynamicResource TeacherExpander}" IsExpanded="False"
+                        Header="自动录课与计划" AutomationProperties.AutomationId="QuickAutomaticRecordingDetails">
+                <StackPanel>
+                  <TextBlock x:Name="AutomaticStatus" Text="自动录制状态待确认" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" AutomationProperties.AutomationId="QuickAutomaticStatus" />
+                  <Button x:Name="AutomaticSkipDay" Style="{DynamicResource TeacherButton}" Content="今天不再自动录制" Click="AutomaticSkipDayClicked" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickAutoSkipDay" />
+                  <Button Content="自动录课计划  →" Click="RecordingPlanClicked" Style="{DynamicResource TeacherQuiet}" HorizontalAlignment="Left" Padding="8,6" AutomationProperties.AutomationId="QuickRecordingPlan" />
+                </StackPanel>
+              </Expander>
             </StackPanel></Border>
           </StackPanel>
           <TextBlock Text="课堂工具" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,10,0,8" />
@@ -94,19 +138,15 @@
             <StackPanel><TextBlock x:Name="ClassroomModeTitle" Text="课堂模式 · 正在连接…" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="QuickClassroomModeTitle" />
               <TextBlock x:Name="ClassroomModeDetail" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,4,0,0" AutomationProperties.AutomationId="QuickClassroomModeDetail" /></StackPanel>
           </Button>
-          <Border Style="{DynamicResource SettingsGroupSurface}" Padding="12" Margin="0,0,0,8"><StackPanel>
-            <DockPanel><Button x:Name="PowerButton" Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" Content="开启辅助" Padding="10,8" Margin="8,0,0,0" Click="PowerClicked" AutomationProperties.AutomationId="QuickTouchPower" /><StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Ellipse x:Name="RailStatusDot" Fill="#A5B3AB" Width="6" Height="6" Margin="0,0,6,0" /><TextBlock Text="PPT 触摸翻页" FontSize="14" FontWeight="SemiBold" /></StackPanel></DockPanel>
-            <TextBlock x:Name="StatusText" Text="正在连接后台…" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.AutomationId="QuickTouchStatus" />
-            <Button x:Name="PauseButton" Style="{DynamicResource TeacherButton}" Content="暂停辅助" Visibility="Collapsed" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="12,8" Click="PauseClicked" AutomationProperties.AutomationId="QuickTouchPause" />
-          </StackPanel></Border>
           <Button Style="{DynamicResource TeacherButton}" Content="考试看板 · ExamAware2  →" HorizontalContentAlignment="Left" Click="ExamAwareClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="QuickExamAware" />
           <Button Style="{DynamicResource TeacherButton}" Content="点名页面 · SecRandom  →" HorizontalContentAlignment="Left" Click="SecRandomClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="QuickSecRandom" />
           <Border Style="{DynamicResource SettingsGroupSurface}" Padding="12"><StackPanel>
             <DockPanel><Button x:Name="ClassIslandButton" Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" Content="启动" Padding="10,8" Margin="8,0,0,0" Click="ClassIslandClicked" AutomationProperties.AutomationId="QuickStartClassIsland" /><TextBlock Text="ClassIsland" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" /></DockPanel>
             <TextBlock x:Name="ClassIslandStatus" Text="正在连接…" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
           </StackPanel></Border>
+          <Button x:Name="SettingsFooter" Content="管理与设置  →" Margin="0,10,0,0" HorizontalAlignment="Stretch" Style="{DynamicResource TeacherQuiet}" Click="SettingsClicked" AutomationProperties.AutomationId="QuickOpenSettings" />
         </StackPanel></ScrollViewer>
-        <ScrollViewer x:Name="ShortcutsPage" Grid.Row="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
+        <ScrollViewer x:Name="ShortcutsPage" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
           <StackPanel x:Name="ShortcutsEmpty" Margin="0,12">
             <TextBlock Text="暂无快捷项" Style="{DynamicResource SettingsLabel}" />
             <TextBlock Text="添加教学软件、课件或网站。" Style="{DynamicResource SettingsHint}" Margin="0,4,0,10" />
@@ -120,8 +160,7 @@
           <TextBlock x:Name="ShortcutStatus" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.AutomationId="QuickShortcutMessage" />
           <Button x:Name="ShortcutRepair" Style="{DynamicResource TeacherButton}" Content="编辑此项" Click="RepairShortcutClicked" Visibility="Collapsed" Margin="0,10,0,0" AutomationProperties.AutomationId="QuickRepairShortcut" />
         </StackPanel></ScrollViewer>
-        <Button x:Name="SettingsFooter" Grid.Row="3" Content="管理与设置  →" Margin="0,14,0,0" HorizontalAlignment="Stretch" Style="{DynamicResource TeacherQuiet}" Click="SettingsClicked" AutomationProperties.AutomationId="QuickOpenSettings" />
-        <Button x:Name="ShortcutsFooter" Grid.Row="3" Content="管理快捷启动  →" Visibility="Collapsed" Margin="0,14,0,0" HorizontalAlignment="Stretch" Style="{DynamicResource TeacherQuiet}" Click="ManageShortcutsClicked" AutomationProperties.AutomationId="QuickManageShortcuts" />
+        <Button x:Name="ShortcutsFooter" Grid.Row="4" Content="管理快捷启动  →" Visibility="Collapsed" Margin="0,10,0,0" HorizontalAlignment="Stretch" Style="{DynamicResource TeacherQuiet}" Click="ManageShortcutsClicked" AutomationProperties.AutomationId="QuickManageShortcuts" />
       </Grid>
     </Border>
     <Border x:Name="MoveHint" Grid.Column="0" Visibility="Collapsed" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" CornerRadius="10" Padding="10,8" Margin="0,0,8,0" MaxHeight="82" VerticalAlignment="Bottom" IsHitTestVisible="False">

@@ -30,7 +30,12 @@ internal static partial class Program
             var active = new RecordingState("Recording", "录制进行中", Seconds: 120, Control: new("Manual", Guid.NewGuid(), "", 0, 0));
             quick.UpdateStudy("当前没有自习任务", "可开始手动自习", "下次学校自习 · 时间待确认", "开始自习", false);
             quick.UpdateRecording(active);
+            quick.Update(new TouchAssistState(true, false, false, "放映触摸辅助运行中"), "PPT 辅助已开启", true, "就绪", true);
             quick.OpenPanel(); quick.UpdateLayout();
+            var pptPause = Control<Button>("PauseButton");
+            var pptBounds = pptPause.TransformToAncestor(panel).TransformBounds(new Rect(pptPause.RenderSize));
+            Assert(pptPause.IsVisible && pptBounds.Bottom <= panel.ActualHeight - 45,
+                "the PPT pause action was below the first visible classroom-tool screen");
             Assert(Control<StackPanel>("TaskStack").Children[0] == Control<Border>("RecordingCard"), "active recording is not first");
             Reachable(quick, Control<Button>("RecordingPause")); Reachable(quick, Control<Button>("RecordingStop"));
             var original = Control<Button>("RecordingPause").TranslatePoint(new Point(), quick);

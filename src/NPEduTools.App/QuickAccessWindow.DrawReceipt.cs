@@ -35,14 +35,14 @@ public partial class QuickAccessWindow
             };
             button.PreviewTouchMove += (_, e) =>
             {
-                if (_drawTouch == e.TouchDevice) _drawTouchCancelled |= !DrawButtonContains(button, e);
+                if (_drawTouch == e.TouchDevice) _drawTouchCancelled |= !ButtonContainsTouchPoint(button, e);
                 e.Handled = true;
             };
             button.PreviewTouchUp += (_, e) =>
             {
                 e.Handled = true;
                 if (_drawTouch != e.TouchDevice || _drawTouchButton != button) return;
-                bool invoke = !_drawTouchCancelled && DrawButtonContains(button, e) && button.IsEnabled && button.IsVisible;
+                bool invoke = !_drawTouchCancelled && ButtonContainsTouchPoint(button, e) && button.IsEnabled && button.IsVisible;
                 CancelDrawTouch();
                 if (invoke) button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
             };
@@ -67,7 +67,7 @@ public partial class QuickAccessWindow
         !(button == RailSecRandom || button == DrawNext) || _drawReceipt?.State == SidebarDrawState.Pending ||
         !_drawInFlight && Environment.TickCount64 >= _nextDrawAllowedTick;
 
-    private bool DrawButtonContains(Button button, TouchEventArgs e) =>
+    private bool ButtonContainsTouchPoint(Button button, TouchEventArgs e) =>
         new Rect(button.RenderSize).Contains(button.PointFromScreen(PointToScreen(e.GetTouchPoint(this).Position)));
 
     private void CancelDrawTouch()

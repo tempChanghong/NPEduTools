@@ -80,6 +80,8 @@ internal static partial class Program
             if (scenario != "cold-hidden") { main.Show(); main.UpdateLayout(); main.Hide(); }
             if (scenario == "minimized") { main.Show(); main.WindowState = WindowState.Minimized; }
             quick.OpenPanel(); quick.UpdateLayout();
+            ((Expander)quick.FindName("AutomaticRecordingDetails")).IsExpanded = true;
+            quick.UpdateLayout();
             Click(quick, "QuickRecordingPlan", automation: true);
             main.UpdateLayout();
             PumpUntil(() => main.IsVisible && main.WindowState == WindowState.Normal, scenario + ": quick navigation did not restore the main window");

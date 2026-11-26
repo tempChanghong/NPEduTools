@@ -60,6 +60,7 @@ public partial class QuickAccessWindow : Window
     private long _handleActivity = Stopwatch.GetTimestamp();
     private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _studyTask, _recordingTask, _taskOrderDirty;
+    private bool _recordingControlSlot, _studyNextSlot;
     private Action? _study;
     private Action? _openRecording, _pauseRecording, _stopRecording, _openRecordingPlan, _skipAutomaticToday;
 
@@ -83,6 +84,7 @@ public partial class QuickAccessWindow : Window
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException) { }
         InitializeComponent();
         WireDrawTouch();
+        InitializePptStrip();
         SelectShortcutPage(false); RefreshCompact();
         _foregroundChanged = (_, _, window, _, _, _, _) => RememberExternalForeground(window);
         _idleTimer.Tick += (_, _) => RefreshHandleOpacity();
@@ -139,7 +141,7 @@ public partial class QuickAccessWindow : Window
         EdgeHandle.LostTouchCapture += (_, e) => { if (_handleTouch == e.TouchDevice) { _handleTouch = null; CancelHandlePress(); } };
         PreviewTouchDown += (_, e) =>
         {
-            if ((_handleTouch ?? _drawTouch) is { } active && active != e.TouchDevice) e.Handled = true;
+            if ((_handleTouch ?? _drawTouch ?? _pptTouch) is { } active && active != e.TouchDevice) e.Handled = true;
         };
         PreviewKeyDown += (_, e) =>
         {
@@ -214,11 +216,14 @@ public partial class QuickAccessWindow : Window
             {
                 content.LayoutTransform = new ScaleTransform(density, density);
                 double target = MinimumTouchTarget / density;
-                foreach (var button in new[] { LayoutButton, LayoutShape, LayoutMove, ToolsTab, ShortcutsTab, CollapseButton })
+                foreach (var button in new[] { LayoutButton, LayoutShape, LayoutMove, ToolsTab, ShortcutsTab, CollapseButton, PowerButton, PauseButton })
                 {
                     button.MinWidth = target;
                     button.MinHeight = target;
                 }
+                foreach (var button in new[] { StudyButton, RecordingButton, RecordingPause, RecordingStop, AutomaticSkipDay, SettingsFooter })
+                    button.MinHeight = target;
+                ArrangePptActions();
             }
             // Shrink the panel with the user's density, but keep the rail and
             // the controls used to open, close, or switch pages usable by touch.
@@ -293,9 +298,10 @@ public partial class QuickAccessWindow : Window
         if (_closing) return;
         AbortHandleGesture();
         DismissDrawReceipt();
+        InvalidatePptPress();
         EndMove(save: false, restoreFocus);
         bool wasExpanded = _expanded;
-        _expanded = false; RefreshCompact(); RefreshTaskOrder();
+        _expanded = false; RefreshCompact(); RefreshTaskOrder(); RefreshRecordingControlSlot(); RefreshStudyNextSlot();
         LayoutOptions.Visibility = Visibility.Collapsed;
         PanelSurface.BeginAnimation(OpacityProperty, null);
         PanelSurface.Visibility = Visibility.Collapsed;
@@ -417,12 +423,7 @@ public partial class QuickAccessWindow : Window
 
     public void Update(TouchAssistState? state, string status, bool available, string classIslandStatus, bool canStart, string startLabel = "启动")
     {
-        StatusText.Text = status;
-        PowerButton.Content = state?.Running == true ? "停止辅助" : "开启辅助";
-        PowerButton.IsEnabled = available;
-        PauseButton.Content = state?.Paused == true ? "继续辅助" : "暂停辅助";
-        PauseButton.Visibility = state?.Running == true ? Visibility.Visible : Visibility.Collapsed;
-        PauseButton.IsEnabled = available;
+        UpdatePptStrip(state, status, available);
         ClassIslandStatus.Text = classIslandStatus; ClassIslandButton.IsEnabled = canStart;
         ClassIslandButton.Content = startLabel;
         RailStatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,
@@ -515,9 +516,16 @@ public partial class QuickAccessWindow : Window
     public void UpdateStudy(string title, string status, string next, string action, bool active)
     {
         StudyTitle.Text = title; StudyStatus.Text = status; StudyNext.Text = next; StudyButton.Content = action;
-        StudyNext.Visibility = string.IsNullOrWhiteSpace(next) ? Visibility.Collapsed : Visibility.Visible;
+        StudyTitle.ToolTip = title; StudyStatus.ToolTip = status; StudyNext.ToolTip = next;
+        RefreshStudyNextSlot();
         if (_studyTask != active) { _studyTask = active; _taskOrderDirty = true; }
         RefreshTaskOrder();
+    }
+    private void RefreshStudyNextSlot()
+    {
+        bool hasNext = !string.IsNullOrWhiteSpace(StudyNext.Text);
+        if (!_expanded) _studyNextSlot = hasNext;
+        StudyNext.Visibility = !_studyNextSlot ? Visibility.Collapsed : hasNext ? Visibility.Visible : Visibility.Hidden;
     }
     private void RefreshTaskOrder()
     {
@@ -555,8 +563,9 @@ public partial class QuickAccessWindow : Window
         if (!stateAvailable)
         {
             RecordingStatus.Text = "录制后台未确认当前状态，等待重新连接。";
+            RecordingStatus.ToolTip = RecordingStatus.Text;
             RecordingButton.Content = "查看";
-            RecordingControls.Visibility = Visibility.Collapsed;
+            RefreshRecordingControlSlot();
             RecordingPause.IsEnabled = RecordingStop.IsEnabled = false;
             return;
         }
@@ -564,9 +573,16 @@ public partial class QuickAccessWindow : Window
         RecordingButton.Content = state.Active ? "控制" : "录制";
         if (state.Active && state.Control is { Owner: "Automatic", HardDeadline: > 0 } c)
             RecordingStatus.Text += $" · 至多剩余 {TimeSpan.FromSeconds(Math.Max(0, RecorderDeadline.SecondsUntil(c.HardDeadline))):hh\\:mm\\:ss}";
-        RecordingControls.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
+        RecordingStatus.ToolTip = RecordingStatus.Text;
+        RefreshRecordingControlSlot();
         RecordingPause.IsEnabled = RecordingStop.IsEnabled = !state.Busy;
         RecordingPause.Content = state.Phase == "Paused" ? "继续" : "暂停";
+    }
+    private void RefreshRecordingControlSlot()
+    {
+        if (!_expanded) _recordingControlSlot = _recordingTask;
+        RecordingControls.Visibility = !_recordingControlSlot ? Visibility.Collapsed :
+            _recordingTask ? Visibility.Visible : Visibility.Hidden;
     }
     private void RecordingClicked(object sender, RoutedEventArgs e) { Collapse(false); _openRecording?.Invoke(); }
     private void RecordingPlanClicked(object sender, RoutedEventArgs e) { Collapse(false); _openRecordingPlan?.Invoke(); }
@@ -574,8 +590,8 @@ public partial class QuickAccessWindow : Window
     private void RecordingStopClicked(object sender, RoutedEventArgs e) { if (RecordingStop.IsEnabled && RecordingControls.Visibility == Visibility.Visible) _stopRecording?.Invoke(); }
     private void RailToolsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(false); OpenPanel(); }
     private void RailShortcutsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(true); OpenPanel(); }
-    private void PowerClicked(object sender, RoutedEventArgs e) => _power();
-    private void PauseClicked(object sender, RoutedEventArgs e) => _pause();
+    private void PowerClicked(object sender, RoutedEventArgs e) => PptActionClicked(sender, e);
+    private void PauseClicked(object sender, RoutedEventArgs e) => PptActionClicked(sender, e);
     private void ClassIslandClicked(object sender, RoutedEventArgs e) => _startClassIsland();
     private void SettingsClicked(object sender, RoutedEventArgs e) { Collapse(false); _settings(); }
     public void SetShortcuts(ShortcutEntry[] items)
@@ -595,8 +611,9 @@ public partial class QuickAccessWindow : Window
     private void ShortcutsTabClicked(object sender, RoutedEventArgs e) => SelectShortcutPage(true);
     private void SelectShortcutPage(bool shortcuts)
     {
+        if (_shortcutsSelected != shortcuts) InvalidatePptPress();
         _shortcutsSelected = shortcuts;
-        ToolsPage.Visibility = SettingsFooter.Visibility = shortcuts ? Visibility.Collapsed : Visibility.Visible;
+        ToolsPage.Visibility = PptQuickStrip.Visibility = shortcuts ? Visibility.Collapsed : Visibility.Visible;
         ShortcutsPage.Visibility = ShortcutsFooter.Visibility = shortcuts ? Visibility.Visible : Visibility.Collapsed;
         ToolsTab.Tag = shortcuts ? null : "active";
         ShortcutsTab.Tag = shortcuts ? "active" : null;
