@@ -710,6 +710,86 @@
             </StackPanel></Border>
             </StackPanel>
             <StackPanel x:Name="ConnectionsSettingsPanel" Visibility="Collapsed">
+            <Border Style="{StaticResource SettingsGroupSurface}" Padding="14,12" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock Text="ClassIsland · 课表与时间" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                <Grid x:Name="ClassIslandOverviewGrid" SizeChanged="ClassIslandOverviewSizeChanged">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="0" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+
+                  <Border x:Name="ClassIslandTimePane" Grid.Row="0" Grid.Column="0" Background="{DynamicResource TeacherHoverBrush}" CornerRadius="8" Padding="12,10" Margin="0,0,0,8">
+                    <StackPanel>
+                      <TextBlock Text="学校时间" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" />
+                      <TextBlock x:Name="ClassIslandClockText" Text="--:--:--" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,0" AutomationProperties.AutomationId="ClassIslandClock" />
+                      <TextBlock x:Name="ClassIslandClockDetail" Text="尚未读取桥接时间；不使用 Windows 时间代替。" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,4,0,0" />
+                    </StackPanel>
+                  </Border>
+
+                  <Border x:Name="ClassIslandStatusPane" Grid.Row="1" Grid.Column="0" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,8" VerticalAlignment="Stretch">
+                    <Grid VerticalAlignment="Center">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <TextBlock Grid.Row="0" Grid.Column="0" Text="程序位置" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,2,10,4" VerticalAlignment="Top" />
+                      <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ClassIslandProgramStatus" Text="等待检查" TextWrapping="Wrap" FontSize="13" FontWeight="Medium" Margin="0,0,0,4" AutomationProperties.AutomationId="ClassIslandProgramStatus" />
+
+                      <TextBlock Grid.Row="1" Grid.Column="0" Text="时间桥接" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,2,10,4" VerticalAlignment="Top" />
+                      <TextBlock Grid.Row="1" Grid.Column="1" x:Name="ClassIslandBridgeSummaryText" Text="尚未检查" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,4" AutomationProperties.AutomationId="ClassIslandBridgeSummary" />
+
+                      <TextBlock Grid.Row="2" Grid.Column="0" Text="课表状态" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,2,10,0" VerticalAlignment="Top" />
+                      <TextBlock Grid.Row="2" Grid.Column="1" x:Name="ClassIslandLessonSummaryText" Text="未核实" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" AutomationProperties.AutomationId="ClassIslandLessonSummary" />
+                    </Grid>
+                  </Border>
+                </Grid>
+
+                <Button x:Name="ClassIslandRefreshButton" Content="检查时间桥接" Click="RefreshClassIslandBridgeClicked"
+                        Style="{DynamicResource TeacherQuiet}" MinHeight="44" Padding="14,6" Margin="0,2,0,4"
+                        HorizontalAlignment="Left" AutomationProperties.AutomationId="RefreshClassIslandBridge" />
+
+                <Expander x:Name="ClassIslandConfiguration" Header="程序位置" Style="{DynamicResource TeacherExpander}" IsExpanded="True" Margin="0,6,0,0" AutomationProperties.AutomationId="ClassIslandConfiguration">
+                  <StackPanel Margin="0,8,0,0">
+                    <TextBlock Text="程序路径（选择可执行文件后，点击保存）" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,6" />
+                    <TextBox Style="{StaticResource TeacherInput}" x:Name="ExecutablePathBox" AutomationProperties.AutomationId="ExecutablePath" AutomationProperties.Name="ClassIsland 程序路径" />
+                    <WrapPanel Margin="0,10,0,4">
+                      <Button Style="{StaticResource TeacherButton}" Content="选择文件" Click="BrowseClicked" Margin="0,0,8,6" AutomationProperties.AutomationId="BrowseExecutable" />
+                      <Button Content="保存" Style="{StaticResource TeacherPrimary}" Click="SavePathClicked" Margin="0,0,8,6" AutomationProperties.AutomationId="SaveExecutable" />
+                      <Button Content="重新读取" Style="{StaticResource TeacherQuiet}" Click="ReloadClicked" Margin="0,0,0,6" AutomationProperties.AutomationId="ReloadConfiguration" />
+                    </WrapPanel>
+                    <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,2,0,0" AutomationProperties.AutomationId="ConfigurationMessage" />
+                  </StackPanel>
+                </Expander>
+
+                <Expander Header="连接诊断与启动记录" Style="{DynamicResource TeacherExpander}" Margin="0,6,0,0" AutomationProperties.AutomationId="ClassIslandDetails">
+                  <StackPanel>
+                    <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
+                    <StackPanel Margin="0,8,0,0">
+                      <TextBlock x:Name="LaunchResultText" Text="暂无启动记录" TextWrapping="Wrap" AutomationProperties.AutomationId="LaunchResult" />
+                      <TextBlock x:Name="LaunchTimeText" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,5,0,12" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding State}" AutomationProperties.AutomationId="LessonState" />
+                      <TextBlock Text="{Binding Subject}" FontSize="20" Margin="0,5,0,8" AutomationProperties.AutomationId="Subject" />
+                      <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" AutomationProperties.AutomationId="Detail" />
+                      <TextBlock Text="{Binding LessonPlan}" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,0" />
+                      <TextBlock Text="{Binding Updated}" Foreground="{DynamicResource TeacherMutedBrush}" />
+                      <TextBlock Text="{Binding Events}" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </Border>
+
             <Border Style="{StaticResource SettingsGroupSurface}" Margin="0,0,0,10">
               <local:SettingsRow Style="{StaticResource SettingsRow}" Icon="M3,5 L21,5 21,17 3,17 Z M8,21 L16,21 M12,17 L12,21">
                 <local:SettingsRow.Header><StackPanel>
@@ -719,39 +799,6 @@
                 <Button Content="管理课堂模式" Style="{StaticResource TeacherButton}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="SettingsClassroomMode" />
               </local:SettingsRow>
             </Border>
-            <Border Style="{StaticResource SettingsGroupSurface}" Padding="16" Margin="0,0,0,10">
-              <StackPanel>
-                <TextBlock Text="ClassIsland · 课表与时间" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,16" />
-
-                <TextBlock Text="学校时间与连接" FontSize="13" Margin="0,4,0,6" />
-                <TextBlock x:Name="ClassIslandProgramStatus" Text="程序位置：等待检查" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,0,0,8" AutomationProperties.AutomationId="ClassIslandProgramStatus"/><TextBlock x:Name="ClassIslandClockText" Text="--:--:--" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="ClassIslandClock" />
-                <TextBlock x:Name="ClassIslandClockDetail" Text="尚未读取桥接时间；不使用 Windows 时间代替。" FontSize="13" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,12" />
-                <WrapPanel><Button Content="程序位置" Click="ConfigureClassIslandClicked" Style="{StaticResource TeacherQuiet}" MinHeight="44" Padding="12,6" AutomationProperties.AutomationId="ConfigureClassIsland"/><Button Content="检查时间桥接插件" Click="RefreshClassIslandBridgeClicked" Style="{StaticResource TeacherQuiet}" MinHeight="44" Padding="12,6" AutomationProperties.AutomationId="RefreshClassIslandBridge" /></WrapPanel>
-                <TextBlock x:Name="ConfigurationMessage" Text="正在读取路径配置…" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" TextWrapping="Wrap" AutomationProperties.AutomationId="ConfigurationMessage" />
-                <Expander x:Name="ClassIslandConfiguration" Header="程序位置与保存" IsExpanded="True" Margin="0,12,0,0" AutomationProperties.AutomationId="ClassIslandConfiguration"><StackPanel Margin="0,10,0,0"><TextBlock Text="程序路径（选择可执行文件后，点击保存）" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,8" />
-                <TextBox Style="{StaticResource TeacherInput}" x:Name="ExecutablePathBox" AutomationProperties.AutomationId="ExecutablePath" AutomationProperties.Name="ClassIsland 程序路径" />
-                <WrapPanel Margin="0,12,0,6">
-                  <Button Style="{StaticResource TeacherButton}" Content="选择文件" Click="BrowseClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="BrowseExecutable" />
-                  <Button Content="保存" Style="{StaticResource TeacherPrimary}" Click="SavePathClicked" Margin="0,0,8,8" AutomationProperties.AutomationId="SaveExecutable" />
-                  <Button Content="重新读取" Style="{StaticResource TeacherQuiet}" Click="ReloadClicked" Margin="0,0,0,8" AutomationProperties.AutomationId="ReloadConfiguration" />
-                </WrapPanel>
-                </StackPanel></Expander>
-                <Expander Header="连接诊断与启动记录" Margin="0,8,0,0" AutomationProperties.AutomationId="ClassIslandDetails"><StackPanel>
-                  <TextBlock x:Name="ClassIslandBridgeStatus" Text="时间桥接插件：尚未检查" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,10,0,8" AutomationProperties.AutomationId="ClassIslandBridgeStatus" />
-                  <StackPanel Margin="0,12,0,0">
-                    <TextBlock x:Name="LaunchResultText" Text="暂无启动记录" TextWrapping="Wrap" AutomationProperties.AutomationId="LaunchResult" />
-                    <TextBlock x:Name="LaunchTimeText" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,5,0,14" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding State}" AutomationProperties.AutomationId="LessonState" />
-                    <TextBlock Text="{Binding Subject}" FontSize="20" Margin="0,5,0,8" AutomationProperties.AutomationId="Subject" />
-                    <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" AutomationProperties.AutomationId="Detail" />
-                    <TextBlock Text="{Binding LessonPlan}" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,0" />
-                    <TextBlock Text="{Binding Updated}" Foreground="{DynamicResource TeacherMutedBrush}" />
-                    <TextBlock Text="{Binding Events}" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" />
-                  </StackPanel>
-                </StackPanel></Expander>
-              </StackPanel>
-            </Border>
-
             <Border Style="{StaticResource SettingsGroupSurface}" Margin="0,0,0,10">
               <local:SettingsRow Style="{StaticResource SettingsRow}" Icon="M4,5 L20,5 20,19 4,19 Z M8,9 L16,9 M8,13 L13,13">
                 <local:SettingsRow.Header><StackPanel>
@@ -770,13 +817,13 @@
                 <Button Content="打开点名管理" Style="{StaticResource TeacherButton}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="SettingsSecRandom" />
               </local:SettingsRow>
             </Border>
-            <Border x:Name="AdminSection" Style="{StaticResource SettingsGroupSurface}" Padding="16" Margin="0,0,0,10">
-              <Expander x:Name="AdminSettingsExpander" Header="高级 · ClassIsland 管理员自启动" FontSize="14" AutomationProperties.AutomationId="AdminSettingsExpander"><StackPanel Margin="0,16,0,0">
+            <Border x:Name="AdminSection" Style="{StaticResource SettingsGroupSurface}" Padding="14,10" Margin="0,0,0,10">
+              <Expander x:Name="AdminSettingsExpander" Header="高级 · ClassIsland 管理员自启动" Style="{DynamicResource TeacherExpander}" FontSize="14" AutomationProperties.AutomationId="AdminSettingsExpander"><StackPanel Margin="0,12,0,0">
                 <TextBlock Text="ClassIsland 管理员自启动" FontSize="16" FontWeight="SemiBold" />
-                <TextBlock Text="当前用户登录 Windows 时，以管理员身份启动已保存的 ClassIsland。" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,16" />
+                <TextBlock Text="当前用户登录 Windows 时，以管理员身份启动已保存的 ClassIsland。" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,14" />
                 <TextBlock x:Name="AdminTaskStatus" Text="等待检查计划任务" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="AdminTaskStatus" />
                 <TextBlock x:Name="AdminProcessStatus" Text="运行权限尚未检查" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.AutomationId="AdminProcessStatus" />
-                <WrapPanel Margin="0,16,0,0">
+                <WrapPanel Margin="0,14,0,0">
                   <Button x:Name="AdminCreate" Content="启用管理员自启动" Style="{StaticResource TeacherPrimary}" Click="AdminCreateClicked" IsEnabled="False" Margin="0,0,8,8" AutomationProperties.AutomationId="AdminCreate" />
                   <Button Style="{StaticResource TeacherButton}" x:Name="AdminDelete" Content="删除自启动任务" Click="AdminDeleteClicked" IsEnabled="False" Margin="0,0,0,8" AutomationProperties.AutomationId="AdminDelete" />
                 </WrapPanel>

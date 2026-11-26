@@ -99,5 +99,4 @@ public partial class MainWindow
             ExecutablePathBox.Focus();
         });
     }
-    private void ConfigureClassIslandClicked(object sender, RoutedEventArgs e) => ShowClassIslandPathSettings();
 }

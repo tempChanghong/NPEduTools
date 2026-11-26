@@ -17,8 +17,10 @@ public partial class MainWindow : Window
     private Task? _watch;
     private Task? _management;
     private long _configurationRevision;
+    private long? _classIslandPathDraftRevision;
     private string? _savedPath;
     private bool _configurationLoaded;
+    private bool _hasReadLaunchConfiguration;
     private long _launchUiGeneration;
     private bool _actionInProgress;
     private Guid? _pendingStartId;
@@ -43,6 +45,10 @@ public partial class MainWindow : Window
         InitializeDensity(initializeServices);
         InitializeStudyWorkspace();
         InitializeBridgeClock();
+        ExecutablePathBox.TextChanged += (_, _) =>
+        {
+            if (!HasClassIslandPathDraft) _classIslandPathDraftRevision = null;
+        };
         StateChanged += (_, _) => UpdateExamAwareWindowState();
         Closed += (_, _) => ShutdownExitWarning();
         DataContext = _model;
@@ -355,7 +361,34 @@ public partial class MainWindow : Window
     private bool CurrentLaunchQuery(long generation) => generation == _launchUiGeneration &&
         !_lifetime.IsCancellationRequested && !_actionInProgress && !_exitBusy;
 
-    private void ShowLaunchData(HostResponse response)
+    private bool HasClassIslandPathDraft =>
+        !string.Equals(ExecutablePathBox.Text.Trim(), _savedPath ?? "", StringComparison.OrdinalIgnoreCase);
+
+    private void ShowLaunchData(HostResponse response) => ApplyLaunchData(response, rebaseDraft: false);
+
+    private void ApplyClassIslandConfiguration(LaunchData data, bool rebaseDraft)
+    {
+        if (_configurationLoaded) return;
+        bool keepDraft = HasClassIslandPathDraft &&
+            !string.Equals(ExecutablePathBox.Text.Trim(), data.Settings.ExecutablePath ?? "", StringComparison.OrdinalIgnoreCase);
+        if (keepDraft && !rebaseDraft && _hasReadLaunchConfiguration)
+            _classIslandPathDraftRevision ??= _configurationRevision;
+        else
+            _classIslandPathDraftRevision = null;
+        _configurationRevision = data.Settings.Revision;
+        _savedPath = data.Settings.ExecutablePath;
+        if (_restartOfferedFor != _savedPath) { _restartOfferedFor = null; StartButton.Content = "启动"; }
+        if (!keepDraft) ExecutablePathBox.Text = _savedPath ?? "";
+        _configurationLoaded = true;
+        _hasReadLaunchConfiguration = true;
+        ConfigurationMessage.Text = keepDraft
+            ? _classIslandPathDraftRevision is { } revision && revision != _configurationRevision
+                ? "后台的路径配置已更新。输入已保留，请先重新读取配置再决定是否保存。"
+                : "已读取保存的路径，保留未保存的输入。"
+            : _savedPath is null ? "请选择本机 ClassIsland 程序，然后保存路径。" : "已读取保存的程序路径。";
+    }
+
+    private void ApplyLaunchData(HostResponse response, bool rebaseDraft)
     {
         if (response.Launch is not { } data)
         {
@@ -363,15 +396,7 @@ public partial class MainWindow : Window
             StartButton.IsEnabled = false;
             return;
         }
-        if (!_configurationLoaded)
-        {
-            _configurationRevision = data.Settings.Revision;
-            _savedPath = data.Settings.ExecutablePath;
-            if (_restartOfferedFor != _savedPath) { _restartOfferedFor = null; StartButton.Content = "启动"; }
-            ExecutablePathBox.Text = _savedPath ?? "";
-            _configurationLoaded = true;
-            ConfigurationMessage.Text = _savedPath is null ? "请选择本机 ClassIsland 程序，然后保存路径。" : "已读取保存的程序路径。";
-        }
+        ApplyClassIslandConfiguration(data, rebaseDraft);
         if (data.StorageWarning is not null) ConfigurationMessage.Text = data.StorageWarning;
         var operation = data.Execution;
         if (_unifiedVerification is { } verifying && operation?.RequestId == verifying)
@@ -423,7 +448,7 @@ public partial class MainWindow : Window
         try
         {
             var request = new HostRequest(Protocol.Version, Guid.NewGuid(), "classisland.config.set",
-                ExecutablePath: ExecutablePathBox.Text.Trim(), ExpectedRevision: _configurationRevision);
+                ExecutablePath: ExecutablePathBox.Text.Trim(), ExpectedRevision: _classIslandPathDraftRevision ?? _configurationRevision);
             if (Protocol.Validate(request) is not null) { ConfigurationMessage.Text = "请先选择有效的程序路径。"; return; }
             var response = await ManagementRequestAsync(request);
             if (_lifetime.IsCancellationRequested) return;
@@ -436,7 +461,7 @@ public partial class MainWindow : Window
             if (response.Outcome == "Succeeded")
             {
                 _configurationLoaded = false;
-                ShowLaunchData(response);
+                ApplyLaunchData(response, rebaseDraft: true);
             }
             ConfigurationMessage.Text = response.Message;
         }
@@ -462,7 +487,7 @@ public partial class MainWindow : Window
             var response = await ManagementRequestAsync(new(Protocol.Version, Guid.NewGuid(), "classisland.config.get"));
             if (!CurrentLaunchQuery(generation)) return;
             _configurationLoaded = false;
-            ShowLaunchData(response);
+            ApplyLaunchData(response, rebaseDraft: true);
         }
         catch (Exception ex) when (IsManagementError(ex))
         { if (CurrentLaunchQuery(generation)) ConfigurationMessage.Text = "后台未连接，暂时无法读取配置。"; }

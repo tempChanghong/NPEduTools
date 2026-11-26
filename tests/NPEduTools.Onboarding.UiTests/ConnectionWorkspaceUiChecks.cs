@@ -96,6 +96,7 @@ internal static partial class Program
             });
             Checks.Add("Mode previews reflect the immediate-switch checkbox without issuing commands; actual results stay independent, narrow choices stack and disconnection withdraws new result fields");
             RunConnectionMainLayoutCheck();
+            RunClassIslandFirstPathCheck();
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
@@ -107,12 +108,13 @@ internal static partial class Program
         using var stop = new CancellationTokenSource();
         var requests = new ConcurrentQueue<HostRequest>();
         long sequence = 0; Guid connection = Guid.NewGuid(), bridge = Guid.NewGuid();
+        int bridgeFault = 0;
         var schoolElapsed = System.Diagnostics.Stopwatch.StartNew();
         var serving = Task.Run(() => WorkspaceProxy(pipe, request => {
             requests.Enqueue(request);
             return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "隔离只读状态",
                 Launch: request.Capability == "classisland.config.get" ? new(new(1, path), null, null) : null,
-                SchoolClock: request.Capability == "classisland.school-clock" ? new(connection, bridge, Interlocked.Increment(ref sequence), 1,
+                SchoolClock: request.Capability == "classisland.school-clock" && Volatile.Read(ref bridgeFault) == 0 ? new(connection, bridge, Interlocked.Increment(ref sequence), 1,
                     new DateTimeOffset(2026, 10, 13, 19, 15, 0, TimeSpan.Zero).Add(schoolElapsed.Elapsed), 0, "Advancing", "隔离学校时间") : null));
         }, stop.Token));
         var main = IsolatedMainWindow(pipe);
@@ -121,32 +123,145 @@ internal static partial class Program
         try
         {
             Exercise(main, window => {
+                var scroll = (ScrollViewer)window.FindName("SettingsScroll");
+                var course = (TextBlock)window.FindName("ClassIslandLessonSummaryText");
+                var time = (TextBlock)window.FindName("ClassIslandClockText");
+                var timeDetail = (TextBlock)window.FindName("ClassIslandClockDetail");
+                var bridgeSummary = (TextBlock)window.FindName("ClassIslandBridgeSummaryText");
+                var program = (TextBlock)window.FindName("ClassIslandProgramStatus");
+                var status = (FrameworkElement)window.FindName("ClassIslandStatusPane");
+                var overview = (FrameworkElement)window.FindName("ClassIslandOverviewGrid");
+                var refreshButton = Button(window, "ClassIslandRefreshButton");
+                var pathField = (TextBox)window.FindName("ExecutablePathBox");
+                void InspectViewport(params FrameworkElement[] items)
+                {
+                    var viewport = (ScrollContentPresenter)scroll.Template.FindName("PART_ScrollContentPresenter", scroll);
+                    foreach (var item in items)
+                    {
+                        var position = item.TransformToAncestor(viewport).TransformBounds(new Rect(item.RenderSize));
+                        Assert(item.IsVisible && position.Left >= -1 && position.Top >= -1 &&
+                            position.Right <= viewport.ActualWidth + 1 && position.Bottom <= viewport.ActualHeight + 1,
+                            $"{item.Name} is outside the first viewport ({position}, viewport {viewport.ActualWidth}x{viewport.ActualHeight})");
+                    }
+                }
+                void Capture(int width, int height, string file)
+                {
+                    window.Width = width; window.Height = height;
+                    scroll.ScrollToTop(); window.UpdateLayout();
+                    Assert(window.ActualWidth == width && window.ActualHeight == height, "fixture did not reach actual requested size");
+                    Assert(Grid.GetColumn(status) == (width == 1040 ? 1 : 0) && Grid.GetRow(status) == (width == 1040 ? 0 : 1),
+                        $"ClassIsland overview at {width} had content width {overview.ActualWidth} and cell {Grid.GetColumn(status)},{Grid.GetRow(status)}");
+                    InspectViewport(time, timeDetail, program, bridgeSummary, course, refreshButton);
+                    Snapshot(window, file);
+                }
+                void RefreshBridge()
+                {
+                    var refresh = (Task)typeof(MainWindow).GetMethod("RefreshClassIslandBridgeAsync", flags)!.Invoke(main, null)!;
+                    PumpUntil(() => refresh.IsCompleted, "read-only refresh did not settle");
+                    refresh.GetAwaiter().GetResult();
+                }
                 Invoke("ShowConnectionSettings");
-                PumpUntil(() => ((TextBlock)window.FindName("ClassIslandProgramStatus")).Text.Contains("文件可访问"), "connection summary did not use the fresh fake Host configuration");
-                Assert(((TextBlock)window.FindName("ClassIslandClockText")).Text.StartsWith("2026-10-13 19:15:"), "fresh valid school-clock fixture was not displayed alongside program status");
+                PumpUntil(() => program.Text == "文件可访问" && time.Text.StartsWith("2026-10-13 19:15:"), "separate path and school-time results did not arrive");
+                Assert(course.Text == "未核实", "a school-time sample was incorrectly used as proof of the current timetable");
+                RefreshBridge();
+                long secondSample = schoolElapsed.ElapsedMilliseconds;
+                PumpUntil(() => schoolElapsed.ElapsedMilliseconds >= secondSample + 550, "clock sample interval did not elapse");
+                RefreshBridge();
+                Assert(bridgeSummary.Text == "已同步" && course.Text == "未核实", "confirmed time bridge wrongly implies enabled timetable");
                 var config = (Expander)window.FindName("ClassIslandConfiguration");
                 Assert(!config.IsExpanded, "known accessible ClassIsland path does not collapse its initial configuration");
                 Invoke("ShowLaunchData", new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null, "隔离配置", Launch: new(new(1, path), null, null)));
                 Invoke("ShowClassroomModeState", new ClassroomModeState(2, "Daily"));
-                window.UpdateLayout(); Snapshot(window, "connections-ready.png");
+                Capture(1040, 760, "classisland-time-and-timetable-1040-760.png");
+                Capture(840, 600, "classisland-time-and-timetable-840-600.png");
+                var model = (StatusViewModel)typeof(MainWindow).GetField("_model", flags)!.GetValue(main)!;
+                var now = DateTimeOffset.UtcNow;
+                model.Apply(new(Protocol.Version, Guid.NewGuid(), Guid.NewGuid(), 1, connection, now, "Succeeded", null, "隔离课表",
+                    new(now, now, "OnClass", "语文", true, true, true, 0, new Dictionary<string, long>())));
+                Assert(course.Text == "课表已启用", "live course observation was not reflected in its dedicated summary");
                 Invoke("ShowClassIslandPathSettings");
-                PumpUntil(() => ((TextBox)window.FindName("ExecutablePathBox")).IsKeyboardFocused, "path shortcut did not reveal/focus the folded field");
-                ((TextBox)window.FindName("ExecutablePathBox")).Text = "edited-fixture.exe";
-                var refresh = (Task)typeof(MainWindow).GetMethod("RefreshClassIslandBridgeAsync", flags)!.Invoke(main, null)!;
-                PumpUntil(() => refresh.IsCompleted, "read-only refresh did not settle"); refresh.GetAwaiter().GetResult();
-                Assert(config.IsExpanded && ((TextBox)window.FindName("ExecutablePathBox")).Text == "edited-fixture.exe", "ClassIsland refresh folded the explicitly requested config or replaced draft");
+                PumpUntil(() => pathField.IsKeyboardFocused, "path shortcut did not reveal/focus the folded field");
+                pathField.Text = "edited-fixture.exe";
+                Volatile.Write(ref bridgeFault, 1);
+                RefreshBridge();
+                PumpUntil(() => bridgeSummary.Text == "暂不可用", "bridge loss did not clear the prior observed clock");
+                Assert(course.Text == "课表已启用" && program.Text == "文件可访问", "bridge loss erased the separately confirmed path or course status");
+                model.Disconnected("隔离课程接口断开");
+                Assert(course.Text == "未核实", "course summary retained old ready state after course disconnect");
+                Assert(config.IsExpanded && pathField.Text == "edited-fixture.exe", "ClassIsland refresh folded the explicitly requested config or replaced draft");
+                Capture(840, 600, "classisland-offline-with-path-draft-840-600.png");
                 Invoke("SelectSettingsCategory", "General"); Invoke("SelectSettingsCategory", "Connections");
-                Assert(((TextBox)window.FindName("ExecutablePathBox")).Text == "edited-fixture.exe", "settings tab switch lost the path draft");
+                typeof(MainWindow).GetField("_configurationLoaded", flags)!.SetValue(main, false);
+                Invoke("ShowLaunchData", new HostResponse(Protocol.Version, Guid.NewGuid(), "Succeeded", null, "隔离重连配置",
+                    Launch: new(new(2, path), null, null)));
+                Assert(pathField.Text == "edited-fixture.exe" && config.IsExpanded &&
+                    (long?)typeof(MainWindow).GetField("_classIslandPathDraftRevision", flags)!.GetValue(main) == 1,
+                    "navigation or a reloaded Host config discarded or silently rebased the original draft");
+                var bridgeBusy = typeof(MainWindow).GetField("_bridgeInspectionBusy", flags)!;
+                PumpUntil(() => !(bool)bridgeBusy.GetValue(main)!, "opening software connections did not finish its read");
+                Volatile.Write(ref bridgeFault, 0);
+                Click(window, "ClassIslandRefreshButton");
+                PumpUntil(() => time.Text.StartsWith("2026-10-13 19:15:") && !(bool)bridgeBusy.GetValue(main)!,
+                    "retrying with the visible action did not restore the school-time display");
+                Assert(pathField.Text == "edited-fixture.exe" && course.Text == "未核实" && Window.GetWindow(refreshButton) == window,
+                    "rechecking the bridge disturbed the path draft, substituted timetable evidence, or left the main window");
                 config.IsExpanded = false;
                 window.MinWidth = window.MinHeight = 0; window.Width = 1280; window.Height = 680;
                 ((FrameworkElement)window.Content).LayoutTransform = new ScaleTransform(.8, .8);
-                ((ScrollViewer)window.FindName("SettingsScroll")).ScrollToTop(); window.UpdateLayout();
+                scroll.ScrollToTop(); window.UpdateLayout();
                 Reachable(window, (FrameworkElement)window.FindName("ClassIslandClockText")); Snapshot(window, "connections-simulated-200.png");
                 Assert(requests.All(r => r.Capability is "classisland.config.get" or "classisland.school-clock"), "view setup or navigation issued a mutation or launched software");
                 window.Close();
             });
             Checks.Add("Actual settings page and fake Host: fresh ClassIsland summary, explicit path shortcut, tab changes and polling preserve drafts/expansion; school-time summary fits simulated 200% work area and all requests are read-only");
+            Checks.Add("Native ClassIsland overview at 1040x760 and 840x600: clock, program and course evidence stay separate; the current action fits at both widths while an interrupted, unsaved path remains intact");
         }
         finally { main.Close(); stop.Cancel(); try { serving.GetAwaiter().GetResult(); } catch (OperationCanceledException) { } System.IO.File.Delete(path); }
+    }
+
+    private static void RunClassIslandFirstPathCheck()
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+        string pipe = "NPEduTools.Test.classisland-first-path." + Guid.NewGuid().ToString("N");
+        using var stop = new CancellationTokenSource();
+        var requests = new ConcurrentQueue<string>();
+        var server = Task.Run(() => WorkspaceProxy(pipe, request =>
+        {
+            requests.Enqueue(request.Capability);
+            return Task.FromResult(new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null, "隔离首次设置",
+                Launch: request.Capability == "classisland.config.get" ? new(new(0, null), null) : null));
+        }, stop.Token));
+        var main = IsolatedMainWindow(pipe);
+        typeof(MainWindow).GetField("_adminBusy", flags)!.SetValue(main, true);
+        try
+        {
+            Exercise(main, window =>
+            {
+                window.Width = 840; window.Height = 600;
+                typeof(MainWindow).GetMethod("ShowConnectionSettings", flags)!.Invoke(main, null);
+                PumpUntil(() => ((TextBlock)window.FindName("ClassIslandProgramStatus")).Text == "尚未保存",
+                    "missing program state did not settle");
+                var path = (TextBox)window.FindName("ExecutablePathBox");
+                var choose = (Button)Find(window, "BrowseExecutable");
+                var save = (Button)Find(window, "SaveExecutable");
+                window.UpdateLayout();
+                var scroll = (ScrollViewer)window.FindName("SettingsScroll");
+                var viewport = (ScrollContentPresenter)scroll.Template.FindName("PART_ScrollContentPresenter", scroll);
+                foreach (var control in new FrameworkElement[] { path, choose, save })
+                {
+                    var position = control.TransformToAncestor(viewport).TransformBounds(new Rect(control.RenderSize));
+                    Assert(control.IsVisible && position.Top >= -1 && position.Bottom <= viewport.ActualHeight + 1,
+                        $"first-time ClassIsland control {control.Name} is clipped ({position}, viewport {viewport.ActualHeight})");
+                }
+                Assert(string.IsNullOrEmpty(path.Text) &&
+                    ((TextBlock)window.FindName("ConfigurationMessage")).Text.Contains("请选择本机 ClassIsland 程序") &&
+                    requests.All(r => r is "classisland.config.get" or "classisland.school-clock"),
+                    "first setup filled or changed a local program path");
+                Snapshot(window, "classisland-first-setup-840-600.png");
+                window.Close();
+            });
+            Checks.Add("ClassIsland first setup at 840x600 opens the path editor with both choice and save fully visible, and submits no commands");
+        }
+        finally { main.Close(); stop.Cancel(); try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { } }
     }
 }
