@@ -1,19 +1,26 @@
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using NPEduTools.App;
 
 internal static partial class Program
 {
     private static void RunWorkspaceSidebarChecks()
     {
-        var main = PrivateWorkspace("NPEduTools.Test.workspace-sidebar." + Guid.NewGuid().ToString("N"));
-        Exercise(main, owner =>
+        string pipe = "NPEduTools.Test.workspace-sidebar." + Guid.NewGuid().ToString("N");
+        var main = PrivateWorkspace(pipe);
+        // The real shell can hide and show again. Exercise's modal window cannot.
+        main.Show();
+        try
         {
-            var hwnd = new WindowInteropHelper(owner).Handle;
+            PumpUntil(() => main.IsLoaded, "the non-modal workspace did not finish loading");
+            var hwnd = new WindowInteropHelper(main).Handle;
             var surface = (Border)main.FindName("WorkspaceSidebarSurface");
             var brand = (StackPanel)main.FindName("WorkspaceBrand");
             var logo = (Image)brand.Children[0];
@@ -24,34 +31,45 @@ internal static partial class Program
             var quick = Button(main, "WorkspaceOpenQuick");
             var exit = Button(main, "ExitButton");
             var fold = Button(main, "FoldWorkspaceSidebar", automation: true);
+            var collapseToEdge = Button(main, "CollapseToSideRail", automation: true);
             var nav = items.Children.OfType<Button>().Where(button => !ReferenceEquals(button, more)).ToArray();
+            var groups = new[] { "WorkspaceCommonGroupLabel", "WorkspaceClassroomGroupLabel", "WorkspaceConfigurationGroupLabel" }
+                .Select(name => (FrameworkElement)main.FindName(name)).ToArray();
 
             Resize(1040, 760);
-            Assert(nav.Length == 9 && nav.All(button => button.IsVisible && Label(button).IsVisible) && !more.IsVisible,
-                "wide navigation lost an existing label or destination");
+            Assert(nav.Select(button => button.Name).SequenceEqual(new[] { "HomeNav", "ShortcutNav", "StudyNav", "RecordingNav",
+                "SecRandomNav", "ExamAwareNav", "ClassroomModeNav", "NpepSettingsTab", "SettingsNav", "AboutNav" }),
+                "classroom tools are interrupted by configuration, or About still occupies the action footer");
+            Assert(nav.All(button => button.IsVisible && Label(button).IsVisible) && groups.All(group => group.IsVisible) && !more.IsVisible &&
+                footer.Children.OfType<Button>().SequenceEqual(new[] { quick, exit }),
+                "wide navigation lost a group or the action footer contains a page");
             Assert(Label(quick).TranslatePoint(new Point(Label(quick).ActualWidth, 0), surface).X < surface.ActualWidth,
                 "the full-size quick entry label is clipped");
             Assert(AutomationProperties.GetName(quick).Contains("打开屏边") &&
-                AutomationProperties.GetName(Button(main, "CollapseToSideRail", automation: true)).Contains("收起到屏边") &&
-                AutomationProperties.GetName(exit) == "退出后台",
+                AutomationProperties.GetName(collapseToEdge).Contains("收起到屏边") &&
+                AutomationProperties.GetName(exit) == "退出后台" && Label(exit).Text == "退出后台…" &&
+                AutomationProperties.GetName(fold) == "折叠导航栏",
                 "window and background actions no longer have distinct accessible names");
             Snapshot(main, "navigation-wide.png");
 
             Resize(840, 600);
-            Assert(nav.All(button => button.IsVisible && !Label(button).IsVisible && FullyIn(button, scroll)) && !more.IsVisible,
+            Assert(nav.All(button => !Label(button).IsVisible && FullyIn(button, scroll)) && !more.IsVisible &&
+                groups.All(group => !group.IsVisible),
                 "the consented minimum window lost a navigation item or showed an overflow menu");
             Assert(scroll.ComputedVerticalScrollBarVisibility == Visibility.Collapsed, "the minimum rail still shows a vertical scrollbar");
-            VerifyCenters(nav.Concat(footer.Children.OfType<Button>()));
+            VerifyCenters(nav.Where(button => button.IsVisible).Concat(footer.Children.OfType<Button>()));
             Assert(Glyph(Button(main, "SettingsNav")).Text != Glyph(Button(main, "ClassroomModeNav")).Text &&
-                Glyph(Button(main, "ShortcutNav")).Text != Glyph(quick).Text, "icon-only actions still share confusing glyphs");
+                new[] { Glyph(Button(main, "ShortcutNav")).Text, Glyph(quick).Text, Glyph(collapseToEdge).Text, fold.Content.ToString() }
+                    .Distinct().Count() == 4 && AutomationProperties.GetName(fold) == "展开导航栏",
+                "icon-only actions still share confusing glyphs or the fold label is reversed");
             Assert(nav.All(button => !string.IsNullOrWhiteSpace(AutomationProperties.GetName(button)) && button.ToolTip is string { Length: > 0 }),
                 "a narrow navigation action has no readable label");
             Snapshot(main, "navigation-840x600.png");
-            Checks.Add("1040×760 shows the original text. At 840×600 all nine navigation buttons fit without a scrollbar, with centered icons and at least 44×44 DIP targets.");
+            Checks.Add("1040×760 shows the three ordered groups and a two-action footer. At 840×600 all nine business destinations and About fit without a scrollbar, with distinct icons and at least 44×44 DIP targets.");
 
             Click(main, "FoldWorkspaceSidebar", automation: true);
             PumpUntil(() => nav.All(button => Label(button).IsVisible), "manual expansion did not restore full labels");
-            Assert(fold.IsVisible && owner.IsVisible && new WindowInteropHelper(owner).Handle == hwnd,
+            Assert(fold.IsVisible && main.IsVisible && new WindowInteropHelper(main).Handle == hwnd,
                 "expanding navigation changed the window or opened a panel");
             Click(main, "FoldWorkspaceSidebar", automation: true);
             PumpUntil(() => nav.All(button => !Label(button).IsVisible), "manual folding did not restore the compact visual");
@@ -60,8 +78,8 @@ internal static partial class Program
             var destination = (ContentControl)main.FindName("ClassroomModeWorkspaceHost");
             PumpUntil(() => destination.IsVisible && Equals(Button(main, "ClassroomModeNav").Tag, "active"),
                 "the direct route did not enter classroom mode");
-            var expectedFocus = Button(main, "ExamAwareNav");
-            owner.Activate();
+            var expectedFocus = Button(main, "AboutNav");
+            main.Activate();
             Assert(expectedFocus.Focus(), "could not focus the original navigation item");
             Resize(840, 500);
             PumpUntil(() => more.IsVisible && more.IsKeyboardFocused, "shrinking lost keyboard focus instead of moving it to More");
@@ -77,23 +95,38 @@ internal static partial class Program
             PumpUntil(() => more.ContextMenu?.IsOpen == true, "Enter did not open the overflow menu");
             var moreMenu = more.ContextMenu!;
             var menuItems = moreMenu.Items.OfType<MenuItem>().ToArray();
-            Assert(menuItems.Length is 2 or 3 && menuItems.Any(item => AutomationProperties.GetName(item).Contains("课堂模式（当前页面）")) &&
+            Assert(menuItems.Length == nav.Count(button => !button.IsVisible) &&
+                menuItems.Any(item => Equals(item.Header, "关于")) &&
+                menuItems.Any(item => AutomationProperties.GetName(item).Contains("课堂模式（当前页面）")) &&
                 !menuItems.Any(item => Equals(item.Header, "退出后台")), "overflow inventory or current-page indicator is wrong");
             KeyPress((UIElement)Keyboard.FocusedElement, Key.Escape);
             PumpUntil(() => more.ContextMenu?.IsOpen != true && more.IsKeyboardFocused,
                 "Escape failed to return keyboard focus to More");
             Assert(destination.IsVisible, "escaping the menu changed the current page");
+            Resize(840, 600);
+            PumpUntil(() => expectedFocus.IsKeyboardFocused, "regrowth restored the active route instead of the original focused entry");
+            Assert(destination.IsVisible && Equals(Button(main, "ClassroomModeNav").Tag, "active"),
+                "restoring keyboard focus switched the active page");
+            Resize(840, 500);
+            PumpUntil(() => more.IsKeyboardFocused, "shrinking a second time lost the focused destination");
             KeyPress(more, Key.Enter);
             PumpUntil(() => more.ContextMenu?.IsOpen == true, "overflow could not be reopened from the keyboard");
-            var exam = more.ContextMenu!.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "ExamAware2"));
-            Assert(exam.Focus(), "an overflow destination was not keyboard focusable");
-            KeyPress(exam, Key.Enter);
-            var examWorkspace = (ContentControl)main.FindName("ExamAwareWorkspaceHost");
-            PumpUntil(() => examWorkspace.IsVisible && more.ContextMenu?.IsOpen != true,
-                "keyboard overflow navigation did not use the ExamAware2 workspace");
-            Assert(AutomationProperties.GetName(more).Contains("ExamAware2") &&
-                new WindowInteropHelper(owner).Handle == hwnd && owner.IsVisible,
-                "overflow navigation opened another window or lost the active selection");
+            var about = more.ContextMenu!.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "关于"));
+            Assert(about.Focus(), "the About overflow entry was not keyboard focusable");
+            KeyPress(about, Key.Enter);
+            var aboutWorkspace = (FrameworkElement)main.FindName("AboutPageView");
+            PumpUntil(() => aboutWorkspace.IsVisible && more.ContextMenu?.IsOpen != true,
+                "keyboard overflow navigation did not use the original About page");
+            // Native popup dismissal can reapply the physical display's density limits.
+            // Restore the fixture's simulated short work area before checking the rail.
+            Resize(840, 500);
+            PumpUntil(() => more.IsVisible && !expectedFocus.IsVisible, "the simulated short rail did not overflow again");
+            Snapshot(main, "navigation-about-short.png");
+            Assert(AutomationProperties.GetName(more).Contains("关于") &&
+                new WindowInteropHelper(main).Handle == hwnd && main.IsVisible,
+                $"overflow navigation lost the original window or selection: {AutomationProperties.GetName(more)}, " +
+                $"About tag={expectedFocus.Tag}, More tag={more.Tag}, About visible={expectedFocus.IsVisible}, " +
+                $"main visible={main.IsVisible}, same HWND={new WindowInteropHelper(main).Handle == hwnd}");
             Checks.Add("On a 500-DIP-high window, More contains only the displaced entries, follows the active destination, supports Enter and Escape, and maps the keyboard choice back to the original main-window page.");
 
             Resize(840, 380);
@@ -106,14 +139,65 @@ internal static partial class Program
             VerifyCenters([more, quick, exit]);
             Assert(more.Focus(), "could not focus More before expanding");
             Resize(840, 600);
-            PumpUntil(() => !more.IsVisible && nav.All(button => FullyIn(button, scroll)) && expectedFocus.IsKeyboardFocused,
+            PumpUntil(() => nav.All(button => FullyIn(button, scroll)) && expectedFocus.IsKeyboardFocused,
                 "resizing back did not restore the original active button and tab focus");
             Assert(scroll.VerticalOffset == 0 && scroll.ComputedVerticalScrollBarVisibility == Visibility.Collapsed,
                 "returning to normal height retained the scrolled position");
             foreach (string id in new[] { "MinimizeWindow", "MaximizeRestoreWindow", "CloseWindow" })
                 Assert(Button(main, id, automation: true).IsVisible, "original window chrome action missing: " + id);
             Checks.Add("At very short height the thin overlay preserves alignment and scrolls; restoring normal height brings back all entries and restores the original focus.");
-            main.Close();
+            VerifyWindowActions();
+
+            void VerifyWindowActions()
+            {
+                var edge = new QuickAccessWindow(pipe, () => { }, () => { }, () => { }, () => { }, _ => { }, () => { }, () => { });
+                typeof(MainWindow).GetField("_quick", WorkspaceFlags)!.SetValue(main, edge);
+                var panel = (FrameworkElement)edge.FindName("PanelSurface");
+                var edgeHandle = (FrameworkElement)edge.FindName("EdgeHandle");
+                try
+                {
+                    edge.ShowEntry();
+                    Click(main, "FoldWorkspaceSidebar", automation: true);
+                    PumpUntil(() => main.IsVisible && Label(Button(main, "StudyNav")).IsVisible && !panel.IsVisible,
+                        "folding navigation opened the screen-edge panel or hid the main window");
+                    Click(main, "FoldWorkspaceSidebar", automation: true);
+
+                    Click(main, "CollapseToSideRail", automation: true);
+                    PumpUntil(() => !main.IsVisible && edge.IsVisible && edgeHandle.IsVisible && !panel.IsVisible,
+                        "title-bar collapse did not leave only the screen-edge entrance");
+                    Snapshot(edge, "screen-edge-entry-only.png");
+                    main.RestoreWindow();
+                    Click(main, "WorkspaceOpenQuick");
+                    PumpUntil(() => !main.IsVisible && edge.IsVisible && panel.IsVisible,
+                        "the lower action left only a handle instead of opening the quick panel");
+                    Snapshot(edge, "screen-edge-panel-open.png");
+                    main.RestoreWindow();
+                    Assert(new WindowInteropHelper(main).Handle == hwnd && aboutWorkspace.IsVisible,
+                        "returning from the edge replaced the main window or its current page");
+
+                    bool cancelledSafely = false;
+                    var cancelConfirmation = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+                    cancelConfirmation.Tick += (_, _) =>
+                    {
+                        if (Application.Current.Windows.OfType<StudyActionConfirmation>().FirstOrDefault(w => w.IsVisible) is not { } dialog) return;
+                        cancelConfirmation.Stop();
+                        var cancel = Button(dialog, "CancelAction");
+                        cancelledSafely = dialog.Owner == main && cancel.IsDefault && cancel.IsCancel && main.IsVisible;
+                        ((IInvokeProvider)new ButtonAutomationPeer(cancel).GetPattern(PatternInterface.Invoke)!).Invoke();
+                    };
+                    cancelConfirmation.Start();
+                    try { Click(main, "ExitButton"); }
+                    finally { cancelConfirmation.Stop(); }
+                    Assert(cancelledSafely && main.IsVisible && exit.IsEnabled,
+                        "the separate exit action no longer opens its protected confirmation and returns safely on cancel");
+                    Checks.Add("Actual buttons: folding changes only the navigation, caption collapse leaves an edge entrance, and the lower action opens the existing edge panel. Returning preserves the native main window and page; exit defaults to cancel.");
+                }
+                finally
+                {
+                    typeof(MainWindow).GetField("_quick", WorkspaceFlags)!.SetValue(main, null);
+                    edge.Shutdown();
+                }
+            }
 
             void Resize(double width, double height)
             {
@@ -138,7 +222,8 @@ internal static partial class Program
 
             double Center(FrameworkElement element) =>
                 element.TranslatePoint(new Point(element.ActualWidth / 2, 0), surface).X;
-        });
+        }
+        finally { main.Close(); }
     }
 
     private static TextBlock Glyph(Button button) => (TextBlock)((StackPanel)button.Content).Children[0];

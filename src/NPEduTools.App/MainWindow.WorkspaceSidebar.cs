@@ -12,6 +12,7 @@ public partial class MainWindow
     private bool? _workspaceSidebarChoice;
     private bool _workspaceSidebarCompact;
     private int _workspaceOverflowCount;
+    private Button? _workspaceOverflowFocus;
     private readonly List<(Button Button, TextBlock Label, TextBlock Icon)> _workspaceNavigation = [];
     private Button[] _workspaceOverflowCandidates = [];
 
@@ -19,7 +20,7 @@ public partial class MainWindow
     {
         // In the compact rail the specialist tools move first. The classroom essentials
         // and explicit background action stay reachable at every height.
-        _workspaceOverflowCandidates = [ClassroomModeNav, ExamAwareNav, SecRandomNav];
+        _workspaceOverflowCandidates = [AboutNav, ClassroomModeNav, ExamAwareNav, SecRandomNav];
         var activeTag = DependencyPropertyDescriptor.FromProperty(TagProperty, typeof(Button));
         foreach (var button in _workspaceOverflowCandidates)
             activeTag.AddValueChanged(button, WorkspaceOverflowSelectionChanged);
@@ -38,7 +39,8 @@ public partial class MainWindow
                     if (button.Content is StackPanel { Children.Count: 2 } content &&
                         content.Children[0] is TextBlock icon && content.Children[1] is TextBlock label)
                     {
-                        string accessibleName = ReferenceEquals(button, WorkspaceOpenQuick) ? "打开屏边快捷面板" : label.Text;
+                        string accessibleName = ReferenceEquals(button, WorkspaceOpenQuick) ? "打开屏边快捷面板" :
+                            ReferenceEquals(button, ExitButton) ? "退出后台" : label.Text;
                         button.ToolTip ??= accessibleName;
                         AutomationProperties.SetName(button, accessibleName);
                         _workspaceNavigation.Add((button, label, icon));
@@ -62,6 +64,11 @@ public partial class MainWindow
         WorkspaceSidebar.Margin = compact ? new Thickness(6, 8, 6, 8) : new Thickness(12, 13, 12, 14);
         WorkspaceBrand.HorizontalAlignment = compact ? HorizontalAlignment.Center : HorizontalAlignment.Left;
         WorkspaceBrand.Margin = compact ? new Thickness(0) : new Thickness(8, 0, 0, 0);
+        WorkspaceCommonGroupLabel.Visibility = WorkspaceClassroomGroupLabel.Visibility = WorkspaceConfigurationGroupLabel.Visibility =
+            compact ? Visibility.Collapsed : Visibility.Visible;
+        string action = compact ? "展开导航栏" : "折叠导航栏";
+        WorkspaceFoldNavigation.ToolTip = action;
+        AutomationProperties.SetName(WorkspaceFoldNavigation, action);
         foreach (var (button, label, icon) in _workspaceNavigation)
         {
             label.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
@@ -109,19 +116,33 @@ public partial class MainWindow
             WorkspaceNavigationScroll.ScrollToTop();
         if (_workspaceOverflowCount == count) return;
 
-        var focused = Keyboard.FocusedElement;
-        bool focusMore = _workspaceOverflowCandidates.Take(count).Any(button => ReferenceEquals(button, focused));
-        bool restoreVisible = count == 0 && (ReferenceEquals(focused, WorkspaceNavigationMore) || WorkspaceNavigationMore.ContextMenu?.IsOpen == true);
-        if (WorkspaceNavigationMore.ContextMenu is { IsOpen: true } popup) popup.IsOpen = false;
+        var focused = _workspaceOverflowCandidates.Take(count).FirstOrDefault(button => button.IsKeyboardFocusWithin);
+        bool fromMore = WorkspaceNavigationMore.IsKeyboardFocusWithin;
+        if (WorkspaceNavigationMore.ContextMenu is { IsOpen: true } popup)
+        {
+            fromMore = true;
+            if (Keyboard.FocusedElement is MenuItem { Tag: Button menuDestination })
+                _workspaceOverflowFocus = menuDestination;
+            WorkspaceNavigationMore.ContextMenu = null;
+            popup.IsOpen = false;
+        }
+        if (focused is not null) _workspaceOverflowFocus = focused;
         _workspaceOverflowCount = count;
         for (int index = 0; index < _workspaceOverflowCandidates.Length; index++)
             _workspaceOverflowCandidates[index].Visibility = index < count ? Visibility.Collapsed : Visibility.Visible;
         WorkspaceNavDivider2.Visibility = count == _workspaceOverflowCandidates.Length ? Visibility.Collapsed : Visibility.Visible;
         WorkspaceNavigationMore.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
         WorkspaceOverflowSelectionChanged(this, EventArgs.Empty);
-        if (focusMore) WorkspaceNavigationMore.Focus();
-        else if (restoreVisible)
+        if (focused is not null) WorkspaceNavigationMore.Focus();
+        else if (fromMore && _workspaceOverflowFocus is { IsVisible: true } original)
+        {
+            _workspaceOverflowFocus = null;
+            original.Focus();
+        }
+        else if (fromMore && count > 0) WorkspaceNavigationMore.Focus();
+        else if (fromMore)
             (_workspaceOverflowCandidates.FirstOrDefault(button => Equals(button.Tag, "active")) ?? ClassroomModeNav).Focus();
+        if (count == 0) _workspaceOverflowFocus = null;
     }
 
     private static double SidebarHeight(FrameworkElement element) =>
@@ -149,6 +170,7 @@ public partial class MainWindow
             var item = new MenuItem
             {
                 Header = label.Text, IsEnabled = button.IsEnabled, MinHeight = 44,
+                Tag = button,
                 Icon = new TextBlock { Text = current ? "\uE73E" : icon.Text, FontFamily = icon.FontFamily }
             };
             AutomationProperties.SetName(item, current ? $"{label.Text}（当前页面）" : label.Text);
@@ -156,6 +178,7 @@ public partial class MainWindow
             item.Click += (_, _) =>
             {
                 if (!button.IsEnabled) return;
+                _workspaceOverflowFocus = button;
                 openedDestination = true;
                 button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
             };
@@ -163,10 +186,11 @@ public partial class MainWindow
         }
         menu.Closed += (_, _) => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
         {
+            if (!ReferenceEquals(WorkspaceNavigationMore.ContextMenu, menu)) return;
+            WorkspaceNavigationMore.ContextMenu = null;
             if (WorkspaceNavigationMore.IsVisible && IsActive &&
                 (!openedDestination || Keyboard.FocusedElement is null or MenuItem or System.Windows.Controls.ContextMenu))
                 WorkspaceNavigationMore.Focus();
-            if (ReferenceEquals(WorkspaceNavigationMore.ContextMenu, menu)) WorkspaceNavigationMore.ContextMenu = null;
         });
         WorkspaceNavigationMore.ContextMenu = menu;
         menu.IsOpen = true;
