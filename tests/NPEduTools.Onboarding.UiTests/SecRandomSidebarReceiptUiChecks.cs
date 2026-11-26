@@ -76,6 +76,8 @@ internal static partial class Program
             var rail = new WindowInteropHelper(quick).Handle;
             var card = (FrameworkElement)quick.FindName("DrawReceiptCard");
             var label = (TextBlock)quick.FindName("RailSecRandomLabel");
+            var drawIcon = (FrameworkElement)quick.FindName("RailSecRandomIcon");
+            var pendingIcon = (FrameworkElement)quick.FindName("RailSecRandomPendingIcon");
             var detail = (TextBlock)quick.FindName("DrawReceiptDetail");
             var flash = Button(quick, "RailSecRandom");
             var action = Button(quick, "DrawReceiptAction");
@@ -93,7 +95,8 @@ internal static partial class Program
             Assert(draws.IsEmpty && !card.IsVisible && slideNumber() == 1, "sliding out of Flash Draw invoked a button or advanced the show");
             Tap(flash);
             PumpUntil(() => accepted.Task.IsCompleted, "first touch did not reach the background");
-            Assert(label.Text == "闪抽" && flash.IsEnabled && Equals(flash.ToolTip, "闪抽一人") && !card.IsVisible,
+            Assert(label.Text == "闪抽" && drawIcon.IsVisible && !pendingIcon.IsVisible &&
+                flash.IsEnabled && Equals(flash.ToolTip, "闪抽一人") && !card.IsVisible,
                 "an ordinary in-flight draw changed the sidebar or opened a card");
             Snapshot(quick, "01-flash-quiet-during-draw.png");
             Tap(flash); Tap(flash);
@@ -131,7 +134,7 @@ internal static partial class Program
             Pause(520);
             Tap(flash);
             PumpUntil(() => label.Text == "待核实" && card.IsVisible, "lost command reply did not retain a visible pending disposition");
-            Assert(draws.Count == 3 && !next.IsVisible && !main.IsVisible &&
+            Assert(draws.Count == 3 && pendingIcon.IsVisible && !drawIcon.IsVisible && !next.IsVisible && !main.IsVisible &&
                 !detail.Text.Contains("旧抽取姓名") && !detail.Text.Contains("断线本次同学"), "lost reply enabled redraw, disclosed a name or navigated automatically");
             Assert(card.TranslatePoint(new Point(), quick).X > flash.TranslatePoint(new Point(), quick).X,
                 "left-side card opened toward the screen edge");

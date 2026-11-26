@@ -37,6 +37,8 @@ internal static partial class Program
             quick.ShowEntry();
             hwnd = new WindowInteropHelper(quick).Handle;
             Assert(InitializeTouchInjection(1, 3), "native touch injection unavailable: " + Marshal.GetLastWin32Error());
+            quick.UpdateLayout();
+            Snapshot(quick, "00-compact-right.png");
             OpenFromSlide();
             Click(quick, "LayoutButton");
             PumpUntil(() => Button(quick, "LayoutRight").IsVisible, "the same panel did not display layout options");
@@ -185,6 +187,81 @@ internal static partial class Program
             Assert(!switchedBack.Left && switchedBack.Height == moved.Height && switchedBack.Display == display && switchedBack.Compact,
                 "returning to the right discarded the fine-tuned height, display or shape");
             Checks.Add("Native fine drag still saves on release and cancels by tap. A recreated rail reopens at its saved coordinates and switches back right without losing its tuned height.");
+
+            quick.SetCompact(false);
+            quick.SetDensity(.9);
+            quick.UpdateClassroomMode(new("课堂模式 · 日常模式", "自动录课按原有计划判断。", "日常", false));
+            quick.SetSecRandomQuickDrawAction(() => throw new InvalidOperationException("layout test should not send a draw"),
+                () => Task.CompletedTask);
+            OpenFromSlide();
+            CheckFullRail();
+            Snapshot(quick, "04-full-right-wide.png");
+
+            quick.SetDensity(.8);
+            CapHeight();
+            Tap(Button(quick, "RailShortcuts"));
+            PumpUntil(() => Control<ScrollViewer>("ShortcutsPage").IsVisible, "the compact visual style blocked switching to shortcuts");
+            CapHeight();
+            CheckFullRail();
+            Snapshot(quick, "05-full-right-short.png");
+
+            quick.SetSide(true);
+            PumpUntil(() => quick.LeftSide && QuickForeground() == slide, "the full rail did not return to PowerPoint when moving left");
+            Pause(180);
+            Tap(Button(quick, "EdgeHandle"));
+            PumpUntil(() => Control<FrameworkElement>("PanelSurface").IsVisible && HasForeground(quick),
+                "the moved rail did not open from its new left-side handle");
+            CapHeight();
+            CheckFullRail();
+            Snapshot(quick, "06-full-left-short.png");
+
+            Tap(Button(quick, "RailFold"));
+            PumpUntil(() => ReadPlacement().Compact && !Button(quick, "RailFold").IsVisible && QuickForeground() == slide,
+                "the bottom handle button did not fold the full rail and restore PowerPoint with one tap");
+            CheckHandle();
+            Snapshot(quick, "07-compact-left.png");
+            Tap(Button(quick, "EdgeHandle"));
+            PumpUntil(() => Control<FrameworkElement>("PanelSurface").IsVisible && HasForeground(quick), "the compact handle no longer opens on a single tap");
+            quick.Collapse();
+            PumpUntil(() => QuickForeground() == slide, "closing the compact panel did not return to the original slide");
+            Checks.Add("Full and compact rails mirror their handle. All six full-rail buttons fit 44 effective DIP targets; the bottom handle control folds in one tap.");
+
+            void CheckFullRail()
+            {
+                var groups = new[] { "EdgeHandle", "RailTools", "RailShortcuts", "RailSecRandom", "RailSettings", "RailFold" };
+                var railBounds = RelativeBounds(Control<Border>("Rail"), quick);
+                double bottom = railBounds.Top;
+                foreach (string name in groups)
+                {
+                    var button = Button(quick, name);
+                    var bounds = RelativeBounds(button, quick);
+                    Assert(button.IsVisible && bounds.Width >= 43.5 && bounds.Height >= 43.5 && railBounds.Contains(bounds) && bounds.Top >= bottom,
+                        "the button is undersized, clipped, or out of the agreed order: " + name);
+                    bottom = bounds.Bottom;
+                }
+                var tools = Button(quick, "RailTools");
+                var shortcutsButton = Button(quick, "RailShortcuts");
+                bool shortcutsOpen = Control<ScrollViewer>("ShortcutsPage").IsVisible;
+                var selected = shortcutsOpen ? shortcutsButton : tools;
+                var inactive = shortcutsOpen ? tools : shortcutsButton;
+                var marker = (Border)selected.Template.FindName("ActiveBar", selected);
+                var selectedBounds = RelativeBounds(selected, quick);
+                var markerBounds = RelativeBounds(marker, quick);
+                Assert(marker.IsVisible && ((Border)inactive.Template.FindName("ActiveBar", inactive)).Visibility == Visibility.Collapsed &&
+                    (markerBounds.Left > selectedBounds.Left + selectedBounds.Width / 2) == quick.LeftSide,
+                    "the active mark did not follow the open page and face the panel");
+                CheckHandle();
+            }
+
+            void CheckHandle()
+            {
+                quick.UpdateLayout();
+                var handle = RelativeBounds(Button(quick, "EdgeHandle"), quick);
+                var arrow = RelativeBounds(Control<TextBlock>("HandleDirection"), quick);
+                Assert(Math.Abs((arrow.Top + arrow.Bottom - handle.Top - handle.Bottom) / 2) <= 2 &&
+                    (arrow.Left > handle.Left + handle.Width / 2) == quick.LeftSide,
+                    "the handle arrow was not centered vertically or mirrored toward the panel");
+            }
 
             T Control<T>(string name) where T : FrameworkElement => (T)quick.FindName(name);
             void OpenFromSlide()

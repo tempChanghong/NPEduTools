@@ -358,7 +358,7 @@ public partial class QuickAccessWindow : Window
     {
         _handlePressStart = null; _dragging = false; _handleTouch = null;
         _handleInputRevision++;
-        EdgeHandle.SetResourceReference(BorderBrushProperty, "TeacherLineBrush");
+        EdgeHandle.ClearValue(BorderBrushProperty);
         EdgeHandle.ReleaseAllTouchCaptures(); EdgeHandle.ReleaseMouseCapture();
     }
 
@@ -630,8 +630,9 @@ public partial class QuickAccessWindow : Window
     }
     private void RefreshRail()
     {
-        RailTools.Tag = _expanded && !_shortcutsSelected ? "active" : null;
-        RailShortcuts.Tag = _expanded && _shortcutsSelected ? "active" : null;
+        string activeTag = _placement.LeftSide ? "active-right" : "active-left";
+        RailTools.Tag = _expanded && !_shortcutsSelected ? activeTag : null;
+        RailShortcuts.Tag = _expanded && _shortcutsSelected ? activeTag : null;
         RefreshHandleLabel();
     }
 
@@ -640,7 +641,7 @@ public partial class QuickAccessWindow : Window
         string action = _moveOrigin is not null ? "拖动调整位置，轻点取消" : _expanded ? "收起快捷面板" : "展开快捷面板";
         HandleDirection.Text = _moveOrigin is not null ? "↕" : _placement.LeftSide == _expanded ? "‹" : "›";
         HandleDirection.HorizontalAlignment = _placement.LeftSide ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-        HandleDirection.Margin = _placement.LeftSide ? new Thickness(0, 1, 3, 0) : new Thickness(3, 1, 0, 0);
+        HandleDirection.Margin = _placement.LeftSide ? new Thickness(0, 0, 2, 0) : new Thickness(2, 0, 0, 0);
         string? status = _onboardingPending ? "初始设置待完成" : _handleStatus;
         EdgeHandle.ToolTip = status is null ? action : $"{action}\n{status}";
         System.Windows.Automation.AutomationProperties.SetName(EdgeHandle, action);

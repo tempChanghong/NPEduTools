@@ -170,8 +170,11 @@ public partial class QuickAccessWindow
         CancelDrawTouch();
         var receipt = _drawReceipt;
         bool pending = receipt?.State == SidebarDrawState.Pending;
-        RailSecRandomGlyph.Text = pending ? "!" : "抽";
+        RailSecRandomIcon.Visibility = pending ? Visibility.Collapsed : Visibility.Visible;
+        RailSecRandomPendingIcon.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
         RailSecRandomLabel.Text = pending ? "待核实" : "闪抽";
+        if (pending) RailSecRandomLabel.SetResourceReference(TextBlock.ForegroundProperty, "TeacherWarningBrush");
+        else RailSecRandomLabel.ClearValue(TextBlock.ForegroundProperty);
         RailSecRandom.IsEnabled = _secRandomQuickDraw is not null;
         string railLabel = pending ? "闪抽待核实" : "闪抽一人";
         RailSecRandom.ToolTip = railLabel;
