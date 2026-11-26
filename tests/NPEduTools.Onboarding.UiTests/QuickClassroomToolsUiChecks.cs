@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -112,7 +113,7 @@ internal static partial class Program
             Assert(runningStripHeight - Bounds(strip).Height >= 12, "the closed PPT strip did not move its only action beside the status");
             AssertFirstUseToolsFit();
             Assert(scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible, "the short fixture did not exercise a real scrollbar");
-            var header = (System.Windows.Controls.Primitives.ToggleButton)plan.Template.FindName("HeaderSite", plan);
+            var header = (ToggleButton)plan.Template.FindName("HeaderSite", plan);
             Assert(!plan.IsExpanded && Bounds(header).Top - Bounds(record).Bottom >= 3,
                 "the recording plan still touched the row above it");
             Snapshot(quick, "01-ppt-off-short-onboarding.png");
@@ -159,11 +160,11 @@ internal static partial class Program
                     "PPT action is clipped or below the first touch viewport");
             }
             var shortViewport = scroll.TransformToAncestor(quick).TransformBounds(new Rect(scroll.RenderSize));
-            Snapshot(quick, "02-classroom-tools-short.png");
             foreach (var item in new[] { Button(quick, "StudyButton"), Button(quick, "RecordingButton") })
                 Assert(shortViewport.Contains(Bounds(item)),
                     $"{item.Name} {Bounds(item)} was clipped in the short viewport {shortViewport}");
             var position = pause.PointToScreen(new Point());
+            CheckQuickScrollBar(quick, scroll, hwnd);
             scroll.ScrollToEnd();
             PumpUntil(() => Math.Abs(scroll.VerticalOffset - scroll.ScrollableHeight) < .5,
                 "the classroom tools did not scroll to the end");
@@ -279,5 +280,72 @@ internal static partial class Program
             try { server.GetAwaiter().GetResult(); }
             catch (OperationCanceledException) { }
         }
+    }
+
+    private static void CheckQuickScrollBar(QuickAccessWindow window, ScrollViewer scroll, nint hwnd)
+    {
+        var bar = Descendants<ScrollBar>(scroll).Single(item => item.Orientation == Orientation.Vertical && item.IsVisible);
+        Assert(!Descendants<RepeatButton>(bar).Any(item => item.Command == ScrollBar.LineUpCommand || item.Command == ScrollBar.LineDownCommand),
+            "the sidebar still renders the system's line-scroll arrow buttons");
+        var track = (Track)bar.Template.FindName("PART_Track", bar);
+        var thumb = track.Thumb;
+        scroll.ScrollToTop(); window.UpdateLayout();
+        var start = thumb.PointToScreen(new Point(2, thumb.ActualHeight / 2));
+        var point = new CursorPoint { X = (int)Math.Round(start.X), Y = (int)Math.Round(start.Y) };
+        // The layered window begins its reopen animation fully transparent.
+        var panel = (FrameworkElement)window.FindName("PanelSurface");
+        PumpUntil(() => panel.Opacity >= .99 && WindowFromPoint(point) == hwnd && HasForeground(window),
+            "the scrollbar hit area did not become reachable");
+        Snapshot(window, "02-classroom-tools-short.png");
+        Assert(GetCursorPos(out var original), "could not read the original cursor position");
+        Assert(SetCursorPos(point.X, point.Y), "could not position the test pointer in the thumb's side gutter");
+        SendMouse(2);
+        try
+        {
+            PumpUntil(() => thumb.IsDragging, "the thumb lost its full-width mouse hit area");
+            Assert(SetCursorPos(point.X, point.Y + 36), "could not drag the scrollbar thumb");
+            PumpUntil(() => scroll.VerticalOffset > 5, "dragging the scrollbar did not move the real viewport");
+        }
+        finally { SendMouse(4); SetCursorPos(original.X, original.Y); }
+        PumpUntil(() => !thumb.IsDragging, "the scrollbar did not release mouse capture");
+        Snapshot(window, "06-scrollbar-dragged.png");
+
+        scroll.ScrollToTop(); window.UpdateLayout();
+        var page = track.IncreaseRepeatButton;
+        ClickFixturePoint(hwnd, page.PointToScreen(new Point(page.ActualWidth / 2, page.ActualHeight / 2)), hwnd,
+            () => PumpUntil(() => scroll.VerticalOffset > 0, "clicking the track did not page down"));
+
+        scroll.ScrollToTop(); window.UpdateLayout();
+        var body = scroll.PointToScreen(new Point(30, 24));
+        var wheel = new CursorPoint { X = (int)Math.Round(body.X), Y = (int)Math.Round(body.Y) };
+        Assert(WindowFromPoint(wheel) == hwnd && SetCursorPos(wheel.X, wheel.Y), "the content is outside the sidebar hit area");
+        try
+        {
+            SendMouse(0x0800, unchecked((uint)-120));
+            PumpUntil(() => scroll.VerticalOffset > 0, "the mouse wheel did not scroll the sidebar");
+        }
+        finally { SetCursorPos(original.X, original.Y); }
+
+        scroll.ScrollToTop(); window.UpdateLayout();
+        var touchStart = scroll.PointToScreen(new Point(18, scroll.ActualHeight * .65));
+        var finger = new CursorPoint { X = (int)Math.Round(touchStart.X), Y = (int)Math.Round(touchStart.Y) };
+        Assert(WindowFromPoint(finger) == hwnd && HasForeground(window), "the touch pan target is outside the active sidebar");
+        SendTouch(0x10006, finger);
+        try
+        {
+            for (int frame = 0; frame < 5; frame++)
+            {
+                Pause(26);
+                finger.Y -= 16;
+                SendTouch(0x20006, finger);
+            }
+        }
+        finally { Pause(26); SendTouch(0x40000, finger); }
+        PumpUntil(() => scroll.VerticalOffset > 15 && HasForeground(window), "touch did not pan the sidebar content");
+        Checks.Add("The narrow Window scrollbar has no arrow buttons. Native mouse input dragged it from outside the visible thumb, paged by clicking the track, and scrolled with the wheel. Touch panned the content.");
+
+        static void SendMouse(uint flags, uint data = 0) => Assert(
+            SendInput(1, [new() { Mouse = new() { Flags = flags, MouseData = data } }], Marshal.SizeOf<NativeInput>()) == 1,
+            "Windows did not deliver the scrollbar mouse input");
     }
 }
