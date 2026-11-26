@@ -33,7 +33,8 @@ internal static partial class Program
         bool connectionWorkspaceOnly = args.Length == 2 && args[1] == "--connection-workspace";
         bool recordingWorkspaceOnly = args.Length == 2 && args[1] == "--recording-workspace";
         bool workspaceRacesOnly = args.Length == 2 && args[1] == "--study-workspace-races";
-        bool workspaceOnly = args.Length == 2 && args[1] is "--study-workspace" or "--study-seating-workspace" or "--manual-reference-workspace";
+        bool workspaceOnly = args.Length == 2 && args[1] is "--study-workspace" or "--study-seating-workspace" or
+            "--manual-reference-workspace" or "--workspace-sidebar";
         bool manualStudyOnly = args.Length == 2 && args[1] == "--manual-study";
         bool examOnly = args.Length == 2 && args[1] == "--remote-exam";
         bool connectionOnly = args.Length == 2 && args[1] == "--school-connection";
@@ -92,7 +93,8 @@ internal static partial class Program
             if (workspaceRacesOnly) { RunWorkspaceRaceChecks(); WriteResult("PASSED", null); return 0; }
             if (workspaceOnly)
             {
-                if (args[1] == "--manual-reference-workspace") RunManualReferenceWorkspaceChecks();
+                if (args[1] == "--workspace-sidebar") RunWorkspaceSidebarChecks();
+                else if (args[1] == "--manual-reference-workspace") RunManualReferenceWorkspaceChecks();
                 else if (args[1] == "--study-seating-workspace") RunStudySeatingWorkspaceChecks();
                 else RunStudyWorkspaceChecks();
                 WriteResult("PASSED", null); return 0;

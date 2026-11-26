@@ -5,12 +5,46 @@
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="SchoolToolsVisibility" />
     <Style x:Key="SidebarNavigation" TargetType="Button" BasedOn="{StaticResource TeacherNavigation}">
-      <Setter Property="MinHeight" Value="44" /><Setter Property="Padding" Value="12,8" />
-      <Setter Property="FontSize" Value="14" /><Setter Property="Margin" Value="0,0,0,2" />
+      <Setter Property="MinWidth" Value="44" /><Setter Property="MinHeight" Value="44" />
+      <Setter Property="Padding" Value="12,6" /><Setter Property="FontSize" Value="14" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
     <Style x:Key="ScrollPage" TargetType="RepeatButton">
       <Setter Property="Focusable" Value="False" />
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="SidebarOverlayScrollBar" TargetType="ScrollBar">
+      <Setter Property="Width" Value="4" /><Setter Property="MinWidth" Value="4" />
+      <Setter Property="Margin" Value="0,2" /><Setter Property="Opacity" Value="0.55" />
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
+        <Track x:Name="PART_Track" IsDirectionReversed="True">
+          <Track.DecreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Style="{StaticResource ScrollPage}" /></Track.DecreaseRepeatButton>
+          <Track.Thumb><Thumb MinHeight="20"><Thumb.Template><ControlTemplate TargetType="Thumb">
+            <Border x:Name="Grip" Background="#9FB2A8" CornerRadius="2" />
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Grip" Property="Background" Value="#718C7E" /></Trigger>
+              <Trigger Property="IsDragging" Value="True"><Setter TargetName="Grip" Property="Background" Value="#147D68" /></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+          <Track.IncreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Style="{StaticResource ScrollPage}" /></Track.IncreaseRepeatButton>
+        </Track>
+      </ControlTemplate></Setter.Value></Setter>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True"><Setter Property="Opacity" Value="0.95" /></Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="SidebarScrollViewer" TargetType="ScrollViewer">
+      <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+      <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+      <Setter Property="PanningMode" Value="VerticalOnly" />
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollViewer">
+        <Grid Background="{TemplateBinding Background}">
+          <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" CanContentScroll="{TemplateBinding CanContentScroll}" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Margin="{TemplateBinding Padding}" />
+          <ScrollBar x:Name="PART_VerticalScrollBar" Style="{StaticResource SidebarOverlayScrollBar}" HorizontalAlignment="Right" Orientation="Vertical" Focusable="False" Maximum="{TemplateBinding ScrollableHeight}" ViewportSize="{TemplateBinding ViewportHeight}" Value="{TemplateBinding VerticalOffset}" Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" AutomationProperties.AutomationId="WorkspaceNavigationScrollBar" />
+        </Grid>
+      </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style TargetType="ScrollBar">
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
@@ -72,40 +106,59 @@
     <Grid.ColumnDefinitions><ColumnDefinition x:Name="WorkspaceNavColumn" Width="164" /><ColumnDefinition /></Grid.ColumnDefinitions>
     <Border x:Name="WorkspaceSidebarSurface" Background="{DynamicResource TeacherShellNavigationBrush}"
             BorderBrush="{DynamicResource TeacherShellLineBrush}" BorderThickness="0,0,1,0">
-      <Grid x:Name="WorkspaceSidebar" Margin="12,13,12,14">
+      <Grid x:Name="WorkspaceSidebar" Margin="12,6,12,6">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <StackPanel x:Name="WorkspaceBrand" Orientation="Horizontal" Margin="8,0,0,0">
           <Image Source="{StaticResource BrandLogoSmall}" Width="24" Height="24" HorizontalAlignment="Left" AutomationProperties.Name="NPEduTools 标志" />
           <TextBlock Text="NPEduTools" Foreground="{DynamicResource TeacherTextBrush}" FontFamily="Segoe UI" FontSize="14" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center" />
         </StackPanel>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,18,0,8"><StackPanel>
-          <Button x:Name="HomeNav" Tag="active" Style="{StaticResource SidebarNavigation}" Click="HomeNavClicked" AutomationProperties.AutomationId="HomeTab">
-            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE80F;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="主页" /></StackPanel>
-          </Button>
-          <Button x:Name="ShortcutNav" Style="{StaticResource SidebarNavigation}" Click="ShortcutNavClicked" AutomationProperties.AutomationId="ShortcutsTab">
-            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A7;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="快捷启动" /></StackPanel>
-          </Button>
-          <Button x:Name="StudyNav" Style="{StaticResource SidebarNavigation}" Click="StudyNavClicked" AutomationProperties.AutomationId="StudyTab"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center"/><TextBlock Text="自习"/></StackPanel></Button>
-          <Button x:Name="RecordingNav" Content="录课" Style="{StaticResource SidebarNavigation}" Click="RecordingNavClicked" AutomationProperties.AutomationId="RecordingNav" />
-          <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,8" />
-          <Button x:Name="NpepSettingsTab" Style="{StaticResource SidebarNavigation}" Click="NpepSettingsClicked" AutomationProperties.AutomationId="NpepSettingsTab">
-            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="学校互联" /></StackPanel>
-          </Button>
-          <Button x:Name="SettingsNav" Style="{StaticResource SidebarNavigation}" Click="SettingsNavClicked" AutomationProperties.AutomationId="SettingsTab">
-            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设备与连接" /></StackPanel>
-          </Button>
-          <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,8" />
-          <Button x:Name="ExamAwareNav" Content="ExamAware2" ToolTip="ExamAware2 连接" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
-          <Button x:Name="SecRandomNav" Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
-          <Button x:Name="ClassroomModeNav" Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
-        </StackPanel></ScrollViewer>
-        <StackPanel Grid.Row="2">
+        <ScrollViewer x:Name="WorkspaceNavigationScroll" Grid.Row="1" Style="{StaticResource SidebarScrollViewer}" Margin="0,6,0,4">
+          <StackPanel x:Name="WorkspaceNavigationItems">
+            <Button x:Name="HomeNav" Tag="active" Style="{StaticResource SidebarNavigation}" Click="HomeNavClicked" AutomationProperties.AutomationId="HomeTab">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE80F;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="主页" /></StackPanel>
+            </Button>
+            <Button x:Name="ShortcutNav" Style="{StaticResource SidebarNavigation}" Click="ShortcutNavClicked" AutomationProperties.AutomationId="ShortcutsTab">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A7;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="快捷启动" /></StackPanel>
+            </Button>
+            <Button x:Name="StudyNav" Style="{StaticResource SidebarNavigation}" Click="StudyNavClicked" AutomationProperties.AutomationId="StudyTab">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="自习" /></StackPanel>
+            </Button>
+            <Button x:Name="RecordingNav" Style="{StaticResource SidebarNavigation}" Click="RecordingNavClicked" AutomationProperties.AutomationId="RecordingNav">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="录课" /></StackPanel>
+            </Button>
+            <Border x:Name="WorkspaceNavDivider1" Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="8,3" />
+            <Button x:Name="NpepSettingsTab" Style="{StaticResource SidebarNavigation}" Click="NpepSettingsClicked" AutomationProperties.AutomationId="NpepSettingsTab">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="学校互联" /></StackPanel>
+            </Button>
+            <Button x:Name="SettingsNav" Style="{StaticResource SidebarNavigation}" Click="SettingsNavClicked" AutomationProperties.AutomationId="SettingsTab">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="设备与连接" /></StackPanel>
+            </Button>
+            <Border x:Name="WorkspaceNavDivider2" Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="8,3" />
+            <Button x:Name="ExamAwareNav" ToolTip="ExamAware2 连接" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7C3;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="ExamAware2" /></StackPanel>
+            </Button>
+            <Button x:Name="SecRandomNav" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8D4;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="课堂点名" /></StackPanel>
+            </Button>
+            <Button x:Name="ClassroomModeNav" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7BE;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="课堂模式" /></StackPanel>
+            </Button>
+            <Button x:Name="WorkspaceNavigationMore" Visibility="Collapsed" Style="{StaticResource SidebarNavigation}" Click="WorkspaceNavigationMoreClicked" AutomationProperties.AutomationId="WorkspaceNavigationMore">
+              <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE712;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="更多" /></StackPanel>
+            </Button>
+          </StackPanel>
+        </ScrollViewer>
+        <StackPanel x:Name="WorkspaceNavigationFooter" Grid.Row="2" Margin="0,2,0,0">
           <Button x:Name="AboutNav" Style="{StaticResource SidebarNavigation}" Click="AboutNavClicked" AutomationProperties.AutomationId="AboutTab">
             <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="关于" /></StackPanel>
           </Button>
-          <Button Content="展开侧边栏" Style="{StaticResource SidebarNavigation}" Click="OpenQuickClicked" AutomationProperties.AutomationId="OpenQuick" />
-          <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="12,8" />
-          <Button x:Name="ExitButton" Content="退出后台" Style="{StaticResource SidebarNavigation}" FontSize="12" Click="StopClicked" AutomationProperties.AutomationId="StopHost" />
+          <Button x:Name="WorkspaceOpenQuick" ToolTip="隐藏主窗并直接打开屏边快捷面板" Style="{StaticResource SidebarNavigation}" Click="OpenQuickClicked" AutomationProperties.AutomationId="OpenQuick" AutomationProperties.Name="打开屏边快捷面板">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE90D;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="屏边快捷面板" /></StackPanel>
+          </Button>
+          <Border x:Name="WorkspaceFooterDivider" Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="8,3" />
+          <Button x:Name="ExitButton" Style="{StaticResource SidebarNavigation}" FontSize="12" Click="StopClicked" AutomationProperties.AutomationId="StopHost">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8AC;" FontFamily="Segoe MDL2 Assets" Margin="0,0,12,0" VerticalAlignment="Center" /><TextBlock Text="退出后台" /></StackPanel>
+          </Button>
         </StackPanel>
       </Grid>
     </Border>
@@ -118,14 +171,14 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Button Content="&#xE700;" FontFamily="Segoe MDL2 Assets" ToolTip="展开或折叠导航" Click="FoldWorkspaceSidebarClicked" Style="{DynamicResource TeacherQuiet}" Width="44" Height="44" MinHeight="44" Padding="0" Margin="0,0,10,0" WindowChrome.IsHitTestVisibleInChrome="True" AutomationProperties.AutomationId="FoldWorkspaceSidebar" AutomationProperties.Name="展开或折叠导航"/>
+          <Button Content="&#xE700;" FontFamily="Segoe MDL2 Assets" ToolTip="展开或折叠左侧导航" Click="FoldWorkspaceSidebarClicked" Style="{DynamicResource TeacherQuiet}" Width="44" Height="44" MinHeight="44" Padding="0" Margin="0,0,10,0" WindowChrome.IsHitTestVisibleInChrome="True" AutomationProperties.AutomationId="FoldWorkspaceSidebar" AutomationProperties.Name="展开或折叠左侧导航"/>
           <TextBlock x:Name="PageBreadcrumb" Text="主页" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12" VerticalAlignment="Center" IsHitTestVisible="False" />
         </StackPanel>
         <StackPanel Grid.Column="2" HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button Style="{DynamicResource TeacherQuiet}" Height="44" MinHeight="44" MinWidth="44" Padding="10,0" Click="CollapseToSideRailClicked" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="收起到侧边栏" AutomationProperties.AutomationId="CollapseToSideRail" AutomationProperties.Name="收起到侧边栏">
+          <Button Style="{DynamicResource TeacherQuiet}" Height="44" MinHeight="44" MinWidth="44" Padding="10,0" Click="CollapseToSideRailClicked" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="隐藏主窗并收起到屏边入口" AutomationProperties.AutomationId="CollapseToSideRail" AutomationProperties.Name="收起到屏边">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
               <TextBlock Text="&#xE8A7;" FontFamily="Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0" />
-              <TextBlock Text="收起到侧边栏" FontSize="12" VerticalAlignment="Center" />
+              <TextBlock Text="收起到屏边" FontSize="12" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
           <Border Width="1" Height="18" Background="{DynamicResource TeacherLineBrush}" Margin="6,0" VerticalAlignment="Center" IsHitTestVisible="False" />

@@ -177,10 +177,18 @@ internal static partial class Program
                 Assert(sidebar.Width.Value != expandedWidth && main.IsVisible && !quick.IsVisible,
                     "folding the internal navigation hid the main window or opened the desktop rail");
                 Click(main, "CollapseToSideRail", true);
-                PumpUntil(() => !main.IsVisible && quick.IsVisible, "collapse did not show the separate desktop rail");
+                var quickPanel = (FrameworkElement)quick.FindName("PanelSurface");
+                PumpUntil(() => !main.IsVisible && quick.IsVisible && !quickPanel.IsVisible,
+                    "collapse did not leave only the screen-edge entry");
                 Assert(main.WindowState == WindowState.Normal, "collapsing to the rail entered the Windows minimized state");
                 main.RestoreWindow();
                 PumpUntil(() => panel.IsVisible && Button(exam, "StartButton").IsEnabled, "returning from the rail lost the exam workspace");
+                Click(main, "OpenQuick", true);
+                PumpUntil(() => !main.IsVisible && quick.IsVisible && quickPanel.IsVisible,
+                    "the separate quick-panel action did not expand the panel");
+                main.RestoreWindow();
+                PumpUntil(() => panel.IsVisible && Button(exam, "StartButton").IsEnabled,
+                    "returning from the open quick panel lost the exam workspace");
 
                 typeof(MainWindow).GetMethod("ShowWorkspaceCalibration", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, null);
                 var calibration = (ContentControl)main.FindName("WorkspaceCalibrationHost");
@@ -216,7 +224,7 @@ internal static partial class Program
                 Checks.Add("ExamAware same HWND from home, settings and sidebar; original focus, path draft and in-flight receipt survive switching; quick fallback keeps calibration");
                 Checks.Add("Active calibration prompts before switching; the native default decline retains the pending sample and current workspace");
                 Checks.Add("ExamAware first setup, connected and disconnected at both sizes: path save and export never claim a verified bridge; optional playback stays folded");
-                Checks.Add("Title bar: native hit targets, 44-DIP controls, Windows minimize/maximize/restore retain manual size, and navigation fold is distinct from collapsing to the desktop rail");
+                Checks.Add("Title bar: native hit targets, 44-DIP controls, Windows minimize/maximize/restore retain manual size; folding navigation, going to the screen edge and opening the quick panel are distinct");
             }
         }
         finally
