@@ -67,7 +67,7 @@ internal static partial class Program
         bool planSaveOnly = args.Length == 2 && args[1] == "--recording-plan-save";
         bool automaticRecoveryOnly = args.Length == 2 && args[1] == "--automatic-recovery";
         bool inboxOnly = args.Length == 2 && args[1] is "--notification-inbox" or "--notification-workspace";
-        bool shortcutsOnly = args.Length == 2 && args[1] == "--shortcut-recovery";
+        bool shortcutsOnly = args.Length == 2 && args[1] is "--shortcut-recovery" or "--quick-shortcuts";
         if (args.Length != 1 && !schoolStudySeating && !aboutVersionOnly && !quickBoundariesOnly && !quickWorkspaceOnly && !connectionWorkspaceOnly && !homeWorkspaceOnly && !recordingWorkspaceOnly && !workspaceRacesOnly && !workspaceOnly && !manualStudyOnly && !readingLayoutOnly && !inputsOnly && !studyReportOnly && !studyExitOnly && !meterOnly && !calibrationOnly && !examOnly && !connectionOnly && !noiseOnly && !recordingOnly && !manualOnly && !secRandomOnly && !examAwareOnly && !classroomOnly && !scheduledDisplayOnly && !studyDisplayOnly && !studyReliabilityOnly && !studyDevicesOnly && !studyMemoryOnly && !studySoakOnly && !preparationOnly && !touchOnly && !adminOnly && !launchConfigOnly && !launchOnly && !planSaveOnly && !automaticRecoveryOnly && !inboxOnly && !shortcutsOnly) throw new ArgumentException("Usage: UiTests <output-directory> [--about-version|--quick-boundaries|--quick-slideshow|--quick-workspace|--connection-workspace|--home-workspace|--recording-workspace|--study-workspace|--sound-meter-beta|--noise-calibration|--remote-exam|--school-connection|--noise-status|--automatic-recording|--manual-recording|--secrandom-status|--examaware-status|--classroom-status|--scheduled-display|--study-display|--homework-reading-layout|--study-reliability|--study-devices|--study-display-memory|--study-display-soak|--study-display-soak-probe|--onboarding-preparation|--touch-status|--admin-status|--launch-configuration|--classisland-launch|--recording-plan-save|--automatic-recovery|--notification-inbox|--notification-workspace|--shortcut-recovery]");
         _output = Path.GetFullPath(args[0]); Directory.CreateDirectory(_output);
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -83,6 +83,8 @@ internal static partial class Program
         string path = AgreementAcceptanceStore.PathFor(pipe);
         try
         {
+            if (shortcutsOnly && args[1] == "--quick-shortcuts")
+            { RunQuickShortcutChecks(); WriteResult("PASSED", null); return 0; }
             if (schoolStudySeating) { RunSchoolStudySeatingAcceptance(args[2]); WriteResult("PASSED", null); return 0; }
             if (studyReliabilityOnly) { RunStudyReliabilityChecks(); WriteResult("PASSED", null); return 0; }
             if (aboutVersionOnly) { RunAboutVersionChecks(); WriteResult("PASSED", null); return 0; }

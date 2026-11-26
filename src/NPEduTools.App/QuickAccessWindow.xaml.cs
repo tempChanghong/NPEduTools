@@ -48,6 +48,7 @@ public partial class QuickAccessWindow : Window
     private readonly ForegroundCallback _foregroundChanged;
     private bool _autoHidden;
     private bool _expanded, _dragging, _closing, _positioning, _shortcutsSelected;
+    internal long ShortcutViewRevision { get; private set; }
     private bool _tapCancelled, _onboardingPending;
     private string? _handleStatus;
     private Placement? _moveOrigin;
@@ -301,6 +302,7 @@ public partial class QuickAccessWindow : Window
         InvalidatePptPress();
         EndMove(save: false, restoreFocus);
         bool wasExpanded = _expanded;
+        if (wasExpanded) ShortcutViewRevision++;
         _expanded = false; RefreshCompact(); RefreshTaskOrder(); RefreshRecordingControlSlot(); RefreshStudyNextSlot();
         LayoutOptions.Visibility = Visibility.Collapsed;
         PanelSurface.BeginAnimation(OpacityProperty, null);
@@ -603,18 +605,35 @@ public partial class QuickAccessWindow : Window
 
     public void SetShortcutStatus(string message, bool available, bool repair)
     {
-        ShortcutStatus.Text = message; ShortcutItems.IsEnabled = ShortcutRepair.IsEnabled = available;
+        ShortcutStatus.Text = message;
+        ShortcutStatus.ToolTip = message;
+        bool hasMessage = !string.IsNullOrEmpty(message);
+        ShortcutStatus.Visibility = hasMessage ? Visibility.Visible : Visibility.Hidden;
+        ShortcutStatus.SetResourceReference(TextBlock.ForegroundProperty, repair ? "TeacherErrorBrush" : "TeacherMutedBrush");
+        ShortcutItems.IsEnabled = ShortcutRepair.IsEnabled = available;
         ShortcutRepair.Visibility = repair ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetColumn(ShortcutsFooter, hasMessage ? 2 : 0);
+        Grid.SetColumnSpan(ShortcutsFooter, hasMessage ? 1 : 3);
+        ShortcutsFooter.Content = hasMessage ? "管理" : "管理快捷启动  →";
+    }
+
+    internal void CompleteShortcutHandoff(long view)
+    {
+        if (_expanded && _shortcutsSelected && ShortcutViewRevision == view) Collapse();
     }
 
     private void ToolsTabClicked(object sender, RoutedEventArgs e) => SelectShortcutPage(false);
     private void ShortcutsTabClicked(object sender, RoutedEventArgs e) => SelectShortcutPage(true);
     private void SelectShortcutPage(bool shortcuts)
     {
-        if (_shortcutsSelected != shortcuts) InvalidatePptPress();
+        if (_shortcutsSelected != shortcuts)
+        {
+            ShortcutViewRevision++;
+            InvalidatePptPress();
+        }
         _shortcutsSelected = shortcuts;
         ToolsPage.Visibility = PptQuickStrip.Visibility = shortcuts ? Visibility.Collapsed : Visibility.Visible;
-        ShortcutsPage.Visibility = ShortcutsFooter.Visibility = shortcuts ? Visibility.Visible : Visibility.Collapsed;
+        ShortcutsPage.Visibility = ShortcutsPanelFooter.Visibility = shortcuts ? Visibility.Visible : Visibility.Collapsed;
         ToolsTab.Tag = shortcuts ? null : "active";
         ShortcutsTab.Tag = shortcuts ? "active" : null;
         RefreshRail();

@@ -13,6 +13,18 @@ public sealed record ShortcutEntry(Guid Id, string Name, string Kind, string Tar
     [JsonIgnore] public string Ink => Kind switch { "app" => "#7968A3", "file" => "#BC724C", _ => "#147D68" };
     [JsonIgnore] public string OpenId => "ShortcutOpen_" + Id.ToString("N");
     [JsonIgnore] public string Tip => Name + "\n" + Target;
+    [JsonIgnore] public string CompactTarget
+    {
+        get
+        {
+            if (Kind == "url" && Uri.TryCreate(Target, UriKind.Absolute, out var url))
+                return url.Authority + (url.AbsolutePath == "/" ? "" : url.AbsolutePath);
+
+            string name = Path.GetFileName(Target);
+            string? folder = Path.GetFileName(Path.GetDirectoryName(Target));
+            return string.IsNullOrEmpty(folder) ? name : $"{name} · {folder}";
+        }
+    }
 }
 
 public sealed record ShortcutDocument(int Version, ShortcutEntry[] Items);

@@ -17,7 +17,7 @@ public partial class MainWindow
     private ShortcutEdit? _shortcutEdit;
     private bool _shortcutsReadable, _shortcutBusy;
     private Guid? _shortcutRepairId;
-    private string _shortcutMessage = "";
+    private string _railShortcutMessage = "";
 
     private void InitializeShortcuts()
     {
@@ -73,12 +73,12 @@ public partial class MainWindow
         ShortcutEditor?.SetSaveEnabled(_shortcutsReadable && !_shortcutBusy);
         RepairShortcutButton.Visibility = _shortcutRepairId is null ? Visibility.Collapsed : Visibility.Visible;
         RepairShortcutButton.IsEnabled = editable;
-        _quick?.SetShortcutStatus(_shortcutMessage, !_shortcutBusy, _shortcutRepairId is not null);
+        _quick?.SetShortcutStatus(_railShortcutMessage, !_shortcutBusy, _shortcutRepairId is not null);
     }
 
-    private void SetShortcutMessage(string message, Guid? repair = null, bool error = false)
+    private void SetShortcutMessage(string message, Guid? repair = null, bool error = false, string? railMessage = null)
     {
-        _shortcutMessage = message; _shortcutRepairId = repair;
+        _railShortcutMessage = railMessage ?? message; _shortcutRepairId = repair;
         ShortcutMessage.Text = HomeShortcutMessage.Text = message;
         string brush = error || repair is not null ? "TeacherErrorBrush" : "TeacherMutedBrush";
         ShortcutMessage.SetResourceReference(TextBlock.ForegroundProperty, brush);
@@ -254,7 +254,14 @@ public partial class MainWindow
     private void OpenShortcutClicked(object sender, RoutedEventArgs e)
     { if (sender is FrameworkElement { DataContext: ShortcutEntry entry }) _ = OpenShortcutAsync(entry); }
 
-    private async Task OpenShortcutAsync(ShortcutEntry entry)
+    private void OpenShortcutFromRail(ShortcutEntry entry)
+    {
+        if (_quick is not { } rail) return;
+        long view = rail.ShortcutViewRevision;
+        _ = OpenShortcutAsync(entry, () => rail.CompleteShortcutHandoff(view));
+    }
+
+    private async Task OpenShortcutAsync(ShortcutEntry entry, Action? onHandoff = null)
     {
         if (_shortcutBusy || _exitBusy || _exiting || !_shortcuts.Any(item => item.Id == entry.Id)) return;
         _shortcutBusy = true;
@@ -270,18 +277,22 @@ public partial class MainWindow
         try
         {
             thread.Start(); await completion.Task;
-            if (!_exiting) SetShortcutMessage($"已将“{entry.Name}”交给 Windows 打开。");
+            if (!_exiting)
+            {
+                SetShortcutMessage($"已将“{entry.Name}”交给 Windows 打开。", railMessage: "已交给 Windows 打开。");
+                onHandoff?.Invoke();
+            }
         }
         catch (Exception error) when (IsShortcutError(error))
         {
-            string message = error switch
+            var (message, railMessage) = error switch
             {
-                FileNotFoundException => "文件不存在或无法访问，请编辑此项并重新选择位置。",
-                Win32Exception { NativeErrorCode: 1223 } => "已取消打开。",
-                Win32Exception { NativeErrorCode: 1155 } => "没有可打开此文件的默认应用，请在 Windows 中设置文件关联。",
-                _ => "Windows 未能打开此项，请检查路径、访问权限或默认应用。"
+                FileNotFoundException => ("文件不存在或无法访问，请编辑此项并重新选择位置。", "文件缺失或不可读。"),
+                Win32Exception { NativeErrorCode: 1223 } => ("已取消打开。", "已取消打开。"),
+                Win32Exception { NativeErrorCode: 1155 } => ("没有可打开此文件的默认应用，请在 Windows 中设置文件关联。", "未设置默认应用。"),
+                _ => ("Windows 未能打开此项，请检查路径、访问权限或默认应用。", "Windows 未能打开此项。")
             };
-            if (!_exiting) SetShortcutMessage($"{entry.Name}：{message}", entry.Id);
+            if (!_exiting) SetShortcutMessage($"{entry.Name}：{message}", entry.Id, railMessage: railMessage);
         }
         finally
         {

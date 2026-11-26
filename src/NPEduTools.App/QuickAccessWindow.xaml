@@ -2,13 +2,12 @@
   <Window.Resources>
     <DataTemplate x:Key="QuickShortcutContent">
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
-        <Border Background="{DynamicResource TeacherPageBrush}" Width="28" Height="30" CornerRadius="6" Margin="0,0,7,0" VerticalAlignment="Top">
-          <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{DynamicResource TeacherMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <Border Background="{DynamicResource TeacherPageBrush}" Width="28" Height="28" CornerRadius="6" Margin="0,0,8,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Glyph}" FontFamily="Segoe MDL2 Assets" FontSize="15" Foreground="{DynamicResource TeacherMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
-        <StackPanel Grid.Column="1">
-          <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding KindLabel}" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,2,0,0" />
-          <TextBlock Text="{Binding Target}" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding CompactTarget}" FontSize="11.5" Foreground="{DynamicResource TeacherMutedBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
         </StackPanel>
       </Grid>
     </DataTemplate>
@@ -147,20 +146,33 @@
           <Button x:Name="SettingsFooter" Content="管理与设置  →" Margin="0,10,0,0" HorizontalAlignment="Stretch" Style="{DynamicResource TeacherQuiet}" Click="SettingsClicked" AutomationProperties.AutomationId="QuickOpenSettings" />
         </StackPanel></ScrollViewer>
         <ScrollViewer x:Name="ShortcutsPage" Grid.Row="3" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel>
-          <StackPanel x:Name="ShortcutsEmpty" Margin="0,12">
-            <TextBlock Text="暂无快捷项" Style="{DynamicResource SettingsLabel}" />
-            <TextBlock Text="添加教学软件、课件或网站。" Style="{DynamicResource SettingsHint}" Margin="0,4,0,10" />
-            <Button Content="添加快捷启动" Style="{DynamicResource TeacherPrimary}" HorizontalAlignment="Left"
+          <StackPanel x:Name="ShortcutsEmpty" Margin="0,10">
+            <TextBlock Text="暂无快捷项" Style="{DynamicResource SettingsLabel}" Margin="0,0,0,8" />
+            <Button Content="添加快捷项" Style="{DynamicResource TeacherPrimary}" HorizontalAlignment="Left" MinHeight="55"
              Click="ManageShortcutsClicked" AutomationProperties.AutomationId="QuickAddShortcut" />
           </StackPanel>
           <ItemsControl x:Name="ShortcutItems">
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid x:Name="ShortcutGrid" Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding}" ContentTemplate="{StaticResource QuickShortcutContent}" HorizontalContentAlignment="Stretch" Style="{DynamicResource TeacherButton}" Padding="8,8" Margin="0,0,4,6" MinHeight="68" ToolTip="{Binding Tip}" Click="ShortcutClicked" AutomationProperties.AutomationId="{Binding OpenId}" AutomationProperties.Name="{Binding Name}" /></DataTemplate></ItemsControl.ItemTemplate>
+            <ItemsControl.ItemTemplate><DataTemplate>
+              <Button Content="{Binding}" ContentTemplate="{StaticResource QuickShortcutContent}" HorizontalContentAlignment="Stretch"
+                      VerticalContentAlignment="Center" Style="{DynamicResource TeacherButton}" Padding="8,6" Margin="0,0,4,5" MinHeight="56"
+                      ToolTip="{Binding Tip}" Click="ShortcutClicked" AutomationProperties.AutomationId="{Binding OpenId}"
+                      AutomationProperties.Name="{Binding Name}" AutomationProperties.HelpText="{Binding CompactTarget}" />
+            </DataTemplate></ItemsControl.ItemTemplate>
           </ItemsControl>
-          <TextBlock x:Name="ShortcutStatus" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.AutomationId="QuickShortcutMessage" />
-          <Button x:Name="ShortcutRepair" Style="{DynamicResource TeacherButton}" Content="编辑此项" Click="RepairShortcutClicked" Visibility="Collapsed" Margin="0,10,0,0" AutomationProperties.AutomationId="QuickRepairShortcut" />
         </StackPanel></ScrollViewer>
-        <Button x:Name="ShortcutsFooter" Grid.Row="4" Content="管理快捷启动  →" Visibility="Collapsed" Margin="0,10,0,0" HorizontalAlignment="Stretch" Style="{DynamicResource TeacherQuiet}" Click="ManageShortcutsClicked" AutomationProperties.AutomationId="QuickManageShortcuts" />
+        <Grid x:Name="ShortcutsPanelFooter" Grid.Row="4" Visibility="Collapsed" Height="56" Margin="0,8,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <TextBlock x:Name="ShortcutStatus" FontSize="12.5" LineHeight="17" MaxHeight="36"
+                     Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                     VerticalAlignment="Center" Visibility="Hidden" AutomationProperties.AutomationId="QuickShortcutMessage" />
+          <Button x:Name="ShortcutRepair" Grid.Column="1" Style="{DynamicResource TeacherButton}" Content="编辑此项"
+                  Click="RepairShortcutClicked" Visibility="Collapsed" MinHeight="55" Padding="8,5" Margin="6,0,0,0"
+                  VerticalAlignment="Center" AutomationProperties.AutomationId="QuickRepairShortcut" />
+          <Button x:Name="ShortcutsFooter" Grid.ColumnSpan="3" Content="管理快捷启动  →" MinHeight="55" MinWidth="55" Padding="6,5"
+                  Style="{DynamicResource TeacherQuiet}" Click="ManageShortcutsClicked" ToolTip="管理快捷启动"
+                  AutomationProperties.Name="管理快捷启动" AutomationProperties.AutomationId="QuickManageShortcuts" />
+        </Grid>
       </Grid>
     </Border>
     <Border x:Name="MoveHint" Grid.Column="0" Visibility="Collapsed" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" CornerRadius="10" Padding="10,8" Margin="0,0,8,0" MaxHeight="82" VerticalAlignment="Bottom" IsHitTestVisible="False">

@@ -40,7 +40,7 @@ public partial class MainWindow
         // Initialize the edge and services without ever showing the main window on a quiet login.
         _quick = new QuickAccessWindow(_pipe, () => TouchPowerClicked(this, new RoutedEventArgs()),
             () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings,
-            entry => _ = OpenShortcutAsync(entry), ShowShortcutManager, RepairShortcut);
+            OpenShortcutFromRail, ShowShortcutManager, RepairShortcut);
         _quick.SetShortcuts(_shortcuts);
         _quick.SetExamAwareAction(OpenExamAwareQuick);
         _quick.SetSecRandomAction(ShowSecRandom);
