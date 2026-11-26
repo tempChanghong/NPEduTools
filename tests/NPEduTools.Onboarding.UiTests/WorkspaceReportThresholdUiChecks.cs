@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Media;
 using System.Windows.Threading;
 using NPEduTools.App;
 using NPEduTools.Contracts;
@@ -31,7 +32,7 @@ internal static partial class Program
         var start = new DateTimeOffset(2026, 11, 19, 18, 40, 0, TimeSpan.FromHours(8));
         var schoolData = new StudyReportData(new(start, start.AddMinutes(45)), 2700, 2550, 2550d / 2700, .15, 100, 2,
             new("dBFS", 2550, -51.4, -22.1, 2500, 30, 4, [], 2490),
-            new("estimated-dB(A)", 600, 49.6, 67.3, 600, 12, 3, [], 600), true, []);
+            new("estimated-dB(A)", 600, 49.6, 67.3, 600, 12, 3, [], 600), true, ["估算有效采样共 10 分钟。"]);
         var manualStart = start.AddHours(5).AddMinutes(5);
         var manualData = schoolData with
         {
@@ -42,18 +43,23 @@ internal static partial class Program
         };
         string pipe = "NPEduTools.Test.report-refresh." + Guid.NewGuid().ToString("N");
         using var stop = new CancellationTokenSource();
-        var firstManual = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var initialSchool = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var oldRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int schoolReads = 0, manualReads = 0, oldReplies = 0;
+        var ended = new ManualStudyState(Guid.NewGuid(), 2, Guid.NewGuid(), "Ended", "UserEnded", manualStart,
+            manualStart.AddMinutes(30), false, null);
+        var idleNoise = new NoiseState(ended.InstanceId, 2, "Idle", "Synthetic", "fixture", "隔离模拟麦克风", null, null, "Unknown", null, []);
         var server = Task.Run(() => WorkspaceProxy(pipe, async request =>
         {
+            if (request.Capability is "noise.devices" or "noise.status" or "manual.study.status")
+                return new(1, request.RequestId, "Succeeded", null, "", Noise: idleNoise, NoiseDevices: [], ManualStudy: ended);
             bool school = request.Capability == "study.report.status";
             if (!school && request.Capability != "manual.study.report.status") return new(1, request.RequestId, "Rejected", "UNSUPPORTED", "");
             int read = school ? Interlocked.Increment(ref schoolReads) : Interlocked.Increment(ref manualReads);
-            if (!school && read == 1) await firstManual.Task.WaitAsync(stop.Token);
+            if (school && read == 1) await initialSchool.Task.WaitAsync(stop.Token);
             if (read == 2) { await oldRefresh.Task.WaitAsync(stop.Token); Interlocked.Increment(ref oldReplies); }
-            if (!school && read >= 3) return new(1, request.RequestId, "Rejected", "UNSUPPORTED", "");
-            var data = read >= 3 ? null : school ? schoolData : manualData;
+            if (school && read >= 4 || !school && read == 3) return new(1, request.RequestId, "Rejected", "UNSUPPORTED", "");
+            var data = read == 3 ? null : school ? schoolData : manualData;
             return new(1, request.RequestId, "Succeeded", null, "", StudyReport: new(Guid.NewGuid(), "fixture", false, "Report", 0, data));
         }, stop.Token));
         var main = PrivateWorkspace(pipe);
@@ -61,60 +67,133 @@ internal static partial class Program
         {
             Exercise(main, owner =>
             {
+                main.Width = 840; main.Height = 600;
+                main.UpdateLayout();
                 Click(main, "StudyNav");
-                Click(main, "ReportWorkspaceTab");
+                var manualPage = WorkspaceField<NoiseWindow>(main, "_noiseWindow");
+                PumpUntil(() => Button(manualPage, "ManualReportButton").IsVisible, "the ended manual session has no report entry");
+                Click(manualPage, "ManualReportButton");
                 var school = (ContentControl)main.FindName("WorkspaceSchoolReport");
                 var manual = (ContentControl)main.FindName("WorkspaceManualReport");
-                PumpUntil(() => school.Content is StudyWorkspaceReport { HasData: true } && Volatile.Read(ref manualReads) == 1, "school report waited for manual");
-                Assert(manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Loading } && Button(main, "ReportWorkspaceTab").Tag as string == "active", "pending report or active tab mislabeled");
-                firstManual.SetResult();
-                PumpUntil(() => manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Partial }, "partial report did not appear");
+                var details = (ContentControl)main.FindName("WorkspaceReportDetails");
+                var scroll = (ScrollViewer)main.FindName("WorkspaceReportScroll");
+                var reportTools = (FrameworkElement)main.FindName("WorkspaceReportTools");
+                Assert(reportTools.IsDescendantOf(scroll), "device and calibration actions still occupy a fixed report footer");
+                PumpUntil(() => manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Partial } &&
+                    Volatile.Read(ref schoolReads) == 1, "manual report waited for the school report");
+                Assert(school.Content is StudyWorkspaceReport { State: WorkspaceReportState.Loading } &&
+                    manual.IsKeyboardFocused && !details.IsVisible && Button(main, "ReportWorkspaceTab").Tag as string == "active",
+                    "the manual entry did not focus the manual summary while school data was loading");
                 var manualView = (StudyWorkspaceReport)manual.Content;
-                Assert(manualView is { SampledTime: "0 秒", Coverage: "0%", Clipping: "—", ReminderCount: "0 次", Estimated: null } &&
+                Assert(manualView is { HasValidSamples: false, SampledTime: "—", Coverage: "—", Clipping: "—", ReminderCount: "0 次", Raw: null, Estimated: null } &&
                     manualView.WindowText.Contains("2026-11-19") && manualView.WindowText.Contains("2026-11-20"), "zero samples or cross-day range misrepresented");
-                Snapshot(main, "teacher-study-reports.png");
-                var schoolDetails = Descendants<Expander>(school).Single();
-                var manualDetails = Descendants<Expander>(manual).Single();
-                Assert(!schoolDetails.IsExpanded && !manualDetails.IsExpanded, "details are not initially collapsed");
-                schoolDetails.IsExpanded = true;
+                Assert(((TextBlock)Find(manual, "StudyReportNoValidSamples")).IsVisible &&
+                    ((TextBlock)Find(manual, "StudyReportReminderCount")).Text == "0 次", "zero recorded reminders were hidden or equated with missing samples");
+                OpenDetails(manual);
+                Assert(details.IsVisible && details.IsKeyboardFocused &&
+                    details.Content is StudyWorkspaceReport { Title: "手动自习", IsDetailsOpen: true },
+                    "opening the manual report did not focus its scoped details");
+                AssertFocusedBorder(details);
+                var noSamples = VisibleReportText(details);
+                Assert(noSamples.Any(t => t.Contains("没有有效样本")) && noSamples.Any(t => t.Contains("Windows")) &&
+                    noSamples.All(t => !t.Contains("dBFS") && !t.Contains("dB(A)")),
+                    "a zero-sample report showed numeric channels or lost its clock evidence");
+                main.UpdateLayout();
+                double originalTop = Bounds(details, scroll).Top;
+                initialSchool.SetResult();
+                PumpUntil(() => school.Content is StudyWorkspaceReport { HasData: true }, "school report did not arrive");
+                Assert(details.IsKeyboardFocused && details.Content is StudyWorkspaceReport { Title: "手动自习" } &&
+                    ((StudyWorkspaceReport)manual.Content).IsDetailsOpen, "late school report replaced the manual selection or took its focus");
+                PumpUntil(() => Math.Abs(Bounds(details, scroll).Top - originalTop) <= 1, "late school report moved the manual reading position");
+                Snapshot(main, "teacher-study-report-no-samples.png");
+                Button clickClose = (Button)Find(details, "WorkspaceCloseReportDetails");
+                Press(clickClose);
+                Assert(manual.IsKeyboardFocused && !details.IsVisible, "closing details did not return to the original summary");
+                AssertFocusedBorder(manual);
+
+                foreach (var (width, height, name) in new[] { (1040, 760, "teacher-study-reports.png"), (840, 600, "teacher-study-reports-narrow.png") })
+                {
+                    main.Width = width; main.Height = height;
+                    scroll.ScrollToTop();
+                    main.UpdateLayout();
+                    PumpUntil(() => Math.Abs(main.ActualWidth - width) < 1 && Math.Abs(main.ActualHeight - height) < 1, "report main window did not resize");
+                    Assert(Window.GetWindow(scroll) == main && new[] { "MinimizeWindow", "MaximizeRestoreWindow", "CloseWindow" }
+                        .All(id => Find(main, id) is Button { IsVisible: true }), "report workspace lost the main window or its caption controls");
+                    InViewport(school);
+                    InViewport(manual);
+                    InViewport((Button)Find(school, "StudyReportSamplingDetails"));
+                    InViewport((Button)Find(manual, "StudyReportSamplingDetails"));
+                    Snapshot(main, name);
+                }
+                OpenDetails(school);
                 main.UpdateLayout();
                 Snapshot(main, "teacher-study-report-details.png");
-                Assert(!manualDetails.IsExpanded, "opening school details also opened manual details");
-                var detailText = Descendants<TextBlock>(school).Where(t => t.IsVisible).Select(t => new TextRange(t.ContentStart, t.ContentEnd).Text).ToArray();
-                Assert(detailText.Any(t => t.Contains("ClassIsland")) && detailText.Contains("4 秒（判定采样 41 分 40 秒）"),
-                    "expanded school report lost the clock source or readable threshold duration");
-                var scroll = Descendants<ScrollViewer>((FrameworkElement)main.FindName("WorkspaceReports")).Single();
+                Assert(details.Content is StudyWorkspaceReport { Title: "学校定时自习" } && !((StudyWorkspaceReport)manual.Content).IsDetailsOpen,
+                    "the opened details did not switch to the school report");
+                double detailTop = Bounds(details, scroll).Top;
+                double manualBottom = Bounds(manual, scroll).Bottom;
+                Assert(detailTop >= manualBottom - 1, $"the opened details do not follow both summaries ({detailTop:F2} versus {manualBottom:F2})");
+                var detailText = VisibleReportText(details);
+                Assert(detailText.Any(t => t.Contains("ClassIsland")) && detailText.Contains("4 秒（判定采样 41 分 40 秒）") &&
+                    detailText.Any(t => t.Contains("学校定时自习 · 采样详情")) && detailText.Any(t => t.Contains("2026-11-19 18:40")),
+                    $"expanded school report lost its source, time or readable threshold duration: {string.Join(" | ", detailText)}");
                 var refresh = Button(main, "WorkspaceRefreshReports");
                 var headerPosition = refresh.TranslatePoint(new(), main);
                 scroll.ScrollToEnd();
                 main.UpdateLayout();
                 Assert(scroll.VerticalOffset > 0 && refresh.TranslatePoint(new(), main) == headerPosition, "refresh button scrolled away with sampling details");
-                schoolDetails.IsExpanded = false;
+                InViewport((TextBlock)Find(details, "StudyReportNotes"));
+                Snapshot(main, "teacher-study-report-details-end.png");
+                var closeSchool = (Button)Find(details, "WorkspaceCloseReportDetails");
+                closeSchool.BringIntoView();
+                main.UpdateLayout();
+                InViewport(closeSchool);
+                Press(closeSchool);
                 scroll.ScrollToTop();
-                main.Width = main.MinWidth;
-                main.Height = main.MinHeight;
-                PumpUntil(() => Math.Abs(main.ActualWidth - main.Width) < 1, "window did not resize");
-                Snapshot(main, "teacher-study-reports-narrow.png");
-                school.MaxWidth = 420;
+                school.MaxWidth = 340;
                 main.UpdateLayout();
                 var sampled = (TextBlock)Find(school, "StudyReportSampledTime");
                 var reminders = (TextBlock)Find(school, "StudyReportReminderCount");
                 Assert(reminders.TranslatePoint(new(), school).Y > sampled.TranslatePoint(new(), school).Y &&
                     reminders.TranslatePoint(new(reminders.ActualWidth, 0), school).X <= school.ActualWidth, "metrics did not wrap inside the narrow card");
 
+                OpenDetails(school);
                 Click(main, "WorkspaceRefreshReports");
                 PumpUntil(() => Volatile.Read(ref schoolReads) == 2 && Volatile.Read(ref manualReads) == 2, "refresh did not request both sources");
                 Assert(school.Content is StudyWorkspaceReport { State: WorkspaceReportState.Loading } &&
-                    manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Loading }, "refresh retained old results while loading");
+                    manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Loading } &&
+                    !details.IsVisible, "refresh retained old results or open details while loading");
                 Click(main, "WorkspaceRefreshReports");
                 PumpUntil(() => school.Content is StudyWorkspaceReport { State: WorkspaceReportState.Empty } &&
                     manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Failed }, "new refresh did not resolve sources independently");
                 oldRefresh.SetResult();
                 PumpUntil(() => Volatile.Read(ref oldReplies) == 2, "superseded replies did not complete");
                 Assert(school.Content is StudyWorkspaceReport { State: WorkspaceReportState.Empty } &&
-                    manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Failed }, "late refresh restored stale report data");
-                Checks.Add("Teacher report cards: independent arrival, partial cross-day session, empty versus failed, responsive metrics, independent details and latest refresh wins");
+                    manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Failed } && !details.IsVisible, "late refresh restored stale report data");
+                Click(main, "WorkspaceRefreshReports");
+                PumpUntil(() => school.Content is StudyWorkspaceReport { State: WorkspaceReportState.Failed } &&
+                    manual.Content is StudyWorkspaceReport { State: WorkspaceReportState.Partial }, "school read failure prevented the manual report from recovering");
+                OpenDetails(manual);
+                Assert(details.IsVisible && details.Content is StudyWorkspaceReport { Title: "手动自习" },
+                    "a failed school report blocked the successful manual report's details");
+                Checks.Add("Local study reports in the 1040x760/840x600 main window: first-screen summaries, one scoped details panel, last field reachable, zero samples distinct, actual manual entry keeps focus and reading position after delayed school arrival, another source may fail independently, and stale refresh cannot restore data.");
                 owner.Close();
+
+                void InViewport(FrameworkElement item)
+                {
+                    Rect bounds = Bounds(item, scroll);
+                    Assert(item.IsVisible && bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= -1 && bounds.Top >= -1 &&
+                        bounds.Right <= scroll.ViewportWidth + 1 && bounds.Bottom <= scroll.ViewportHeight + 1,
+                        $"report field {item.Name} clipped at {main.Width}x{main.Height}: {bounds.Top:0}–{bounds.Bottom:0}/{scroll.ViewportHeight:0}");
+                }
+
+                void AssertFocusedBorder(ContentControl item)
+                {
+                    main.UpdateLayout();
+                    var surface = Descendants<Border>(item).First();
+                    Assert(surface.BorderBrush is SolidColorBrush border && main.FindResource("TeacherTextBrush") is SolidColorBrush focus &&
+                        border.Color == focus.Color, "focused report surface lacks its visible outline");
+                }
             });
         }
         finally
@@ -187,14 +266,15 @@ internal static partial class Program
                 }
                 Assert(report.ReminderCount == "2 次" && report.Coverage != "0%", "report dropped reminders or rounded positive coverage to zero");
                 main.UpdateLayout();
-                var details = Descendants<Expander>(card).Single();
-                Assert(!details.IsExpanded, "sampling details opened before the teacher requested them");
-                details.IsExpanded = true;
+                var details = (ContentControl)main.FindName("WorkspaceReportDetails");
+                Assert(!details.IsVisible, "sampling details opened before the teacher requested them");
+                OpenDetails(card);
                 main.UpdateLayout();
-                var visible = Descendants<TextBlock>(card).Where(t => t.IsVisible).Select(t => t.Text).ToArray();
+                var visible = VisibleReportText(details);
+                var summary = VisibleReportText(card);
                 Assert(visible.Contains(levels.HighThreshold) && visible.Any(t => t.Contains("dBFS")) &&
                     visible.Any(t => t.Contains("dB(A)")) == (report.Estimated is not null) &&
-                    visible.Contains(report.ReminderCount) && visible.Contains(report.Coverage) &&
+                    summary.Contains(report.ReminderCount) && summary.Contains(report.Coverage) &&
                     visible.All(t => !t.Contains("已上传")), "report template lost the bound threshold, units or summary values");
                 Checks.Add($"{scenario}/{(manual ? "manual" : "school")}: actual accumulators/private pipe/report workspace distinguish unclassified samples from measured zero and preserve per-unit/per-line coverage; no sensors");
                 owner.Close();
@@ -206,4 +286,11 @@ internal static partial class Program
             try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
         }
     }
+
+    private static void OpenDetails(ContentControl summary) => Press((Button)Find(summary, "StudyReportSamplingDetails"));
+
+    private static void Press(Button button) => button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, button));
+
+    private static string[] VisibleReportText(DependencyObject root) => Descendants<TextBlock>(root)
+        .Where(t => t.IsVisible).Select(t => new TextRange(t.ContentStart, t.ContentEnd).Text).ToArray();
 }

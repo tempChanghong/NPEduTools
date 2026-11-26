@@ -22,6 +22,7 @@ public partial class MainWindow
     private StudySeatingUploadWindow? _workspaceSeatingController;
     private long _workspaceReportGeneration;
     private CancellationTokenSource? _workspaceReportRead;
+    private ContentControl? _workspaceOpenReport;
 
     private void InitializeStudyWorkspace()
     {
@@ -133,20 +134,66 @@ public partial class MainWindow
     }
     private void ShowManualWorkspaceReport()
     {
+        SelectWorkspaceReportDetails(null);
         ShowStudyWorkspace("Reports");
-        BringManualReportIntoView();
-        WorkspaceManualReport.Focus();
+        FocusWorkspaceReport(WorkspaceManualReport);
     }
-    private void BringManualReportIntoView()
+
+    private void FocusWorkspaceReport(ContentControl summary)
     {
         WorkspaceReportScroll.UpdateLayout();
-        WorkspaceManualReport.BringIntoView(new Rect(0, 0, 1, 1));
+        summary.BringIntoView(new Rect(0, 0, 1, 1));
+        summary.Focus();
     }
-    private bool IsManualReportHeadingInView()
+
+    private void WorkspaceReportDetailsClicked(object sender, RoutedEventArgs e)
     {
-        double top = WorkspaceManualReport.TranslatePoint(new Point(), WorkspaceReportScroll).Y;
-        return top >= -1 && top < WorkspaceReportScroll.ActualHeight;
+        if (e.OriginalSource is not Button button) return;
+        var summary = button.Tag switch
+        {
+            "CloseStudyReportDetails" => _workspaceOpenReport,
+            "StudyReportDetails" when button.DataContext is StudyWorkspaceReport { HasData: true } report =>
+                ReferenceEquals(WorkspaceSchoolReport.Content, report) ? WorkspaceSchoolReport :
+                ReferenceEquals(WorkspaceManualReport.Content, report) ? WorkspaceManualReport : null,
+            _ => null
+        };
+        if (summary is null) return;
+        e.Handled = true;
+        if (ReferenceEquals(_workspaceOpenReport, summary))
+        {
+            SelectWorkspaceReportDetails(null);
+            FocusWorkspaceReport(summary);
+            return;
+        }
+        SelectWorkspaceReportDetails(summary);
+        WorkspaceReportDetails.Focus();
+        RevealWorkspaceReportDetails();
     }
+
+    private void SelectWorkspaceReportDetails(ContentControl? summary)
+    {
+        var previous = _workspaceOpenReport;
+        _workspaceOpenReport = summary;
+        if (previous?.Content is StudyWorkspaceReport { IsDetailsOpen: true } old)
+            previous.Content = old with { IsDetailsOpen = false };
+        if (summary?.Content is StudyWorkspaceReport { HasData: true } current)
+            summary.Content = current with { IsDetailsOpen = true };
+        UpdateWorkspaceReportDetails();
+    }
+
+    private void UpdateWorkspaceReportDetails()
+    {
+        var report = _workspaceOpenReport?.Content as StudyWorkspaceReport;
+        WorkspaceReportDetails.Content = report is { HasData: true } ? report : null;
+        WorkspaceReportDetails.Visibility = WorkspaceReportDetails.Content is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void RevealWorkspaceReportDetails()
+    {
+        WorkspaceReportScroll.UpdateLayout();
+        WorkspaceReportDetails.BringIntoView(new Rect(0, 0, 1, Math.Min(WorkspaceReportDetails.ActualHeight, 100)));
+    }
+
     private void WorkspaceDevicesClicked(object sender, RoutedEventArgs e) => ShowWorkspaceDevices();
     private void ShowWorkspaceDevices()
     {
@@ -436,17 +483,29 @@ public partial class MainWindow
         async Task ReadReportAsync(string capability, string title, ContentControl target)
         {
             target.Content = StudyWorkspaceReport.Loading(title);
+            if (ReferenceEquals(_workspaceOpenReport, target)) UpdateWorkspaceReportDetails();
             StudyWorkspaceReport report;
             try { report = StudyWorkspaceReport.FromResponse(title, await HostClient.RequestAsync(_pipe, capability, deadline.Token)); }
             catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
             { report = StudyWorkspaceReport.Failed(title); }
             if (!_lifetime.IsCancellationRequested && generation == _workspaceReportGeneration)
             {
-                // A late school card can grow above the manual heading. Keep it in view
-                // only while the teacher is still reading there.
-                bool keepHeading = target == WorkspaceSchoolReport && WorkspaceManualReport.IsKeyboardFocused && IsManualReportHeadingInView();
-                target.Content = report;
-                if (keepHeading) BringManualReportIntoView();
+                // Only compensate for a growing school row if the user is still reading the manual report.
+                ContentControl? anchor = null;
+                if (target == WorkspaceSchoolReport)
+                    anchor = _workspaceOpenReport == WorkspaceManualReport && WorkspaceReportDetails.IsKeyboardFocusWithin
+                        ? WorkspaceReportDetails : WorkspaceManualReport.IsKeyboardFocusWithin ? WorkspaceManualReport : null;
+                double top = anchor?.TranslatePoint(new Point(), WorkspaceReportScroll).Y ?? 0;
+                bool keepPosition = anchor is not null && top + anchor.ActualHeight > 0 && top < WorkspaceReportScroll.ViewportHeight;
+                bool selected = ReferenceEquals(_workspaceOpenReport, target);
+                target.Content = selected && report.HasData ? report with { IsDetailsOpen = true } : report;
+                if (selected) UpdateWorkspaceReportDetails();
+                if (keepPosition)
+                {
+                    WorkspaceReportScroll.UpdateLayout();
+                    double newTop = anchor!.TranslatePoint(new Point(), WorkspaceReportScroll).Y;
+                    WorkspaceReportScroll.ScrollToVerticalOffset(WorkspaceReportScroll.VerticalOffset + newTop - top);
+                }
             }
         }
     }

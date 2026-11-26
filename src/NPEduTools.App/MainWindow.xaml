@@ -218,7 +218,7 @@
           <Grid.Resources>
             <ResourceDictionary Source="Resources/StudyWorkspaceReports.xaml" />
           </Grid.Resources>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,12">
             <Button x:Name="ManualWorkspaceTab" Content="手动自习" Click="ManualWorkspaceClicked" Style="{DynamicResource TeacherTab}" AutomationProperties.AutomationId="ManualWorkspaceTab" Margin="0,0,8,4"/>
             <Button x:Name="SchoolWorkspaceTab" Content="学校定时自习" Click="SchoolWorkspaceClicked" Style="{DynamicResource TeacherTab}" AutomationProperties.AutomationId="SchoolWorkspaceTab" Margin="0,0,8,4"/>
@@ -228,8 +228,9 @@
             <ContentControl x:Name="ManualWorkspaceHost" Visibility="Collapsed"/>
             <ContentControl x:Name="SchoolWorkspaceHost" Visibility="Collapsed"/>
             <DockPanel x:Name="WorkspaceReports" Visibility="Collapsed" TextElement.FontFamily="{DynamicResource TeacherFont}"
-                       TextElement.Foreground="{DynamicResource TeacherTextBrush}">
-              <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                       TextElement.Foreground="{DynamicResource TeacherTextBrush}"
+                       Button.Click="WorkspaceReportDetailsClicked">
+              <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                 <Button x:Name="WorkspaceRefreshReports" Content="刷新报告" Click="RefreshWorkspaceReportsClicked"
                         Style="{DynamicResource TeacherButton}" DockPanel.Dock="Right" VerticalAlignment="Top" Margin="12,0,0,0"
                         AutomationProperties.AutomationId="WorkspaceRefreshReports" />
@@ -243,22 +244,30 @@
                   <Style TargetType="ScrollBar" />
                 </ScrollViewer.Resources>
                 <StackPanel>
-                  <ContentControl x:Name="WorkspaceSchoolReport" ContentTemplate="{StaticResource StudyWorkspaceReport}"
+                  <ContentControl x:Name="WorkspaceSchoolReport" ContentTemplate="{StaticResource StudyWorkspaceReport}" Focusable="True" IsTabStop="False"
+                                  FocusVisualStyle="{x:Null}"
+                                  AutomationProperties.Name="最近的学校定时自习报告"
                                   AutomationProperties.AutomationId="WorkspaceSchoolReport" />
                   <ContentControl x:Name="WorkspaceManualReport" ContentTemplate="{StaticResource StudyWorkspaceReport}" Focusable="True" IsTabStop="False"
+                                  FocusVisualStyle="{x:Null}"
                                   AutomationProperties.Name="最近的手动自习报告"
                                   AutomationProperties.AutomationId="WorkspaceManualReport" />
-                  <TextBlock Text="学校历史报告和上传状态请在 NPClassworks 后台查看。"
+                  <ContentControl x:Name="WorkspaceReportDetails" ContentTemplate="{StaticResource StudyWorkspaceReportDetails}"
+                                  Visibility="Collapsed" Focusable="True" IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                  AutomationProperties.Name="{Binding Content.Title, RelativeSource={RelativeSource Self}, StringFormat='{}{0}采样详情'}"
+                                  AutomationProperties.AutomationId="WorkspaceReportDetails" />
+                  <TextBlock Text="学校已上传的报告，请在 NPEduConsole 的「学校自习」选班查看。"
                              Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,10" />
+                  <Border x:Name="WorkspaceReportTools" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,6">
+                    <WrapPanel>
+                      <Button x:Name="ReportDevicesButton" Content="查看设备" Click="WorkspaceDevicesClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,0"/>
+                      <Button x:Name="ReportCalibrationButton" Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{DynamicResource TeacherQuiet}"/>
+                    </WrapPanel>
+                  </Border>
                 </StackPanel>
               </ScrollViewer>
             </DockPanel>
           </Grid>
-          <Border x:Name="WorkspaceReportTools" Grid.Row="2" Visibility="{Binding Visibility, ElementName=WorkspaceReports}"
-                  BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0"><WrapPanel>
-            <Button x:Name="ReportDevicesButton" Content="查看设备" Click="WorkspaceDevicesClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,0"/>
-            <Button x:Name="ReportCalibrationButton" Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{DynamicResource TeacherQuiet}"/>
-          </WrapPanel></Border>
         </Grid>
         <Grid x:Name="WorkspaceDevices" Visibility="Collapsed">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
