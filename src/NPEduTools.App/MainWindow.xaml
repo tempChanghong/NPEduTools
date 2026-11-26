@@ -256,9 +256,19 @@
           </Grid>
           <Border x:Name="WorkspaceReportTools" Grid.Row="2" Visibility="{Binding Visibility, ElementName=WorkspaceReports}"
                   BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0"><WrapPanel>
-            <Button Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,0"/>
+            <Button x:Name="ReportDevicesButton" Content="查看设备" Click="WorkspaceDevicesClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,0"/>
             <Button x:Name="ReportCalibrationButton" Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{DynamicResource TeacherQuiet}"/>
           </WrapPanel></Border>
+        </Grid>
+        <Grid x:Name="WorkspaceDevices" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <Button x:Name="WorkspaceDevicesBack" Content="← 返回自习" Click="ReturnFromDevicesClicked"
+                  Style="{DynamicResource TeacherQuiet}" FocusVisualStyle="{x:Null}" HorizontalAlignment="Left" Margin="4,0,0,8"
+                  AutomationProperties.AutomationId="StudyDevicesBack"/>
+          <ScrollViewer x:Name="WorkspaceDevicesScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+            <ContentControl x:Name="WorkspaceDevicesHost" Margin="4,0,4,12"/>
+          </ScrollViewer>
         </Grid>
         <Grid x:Name="WorkspaceCalibration" Visibility="Collapsed">
           <Grid.Resources>
@@ -469,7 +479,7 @@
 
             <Expander Header="设备准备与课堂辅助" FontSize="14" Margin="0,8,0,0"><StackPanel>
             <Border Style="{StaticResource Surface}" Padding="16"><DockPanel>
-              <Button DockPanel.Dock="Right" Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{StaticResource Quiet}" Margin="12,0,0,0"/>
+              <Button x:Name="HomeStudyDevicesButton" DockPanel.Dock="Right" Content="查看设备" Click="WorkspaceDevicesClicked" Style="{StaticResource Quiet}" Margin="12,0,0,0"/>
               <StackPanel><TextBlock x:Name="WorkspaceReadiness" Text="设备状态待确认" TextWrapping="Wrap"/><TextBlock x:Name="WorkspaceReference" Text="参考状态请在校准页核对" FontSize="12" Foreground="#61786B" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel>
             </DockPanel></Border>
             <Grid>

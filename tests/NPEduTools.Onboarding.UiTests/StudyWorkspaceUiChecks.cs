@@ -94,8 +94,14 @@ internal static partial class Program
                 Click(panel, "ManualDeviceLink");
                 var schoolPanel = Field<StudyMonitoringWindow>("_studyMonitoringWindow");
                 main.UpdateLayout();
-                Assert(((Expander)schoolPanel.FindName("DeviceSettings")).IsExpanded, "device link did not open school device settings");
-                Assert(Button(schoolPanel, "SchoolSeatingButton").IsVisible, "school seating action is missing");
+                Assert(Element<FrameworkElement>("WorkspaceDevices").IsVisible &&
+                    ReferenceEquals(Element<ContentControl>("WorkspaceDevicesHost").Content, schoolPanel.FindName("Devices")),
+                    "device link did not open the shared picker in the main workspace");
+                Click(main, "WorkspaceDevicesBack");
+                Assert(Element<FrameworkElement>("ManualWorkspaceHost").IsVisible,
+                    "device page did not return to the manual reservation view");
+                Invoke("ShowStudyWorkspace", "School");
+                PumpUntil(() => Button(schoolPanel, "SchoolSeatingButton").IsVisible, "school seating action is missing");
                 Assert(!Button(schoolPanel, "SchoolManualLink").IsVisible && !Element<FrameworkElement>("WorkspaceReportTools").IsVisible,
                     "school workspace still has duplicate navigation");
                 Assert(manual.Status().State == "Waiting" && formalCapture == 0, "switching tabs stopped/resumed capture");

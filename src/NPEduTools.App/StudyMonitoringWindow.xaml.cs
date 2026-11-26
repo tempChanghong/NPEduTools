@@ -20,6 +20,7 @@ public partial class StudyMonitoringWindow : Window
     private readonly StudyDisplayReturn _returnDisplay = new();
     private readonly NoiseCalibrationRead _calibrationRead = new();
     private long _viewGeneration;
+    internal Action? OpenDevicesWorkspace { get; init; }
     private sealed record ScheduledStop(bool Legacy, SchoolNoiseWindow Window, Guid Instance, Guid Session, long Revision,
         string? Mode = null, string? Version = null, NoiseProtectionState? Access = null)
     {
@@ -34,18 +35,31 @@ public partial class StudyMonitoringWindow : Window
         StopFeedback(null);
         Render(null);
         RenderCalibration(null, null);
-        if (visible) _ = ReadAsync();
+        if (visible)
+        {
+            _ = ReadAsync();
+            if (OpenDevicesWorkspace is not null) _ = Devices.RefreshAsync();
+        }
     }
     public StudyMonitoringWindow(string pipe, Action noise)
     {
         _pipe = pipe; _noise = noise; InitializeComponent(); Devices.Bind(pipe);
         DesktopDialogSizing.Attach(this, pipe);
-        Devices.StatusChanged += (_, _) => DeviceSummary.Text = Devices.Summary;
+        Devices.StatusChanged += (_, _) => DeviceWorkspaceStatus.Text = DeviceSummary.Text = Devices.Summary;
         _timer.Tick += async (_, _) => { if (WorkspacePanel.Visible(this)) await ReadAsync(); };
         Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); if (!_lifetime.IsCancellationRequested && WorkspacePanel.Visible(this)) await Devices.RefreshAsync(); };
         Closed += (_, _) => { _timer.Stop(); _lifetime.Cancel(); Devices.CancelPending(); };
     }
     public void Shutdown() => Close();
+    internal StudyDevicePicker TakeDevicesForWorkspace()
+    {
+        DeviceSettings.Content = null;
+        StandaloneDeviceSection.Visibility = Visibility.Collapsed;
+        DeviceWorkspaceSummary.Visibility = Visibility.Visible;
+        Devices.EnableWorkspace();
+        return Devices;
+    }
+    private void OpenDevicesClicked(object sender, RoutedEventArgs e) => OpenDevicesWorkspace?.Invoke();
     private async Task ReadAsync()
     {
         if (_reading || _returning || _stopping || _lifetime.IsCancellationRequested) return;

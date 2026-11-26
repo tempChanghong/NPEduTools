@@ -34,7 +34,8 @@ internal static partial class Program
         bool recordingWorkspaceOnly = args.Length == 2 && args[1] == "--recording-workspace";
         bool workspaceRacesOnly = args.Length == 2 && args[1] == "--study-workspace-races";
         bool workspaceOnly = args.Length == 2 && args[1] is "--study-workspace" or "--study-seating-workspace" or
-            "--manual-reference-workspace" or "--quick-calibration-workspace" or "--usb-calibration-workspace" or "--workspace-sidebar";
+            "--manual-reference-workspace" or "--quick-calibration-workspace" or "--usb-calibration-workspace" or
+            "--study-device-workspace" or "--workspace-sidebar";
         bool manualStudyOnly = args.Length == 2 && args[1] == "--manual-study";
         bool examOnly = args.Length == 2 && args[1] == "--remote-exam";
         bool connectionOnly = args.Length == 2 && args[1] == "--school-connection";
@@ -97,6 +98,7 @@ internal static partial class Program
                 else if (args[1] == "--manual-reference-workspace") RunManualReferenceWorkspaceChecks();
                 else if (args[1] == "--quick-calibration-workspace") RunQuickCalibrationWorkspaceChecks();
                 else if (args[1] == "--usb-calibration-workspace") RunUsbCalibrationWorkspaceChecks();
+                else if (args[1] == "--study-device-workspace") RunStudyDeviceWorkspaceChecks();
                 else if (args[1] == "--study-seating-workspace") RunStudySeatingWorkspaceChecks();
                 else RunStudyWorkspaceChecks();
                 WriteResult("PASSED", null); return 0;

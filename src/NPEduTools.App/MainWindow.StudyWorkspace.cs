@@ -13,6 +13,8 @@ public partial class MainWindow
     private ManualStudyState? _workspaceManual;
     private string _workspaceTab = "Manual";
     private string _homeStudyTarget = "Manual";
+    private string _workspaceDevicesOrigin = "Home";
+    private double _workspaceDeviceReportOffset;
     private Window? _workspaceCalibrationController;
     private SoundMeterDevice? _usbPreviousMeter;
     private NoiseCalibrationWindow? _workspaceQuickCalibrationController;
@@ -79,7 +81,7 @@ public partial class MainWindow
     {
         CancelWorkspaceReports();
         StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = WorkspaceSeating.Visibility =
-            WorkspaceManualReference.Visibility = WorkspaceQuickCalibration.Visibility = Visibility.Collapsed;
+            WorkspaceManualReference.Visibility = WorkspaceQuickCalibration.Visibility = WorkspaceDevices.Visibility = Visibility.Collapsed;
         StudyNav.Tag = null;
         if (!keepCalibration) CloseWorkspaceCalibration();
     }
@@ -106,23 +108,28 @@ public partial class MainWindow
             };
             ManualWorkspaceHost.Content = new WorkspacePanel(_noiseWindow, this, _noiseWindow.WorkspaceVisibilityChanged);
         }
-        if (tab == "School" && _studyMonitoringWindow is null)
-        {
-            _studyMonitoringWindow = new StudyMonitoringWindow(_pipe, () => ShowStudyWorkspace("Manual"))
-            {
-                OpenCalibration = ShowWorkspaceCalibration,
-                OpenQuickCalibration = ShowWorkspaceQuickCalibration,
-                OpenManualReference = ShowWorkspaceManualReference,
-                OpenSeatingWorkspace = ShowWorkspaceSeating
-            };
-            SchoolWorkspaceHost.Content = new WorkspacePanel(_studyMonitoringWindow, this, _studyMonitoringWindow.WorkspaceVisibilityChanged);
-        }
+        if (tab == "School") EnsureSchoolWorkspace();
         RestoreWindow();
         if (tab == "Reports")
         {
             WorkspaceReportScroll.ScrollToTop();
             _ = RefreshWorkspaceReportsAsync();
         }
+    }
+    private void EnsureSchoolWorkspace()
+    {
+        if (_studyMonitoringWindow is not null) return;
+        var school = new StudyMonitoringWindow(_pipe, () => ShowStudyWorkspace("Manual"))
+        {
+            OpenCalibration = ShowWorkspaceCalibration,
+            OpenQuickCalibration = ShowWorkspaceQuickCalibration,
+            OpenManualReference = ShowWorkspaceManualReference,
+            OpenSeatingWorkspace = ShowWorkspaceSeating,
+            OpenDevicesWorkspace = ShowWorkspaceDevices
+        };
+        _studyMonitoringWindow = school;
+        WorkspaceDevicesHost.Content = school.TakeDevicesForWorkspace();
+        SchoolWorkspaceHost.Content = new WorkspacePanel(school, this, school.WorkspaceVisibilityChanged);
     }
     private void ShowManualWorkspaceReport()
     {
@@ -143,11 +150,52 @@ public partial class MainWindow
     private void WorkspaceDevicesClicked(object sender, RoutedEventArgs e) => ShowWorkspaceDevices();
     private void ShowWorkspaceDevices()
     {
-        ShowStudyWorkspace("School");
-        if (_studyMonitoringWindow is not { } school) return;
-        school.DeviceSettings.IsExpanded = true;
-        SchoolWorkspaceHost.UpdateLayout();
-        school.Devices.BringIntoView(new Rect(0, 0, 1, 1));
+        if (WorkspaceDevices.IsVisible) return;
+        _workspaceDevicesOrigin = StudyWorkspace.IsVisible ? _workspaceTab : "Home";
+        _workspaceDeviceReportOffset = WorkspaceReportScroll.VerticalOffset;
+        RestoreWorkspaceDevices();
+    }
+
+    private void RestoreWorkspaceDevices()
+    {
+        SelectPage(false);
+        EnsureSchoolWorkspace();
+        HomePage.Visibility = Visibility.Collapsed;
+        HomeNav.Tag = null;
+        StudyNav.Tag = "active";
+        PageBreadcrumb.Text = "自习 / 麦克风与摄像头";
+        WorkspaceDevicesBack.Content = _workspaceDevicesOrigin switch
+        {
+            "School" => "← 返回学校定时自习",
+            "Manual" => "← 返回手动自习",
+            "Reports" => "← 返回本机报告",
+            _ => "← 返回主页"
+        };
+        WorkspaceDevices.Visibility = Visibility.Visible;
+        WorkspaceDevicesScroll.ScrollToTop();
+        RestoreWindow();
+        WorkspaceDevicesBack.Focus();
+    }
+
+    private void ReturnFromDevicesClicked(object sender, RoutedEventArgs e)
+    {
+        string origin = _workspaceDevicesOrigin;
+        if (origin == "Home") SelectPage(false);
+        else ShowStudyWorkspace(origin);
+        Dispatcher.InvokeAsync(() =>
+        {
+            var anchor = origin switch
+            {
+                "School" => _studyMonitoringWindow?.DeviceWorkspaceEntry,
+                "Manual" => _noiseWindow?.ManualDeviceLink,
+                "Reports" => ReportDevicesButton,
+                _ => HomeStudyDevicesButton
+            };
+            if (anchor is not { IsVisible: true }) return;
+            if (origin == "Reports") WorkspaceReportScroll.ScrollToVerticalOffset(_workspaceDeviceReportOffset);
+            anchor.BringIntoView();
+            anchor.Focus();
+        }, DispatcherPriority.Input);
     }
     private void WorkspaceCalibrationClicked(object sender, RoutedEventArgs e) => ShowWorkspaceCalibration();
     private void ShowWorkspaceSeating()

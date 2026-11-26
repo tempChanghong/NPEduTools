@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using NPEduTools.Contracts;
@@ -20,6 +22,9 @@ public partial class StudyDevicePicker : UserControl
     private Task? _refresh;
     private long _generation;
     private bool _busy, _rendering, _connected;
+    private bool _deviceWorkspace;
+    private DeviceAttempt? _microphoneAttempt, _cameraAttempt;
+    private sealed record DeviceAttempt(Guid Instance, long Revision, string? Previous, string? Target);
     private NoiseDevice[] _microphones = [];
     private readonly NoiseCalibrationRead _calibrationRead = new();
     public StudyDevicePicker()
@@ -29,12 +34,41 @@ public partial class StudyDevicePicker : UserControl
         Unloaded += (_, _) => CancelPending();
         UpdateButtons();
     }
-    public void Bind(string pipe) { if (_pipe != pipe) { CancelPending(); _pipe = pipe; _noise = null; _camera = null; _connected = false; } }
+    public void Bind(string pipe)
+    {
+        if (_pipe == pipe) return;
+        _microphoneAttempt = _cameraAttempt = null;
+        CancelPending();
+        _pipe = pipe; _noise = null; _camera = null; _connected = false;
+    }
+    internal void EnableWorkspace()
+    {
+        _deviceWorkspace = true;
+        Tag = "DeviceWorkspace";
+        UpdateButtons();
+    }
+    private void DeviceLayoutChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!_deviceWorkspace || DeviceLayout is null || CameraPane is null) return;
+        bool wide = e.NewSize.Width >= 735 && Window.GetWindow(this)?.ActualWidth >= 930;
+        DeviceLayout.ColumnDefinitions[0].Width = new GridLength(wide ? 1.2 : 1, GridUnitType.Star);
+        DeviceLayout.ColumnDefinitions[1].Width = new GridLength(wide ? 1 : 0, GridUnitType.Star);
+        Grid.SetColumn(CameraPane, wide ? 1 : 0);
+        Grid.SetRow(CameraPane, wide ? 1 : 2);
+    }
+    private TextBlock Feedback(bool camera) => camera && _deviceWorkspace ? CameraMessage : DeviceMessage;
+    private void SetAttempt(bool camera, DeviceAttempt? attempt)
+    {
+        if (camera) _cameraAttempt = attempt;
+        else _microphoneAttempt = attempt;
+    }
+
     public void CancelPending()
     {
         EquipmentSecret.Clear();
         CalibrationStatus.Text = "校准状态待刷新"; CalibrationStatus.ToolTip = null;
-        if (_busy) DeviceMessage.Text = "设备操作结果待确认，请刷新核对。";
+        if (_microphoneAttempt is not null || _busy && !_deviceWorkspace) DeviceMessage.Text = "设备操作结果待确认，请刷新核对。";
+        if (_cameraAttempt is not null) CameraMessage.Text = "摄像头操作结果待确认，请刷新核对。";
         _connected = false; _refresh = null;
         _generation++; _operation?.Cancel(); _operation?.Dispose(); _operation = null; _busy = false; UpdateButtons();
     }
@@ -44,6 +78,8 @@ public partial class StudyDevicePicker : UserControl
         _operation?.Cancel(); _operation?.Dispose(); _operation = new(); _operation.CancelAfter(6000);
         _busy = true; _generation++; DeviceMessage.Text = "";
         DeviceMessage.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "TeacherWarningBrush");
+        CameraMessage.Text = "";
+        CameraMessage.SetResourceReference(TextBlock.ForegroundProperty, "TeacherWarningBrush");
         UpdateButtons(); return _operation.Token;
     }
     public Task RefreshAsync()
@@ -87,13 +123,16 @@ public partial class StudyDevicePicker : UserControl
                     !string.IsNullOrWhiteSpace(device.Name) && device.Name.Length <= 512 && !device.Name.Any(char.IsControl));
             if (cameras.Outcome != "Succeeded" && !cameraOnlyFailure)
                 throw new InvalidDataException("后台未确认本机设备策略。");
+            if (_deviceWorkspace && _noise is { } previousNoise && previousNoise.InstanceId != microphoneState.InstanceId) draftMic = null;
+            if (_deviceWorkspace && _camera is { } previousCamera && previousCamera.InstanceId != cameraState.InstanceId) draftCamera = null;
             _noise = microphoneState; _microphones = DistinguishMicrophones(microphones.NoiseDevices); _camera = cameraState;
             var calibration = NoiseCalibrationPresentation.Describe(microphones.NoiseCalibrationStatus, microphones.Noise,
                 System.Diagnostics.Stopwatch.GetElapsedTime(calibrationAt).TotalSeconds < 3.5);
             CalibrationStatus.Text = calibration.Text; CalibrationStatus.ToolTip = calibration.Detail;
             _connected = true; _rendering = true;
             var micList = _microphones.ToList();
-            if (_noise.SelectedDeviceId is { } saved && !micList.Any(d => d.Id == saved)) micList.Add(new(saved, "已保存的麦克风 · 当前不可用"));
+            if (_noise.SelectedDeviceId is { } saved && !micList.Any(d => d.Id == saved))
+                micList.Add(new(saved, "已保存的麦克风 · 当前不可用" + (_deviceWorkspace ? " · " + DeviceNumber(saved) : "")));
             StudyMicrophone.ItemsSource = micList;
             StudyMicrophone.SelectedValue = draftMic is not null && micList.Any(d => d.Id == draftMic) ? draftMic : _noise.SelectedDeviceId;
             var camList = new List<StudyCameraDevice> { new("", "暂不使用摄像头") };
@@ -107,7 +146,9 @@ public partial class StudyDevicePicker : UserControl
             StudyCamera.ItemsSource = camList;
             StudyCamera.SelectedValue = draftCamera is not null && camList.Any(d => d.Id == draftCamera) ? draftCamera : _camera?.CameraId ?? "";
             _rendering = false; RenderStatus();
-            if (!cameraOnlyFailure && _camera?.Error is { } error) DeviceMessage.Text = DeviceError(error);
+            if (!cameraOnlyFailure && _camera?.Error is { } error) Feedback(true).Text = DeviceError(error);
+            ReconcileDeviceAttempt(false, _microphoneAttempt);
+            ReconcileDeviceAttempt(true, _cameraAttempt);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
         {
@@ -118,12 +159,45 @@ public partial class StudyDevicePicker : UserControl
         }
         finally { if (generation == _generation) { _rendering = false; _busy = false; UpdateButtons(); } }
     }
+    private void ReconcileDeviceAttempt(bool camera, DeviceAttempt? attempt)
+    {
+        // The school overview also reads the picker. Reconcile when the person can see the result.
+        if (attempt is null || !IsVisible) return;
+        var message = Feedback(camera);
+        if (camera && _camera?.Error is not null)
+        {
+            message.Text = "摄像头保存结果待确认，请在列表恢复后刷新核对。";
+            return;
+        }
+        var instance = camera ? _camera?.InstanceId : _noise?.InstanceId;
+        var revision = camera ? _camera?.Revision : _noise?.Revision;
+        var saved = camera ? _camera?.CameraId : _noise?.SelectedDeviceId;
+        if (instance == attempt.Instance && revision < attempt.Revision)
+        {
+            message.Text = "当前保存状态仍待确认，请刷新核对。";
+            return;
+        }
+        SetAttempt(camera, null);
+        string device = camera ? "摄像头" : "麦克风";
+        if (instance != attempt.Instance)
+            message.Text = "后台已变化，请核对当前保存的" + device + "。原操作结果未确认。";
+        else if (saved == attempt.Target)
+        {
+            message.Text = "已重新读取，当前保存设置与本次选择一致。请查看上方设备可用性。";
+            message.SetResourceReference(TextBlock.ForegroundProperty, "TeacherSuccessBrush");
+        }
+        else
+            message.Text = saved == attempt.Previous ? "当前仍保存原" + device + "。请核对候选后决定是否再次保存。" :
+                "当前保存的" + device + "与本次候选不同。请核对当前设备，再决定是否保存候选。";
+    }
     private void RenderStatus()
     {
         MicrophoneStatus.Text = _noise?.SelectedDeviceId is not { } id ? "尚未保存监测麦克风" :
-            _microphones.FirstOrDefault(d => d.Id == id) is { } mic ? "已保存：" + mic.Name : "已保存的麦克风当前不可用；原选择保留";
+            _microphones.FirstOrDefault(d => d.Id == id) is { } mic ? "已保存：" + mic.Name :
+            "已保存的麦克风当前不可用" + (_deviceWorkspace ? " · " + DeviceNumber(id) : "") + "；原选择保留";
         CameraStatus.Text = CameraReadError ?? (_camera is null ? "当前后台尚不支持摄像头选择" : _camera.CameraId is null ? "摄像头未选择 · 不影响基本自习监测" :
             _camera.CameraAvailable == true ? "已保存：" + _camera.CameraName + " · 未开启捕获" : "摄像头选择已保存，可用性未确认或设备已断开");
+        if (_deviceWorkspace && CameraReadError is not null) CameraStatus.Text += " · 原设置保留";
         if (_camera?.Locked == true) CameraStatus.Text += " · 学校已锁定";
     }
     private string? CameraReadError => _camera?.Error switch
@@ -148,17 +222,26 @@ public partial class StudyDevicePicker : UserControl
         StudyMicrophone.IsEnabled = editable && (!locked || allowed && alternative);
         StudyCamera.IsEnabled = editable && !locked;
         SchoolMicrophoneForm.Visibility = locked && _connected && allowed && Idle && chosen ? Visibility.Visible : Visibility.Collapsed;
-        EquipmentSecret.IsEnabled = ConfirmSchoolMicrophone.IsEnabled = editable && locked && allowed && chosen;
+        bool micAwaiting = _microphoneAttempt is not null, cameraAwaiting = _cameraAttempt is not null;
+        EquipmentSecret.IsEnabled = ConfirmSchoolMicrophone.IsEnabled = editable && locked && allowed && chosen && !micAwaiting;
         if (locked)
             SchoolMicrophoneHint.Text = !_connected ? "学校设备策略待刷新。"
                 : !allowed ? "学校已锁定采集设备，当前策略未开放本班现场更换麦克风。"
                 : !Idle ? "当前正在采集或释放设备。结束后请刷新，再选择麦克风。"
                 : !alternative ? "学校已锁定采集设备，当前没有其他可用麦克风。"
-                : chosen ? "核对所选麦克风后，输入班级管理口令确认本次更换。新麦克风可能需要单独校准。"
+                : chosen ? (_deviceWorkspace ? "更换后请核对新麦克风的校准状态。" :
+                    "核对所选麦克风后，输入班级管理口令确认本次更换。新麦克风可能需要单独校准。")
                 : "请选择另一支可用麦克风，再用班级管理口令确认更换。摄像头继续锁定。";
-        SaveMicrophone.IsEnabled = !_busy && _connected && Idle && !locked && StudyMicrophone.SelectedValue is string mic && _microphones.Any(d => d.Id == mic);
-        SaveCamera.IsEnabled = !_busy && _connected && Idle && !locked && _camera is not null && _camera.Error is null &&
-            StudyCamera.SelectedValue is string cam && (cam.Length == 0 || _camera.Cameras.Any(d => d.Id == cam));
+        SaveMicrophone.IsEnabled = editable && !locked && !micAwaiting && StudyMicrophone.SelectedValue is string mic &&
+            _microphones.Any(d => d.Id == mic) && (!_deviceWorkspace || mic != _noise?.SelectedDeviceId);
+        SaveCamera.IsEnabled = editable && !locked && !cameraAwaiting && _camera is { Error: null } &&
+            StudyCamera.SelectedValue is string cam && (cam.Length == 0 || _camera.Cameras.Any(d => d.Id == cam)) &&
+            (!_deviceWorkspace || cam != (_camera.CameraId ?? ""));
+        CameraControls.Visibility = !_deviceWorkspace || _connected && !locked && _camera is { Error: null }
+            ? Visibility.Visible : Visibility.Collapsed;
+        PendingMicrophoneStatus.Text = _deviceWorkspace && StudyMicrophone.SelectedValue is string candidate &&
+            candidate != _noise?.SelectedDeviceId && _microphones.FirstOrDefault(d => d.Id == candidate) is { } next
+            ? $"本次候选：{next.Name} · {(_connected ? "待确认" : "待刷新核对")}" : "";
         if (!_connected)
         {
             CalibrationStatus.Text = "校准状态待确认"; CalibrationStatus.ToolTip = null;
@@ -194,6 +277,12 @@ public partial class StudyDevicePicker : UserControl
     private async Task SaveAsync(HostRequest request, bool camera)
     {
         var token = Begin(); long generation = _generation;
+        var message = Feedback(camera);
+        if (_deviceWorkspace)
+        {
+            SetAttempt(camera, camera && request.StudyCamera is { } cam ? new(cam.InstanceId, cam.Revision, _camera?.CameraId, cam.DeviceId) :
+                request.Noise is { } mic ? new(mic.InstanceId, mic.Revision, _noise?.SelectedDeviceId, mic.DeviceId) : null);
+        }
         try
         {
             var response = await HostClient.RequestAsync(_pipe!, request, token);
@@ -211,25 +300,26 @@ public partial class StudyDevicePicker : UserControl
             }
             if (response.Noise is { } noise) _noise = noise;
             if (response.StudyDevices is { } devices) _camera = devices;
+            SetAttempt(camera, null);
             if (response.Outcome != "Succeeded")
             {
                 // A rejection may carry only one device snapshot. A new lock,
                 // capture owner or Host revision invalidates the combined editability claim.
                 if (response.ErrorCode is "EQUIPMENT_LOCKED" or "CameraStateChanged" or "NoiseStateChanged" or "StudyDevicesBusy" or "NoiseBusy" or "NoiseCleanupRequired" or "NoiseStopping")
                     _connected = false;
-                DeviceMessage.Text = DeviceError(response.ErrorCode);
+                message.Text = DeviceError(response.ErrorCode);
             }
             else
             {
-                DeviceMessage.Text = camera ? "摄像头选择已保存，未开始捕获。" : "监测麦克风已保存，未开始采集。";
+                message.Text = camera ? "摄像头选择已保存，未开始捕获。" : "监测麦克风已保存，未开始采集。";
                 if (!camera) { CalibrationStatus.Text = "校准状态待刷新"; CalibrationStatus.ToolTip = "麦克风选择已保存，请刷新核对校准状态。"; }
-                DeviceMessage.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "TeacherSuccessBrush");
+                message.SetResourceReference(TextBlock.ForegroundProperty, "TeacherSuccessBrush");
                 SelectionSaved?.Invoke(this, EventArgs.Empty);
             }
             RenderStatus();
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException)
-        { if (generation == _generation) { _connected = false; DeviceMessage.Text = "保存结果未确认，请刷新核对；不会自动重新保存或开始采集。"; } }
+        { if (generation == _generation) { _connected = false; message.Text = "保存结果未确认，请刷新核对当前设备。"; } }
         finally { if (generation == _generation) { _busy = false; UpdateButtons(); } }
     }
     private static string DeviceError(string? code) => code switch
@@ -254,10 +344,13 @@ public partial class StudyDevicePicker : UserControl
         "STUDY_UNSUPPORTED" or "UnknownCapability" => "请更新并重启 Host，以使用原生摄像头选择。",
         _ => "设备设置未确认，请刷新后重试。"
     };
-    private static NoiseDevice[] DistinguishMicrophones(IReadOnlyList<NoiseDevice> devices) => devices.Select(device =>
+    private static string DeviceNumber(string id) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(id)))[..8];
+    private NoiseDevice[] DistinguishMicrophones(IReadOnlyList<NoiseDevice> devices) => devices.Select(device =>
     {
+        if (_deviceWorkspace) return device with { Name = $"{device.Name} · {DeviceNumber(device.Id)}" };
         var same = devices.Where(d => d.Name == device.Name).ToArray();
-        return device with { Name = same.Length > 1 ? $"{device.Name}（{Array.FindIndex(same, d => d.Id == device.Id) + 1}）" : device.Name };
+        if (same.Length < 2) return device;
+        return device with { Name = $"{device.Name}（{Array.FindIndex(same, d => d.Id == device.Id) + 1}）" };
     }).ToArray();
     private void ChoiceChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -278,6 +371,7 @@ public partial class StudyDevicePicker : UserControl
         }
         var instance = _noise.InstanceId;
         var token = Begin(); long generation = _generation;
+        if (_deviceWorkspace) _microphoneAttempt = new(instance, _noise.Revision, _noise.SelectedDeviceId, target);
         var command = new HostRequest(1, Guid.NewGuid(), "noise.management.command",
             NoiseManagement: new("replace-microphone", Secret: secret, DeviceId: target, PolicyToken: policyToken));
         try
@@ -286,6 +380,7 @@ public partial class StudyDevicePicker : UserControl
             if (generation != _generation) return;
             if (reply.Outcome == "Rejected")
             {
+                if (reply.ErrorCode != "EQUIPMENT_CHANGE_UNCONFIRMED") _microphoneAttempt = null;
                 if (reply.ErrorCode is not ("MANAGEMENT_SECRET_INVALID" or "INVALID_MANAGEMENT_SECRET" or "MANAGEMENT_RATE_LIMITED")) _connected = false;
                 DeviceMessage.Text = reply.ErrorCode == "UnknownCapability" ? "当前后台不支持受管麦克风更换，请更新后台后刷新。" : DeviceError(reply.ErrorCode);
                 return;
