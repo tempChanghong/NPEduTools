@@ -223,7 +223,7 @@ internal static partial class Program
             serverConfirmation.IsChecked = true; window.UpdateLayout();
             Assert(target.IsVisible && !secret.IsVisible && target.Items.Count == 2, "class catalogue should wait for a manual target");
             target.SelectedIndex = 0; window.UpdateLayout();
-            var apply = FlowElements<Button>(view).Single(button => Equals(button.Content, "向学校申请连接（尚无管理口令）"));
+            var apply = (Button)Find(view, "NpepApplyClass");
             Assert(apply.IsVisible && apply.IsEnabled && secret.IsVisible, "class pairing fixture did not reach confirmed provider");
             apply.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             Assert(((TextBlock)view.FindName("ClassInputMessage")).Text == "学校暂未开放申请",

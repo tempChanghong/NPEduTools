@@ -23,7 +23,8 @@ public partial class NpepConnectionControl : UserControl
     {
         InitializeComponent();
         DataContext = null;
-        RequestedClass.SelectionChanged += (_, _) => ClearClassInput();
+        RequestedClass.SelectionChanged += (_, _) => { ClearClassInput(); UpdateClassJourneyLayout(); };
+        ClassJourneyGrid.SizeChanged += (_, _) => UpdateClassJourneyLayout();
         ClassManagementSecret.PasswordChanged += (_, _) => ClearClassMessage();
         ClassManagementSecret.IsVisibleChanged += (_, _) => { if (!ClassManagementSecret.IsVisible) ClearClassInput(); };
         ReplacementSecret.PasswordChanged += (_, _) => ReplacementMessage.Text = "";
@@ -43,6 +44,20 @@ public partial class NpepConnectionControl : UserControl
             if (!IsVisible) LeaveClassSelection();
             else if (_session is { } session) await session.RefreshAsync();
         };
+    }
+    private void UpdateClassJourneyLayout()
+    {
+        bool split = Window.GetWindow(this) is MainWindow && ClassJourneyGrid.ActualWidth >= 800 && RequestedClass.SelectedItem is not null;
+        ClassJourneyGap.Width = new GridLength(split ? 12 : 0);
+        ClassActionColumn.Width = split ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        Grid.SetRow(ClassActionCard, split ? 0 : 1);
+        Grid.SetColumn(ClassActionCard, split ? 2 : 0);
+        ClassActionHeading.Visibility = ClassActionDivider.Visibility = split ? Visibility.Visible : Visibility.Collapsed;
+        bool inlineApplication = !split && ClassJourneyGrid.ActualWidth >= 580 &&
+            RequestedClass.SelectedItem is NpepConnectionSession.ClassChoice { Preauthorized: not false };
+        Grid.SetRow(ClassApplyAction, inlineApplication ? 0 : 1);
+        Grid.SetColumn(ClassApplyAction, inlineApplication ? 1 : 0);
+        ClassApplyAction.Margin = inlineApplication ? new Thickness(8, 0, 0, 0) : new Thickness(0, 8, 0, 0);
     }
     public void Bind(NpepConnectionSession session)
     {

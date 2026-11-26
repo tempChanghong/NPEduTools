@@ -32,7 +32,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     internal int ProviderRevision { get; private set; }
     private string? _feedbackCode;
     private Guid? _feedbackRequestId;
-    private bool _working, _mutating, _originEdited, _serverConfirmed, _bindingConfirmed;
+    private bool _working, _mutating, _originEdited, _serverConfirmed, _bindingConfirmed, _admissionReplyUnconfirmed;
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Changed() => PropertyChanged?.Invoke(this, new(""));
     private static string Text(JsonObject? value, string key) => value?[key] is JsonValue v && v.TryGetValue<string>(out var text) ? text : "";
@@ -79,8 +79,9 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public long? Revision => _state?.Revision;
     public bool CanFinish => Available && HasPairing;
     public bool CanRefresh => !_working;
-    public bool ShowAddressEditor => _state is null || _state.State == "UNPAIRED";
-    public bool ShowCurrentAddress => !ShowAddressEditor;
+    public string RefreshLabel => _admissionReplyUnconfirmed ? "核对原申请" : "刷新";
+    public bool ShowAddressEditor => ShowCreate || _state is null && !_admissionReplyUnconfirmed;
+    public bool ShowCurrentAddress => _state is not null && !ShowAddressEditor;
     public string ProviderHint => _state is null ? "后台状态尚未确认，可先填写地址；恢复后台连接后再检查服务。"
         : ShowCreate ? "请填写学校提供的服务地址，然后检查服务。"
         : "此地址属于当前申请或绑定。更换提供商需先取消申请或解除绑定，再输入新地址并重新配对。";
@@ -91,7 +92,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public bool ShowInspectedService => HasCatalogueProvider && !ServerConfirmed;
     public bool HasSchoolDirectory => ProviderCatalogue is not null;
     public bool UseAlternatePairing => SchoolVerified && !ShowClassLookup && !HasClasses;
-    public bool ShowApprovalReview => ShowBinding && !ShowBindingManagement;
+    public bool ShowApprovalReview => ShowBinding && !ShowBindingManagement && (_state?.State != "CONFIRMING" || !HasCurrentRequestTarget);
     public bool ScreenOccupied => _state?.Error == "BINDING_OCCUPIED";
     public bool ShowReplacementRequest => NpepConnectionPresentation.CanOfferReplacement(_state);
     public bool CanRequestReplacement => Available && ShowReplacementRequest;
@@ -102,7 +103,23 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         ? _state?.RequestedScreenBindingId ?? "" : _state.RequestedScreenName;
     public string RequestedDeviceName => _state?.RequestedDeviceName ?? "";
     public bool ReplacementCandidate => _state is { PairingSource: "REPLACEMENT", State: "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING" };
-    public bool ShowReplacementDeadline => ReplacementCandidate && Text(_state?.Pairing, "expiresAt").Length > 0;
+    public bool ShowRequestExpiry => !ShowCode && _state is { State: "PENDING" or "APPROVED" } && Text(_state.Pairing, "expiresAt").Length > 0;
+    public bool ShowCompanionTools => !_admissionReplyUnconfirmed && !SchoolVerified &&
+        _state?.State is not ("CREATING" or "PENDING" or "APPROVED" or "CONFIRMING");
+    public string CurrentRequestTarget
+    {
+        get
+        {
+            if (_state is not { State: "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING" }) return "";
+            if (RequestedScreenLabel is { Length: > 0 } label) return label;
+            if (Text(_state.Approval, "screenBindingId") is not { Length: > 0 } id) return "";
+            string screen = Text(_state.Approval, "screenBindingName");
+            return string.Join(" · ", new[] { Text(_state.Approval, "schoolName"), Text(_state.Approval, "administrativeClassName"),
+                screen.Length == 0 ? id : screen }.Where(value => value.Length > 0));
+        }
+    }
+    public bool HasCurrentRequestTarget => CurrentRequestTarget.Length > 0;
+    public bool ShowRequestSummary => !ShowReplacementRequest && !ShowConfirm && (HasCurrentRequestTarget || ShowRequestExpiry);
     public string ConfirmLabel => ReplacementCandidate ? "确认交接并启用本机" : "确认连接";
     public bool ShowConnectionAdvice => _state is null || _feedback is not null || _state.Error is not null ||
         _state.ReportingPaused || (!ShowCreate && _state.Connection != "ONLINE") || _state.State == "STORE_UNAVAILABLE";
@@ -129,6 +146,10 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public sealed record ClassChoice(string Id, string Name)
     {
         public bool? Preauthorized { get; init; }
+        public string School { get; init; } = "";
+        public string Class { get; init; } = "";
+        public string Screen { get; init; } = "";
+        public string Classroom => string.Join(" · ", new[] { School, Class }.Where(value => value.Length > 0));
     }
     public IReadOnlyList<ClassChoice> Classes => _classes;
     public bool HasClasses => Classes.Count > 0;
@@ -174,6 +195,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     internal void LeaveClassSelection()
     {
         ResetClassSelection();
+        _bindingConfirmed = false;
         Changed();
     }
 
@@ -264,21 +286,23 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         if (!matches || catalogue?["items"] is not JsonArray items) { _classes = []; return; }
 
         var choices = items.OfType<JsonObject>().Where(row => Text(row, "screenBindingId").Length > 0)
-            .Select(row => new ClassChoice(Text(row, "screenBindingId"), CatalogueLabel(row))
-            {
-                Preauthorized = row["preauthorized"] is JsonValue flag && flag.TryGetValue<bool>(out var enabled) ? enabled : null
-            }).DistinctBy(row => row.Id).ToArray();
+            .Select(CatalogueChoice).DistinctBy(row => row.Id).ToArray();
         var duplicateLabels = choices.GroupBy(row => row.Name).Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
         _classes = choices.Select(row => duplicateLabels.Contains(row.Name) ? row with { Name = $"{row.Name}（大屏编号 {row.Id}）" } : row).ToArray();
     }
 
-    private static string CatalogueLabel(JsonObject row)
+    private static ClassChoice CatalogueChoice(JsonObject row)
     {
         string WithCode(string key, string codeKey) => Text(row, codeKey) is { Length: > 0 } code ? $"{Text(row, key)}（{code}）" : Text(row, key);
         var grade = Text(row, "gradeName");
         var classLabel = WithCode("className", "classCode");
         if (grade.Length > 0 && !classLabel.StartsWith(grade, StringComparison.Ordinal)) classLabel = $"{grade} / {classLabel}";
-        return string.Join(" · ", new[] { WithCode("schoolName", "schoolCode"), classLabel, Text(row, "screenName") }.Where(value => value.Length > 0));
+        string id = Text(row, "screenBindingId"), school = WithCode("schoolName", "schoolCode"), screen = Text(row, "screenName");
+        return new(id, string.Join(" · ", new[] { school, classLabel, screen }.Where(value => value.Length > 0)))
+        {
+            School = school, Class = classLabel, Screen = screen.Length == 0 ? id : screen,
+            Preauthorized = row["preauthorized"] is JsonValue flag && flag.TryGetValue<bool>(out var enabled) ? enabled : null
+        };
     }
     public Task<bool> ConnectClassAsync(string? binding,string? secret)
     {
@@ -337,6 +361,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     private void Apply(HostResponse response, NpepCommand? command)
     {
         _state = response.Npep;
+        if (_state is not null) _admissionReplyUnconfirmed = false;
+        else _admissionReplyUnconfirmed |= IsAdmissionCommand(command);
         if (_state?.State is "APPROVED" or "ACTIVE") _userCode = "";
         (string?, string, string)? provider = _state?.Server is { } identity
             ? (_state.Origin, Text(identity, "serverInstanceId"), Text(identity, "deploymentEpoch")) : null;
@@ -361,6 +387,9 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         UpdateCatalogue();
         Changed();
     }
+
+    private static bool IsAdmissionCommand(NpepCommand? command) => command?.Action is
+        "apply-class" or "password-class" or "replacement-class" or "pair" or "claim" or "confirm" or "resume-create" or "recover";
 
     private void ObserveLookup(HostResponse response, NpepCommand? command)
     {
@@ -468,6 +497,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         {
             if (lifetime.IsCancellationRequested || selectionRevision is int revision && revision != ClassSelectionRevision) return false;
             // A lost mutation response is ambiguous. Disable mutations until a fresh Host snapshot resolves it.
+            _admissionReplyUnconfirmed |= IsAdmissionCommand(command);
             _state = null; _serverConfirmed = _bindingConfirmed = false;
             ClearClassCatalogue();
             _lookupReady = false;

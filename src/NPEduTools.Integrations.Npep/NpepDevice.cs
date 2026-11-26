@@ -31,8 +31,7 @@ public sealed partial class NpepDevice : IDisposable
     {
         var saved = _saved;
         var stage = saved?["stage"]?.GetValue<string>();
-        bool showTarget = stage == "CREATING" || saved?["source"]?.GetValue<string>() == "REPLACEMENT" &&
-            stage is "PENDING" or "APPROVED" or "CONFIRMING";
+        bool showTarget = stage is "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING";
         var view = new JsonObject
         {
             ["state"] = stage ?? "UNPAIRED",

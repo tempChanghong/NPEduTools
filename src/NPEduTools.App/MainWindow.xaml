@@ -3,6 +3,7 @@
     <WindowChrome CaptionHeight="46" ResizeBorderThickness="6" CornerRadius="14" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
   </WindowChrome.WindowChrome>
   <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="SchoolToolsVisibility" />
     <Style x:Key="SidebarNavigation" TargetType="Button" BasedOn="{StaticResource TeacherNavigation}">
       <Setter Property="MinHeight" Value="44" /><Setter Property="Padding" Value="12,8" />
       <Setter Property="FontSize" Value="14" /><Setter Property="Margin" Value="0,0,0,2" />
@@ -488,11 +489,13 @@
           <StackPanel>
             <StackPanel x:Name="NpepSettingsPanel" Visibility="Collapsed">
               <local:NpepConnectionControl x:Name="SettingsSchoolConnection" />
-              <Expander Header="学校连接权限" Style="{DynamicResource TeacherExpander}" AutomationProperties.Name="学校连接权限" Margin="0,10,0,16">
+              <Expander Header="学校连接权限" Style="{DynamicResource TeacherExpander}" AutomationProperties.Name="学校连接权限" Margin="0,10,0,16"
+                        Visibility="{Binding DataContext.ShowCompanionTools, ElementName=SettingsSchoolConnection, Converter={StaticResource SchoolToolsVisibility}, FallbackValue=Visible}">
                 <TextBlock Text="配对后，NPClassworks 可接收设备状态、投递学校通知、管理考试与日常模式（含登录自启动）、考试方案和自习策略。噪音监测仅上传统计；学校启用照片策略时可上传单张捕获画面。屏幕、录课文件、原始录音和完整课表不会上传。"
                            TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="12,6,0,8" />
               </Expander>
               <Expander x:Name="RemoteExamSettings" Header="远程考试模式" Style="{DynamicResource TeacherExpander}"
+                        Visibility="{Binding DataContext.ShowCompanionTools, ElementName=SettingsSchoolConnection, Converter={StaticResource SchoolToolsVisibility}, FallbackValue=Visible}"
                         AutomationProperties.Name="远程考试模式" Margin="0,0,0,16">
                 <StackPanel Margin="12,0,12,12">
                   <TextBlock x:Name="RemoteExamBinding" Text="正在读取当前学校绑定…" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,12" />
@@ -519,6 +522,7 @@
                 </StackPanel>
               </Expander>
               <Border x:Name="NotificationInboxCard" Style="{StaticResource Surface}"
+                      Visibility="{Binding DataContext.ShowCompanionTools, ElementName=SettingsSchoolConnection, Converter={StaticResource SchoolToolsVisibility}, FallbackValue=Visible}"
                       Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
                       Initialized="NotificationInboxInitialized" Loaded="NotificationInboxLoaded" Unloaded="NotificationInboxUnloaded">
                 <StackPanel SizeChanged="NotificationInboxSizeChanged" TextElement.FontFamily="{DynamicResource TeacherFont}"
@@ -591,7 +595,8 @@
                   </WrapPanel>
                 </StackPanel>
               </Border>
-              <Border Style="{StaticResource Surface}" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}">
+              <Border Style="{StaticResource Surface}" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
+                      Visibility="{Binding DataContext.ShowCompanionTools, ElementName=SettingsSchoolConnection, Converter={StaticResource SchoolToolsVisibility}, FallbackValue=Visible}">
                 <StackPanel TextElement.FontFamily="{DynamicResource TeacherFont}" TextElement.Foreground="{DynamicResource TeacherTextBrush}">
                   <TextBlock Text="本地样式预览" FontSize="17" FontWeight="SemiBold" />
                   <TextBlock Text="预览仅在本机显示。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,12" />
@@ -606,7 +611,7 @@
                       <ComboBoxItem Tag="Important">重要</ComboBoxItem>
                       <ComboBoxItem Tag="Urgent">紧急</ComboBoxItem>
                     </ComboBox>
-                    <Button x:Name="NotificationPreviewButton" Grid.Column="1" Content="预览通知" Style="{DynamicResource TeacherPrimary}"
+                    <Button x:Name="NotificationPreviewButton" Grid.Column="1" Content="预览通知" Style="{DynamicResource TeacherButton}"
                             Click="NotificationPreviewClicked" Margin="12,0,0,0" HorizontalAlignment="Left"
                             AutomationProperties.AutomationId="NotificationPreviewButton" />
                   </Grid>

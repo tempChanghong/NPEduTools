@@ -10,13 +10,21 @@ public sealed class ClassAdmissionTests
     public async Task RequestedClassIsFencedAndSecretNeverAppearsInRedactedView(string? secret,string path,string source)
     {
         using var directory=new TestDirectory();var server=new FakeServer();
-        using var device=new NpepDevice(directory.Path,server.Api);
         string binding=server.Approval.Text("screenBindingId");
-        await device.BeginClassAsync("https://npep.test",server.Info,"测试屏","test",binding,secret);
+        const string target = "隔离学校 · 一班 · 后屏";
+        using (var initial = new NpepDevice(directory.Path, server.Api))
+            await initial.BeginClassAsync("https://npep.test", server.Info, "测试屏", "test", binding, secret, default, null, null, target);
+        using var device = new NpepDevice(directory.Path, server.Api);
         Assert.Contains(server.Requests,x=>x.Path==path);Assert.Equal(source,device.View().Text("pairingSource"));
+        var pending = device.View();
+        Assert.Equal("PENDING", pending.Text("state"));
+        var snapshotTarget = pending["replacementTarget"]!.AsObject();
+        Assert.Equal(binding, snapshotTarget.Text("screenBindingId"));
+        Assert.Equal(target, snapshotTarget.Text("screenName"));
         if(secret is not null)Assert.DoesNotContain(secret,device.View().ToJsonString());
         await device.PollApprovalAsync();await device.ConfirmRequestedClassAsync(CancellationToken.None);
         Assert.Equal("ACTIVE",device.View().Text("state"));
+        Assert.Null(device.View()["replacementTarget"]);
     }
     [Fact]
     public async Task ApprovalForDifferentClassNeverAutoConfirms()
