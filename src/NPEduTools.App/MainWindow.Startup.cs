@@ -49,9 +49,7 @@ public partial class MainWindow
         _quick.SetStudyAction(() => ShowStudyWorkspace(_homeStudyTarget));
         RefreshWorkspaceHome();
         _ = ClassroomModePollAsync();
-        _quick.SetRecordingActions(ShowRecording,
-            () => _ = _recording.SendAsync(_recording.State.Phase == "Paused" ? "resume" : "pause"),
-            () => _ = _recording.SendAsync("stop"), ShowRecordingPlan, SkipAutomaticToday);
+        ConfigureQuickRecording();
         _quick.UpdateAutomaticRecording(_recording.Automatic, _recording.AutomaticAvailable);
         RefreshRecording(_recording.State);
         RefreshShortcutControls();

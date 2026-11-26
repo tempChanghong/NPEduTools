@@ -26,7 +26,7 @@ internal static partial class Program
         {
             quick.Show(); quick.UpdateLayout();
             quick.SetStudyAction(() => studies++);
-            quick.SetRecordingActions(() => { }, () => pauses++, () => { }, () => { }, () => { });
+            quick.SetRecordingActions(() => { }, (action, _, _) => { if (action == "pause") pauses++; }, () => { }, () => { });
             var active = new RecordingState("Recording", "录制进行中", Seconds: 120, Control: new("Manual", Guid.NewGuid(), "", 0, 0));
             quick.UpdateStudy("当前没有自习任务", "可开始手动自习", "下次学校自习 · 时间待确认", "开始自习", false);
             quick.UpdateRecording(active);

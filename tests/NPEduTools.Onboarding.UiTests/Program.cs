@@ -27,7 +27,7 @@ internal static partial class Program
             catch (Exception error) { WriteResult("FAILED", error.ToString()); return 1; }
         }
         bool aboutVersionOnly = args.Length == 2 && args[1] == "--about-version";
-        bool quickBoundariesOnly = args.Length == 2 && args[1] is "--quick-boundaries" or "--quick-slideshow" or "--secrandom-sidebar-receipt" or "--quick-classroom-tools";
+        bool quickBoundariesOnly = args.Length == 2 && args[1] is "--quick-boundaries" or "--quick-slideshow" or "--secrandom-sidebar-receipt" or "--quick-classroom-tools" or "--quick-recording-controls" or "--quick-recording-state";
         bool quickWorkspaceOnly = args.Length == 2 && args[1] == "--quick-workspace";
         bool homeWorkspaceOnly = args.Length == 2 && args[1] == "--home-workspace";
         bool connectionWorkspaceOnly = args.Length == 2 && args[1] == "--connection-workspace";
@@ -91,8 +91,9 @@ internal static partial class Program
             if (quickBoundariesOnly)
             {
                 if (args[1] == "--quick-boundaries") RunQuickBoundaryChecks();
+                else if (args[1] == "--quick-recording-state") RunQuickRecordingControlChecks(0);
                 else RunQuickSlideShowChecks(drawReceipt: args[1] == "--secrandom-sidebar-receipt",
-                    classroomTools: args[1] == "--quick-classroom-tools");
+                    classroomTools: args[1] == "--quick-classroom-tools", recordingControls: args[1] == "--quick-recording-controls");
                 WriteResult("PASSED", null); return 0;
             }
             if (quickWorkspaceOnly) { RunQuickWorkspaceChecks(); WriteResult("PASSED", null); return 0; }

@@ -61,6 +61,9 @@ public partial class MainWindow
         RefreshHomeRecordingNext(_recording.Automatic);
         RefreshRecording(_recording.State);
     }
+    private void ConfigureQuickRecording() =>
+        _quick?.SetRecordingActions(ShowRecording, (action, target, phase) => _ = _recording.SendFromSidebarAsync(action, target, phase),
+            ShowRecordingPlan, SkipAutomaticToday);
     private void OpenRecordingClicked(object sender, RoutedEventArgs e) => ShowRecordingSettings();
     private void ShowRecording() => ShowRecordingWorkspace("Manual");
     private void ShowRecordingSettings() { ShowRecording(); _recordingWindow?.ShowSettingsPanel(); }
@@ -80,7 +83,7 @@ public partial class MainWindow
         RecordingHomeTitle.Text = HomeRecordingPresentation.Title(state, _recording.StateAvailable);
         RecordingHomeStatus.Text = HomeRecordingPresentation.Detail(state, _recording.StateAvailable, includeOwner: state.Phase != "Recording");
         RecordingHomeAction.Text = HomeRecordingPresentation.Action(state, _recording.StateAvailable);
-        _quick?.UpdateRecording(state, _recording.StateAvailable);
+        _quick?.UpdateRecording(state, _recording.StateAvailable, _recording.StopFromSidebar);
     }
     private void HomeRecordingPrimaryClicked(object sender, RoutedEventArgs e)
     {

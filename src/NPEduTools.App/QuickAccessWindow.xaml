@@ -116,12 +116,33 @@
                   <TextBlock Text="录课" FontSize="14" FontWeight="SemiBold" />
                   <DockPanel>
                     <TextBlock x:Name="QuickRecordingPhaseMark" FontSize="12" VerticalAlignment="Center" Margin="0,0,5,0" />
-                    <TextBlock x:Name="RecordingStatus" Text="录课状态待确认" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
-                               TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="QuickRecordingStatus" />
+                    <Grid>
+                      <TextBlock x:Name="RecordingStatus" Text="录课状态待确认" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"
+                                 TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="QuickRecordingStatus" />
+                      <TextBlock x:Name="RecordingConfirmationText" Text="结束本场？" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TeacherWarningBrush}" TextTrimming="CharacterEllipsis"
+                                 Visibility="Collapsed" AutomationProperties.AutomationId="QuickRecordingConfirmationText" />
+                    </Grid>
                   </DockPanel>
                 </StackPanel>
               </DockPanel>
-              <WrapPanel x:Name="RecordingControls" Visibility="Collapsed" Margin="0,8,0,0"><Button x:Name="RecordingPause" MinWidth="98" Style="{DynamicResource TeacherButton}" Content="暂停" Padding="12,8" Click="RecordingPauseClicked" AutomationProperties.AutomationId="QuickRecordingPause" Margin="0,0,6,0" /><Button x:Name="RecordingStop" Style="{DynamicResource TeacherButton}" Content="停止并保存" Padding="12,8" Click="RecordingStopClicked" AutomationProperties.AutomationId="QuickRecordingStop" /></WrapPanel>
+              <Grid>
+                <WrapPanel x:Name="RecordingControls" Visibility="Collapsed" Margin="0,8,0,0">
+                  <Button x:Name="RecordingPause" Width="104" MinHeight="55" Content="暂停" Padding="10,6" Margin="0,0,12,0"
+                          Style="{DynamicResource TeacherButton}" Click="RecordingPauseClicked" AutomationProperties.AutomationId="QuickRecordingPause" />
+                  <Button x:Name="RecordingStop" Width="120" MinHeight="55" Content="停止并保存" Padding="10,6"
+                          Style="{DynamicResource TeacherButton}" Click="RecordingStopClicked" AutomationProperties.AutomationId="QuickRecordingStop" />
+                </WrapPanel>
+                <WrapPanel x:Name="RecordingStopConfirmation" Visibility="Collapsed" Margin="0,8,0,0"
+                           AutomationProperties.AutomationId="QuickRecordingStopConfirmation">
+                  <Button x:Name="RecordingConfirmStop" Width="104" MinHeight="55" Content="确认停止" Padding="10,6" Margin="0,0,12,0"
+                          Style="{DynamicResource TeacherButton}" BorderBrush="{DynamicResource TeacherErrorBrush}"
+                          Foreground="{DynamicResource TeacherErrorBrush}" Click="RecordingConfirmStopClicked"
+                          AutomationProperties.AutomationId="QuickRecordingConfirmStop" />
+                  <Button x:Name="RecordingCancelStop" Width="120" MinHeight="55" Content="返回" Padding="10,6"
+                          Style="{DynamicResource TeacherButton}" Click="RecordingCancelStopClicked" AutomationProperties.AutomationId="QuickRecordingCancelStop" />
+                </WrapPanel>
+              </Grid>
               <Expander x:Name="AutomaticRecordingDetails" Style="{DynamicResource TeacherExpander}" IsExpanded="False"
                         Header="自动录课与计划" AutomationProperties.AutomationId="QuickAutomaticRecordingDetails">
                 <StackPanel>

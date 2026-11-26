@@ -6,6 +6,9 @@ using NPEduTools.Contracts;
 
 namespace NPEduTools.App;
 
+internal enum SidebarStopPhase { Requesting, Saving, Saved, Failed, Unconfirmed, Rejected }
+internal sealed record SidebarStop(RecorderControl Target, SidebarStopPhase Phase, long RequestedAt);
+
 /// <summary>UI client only. Host owns the recorder; no capture process is owned by the WPF dispatcher.</summary>
 internal sealed class RecordingClient : IAsyncDisposable
 {
@@ -20,6 +23,7 @@ internal sealed class RecordingClient : IAsyncDisposable
     private long _generation;
     public RecordingState State { get; private set; } = new("Idle", "准备录制");
     public bool StateAvailable { get; private set; }
+    internal SidebarStop? StopFromSidebar { get; private set; }
     public bool AutomaticAvailable { get; private set; }
     public AutomaticRecordingState Automatic { get; private set; } = new(false, Guid.Empty, "自动录制未启用", null, []);
     public event Action<RecordingState>? Changed;
@@ -82,6 +86,9 @@ internal sealed class RecordingClient : IAsyncDisposable
     private void MarkUnavailable(RecordingState? previous = null, string? error = null)
     {
         StateAvailable = false; AutomaticAvailable = false;
+        if (StopFromSidebar is { Phase: SidebarStopPhase.Requesting } stop &&
+            stop.Target.Matches((previous ?? State).Control))
+            StopFromSidebar = stop with { Phase = SidebarStopPhase.Unconfirmed };
         // Preserve the last control/session for reconciliation; do not invent a
         // stopped/failed recorder or use an optimistic command phase as evidence.
         State = (previous ?? State) with { Message = "录制后台连接中断，当前状态未知。", Error = error };
@@ -109,6 +116,17 @@ internal sealed class RecordingClient : IAsyncDisposable
             Changed?.Invoke(State);
             return;
         }
+        var sidebarStop = StopFromSidebar;
+        bool original = sidebarStop?.Target.Matches(state.Control) == true;
+        bool replacing = _pending == "stop" && sidebarStop?.Target.Matches(State.Control) == true &&
+            !original && state.Active && state.Control is not null;
+        // Once a different live recording is known, a delayed snapshot of the
+        // original stop target must not replace the currently controlled session.
+        if (original && State.Active && State.Control is not null && !sidebarStop!.Target.Matches(State.Control)) return;
+        if (original && (sidebarStop!.Phase == SidebarStopPhase.Saved &&
+            (state.Phase != "Saved" || string.IsNullOrWhiteSpace(state.OutputFile)) ||
+            sidebarStop.Phase == SidebarStopPhase.Saving && state.Phase is ("Starting" or "Recording" or "Paused" or "Pausing")))
+            return;
         bool expected = state.Phase is "Failed" or "Saved" || _pending switch
         {
             "start" or "resume" => state.Phase is "Starting" or "Recording",
@@ -116,7 +134,23 @@ internal sealed class RecordingClient : IAsyncDisposable
             "stop" => state.Phase is "Saving" or "Saved",
             _ => true
         };
-        if (!expected) return;
+        bool unconfirmed = !expected && !replacing && _pending == "stop" &&
+            sidebarStop is { Phase: SidebarStopPhase.Requesting } && sidebarStop.Target.Matches(State.Control) &&
+            Stopwatch.GetElapsedTime(sidebarStop.RequestedAt) >= TimeSpan.FromSeconds(8);
+        if (!expected && !replacing && !unconfirmed) return;
+        if (original)
+        {
+            var phase = state.Phase switch
+            {
+                "Saving" => SidebarStopPhase.Saving,
+                "Saved" => string.IsNullOrWhiteSpace(state.OutputFile) ? SidebarStopPhase.Unconfirmed : SidebarStopPhase.Saved,
+                "Failed" => SidebarStopPhase.Failed,
+                _ => unconfirmed ? SidebarStopPhase.Unconfirmed : sidebarStop!.Phase
+            };
+            StopFromSidebar = sidebarStop! with { Phase = phase };
+        }
+        else if (_pending == "stop" && sidebarStop?.Phase == SidebarStopPhase.Requesting)
+            StopFromSidebar = sidebarStop with { Phase = SidebarStopPhase.Unconfirmed };
         _pending = null; StateAvailable = true; State = state; Changed?.Invoke(state);
     }
     internal HostRequest CreateManualStart(RecordingOptions options) =>
@@ -126,14 +160,20 @@ internal sealed class RecordingClient : IAsyncDisposable
     public Task SendAsync(string action, RecordingOptions? options = null) =>
         SendManualAsync(action, new(Protocol.Version, Guid.NewGuid(), "recording.command", 15000,
             Recording: new(action, options, action == "start" ? null : State.Control, _client)), null);
-    private async Task<string?> SendManualAsync(string action, HostRequest request, Func<Task<bool>>? checkBeforeSend)
+    internal Task SendFromSidebarAsync(string action, RecorderControl target, string phase) =>
+        SendManualAsync(action, new(Protocol.Version, Guid.NewGuid(), "recording.command", 15000,
+            Recording: new(action, Control: target, ClientId: _client)), null, phase);
+    private async Task<string?> SendManualAsync(string action, HostRequest request, Func<Task<bool>>? checkBeforeSend,
+        string? sidebarPhase = null)
     {
+        var expected = sidebarPhase is null ? State.Control : request.Recording!.Control;
         if (_closing || !StateAvailable || _manualSending || _pending is not null || State.Busy && action != "stop") return null;
+        if (sidebarPhase is not null && (expected?.Matches(State.Control) != true || State.Phase != sidebarPhase)) return null;
         // Coalesce manual double taps, but do not drop the first manual action
         // merely because an automatic operation is waiting for its receipt.
         _manualSending = true;
-        var expected = State.Control;
         var previous = State;
+        bool sidebarStop = sidebarPhase is not null && action == "stop";
         bool entered = false;
         try
         {
@@ -145,7 +185,8 @@ internal sealed class RecordingClient : IAsyncDisposable
             // The queue may span a lesson handoff. Never retarget the user's
             // action to that new session; lease renewal alone is not a handoff.
             if ((expected is null ? State.Control is not null : !expected.Matches(State.Control)) ||
-                action == "start" && State.Active || State.Busy && action != "stop")
+                action == "start" && State.Active || State.Busy && action != "stop" ||
+                sidebarPhase is not null && State.Phase != sidebarPhase)
             {
                 State = State with { Error = "录制会话或状态已变化，本次操作未执行，请确认当前会话后重试。" };
                 Changed?.Invoke(State);
@@ -154,6 +195,7 @@ internal sealed class RecordingClient : IAsyncDisposable
             previous = State;
             _generation++;
             _sending = true; _pending = action;
+            if (sidebarStop) StopFromSidebar = new(expected!, SidebarStopPhase.Requesting, Stopwatch.GetTimestamp());
             State = State with { Phase = action switch { "start" or "resume" => "Starting", "pause" => "Pausing", _ => "Saving" }, Message = "后台正在处理录制操作…" };
             Changed?.Invoke(State);
             var response = await RequestAsync(request);
@@ -167,13 +209,27 @@ internal sealed class RecordingClient : IAsyncDisposable
             }
             if (response.Recording is null)
                 throw new InvalidDataException("后台未返回录制状态；" + response.Message);
-            if (response.Outcome != "Succeeded") { _pending = null; Apply(response); throw new InvalidOperationException(response.Message); }
+            if (response.Outcome != "Succeeded")
+            {
+                _pending = null;
+                if (sidebarStop)
+                {
+                    StopFromSidebar = StopFromSidebar! with { Phase = SidebarStopPhase.Rejected };
+                    if (expected!.Matches(response.Recording.Control))
+                        response = response with { Recording = response.Recording with { Error = response.Message } };
+                }
+                Apply(response);
+                if (sidebarStop) return null;
+                throw new InvalidOperationException(response.Message);
+            }
             Apply(response);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             _pending = null;
             if (_closing) return null;
+            if (sidebarStop && StopFromSidebar is { Phase: SidebarStopPhase.Requesting } stop)
+                StopFromSidebar = stop with { Phase = SidebarStopPhase.Unconfirmed };
             if (error is IOException or InvalidDataException or OperationCanceledException or TimeoutException or JsonException or UnauthorizedAccessException)
                 MarkUnavailable(previous, "本次操作未确认；" + error.Message);
             else { State = State with { Message = "录制操作未确认，请查看后台状态", Error = error.Message }; Changed?.Invoke(State); }

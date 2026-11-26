@@ -63,7 +63,7 @@ public partial class QuickAccessWindow : Window
     private bool _studyTask, _recordingTask, _taskOrderDirty;
     private bool _recordingControlSlot, _studyNextSlot;
     private Action? _study;
-    private Action? _openRecording, _pauseRecording, _stopRecording, _openRecordingPlan, _skipAutomaticToday;
+    private Action? _openRecording, _openRecordingPlan, _skipAutomaticToday;
 
     public QuickAccessWindow(string endpoint, Action power, Action pause, Action startClassIsland, Action settings,
         Action<ShortcutEntry> openShortcut, Action manageShortcuts, Action repairShortcut)
@@ -86,6 +86,7 @@ public partial class QuickAccessWindow : Window
         InitializeComponent();
         WireDrawTouch();
         InitializePptStrip();
+        InitializeRecordingControls();
         SelectShortcutPage(false); RefreshCompact();
         _foregroundChanged = (_, _, window, _, _, _, _) => RememberExternalForeground(window);
         _idleTimer.Tick += (_, _) => RefreshHandleOpacity();
@@ -142,7 +143,7 @@ public partial class QuickAccessWindow : Window
         EdgeHandle.LostTouchCapture += (_, e) => { if (_handleTouch == e.TouchDevice) { _handleTouch = null; CancelHandlePress(); } };
         PreviewTouchDown += (_, e) =>
         {
-            if ((_handleTouch ?? _drawTouch ?? _pptTouch) is { } active && active != e.TouchDevice) e.Handled = true;
+            if ((_handleTouch ?? _drawTouch ?? _pptTouch ?? RecordingTouch) is { } active && active != e.TouchDevice) e.Handled = true;
         };
         PreviewKeyDown += (_, e) =>
         {
@@ -153,7 +154,7 @@ public partial class QuickAccessWindow : Window
                 LayoutOptions.Visibility = Visibility.Collapsed;
                 LayoutButton.Focus();
             }
-            else Collapse();
+            else if (!DismissRecordingConfirmation(refocus: true)) Collapse();
             e.Handled = true;
         };
     }
@@ -222,8 +223,10 @@ public partial class QuickAccessWindow : Window
                     button.MinWidth = target;
                     button.MinHeight = target;
                 }
-                foreach (var button in new[] { StudyButton, RecordingButton, RecordingPause, RecordingStop, AutomaticSkipDay, SettingsFooter })
+                foreach (var button in new[] { StudyButton, RecordingButton, RecordingPause, RecordingStop, RecordingConfirmStop,
+                    RecordingCancelStop, AutomaticSkipDay, SettingsFooter })
                     button.MinHeight = target;
+                CancelRecordingPress();
                 ArrangePptActions();
             }
             // Shrink the panel with the user's density, but keep the rail and
@@ -300,6 +303,8 @@ public partial class QuickAccessWindow : Window
         AbortHandleGesture();
         DismissDrawReceipt();
         InvalidatePptPress();
+        CancelRecordingPress();
+        DismissRecordingConfirmation(refocus: false);
         EndMove(save: false, restoreFocus);
         bool wasExpanded = _expanded;
         if (wasExpanded) ShortcutViewRevision++;
@@ -533,7 +538,7 @@ public partial class QuickAccessWindow : Window
     {
         // Do not move controls beneath a finger or keyboard focus in an open panel.
         if (_expanded || !_taskOrderDirty) return;
-        bool recordingFirst = _recordingTask && !_studyTask;
+        bool recordingFirst = _recordingNeedsReview || _recordingTask && !_studyTask;
         var first = recordingFirst ? RecordingCard : StudyCard;
         if (TaskStack.Children[0] != first) { TaskStack.Children.Remove(first); TaskStack.Children.Insert(0, first); }
         _taskOrderDirty = false;
@@ -546,8 +551,8 @@ public partial class QuickAccessWindow : Window
         else { HandleActivity(); ShowEntry(); }
     }
     public void ShowEntry() { if (!_autoHidden && !_closing) { if (!IsVisible) Show(); Position(); } }
-    public void SetRecordingActions(Action open, Action pause, Action stop, Action plan, Action skipToday)
-    { _openRecording = open; _pauseRecording = pause; _stopRecording = stop; _openRecordingPlan = plan; _skipAutomaticToday = skipToday; }
+    public void SetRecordingActions(Action open, Action<string, RecorderControl, string> command, Action plan, Action skipToday)
+    { _openRecording = open; _recordingAction = command; _openRecordingPlan = plan; _skipAutomaticToday = skipToday; }
     public void UpdateAutomaticRecording(AutomaticRecordingState state, bool stateAvailable)
     {
         AutomaticStatus.Text = state.Message;
@@ -555,41 +560,8 @@ public partial class QuickAccessWindow : Window
         AutomaticSkipDay.IsEnabled = stateAvailable;
     }
     private void AutomaticSkipDayClicked(object sender, RoutedEventArgs e) { if (AutomaticSkipDay.IsEnabled && AutomaticSkipDay.Visibility == Visibility.Visible) _skipAutomaticToday?.Invoke(); }
-    public void UpdateRecording(RecordingState state, bool stateAvailable = true)
-    {
-        var phase = HomeRecordingPresentation.Phase(state.Phase, stateAvailable);
-        HomeRecordingPresentation.ShowMark(QuickRecordingPhaseMark, phase.Mark, phase.Brush);
-        bool active = stateAvailable && state.Active;
-        if (_recordingTask != active) { _recordingTask = active; _taskOrderDirty = true; }
-        RefreshTaskOrder();
-        if (!stateAvailable)
-        {
-            RecordingStatus.Text = "录制后台未确认当前状态，等待重新连接。";
-            RecordingStatus.ToolTip = RecordingStatus.Text;
-            RecordingButton.Content = "查看";
-            RefreshRecordingControlSlot();
-            RecordingPause.IsEnabled = RecordingStop.IsEnabled = false;
-            return;
-        }
-        RecordingStatus.Text = HomeRecordingPresentation.Detail(state, stateAvailable);
-        RecordingButton.Content = state.Active ? "控制" : "录制";
-        if (state.Active && state.Control is { Owner: "Automatic", HardDeadline: > 0 } c)
-            RecordingStatus.Text += $" · 至多剩余 {TimeSpan.FromSeconds(Math.Max(0, RecorderDeadline.SecondsUntil(c.HardDeadline))):hh\\:mm\\:ss}";
-        RecordingStatus.ToolTip = RecordingStatus.Text;
-        RefreshRecordingControlSlot();
-        RecordingPause.IsEnabled = RecordingStop.IsEnabled = !state.Busy;
-        RecordingPause.Content = state.Phase == "Paused" ? "继续" : "暂停";
-    }
-    private void RefreshRecordingControlSlot()
-    {
-        if (!_expanded) _recordingControlSlot = _recordingTask;
-        RecordingControls.Visibility = !_recordingControlSlot ? Visibility.Collapsed :
-            _recordingTask ? Visibility.Visible : Visibility.Hidden;
-    }
     private void RecordingClicked(object sender, RoutedEventArgs e) { Collapse(false); _openRecording?.Invoke(); }
     private void RecordingPlanClicked(object sender, RoutedEventArgs e) { Collapse(false); _openRecordingPlan?.Invoke(); }
-    private void RecordingPauseClicked(object sender, RoutedEventArgs e) { if (RecordingPause.IsEnabled && RecordingControls.Visibility == Visibility.Visible) _pauseRecording?.Invoke(); }
-    private void RecordingStopClicked(object sender, RoutedEventArgs e) { if (RecordingStop.IsEnabled && RecordingControls.Visibility == Visibility.Visible) _stopRecording?.Invoke(); }
     private void RailToolsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(false); OpenPanel(); }
     private void RailShortcutsClicked(object sender, RoutedEventArgs e) { SelectShortcutPage(true); OpenPanel(); }
     private void PowerClicked(object sender, RoutedEventArgs e) => PptActionClicked(sender, e);
@@ -630,6 +602,8 @@ public partial class QuickAccessWindow : Window
         {
             ShortcutViewRevision++;
             InvalidatePptPress();
+            CancelRecordingPress();
+            DismissRecordingConfirmation(refocus: false);
         }
         _shortcutsSelected = shortcuts;
         ToolsPage.Visibility = PptQuickStrip.Visibility = shortcuts ? Visibility.Collapsed : Visibility.Visible;

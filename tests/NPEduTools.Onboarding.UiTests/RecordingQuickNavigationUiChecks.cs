@@ -76,7 +76,7 @@ internal static partial class Program
         {
             WorkspaceCall(main, "InitializeRecording");
             typeof(MainWindow).GetField("_quick", WorkspaceFlags)!.SetValue(main, quick);
-            quick.SetRecordingActions(() => { }, () => { }, () => { }, () => WorkspaceCall(main, "ShowRecordingPlan"), () => { });
+            quick.SetRecordingActions(() => { }, (_, _, _) => { }, () => WorkspaceCall(main, "ShowRecordingPlan"), () => { });
             if (scenario != "cold-hidden") { main.Show(); main.UpdateLayout(); main.Hide(); }
             if (scenario == "minimized") { main.Show(); main.WindowState = WindowState.Minimized; }
             quick.OpenPanel(); quick.UpdateLayout();
