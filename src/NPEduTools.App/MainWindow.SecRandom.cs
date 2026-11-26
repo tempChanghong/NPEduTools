@@ -24,7 +24,8 @@ public partial class MainWindow
         if (!ConfirmLeaveWorkspaceCalibration("课堂点名")) return;
 
         var previousPage = origin ?? CaptureWorkspaceOrigin();
-        bool keepCalibration = WorkspaceCalibration.Visibility == Visibility.Visible || ExamAwareWorkspaceHost.Visibility == Visibility.Visible;
+        bool keepCalibration = WorkspaceCalibration.Visibility == Visibility.Visible || ExamAwareWorkspaceHost.Visibility == Visibility.Visible ||
+            ClassroomModeWorkspaceHost.Visibility == Visibility.Visible;
         if (anchor is null && WorkspaceCalibration.IsKeyboardFocusWithin)
             anchor = Keyboard.FocusedElement as FrameworkElement;
         SelectPageCore(false, keepCalibration);

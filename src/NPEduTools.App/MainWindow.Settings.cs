@@ -78,6 +78,8 @@ public partial class MainWindow
     {
         bool settingsVisible = SettingsPage.Visibility == Visibility.Visible;
         bool school = NpepSettingsPanel.Visibility == Visibility.Visible;
+        ClassroomSettingsBack.Visibility = settingsVisible && ConnectionsSettingsPanel.Visibility == Visibility.Visible && _classroomSettingsReturn is not null
+            ? Visibility.Visible : Visibility.Collapsed;
         SettingsCategoryTabs.Visibility = school ? Visibility.Collapsed : Visibility.Visible;
         SettingsHeading.Text = school ? "学校互联" : "设备与连接";
         NpepSettingsTab.Tag = settingsVisible && school ? "active" : null;

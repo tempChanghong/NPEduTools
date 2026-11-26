@@ -96,7 +96,7 @@
           <Border Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,8" />
           <Button x:Name="ExamAwareNav" Content="ExamAware2" ToolTip="ExamAware2 连接" Style="{StaticResource SidebarNavigation}" Click="OpenExamAwareClicked" AutomationProperties.AutomationId="OpenExamAware" />
           <Button x:Name="SecRandomNav" Content="课堂点名" ToolTip="SecRandom 连接与闪抽" Style="{StaticResource SidebarNavigation}" Click="OpenSecRandomClicked" AutomationProperties.AutomationId="OpenSecRandom" />
-          <Button Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
+          <Button x:Name="ClassroomModeNav" Content="课堂模式" Style="{StaticResource SidebarNavigation}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="OpenClassroomMode" />
         </StackPanel></ScrollViewer>
         <StackPanel Grid.Row="2">
           <Button x:Name="AboutNav" Style="{StaticResource SidebarNavigation}" Click="AboutNavClicked" AutomationProperties.AutomationId="AboutTab">
@@ -151,6 +151,7 @@
       <Grid x:Name="Pages" Grid.Row="1" Margin="28,12,28,22">
         <ContentControl x:Name="ExamAwareWorkspaceHost" Visibility="Collapsed" AutomationProperties.AutomationId="ExamAwareWorkspace" />
         <ContentControl x:Name="SecRandomWorkspaceHost" Visibility="Collapsed" AutomationProperties.AutomationId="SecRandomWorkspace" />
+        <ContentControl x:Name="ClassroomModeWorkspaceHost" Visibility="Collapsed" AutomationProperties.AutomationId="ClassroomModeWorkspace" />
         <Grid x:Name="RecordingWorkspace" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
           <WrapPanel Margin="0,0,0,12">
             <Button x:Name="RecordingManualTab" Content="立即录制" Style="{DynamicResource TeacherTab}" Click="RecordingManualTabClicked" AutomationProperties.AutomationId="RecordingManualTab" Margin="0,0,8,0"/>
@@ -468,8 +469,12 @@
         </Grid>
         <Grid x:Name="SettingsPage" Visibility="Collapsed">
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-          <TextBlock x:Name="SettingsHeading" Text="设备与连接" FontSize="30" FontWeight="SemiBold" Margin="0,0,0,18"
-                     Focusable="True" KeyboardNavigation.IsTabStop="False" AutomationProperties.HeadingLevel="Level1" />
+          <WrapPanel Margin="0,0,0,18">
+            <Button x:Name="ClassroomSettingsBack" Visibility="Collapsed" Content="← 返回课堂模式" Style="{DynamicResource TeacherQuiet}" Margin="0,0,10,0"
+                    Click="ReturnToClassroomCheckClicked" AutomationProperties.AutomationId="ReturnToClassroomCheck" />
+            <TextBlock x:Name="SettingsHeading" Text="设备与连接" FontSize="30" FontWeight="SemiBold" VerticalAlignment="Center"
+                       Focusable="True" KeyboardNavigation.IsTabStop="False" AutomationProperties.HeadingLevel="Level1" />
+          </WrapPanel>
           <WrapPanel x:Name="SettingsCategoryTabs" Grid.Row="1" Margin="0,0,0,12">
             <Button x:Name="GeneralSettingsTab" Content="常规" Tag="active" Style="{StaticResource Navigation}" Click="GeneralSettingsClicked" AutomationProperties.AutomationId="GeneralSettingsTab" Margin="0,0,8,0" />
             <Button x:Name="TeachingSettingsTab" Content="课堂工具" Style="{StaticResource Navigation}" Click="TeachingSettingsClicked" AutomationProperties.AutomationId="TeachingSettingsTab" Margin="0,0,8,0" />
@@ -702,7 +707,7 @@
                   <TextBlock x:Name="ConnectionsModeTitle" Text="课堂模式 · 状态未知" Style="{StaticResource SettingsLabel}" />
                   <TextBlock Text="查看当前模式及切换后的影响。" Style="{StaticResource SettingsHint}" />
                 </StackPanel></local:SettingsRow.Header>
-                <Button Content="管理课堂模式" Style="{StaticResource TeacherButton}" Click="OpenClassroomModeClicked" />
+                <Button Content="管理课堂模式" Style="{StaticResource TeacherButton}" Click="OpenClassroomModeClicked" AutomationProperties.AutomationId="SettingsClassroomMode" />
               </local:SettingsRow>
             </Border>
             <Border Style="{StaticResource SettingsGroupSurface}" Padding="16" Margin="0,0,0,10">

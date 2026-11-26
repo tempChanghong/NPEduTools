@@ -183,6 +183,7 @@ public partial class MainWindow : Window
         HideRecordingWorkspace();
         HideExamAwareWorkspace();
         HideSecRandomWorkspace();
+        HideClassroomModeWorkspace();
         AboutPageView.Visibility = Visibility.Collapsed;
         AboutNav.Tag = null;
         if (!settings) PageBreadcrumb.Text = "主页";

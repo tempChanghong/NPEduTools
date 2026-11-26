@@ -29,7 +29,7 @@ public partial class MainWindow
         var previousPage = origin ?? CaptureWorkspaceOrigin();
         if (anchor is null && keepCalibration && WorkspaceCalibration.IsKeyboardFocusWithin)
             anchor = Keyboard.FocusedElement as FrameworkElement;
-        SelectPageCore(false, keepCalibration || SecRandomWorkspaceHost.Visibility == Visibility.Visible);
+        SelectPageCore(false, keepCalibration || SecRandomWorkspaceHost.Visibility == Visibility.Visible || ClassroomModeWorkspaceHost.Visibility == Visibility.Visible);
         _examAwareReturn = returnTo is null ? previousPage : () => { previousPage(); returnTo(); };
         _examAwareReturnFocus = anchor;
         if (_examAwareWindow is null)
@@ -57,6 +57,7 @@ public partial class MainWindow
 
     private Action CaptureWorkspaceOrigin()
     {
+        if (ClassroomModeWorkspaceHost.Visibility == Visibility.Visible) return CaptureClassroomModeReturn();
         if (ExamAwareWorkspaceHost.Visibility == Visibility.Visible)
         {
             var origin = _examAwareReturn;
@@ -75,7 +76,14 @@ public partial class MainWindow
                 TeachingSettingsPanel.Visibility == Visibility.Visible ? "Teaching" :
                 NpepSettingsPanel.Visibility == Visibility.Visible ? "Npep" : "General";
             double offset = SettingsScroll.VerticalOffset;
-            return () => { ShowSettingsCategory(category); SettingsScroll.ScrollToVerticalOffset(offset); };
+            var classroomReturn = _classroomSettingsReturn;
+            return () =>
+            {
+                ShowSettingsCategory(category);
+                _classroomSettingsReturn = classroomReturn;
+                UpdateSettingsNavigation();
+                SettingsScroll.ScrollToVerticalOffset(offset);
+            };
         }
         if (WorkspaceCalibration.Visibility == Visibility.Visible) return RestoreWorkspaceCalibration;
         if (StudyWorkspace.Visibility == Visibility.Visible)
