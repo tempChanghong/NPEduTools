@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -15,6 +17,41 @@ public partial class SoundMeterWindow : Window
     private bool _busy;
     private readonly CalibrationUiOrder _order = new();
     private NoiseProtectionState? _access;
+    private SoundMeterDevice? _previousMeter;
+    private Action? _workspaceChanged;
+    private bool _catalogVerified;
+
+    internal void UseUsbWorkspace(SoundMeterDevice? previous, Action changed)
+    {
+        _previousMeter = previous;
+        _workspaceChanged = changed;
+        if (Content is FrameworkElement root) root.Tag = "UsbWorkspace";
+        if (FindName("MeterHeadingBlock") is FrameworkElement heading) heading.Visibility = Visibility.Collapsed;
+        OpenReference.Content = "核对采样设置";
+        if (previous is not null) Message.Text = "验证后会按设备编号查找上次仪表。";
+    }
+
+    internal string UsbWorkspaceContext => _busy ? "正在核对管理口令和仪表" :
+        Devices.SelectedItem is SoundMeterDevice selected ? $"声级计 · {selected.Name}　|　已选定，尚未开始采样" :
+        _catalogVerified ? "口令已验证　|　" + (Devices.Items.Count > 0 ? "请选声级计" : "尚未找到可用声级计") :
+        _previousMeter is { } previous ? $"上次仪表 · {previous.Name}　|　本次待核对" : "请验证管理口令并查找声级计";
+
+    internal void FocusUsbCredential() => Dispatcher.InvokeAsync(() => ManagementSecret.Focus(), DispatcherPriority.Input);
+
+    private void MeterLayoutChanged(object sender, SizeChangedEventArgs e) => ArrangeMeterDiagnostics(e.NewSize.Width);
+    private void MeterDiagnosticsChanged(object sender, RoutedEventArgs e) =>
+        ArrangeMeterDiagnostics((WorkspacePanel.View(this) as FrameworkElement)?.ActualWidth ?? 0);
+
+    private void ArrangeMeterDiagnostics(double width)
+    {
+        if (DiagnosticDetails is null || FindName("MeterLayout") is not Grid { ColumnDefinitions.Count: >= 2 } layout ||
+            FindName("MeterDiagnosticPane") is not FrameworkElement diagnostics) return;
+        bool twoColumns = width >= 770 && WorkspacePanel.DialogOwner(this).ActualWidth >= 930 && DiagnosticDetails.IsExpanded;
+        layout.ColumnDefinitions[1].Width = new GridLength(twoColumns ? 1 : 0, GridUnitType.Star);
+        Grid.SetColumn(diagnostics, twoColumns ? 1 : 0);
+        Grid.SetRow(diagnostics, twoColumns ? 0 : 1);
+        diagnostics.Margin = twoColumns ? new Thickness(12, 0, 0, 0) : new Thickness(0, 8, 0, 0);
+    }
     private bool ShowAccess(NoiseProtectionState? state, bool invalidateOnChange = false)
     {
         bool reset = (invalidateOnChange || CredentialsPanel.Visibility == Visibility.Collapsed) &&
@@ -23,14 +60,17 @@ public partial class SoundMeterWindow : Window
         if (reset) ResetCredentials();
         _access = state; ManagementLabel.Text = CalibrationAccess.Label(state); ManagementHint.Text = CalibrationAccess.Hint(state);
         ConfigureManagement.IsEnabled = !_busy && state?.ManagementSource != "School";
+        _workspaceChanged?.Invoke();
         return reset;
     }
     private void ResetCredentials()
     {
+        _catalogVerified = false;
         CredentialsPanel.Visibility = Visibility.Visible; ResetVerification.Visibility = Visibility.Collapsed;
         ManagementSecret.Clear(); Devices.ItemsSource = null;
         ReadMeter.IsEnabled = OpenReference.IsEnabled = false;
         ClearReading("请重新验证管理口令并查找仪表。");
+        _workspaceChanged?.Invoke();
     }
     private void ResetVerificationClicked(object sender, RoutedEventArgs e)
     { if (!_busy) ResetCredentials(); }
@@ -44,10 +84,12 @@ public partial class SoundMeterWindow : Window
     {
         _pipe = pipe; InitializeComponent(); DesktopDialogSizing.Attach(this, pipe);
         _expiry.Tick += (_, _) => { if (_received is { } at && Stopwatch.GetElapsedTime(at).TotalSeconds >= 3) ClearReading("读数已过期，请显式重新读取。"); };
-        Loaded += async (_, _) => { _expiry.Start(); long stamp = _order.Advance(); using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
+        Loaded += async (_, _) => { _expiry.Start();
+            if (_busy) return; // The explicit lookup already reads the access state.
+            long stamp = _order.Advance(); using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(3500);
             try { await ReadAccessAsync(deadline.Token, stamp); }
             catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OperationCanceledException or TimeoutException or System.Text.Json.JsonException) { if (_order.Current(stamp) && !_lifetime.IsCancellationRequested) ShowAccess(null); } }; // Never enumerates/opens hardware on load.
-        Closed += (_, _) => { _expiry.Stop(); _order.Advance(); _lifetime.Cancel(); ManagementSecret.Clear(); ClearReading("窗口已关闭。"); };
+        Closed += (_, _) => { _expiry.Stop(); _order.Advance(); _lifetime.Cancel(); _workspaceChanged = null; ManagementSecret.Clear(); ClearReading("窗口已关闭。"); };
     }
     private void ClearReading(string? message = null)
     { _received = null; Reading.Text = "—"; Mode.Text = ""; if (message is not null) Message.Text = message; }
@@ -60,7 +102,8 @@ public partial class SoundMeterWindow : Window
         long stamp = _order.Advance();
         _busy = true; ListDevices.IsEnabled = ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.IsEnabled = ConfigureManagement.IsEnabled = false;
         ClearReading(); Message.Text = "正在核对设备…";
-        if (action == "list") Devices.ItemsSource = null;
+        if (action == "list") { _catalogVerified = false; Devices.ItemsSource = null; }
+        _workspaceChanged?.Invoke();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token); deadline.CancelAfter(5000);
         try
         {
@@ -77,8 +120,25 @@ public partial class SoundMeterWindow : Window
             if (response.Outcome != "Succeeded") return;
             if (action == "list")
             {
-                Devices.ItemsSource = response.SoundMeter?.Devices ?? [];
+                var devices = response.SoundMeter?.Devices ?? [];
+                _catalogVerified = true;
+                if (_workspaceChanged is not null)
+                {
+                    var duplicates = devices.GroupBy(device => device.Name)
+                        .Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
+                    devices = devices.Select(device => duplicates.Contains(device.Name) ? device with
+                    {
+                        Name = device.Name + " · " + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(device.Path)))[..8]
+                    } : device).ToArray();
+                }
+                Devices.ItemsSource = devices;
                 Message.Text = (_access?.ManagementSource == "School" ? "学校" : "本机") + "管理口令验证通过；" + response.Message;
+                if (_previousMeter is { } previous && _workspaceChanged is not null)
+                {
+                    Devices.SelectedItem = devices.FirstOrDefault(device => device.Path == previous.Path);
+                    if (Devices.SelectedItem is null)
+                        Message.Text = "未找到上次仪表。可插回原仪表后重新查找，也可明确选择另一支；原草稿暂时保留。";
+                }
                 if (response.SoundMeter?.Devices is { Count: > 0 })
                 { CredentialsPanel.Visibility = Visibility.Collapsed; ResetVerification.Visibility = Visibility.Visible; }
             }
@@ -97,13 +157,20 @@ public partial class SoundMeterWindow : Window
         {
             _busy = false;
             if (!_lifetime.IsCancellationRequested) { ListDevices.IsEnabled = Devices.IsEnabled = true; ConfigureManagement.IsEnabled = _access?.ManagementSource != "School"; ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
+            _workspaceChanged?.Invoke();
         }
     }
     private async void ListClicked(object sender, RoutedEventArgs e) => await ExecuteAsync("list");
     private async void ReadClicked(object sender, RoutedEventArgs e) => await ExecuteAsync("read");
     private void DeviceSelected(object sender, SelectionChangedEventArgs e)
-    { ClearReading(); if (!_busy) ReadMeter.IsEnabled = OpenReference.IsEnabled = Devices.SelectedItem is SoundMeterDevice; }
-    internal Action<NoiseReferenceWindow>? OpenWorkspaceReference { get; set; }
+    {
+        var selected = Devices.SelectedItem as SoundMeterDevice;
+        ClearReading(_workspaceChanged is not null && selected is not null ? "已选仪表，可以核对采样设置。" : null);
+        if (!_busy) ReadMeter.IsEnabled = OpenReference.IsEnabled = selected is not null;
+        _workspaceChanged?.Invoke();
+    }
+
+    internal Action<NoiseReferenceWindow, SoundMeterDevice>? OpenWorkspaceReference { get; set; }
     private void ReferenceClicked(object sender, RoutedEventArgs e)
     {
         if (_busy || Devices.SelectedItem is not SoundMeterDevice selected) return;
@@ -111,7 +178,7 @@ public partial class SoundMeterWindow : Window
         var reference = new NoiseReferenceWindow(_pipe, selected.Path) { Owner = WorkspacePanel.DialogOwner(this) };
         ((PasswordBox)reference.FindName("ManagementSecret")).Password = ManagementSecret.Password;
         if (OpenWorkspaceReference is not null && _access is { } verified) reference.UseVerifiedAccess(verified);
-        if (OpenWorkspaceReference is { } open) open(reference); else reference.ShowDialog();
+        if (OpenWorkspaceReference is { } open) open(reference, selected); else reference.ShowDialog();
     }
     private async void ManagementClicked(object sender, RoutedEventArgs e)
     {

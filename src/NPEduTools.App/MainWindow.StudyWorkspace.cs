@@ -14,6 +14,7 @@ public partial class MainWindow
     private string _workspaceTab = "Manual";
     private string _homeStudyTarget = "Manual";
     private Window? _workspaceCalibrationController;
+    private SoundMeterDevice? _usbPreviousMeter;
     private NoiseCalibrationWindow? _workspaceQuickCalibrationController;
     private NoiseReferenceWindow? _workspaceManualReferenceController;
     private StudySeatingUploadWindow? _workspaceSeatingController;
@@ -222,12 +223,27 @@ public partial class MainWindow
 
     private void ShowWorkspaceCalibration()
     {
+        if (WorkspaceCalibration.IsVisible) { RestoreWindow(); return; }
         SelectPage(false); HomePage.Visibility = Visibility.Collapsed;
         HomeNav.Tag = null; StudyNav.Tag = "active"; PageBreadcrumb.Text = "自习 / 联机校准 (Beta)";
         WorkspaceCalibration.Visibility = Visibility.Visible;
-        var meter = new SoundMeterWindow(_pipe) { OpenWorkspaceReference = ShowWorkspaceReference };
-        SetWorkspaceCalibration(meter);
+        WorkspaceUsbBack.Content = _workspaceTab switch
+        {
+            "School" => "← 返回学校定时自习",
+            "Reports" => "← 返回自习报告",
+            _ => "← 返回手动自习"
+        };
+        ShowUsbMeterPicker();
         RestoreWindow();
+        WorkspaceUsbBack.Focus();
+    }
+
+    private void ShowUsbMeterPicker()
+    {
+        var meter = new SoundMeterWindow(_pipe) { OpenWorkspaceReference = ShowWorkspaceReference };
+        meter.UseUsbWorkspace(_usbPreviousMeter, RefreshUsbWorkspace);
+        SetWorkspaceCalibration(meter);
+        RefreshUsbWorkspace();
     }
 
     private void ShowWorkspaceQuickCalibration()
@@ -268,8 +284,52 @@ public partial class MainWindow
         HomeNav.Tag = null; StudyNav.Tag = "active"; PageBreadcrumb.Text = "自习 / 联机校准 (Beta)";
         WorkspaceCalibration.Visibility = Visibility.Visible;
     }
-    private void ShowWorkspaceReference(NoiseReferenceWindow reference)
-    { SetWorkspaceCalibration(reference); }
+    private void ShowWorkspaceReference(NoiseReferenceWindow reference, SoundMeterDevice meter)
+    {
+        _usbPreviousMeter = meter;
+        reference.UseUsbWorkspace(meter, RefreshUsbWorkspace);
+        SetWorkspaceCalibration(reference);
+        RefreshUsbWorkspace();
+    }
+
+    private void RefreshUsbWorkspace()
+    {
+        var reference = _workspaceCalibrationController as NoiseReferenceWindow;
+        int active = reference?.UsbWorkspaceStep ?? 0;
+        WorkspaceUsbConnection.Content = reference?.UsbNeedsMeterCheck == true ? "重新查找仪表" :
+            reference is null ? "连接仪表" : "更换或重查仪表";
+        WorkspaceUsbConnection.IsEnabled = reference is null || reference.CanChangeUsbMeter;
+        WorkspaceUsbSampling.IsEnabled = reference?.CanShowUsbSampling == true;
+        WorkspaceUsbReview.IsEnabled = reference?.CanShowUsbReview == true;
+        WorkspaceUsbPrepare.Visibility = reference is { UsbWorkspaceStep: > 0 } &&
+            reference.CanShowUsbPreparation ? Visibility.Visible : Visibility.Collapsed;
+        WorkspaceUsbContext.Text = _workspaceCalibrationController switch
+        {
+            SoundMeterWindow picker => picker.UsbWorkspaceContext,
+            NoiseReferenceWindow page => page.UsbWorkspaceContext,
+            _ => ""
+        };
+        var tabs = new[] { WorkspaceUsbConnection, WorkspaceUsbSampling, WorkspaceUsbReview };
+        for (int i = 0; i < tabs.Length; i++)
+        {
+            tabs[i].Tag = i == active ? "active" : null;
+            System.Windows.Automation.AutomationProperties.SetItemStatus(tabs[i],
+                i == active ? "当前步骤" : i < active ? "已进入后续步骤" : "后续步骤");
+        }
+    }
+
+    private void UsbConnectionClicked(object sender, RoutedEventArgs e)
+    {
+        if (_workspaceCalibrationController is not NoiseReferenceWindow { CanChangeUsbMeter: true }) return;
+        ShowUsbMeterPicker();
+        if (_workspaceCalibrationController is SoundMeterWindow meter) meter.FocusUsbCredential();
+    }
+    private void UsbPreparationClicked(object sender, RoutedEventArgs e) =>
+        (_workspaceCalibrationController as NoiseReferenceWindow)?.ShowUsbPreparation();
+    private void UsbSamplingClicked(object sender, RoutedEventArgs e) =>
+        (_workspaceCalibrationController as NoiseReferenceWindow)?.ShowUsbSampling();
+    private void UsbReviewClicked(object sender, RoutedEventArgs e) =>
+        (_workspaceCalibrationController as NoiseReferenceWindow)?.ShowUsbReview();
     private void SetWorkspaceCalibration(Window controller)
     {
         CloseWorkspaceCalibration();
@@ -285,7 +345,23 @@ public partial class MainWindow
         previous?.Close();
         WorkspaceCalibrationHost.Content = null;
     }
-    private void ReturnFromCalibrationClicked(object sender, RoutedEventArgs e) => ShowStudyWorkspace(_workspaceTab);
+    private void ReturnFromCalibrationClicked(object sender, RoutedEventArgs e)
+    {
+        string origin = _workspaceTab;
+        ShowStudyWorkspace(origin);
+        Dispatcher.InvokeAsync(() =>
+        {
+            var source = origin switch
+            {
+                "School" => _studyMonitoringWindow?.OpenMeterCalibration,
+                "Reports" => ReportCalibrationButton,
+                _ => _noiseWindow?.ManualCalibrationLink
+            };
+            if (source is not { IsVisible: true }) return;
+            source.BringIntoView();
+            source.Focus();
+        }, DispatcherPriority.Input);
+    }
     private async void RefreshWorkspaceReportsClicked(object sender, RoutedEventArgs e) => await RefreshWorkspaceReportsAsync();
     private void CancelWorkspaceReports()
     {

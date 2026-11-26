@@ -26,6 +26,7 @@ public partial class NoiseReferenceWindow : Window
         ReferenceCredentials.Visibility = Visibility.Visible;
         VerifiedCredentialHint.Visibility = Visibility.Collapsed;
         if (clear) ManagementSecret.Clear();
+        if (InUsbWorkspace) RefreshStatus.Content = "验证口令／刷新";
     }
     private async Task ReadAccessAsync(CancellationToken token, long stamp)
     {
@@ -91,7 +92,7 @@ public partial class NoiseReferenceWindow : Window
         RoleChoice.SelectedIndex = 0;
         _timer.Tick += async (_, _) => await ReadAsync();
         Loaded += async (_, _) => { if (!_manualWorkspace) { _timer.Start(); await ReadAsync(); } };
-        Closed += (_, _) => { _timer.Stop(); _order.Advance(); _lifetime.Cancel(); ManagementSecret.Clear(); };
+        Closed += (_, _) => { _timer.Stop(); _order.Advance(); _lifetime.Cancel(); _usbWorkspaceChanged = null; ManagementSecret.Clear(); };
         Closing += async (_, e) =>
         {
             _autoFieldDraft = null;
@@ -157,17 +158,23 @@ public partial class NoiseReferenceWindow : Window
             throw new InvalidDataException("参考校准状态格式不兼容，请刷新或更新后台。");
         bool finishedSample = _state?.State == "Sampling" && state.State != "Sampling";
         var previous = _state;
-        bool changed = previous?.Revision != state.Revision || previous.InstanceId != state.InstanceId;
+        bool changed = previous?.Revision != state.Revision || previous.InstanceId != state.InstanceId ||
+            InUsbWorkspace && previous.DeviceId != state.DeviceId;
         bool newDraft = previous?.Draft?.Id != state.Draft?.Id;
         if (changed && !_busy && !_verifying) OperationMessage.Text = "";
         var previousSelected = (SampleList.SelectedItem as SampleRow)?.Id;
+        ObserveUsbInterruption(previous, state);
         _state = state;
         bool usb = state.Draft?.MeterDevicePath is not null || _meterPath is not null;
-        bool field = state.Draft?.Workflow == "Field";
+        var shownDraft = InUsbWorkspace ? CurrentUsbDraft(state) : state.Draft;
+        bool field = shownDraft?.Workflow == "Field";
         if (changed) AcceptReferenceWarning.IsChecked=false;
-        AcceptReferenceWarning.Visibility = state.Evaluation.Assessment?.WarningRequired == true ? Visibility.Visible : Visibility.Collapsed;
+        UsbReviewWarningSurface.Visibility = AcceptReferenceWarning.Visibility =
+            state.Evaluation.Assessment?.WarningRequired == true && (!InUsbWorkspace || shownDraft is not null)
+            ? Visibility.Visible : Visibility.Collapsed;
         SamplingHeading.Text = _manualWorkspace ? "本段采样与同期读数" :
-            field ? "2　自动采集两段现场统计" : usb ? "2　采样与自动取得同期读数" : "2　采样与填入同期读数";
+            field ? InUsbWorkspace ? "现场校准" : "2　自动采集两段现场统计" :
+            usb ? InUsbWorkspace ? "同期采样" : "2　采样与自动取得同期读数" : "2　采样与填入同期读数";
         ManualReferenceInputs.Visibility = SameWindow.Visibility = AttachReference.Visibility = usb ? Visibility.Collapsed : Visibility.Visible;
         ReferenceInstructions.Text = usb ? "同期读数由 USB 自动取得，不能手动覆盖；预热、跨窗口、迟到和不完整数据不用于参考。模式、MAX、低电量、量程变化或断线会使本段作废。" :
             ManualReferenceInstructions;
@@ -180,9 +187,11 @@ public partial class NoiseReferenceWindow : Window
             $"{(state.Error is not null ? "校准不可用" : state.InvalidationReason is not null ? "校准已失效" : NoiseCalibrationPresentation.MethodName(p.Method))} · {p.Instrument} · A/{p.TimeWeighting} · 偏移 {p.OffsetDb:+0.00;-0.00;0.00} dB\n" +
             (NoiseReferenceCalibration.Describe(p) is {} note?note+"\n":"") +
             (state.Error is not null || state.InvalidationReason is not null ? "参考不可用：" + (state.Error ?? state.InvalidationReason) + "；请新建草稿重新校准。" : "正式监测会核对所选设备、输入设置与格式；匹配后另行显示估算 dB(A)，原始 dBFS 保留。");
-        DraftStatus.Text = state.Draft is { } d ? $"当前草稿：{d.Instrument} · A/{d.TimeWeighting} · 波动 ≤ {d.StabilityDb:F1} dB · " +
+        DraftStatus.Text = shownDraft is { } d ? $"当前草稿：{d.Instrument} · A/{d.TimeWeighting} · 波动 ≤ {d.StabilityDb:F1} dB · " +
             (field?$"自动通过 ≤ {d.CheckToleranceDb:F1} dB，复核硬上限 5 dB":$"复核差值 ≤ {d.CheckToleranceDb:F1} dB") : "请先明确检查门槛并新建草稿。";
-        if (newDraft && state.Draft is { } draft && (!_manualWorkspace || ManualDraft(state) is not null))
+        if (InUsbWorkspace && shownDraft is null && state.Draft is not null)
+            DraftStatus.Text = "已有其他仪表或麦克风的草稿。继续准备时需明确确认替换，已保存的参考保留。";
+        if (newDraft && shownDraft is { } draft && (!_manualWorkspace || ManualDraft(state) is not null))
         {
             _renderingPreferences=true;
             WorkflowChoice.SelectedValue = draft.Workflow;
@@ -201,10 +210,11 @@ public partial class NoiseReferenceWindow : Window
             (_manualWorkspace ? "返回后本段仍可完成，到时自动释放设备。" : "关闭此窗口不会无限占用设备，到时自动释放。") :
             state.State == "Busy" ? "当前采集占用或运行保护生效（准备／自习／考试、暂停或状态未确认），暂不可操作参考校准。" :
             state.State == "Unsupported" ? "当前后台尚不支持 A 加权参考采样，请更新后台。" : state.CaptureMessage ?? "请选择电平开始采样；重采同一电平会替换其旧统计和参考读数。";
+        if (InUsbWorkspace) RenderUsbSamplingStatus(state, shownDraft);
         if (_manualWorkspace) RenderManualSegments(previous, state, changed);
         else if (changed)
         {
-            var samples = state.Draft?.Samples ?? [];
+            var samples = shownDraft?.Samples ?? [];
             SampleList.ItemsSource = samples.Select(s => new SampleRow(s.Id,
                 $"{(field?s.Role=="Primary"?"第一段":"复核段":Role(s.Role))} · {Quality(s.Quality)} · {s.WindowStartedAt.ToLocalTime():HH:mm:ss}–{s.WindowEndedAt.ToLocalTime():HH:mm:ss}\n" +
                 $"A 加权数字统计 {Number(s.DigitalDbfs)} dBFS · 波动 {Number(s.MaximumDbfs - s.MinimumDbfs)} dB · 覆盖 {s.Coverage:P0} · 削波 {s.ClippedPercent:F2}% · 参考 {Number(s.ReferenceDbA)} dB(A)" +
@@ -216,13 +226,15 @@ public partial class NoiseReferenceWindow : Window
         var evaluation = state.Evaluation;
         EvaluationStatus.Text = evaluation.Message + (evaluation.OffsetDb is { } offset ?
             $"\n候选偏移 {offset:+0.00;-0.00;0.00} dB · {(field?"第二段偏移复核差值":"第二电平复核差值")} {Number(evaluation.CheckErrorDb)} dB" : "");
+        if (InUsbWorkspace && shownDraft is null) EvaluationStatus.Text = "当前仪表暂无可复核的同期采样。";
         if (state.Error is not null) OperationMessage.Text = "外部参考文件不可用，原文件已保留；未应用任何新值。";
         if (!_manualWorkspace && _meterPath is not null)
         {
-            if (state.Draft?.MeterDevicePath != _meterPath) _step = 1;
+            if (state.Draft?.MeterDevicePath != _meterPath || InUsbWorkspace && shownDraft is null) _step = 1;
             else if (state.State == "Sampling") _step = 2;
             else if (newDraft) _step = state.Evaluation.Ready ? 3 : 2;
-            else if (finishedSample && (state.Evaluation.Ready || state.Draft.Samples.Any(s => s.Role == "Check" || s.Quality != "Good"))) _step = 3;
+            else if (finishedSample && (state.Evaluation.Ready || state.Draft.Samples.Any(s => s.Role == "Check" || s.Quality != "Good")))
+                _step = InUsbWorkspace && _usbNeedsMeterCheck ? 2 : 3;
         }
         UpdateButtons();
         ContinueFieldSequence(state);
@@ -284,14 +296,17 @@ public partial class NoiseReferenceWindow : Window
         ConfigureManagement.IsEnabled = !_busy && !_closing && !_verifying && _access?.ManagementSource != "School";
         bool draft = idle && _state!.Draft is not null;
         bool matchingDraft = draft && _state!.Draft!.MeterDevicePath == _meterPath && _state.Draft.Workflow==SelectedWorkflow;
+        if (InUsbWorkspace) matchingDraft &= CurrentUsbDraft(_state) is not null && !_usbNeedsMeterCheck;
         WorkflowChoice.IsEnabled=idle;
         BeginDraft.IsEnabled = idle && _state!.DeviceId is not null;
-        StartSample.IsEnabled = matchingDraft;
-        CancelSample.IsEnabled = !_busy && !_closing && _connected && _state is { State: "Sampling" };
+        StartSample.IsEnabled = matchingDraft && (!InUsbWorkspace || _autoFieldDraft is null);
+        CancelSample.IsEnabled = !_busy && !_closing && _connected && _state is { State: "Sampling" } &&
+            (!InUsbWorkspace || _ownedSampleDraft == CurrentUsbDraft(_state)?.Id && _ownedSamplingRevision == _state.Revision);
         RemoveSample.IsEnabled = matchingDraft && SampleList.SelectedItem is SampleRow;
         AttachReference.IsEnabled = RemoveSample.IsEnabled && _state!.Draft!.MeterDevicePath is null;
         ConfirmProfile.IsEnabled = matchingDraft && _state!.Evaluation.Ready && (_state.Evaluation.Assessment?.WarningRequired!=true || AcceptReferenceWarning.IsChecked==true);
-        ClearProfile.IsEnabled = idle && _state!.Profile is not null;
+        ClearProfile.IsEnabled = idle && _state!.Profile is { } profile &&
+            (!InUsbWorkspace || profile.MeterDevicePath == _meterPath && profile.DeviceId == _state.DeviceId);
         if (!_connected)
         {
             ReferenceHealth.Text = "后台连接待确认 · 旧状态不能用于保存";
@@ -301,6 +316,7 @@ public partial class NoiseReferenceWindow : Window
             MeterStatus.Text = "仪表读数待确认 · 不沿用旧 USB 读数";
         }
         UpdateSteps();
+        _usbWorkspaceChanged?.Invoke();
     }
     private void UpdateSteps()
     {
@@ -330,7 +346,7 @@ public partial class NoiseReferenceWindow : Window
         }
         if (_busy || _closing || _verifying || _connected && (_state?.State == "Sampling" || _autoFieldDraft is not null)) return;
         if (!_connected && step != 1) return;
-        if (step != 1 && _state?.Draft?.MeterDevicePath != _meterPath) return;
+        if (step != 1 && (_state?.Draft?.MeterDevicePath != _meterPath || InUsbWorkspace && CurrentUsbDraft(_state) is null)) return;
         _step = step; UpdateSteps(); ReferencePageScroll.ScrollToTop();
     }
     private void SetupClicked(object sender, RoutedEventArgs e) => Navigate(1);
@@ -342,6 +358,18 @@ public partial class NoiseReferenceWindow : Window
         if (_busy || _closing || _verifying || _state is null || _lifetime.IsCancellationRequested ||
             (_manualWorkspace && (!_manualVisible || !_connected || (action is not ("begin" or "clear") && ManualDraft(_state) is null))))
             return;
+        if (InUsbWorkspace && (!_connected || _usbNeedsMeterCheck ||
+            action is not ("begin" or "clear") && CurrentUsbDraft(_state) is null ||
+            action == "cancel" && (_ownedSampleDraft != CurrentUsbDraft(_state)?.Id || _ownedSamplingRevision != _state.Revision))) return;
+        if (InUsbWorkspace && !NoiseManagementContract.SecretValid(ManagementSecret.Password))
+        {
+            RestoreCredentials(false);
+            _step = 1;
+            OperationMessage.Text = "请先输入当前管理口令。原草稿和采样记录保留。";
+            UpdateButtons();
+            ManagementSecret.Focus();
+            return;
+        }
         double? stability = null, tolerance = null;
         if (action == "begin")
         {
@@ -378,6 +406,12 @@ public partial class NoiseReferenceWindow : Window
             if (action == "cancel" && reply.Outcome == "Succeeded")
             { _ownedSampleDraft = null; _ownedSamplingRevision = null; }
             if (reply.NoiseReference is { } state) Render(state);
+            if (InUsbWorkspace && reply.ErrorCode is "MANAGEMENT_SECRET_INVALID" or "MANAGEMENT_NOT_CONFIGURED")
+            {
+                RestoreCredentials(true);
+                _step = 1;
+                UpdateButtons();
+            }
             if (_manualWorkspace && reply.Outcome == "Succeeded")
             {
                 if (action == "begin" && ManualDraft(_state) is not null) _step = 2;
@@ -409,7 +443,8 @@ public partial class NoiseReferenceWindow : Window
     private async void RefreshClicked(object sender, RoutedEventArgs e)
     {
         if (_busy || _closing || _verifying || _lifetime.IsCancellationRequested) return;
-        if (_manualWorkspace && (_step != 1 || string.IsNullOrEmpty(ManagementSecret.Password)))
+        if (_manualWorkspace && (_step != 1 || string.IsNullOrEmpty(ManagementSecret.Password)) ||
+            InUsbWorkspace && CredentialsAreHidden())
         { await ReadCoreAsync(true); return; }
         string? manualSecret = _manualWorkspace ? ManagementSecret.Password : null;
         _busy = _verifying = true; _order.Advance(); UpdateButtons();
@@ -447,7 +482,8 @@ public partial class NoiseReferenceWindow : Window
         // Status polls continue inside a modal dialog; consent belongs to this snapshot.
         var confirmedState = _state;
         if (confirmedState.Draft is { } draft &&
-            (draft.Samples.Count > 0 || _manualWorkspace && ManualDraft(confirmedState) is null) && !confirm()) return;
+            (draft.Samples.Count > 0 || _manualWorkspace && ManualDraft(confirmedState) is null ||
+             InUsbWorkspace && CurrentUsbDraft(confirmedState) is null) && !confirm()) return;
         await SendAsync("begin", confirmedState: confirmedState);
     }
     private async void BeginClicked(object sender, RoutedEventArgs e) =>
@@ -455,8 +491,16 @@ public partial class NoiseReferenceWindow : Window
             "新建外部参考草稿", MessageBoxButton.OKCancel) == MessageBoxResult.OK);
     private async void StartClicked(object sender, RoutedEventArgs e)
     {
-        var role = SelectedWorkflow == "Field" ? "Primary" : RoleChoice.SelectedValue as string;
+        if (InUsbWorkspace && _autoFieldDraft is not null) return;
+        var role = SelectedWorkflow == "Field"
+            ? InUsbWorkspace && CanResumeUsbCheck(_state) ? "Check" : "Primary"
+            : RoleChoice.SelectedValue as string;
         var snapshot = _state;
+        if (InUsbWorkspace && role == "Primary" && SelectedWorkflow == "Field" &&
+            CurrentUsbDraft(snapshot)?.Samples.Count > 0 &&
+            MessageBox.Show(WorkspacePanel.DialogOwner(this), "重采两段会替换当前草稿的两段采样。已保存的参考保留。",
+                "重采两段", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) != MessageBoxResult.OK)
+            return;
         if (_manualWorkspace && ManualDraft(snapshot)?.Samples.Any(sample => sample.Role == role) == true &&
             MessageBox.Show(WorkspacePanel.DialogOwner(this), "重新采样会替换该电平的原统计和同期读数。其他采样段保留。继续吗？",
                 "重新采样", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) != MessageBoxResult.OK)

@@ -257,10 +257,41 @@
           <Border x:Name="WorkspaceReportTools" Grid.Row="2" Visibility="{Binding Visibility, ElementName=WorkspaceReports}"
                   BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0"><WrapPanel>
             <Button Content="设备与校准" Click="WorkspaceDevicesClicked" Style="{DynamicResource TeacherQuiet}" Margin="0,0,8,0"/>
-            <Button Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{DynamicResource TeacherQuiet}"/>
+            <Button x:Name="ReportCalibrationButton" Content="联机校准 (Beta) →" Click="WorkspaceCalibrationClicked" Style="{DynamicResource TeacherQuiet}"/>
           </WrapPanel></Border>
         </Grid>
-        <Grid x:Name="WorkspaceCalibration" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><Button Content="← 返回自习" Click="ReturnFromCalibrationClicked" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Margin="0,0,0,10"/><ContentControl x:Name="WorkspaceCalibrationHost" Grid.Row="1"/></Grid>
+        <Grid x:Name="WorkspaceCalibration" Visibility="Collapsed">
+          <Grid.Resources>
+            <Style x:Key="UsbStepButton" TargetType="Button" BasedOn="{StaticResource TeacherTab}">
+              <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Background" Value="Transparent"/>
+                  <Setter Property="BorderBrush" Value="Transparent"/>
+                </Trigger>
+              </Style.Triggers>
+            </Style>
+          </Grid.Resources>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <StackPanel Margin="4,0,4,8">
+            <DockPanel LastChildFill="False">
+              <Button x:Name="WorkspaceUsbBack" DockPanel.Dock="Left" Content="← 返回自习" Click="ReturnFromCalibrationClicked"
+                      Style="{DynamicResource TeacherButton}" AutomationProperties.AutomationId="UsbCalibrationBack"/>
+              <Button x:Name="WorkspaceUsbPrepare" DockPanel.Dock="Right" Content="采样设置" Click="UsbPreparationClicked"
+                      Style="{DynamicResource TeacherQuiet}" Visibility="Collapsed"/>
+            </DockPanel>
+            <UniformGrid Columns="3" Margin="0,4,0,4">
+              <Button x:Name="WorkspaceUsbConnection" Content="连接仪表" Click="UsbConnectionClicked" Style="{StaticResource UsbStepButton}"
+                      MinHeight="36" AutomationProperties.AutomationId="UsbStepConnection"/>
+              <Button x:Name="WorkspaceUsbSampling" Content="同期采样" Click="UsbSamplingClicked" Style="{StaticResource UsbStepButton}"
+                      MinHeight="36" AutomationProperties.AutomationId="UsbStepSampling"/>
+              <Button x:Name="WorkspaceUsbReview" Content="复核保存" Click="UsbReviewClicked" Style="{StaticResource UsbStepButton}"
+                      MinHeight="36" AutomationProperties.AutomationId="UsbStepReview"/>
+            </UniformGrid>
+            <TextBlock x:Name="WorkspaceUsbContext" TextWrapping="Wrap" FontSize="13"
+                       Foreground="{DynamicResource TeacherMutedBrush}" AutomationProperties.AutomationId="UsbCurrentEquipment"/>
+          </StackPanel>
+          <ContentControl x:Name="WorkspaceCalibrationHost" Grid.Row="1"/>
+        </Grid>
         <Grid x:Name="WorkspaceQuickCalibration" Visibility="Collapsed">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
           <Button x:Name="WorkspaceQuickCalibrationBack" Content="← 返回学校定时自习" Click="ReturnFromQuickCalibrationClicked"

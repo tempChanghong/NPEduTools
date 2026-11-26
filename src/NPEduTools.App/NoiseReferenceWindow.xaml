@@ -69,6 +69,61 @@
       <Setter Property="Padding" Value="14,12"/>
       <Setter Property="Margin" Value="0,0,0,8"/>
      </DataTrigger>
+     <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+      <Setter Property="Padding" Value="14,11"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+     </DataTrigger>
+    </Style.Triggers>
+   </Style>
+   <Style x:Key="ReferenceSectionHeading" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="18"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Style.Triggers>
+     <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+      <Setter Property="FontSize" Value="16"/>
+     </DataTrigger>
+    </Style.Triggers>
+   </Style>
+   <Style x:Key="UsbWarningSurface" TargetType="Border">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Margin" Value="0,0,0,12"/>
+    <Style.Triggers>
+     <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+      <Setter Property="Background" Value="{DynamicResource TeacherPageBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource TeacherWarningBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="Margin" Value="0,0,0,6"/>
+     </DataTrigger>
+    </Style.Triggers>
+   </Style>
+   <Style x:Key="UsbFooterPrimary" TargetType="Button" BasedOn="{StaticResource TeacherPrimary}">
+    <Setter Property="Padding" Value="14,8"/>
+    <Style.Triggers>
+     <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+      <Setter Property="MinHeight" Value="38"/>
+      <Setter Property="Padding" Value="14,5"/>
+     </DataTrigger>
+    </Style.Triggers>
+   </Style>
+   <Style x:Key="UsbFooterButton" TargetType="Button" BasedOn="{StaticResource TeacherButton}">
+    <Setter Property="Padding" Value="14,8"/>
+    <Style.Triggers>
+     <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+      <Setter Property="MinHeight" Value="38"/>
+      <Setter Property="Padding" Value="12,5"/>
+     </DataTrigger>
+    </Style.Triggers>
+   </Style>
+   <Style x:Key="UsbCompactExpander" TargetType="Expander">
+    <Style.Triggers>
+     <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Foreground" Value="{DynamicResource TeacherMutedBrush}"/>
+     </DataTrigger>
     </Style.Triggers>
    </Style>
    <Style x:Key="ReferenceReadingSurface" TargetType="Border">
@@ -105,6 +160,9 @@
       <Style.Triggers>
        <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="ManualWorkspace">
         <Setter Property="Margin" Value="16,12"/>
+       </DataTrigger>
+       <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+        <Setter Property="Margin" Value="12,4,12,10"/>
        </DataTrigger>
       </Style.Triggers>
      </Style>
@@ -186,6 +244,16 @@
          </MultiDataTrigger.Conditions>
          <Setter Property="Visibility" Value="Collapsed"/>
         </MultiDataTrigger>
+        <DataTrigger Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace">
+         <Setter Property="Margin" Value="0,0,0,6"/>
+        </DataTrigger>
+        <MultiDataTrigger>
+         <MultiDataTrigger.Conditions>
+          <Condition Binding="{Binding Tag, ElementName=ReferenceRoot}" Value="UsbWorkspace"/>
+          <Condition Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value=""/>
+         </MultiDataTrigger.Conditions>
+         <Setter Property="Visibility" Value="Collapsed"/>
+        </MultiDataTrigger>
        </Style.Triggers>
       </Style>
      </TextBlock.Style>
@@ -193,7 +261,7 @@
 
     <Border x:Name="PreparePanel" Style="{StaticResource ReferenceCardStyle}">
      <StackPanel>
-      <TextBlock Text="准备校准" FontSize="18" FontWeight="SemiBold"/>
+      <TextBlock Text="准备校准" Style="{StaticResource ReferenceSectionHeading}"/>
       <TextBlock Text="仪表拾音头放在麦克风附近。使用 A 加权，关闭 MAX，保持设备位置与输入设置不变。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,4,0,8" FontSize="13"/>
       <StackPanel x:Name="ReferenceCredentials">
        <TextBlock x:Name="ManagementLabel" Text="管理口令"/>
@@ -239,7 +307,7 @@
 
     <Border x:Name="SamplePanel" Style="{StaticResource ReferenceCardStyle}">
      <StackPanel x:Name="ReferenceSampleStage">
-      <TextBlock x:Name="SamplingHeading" Text="采样与填入同期读数" FontSize="18" FontWeight="SemiBold"/>
+      <TextBlock x:Name="SamplingHeading" Text="采样与填入同期读数" Style="{StaticResource ReferenceSectionHeading}"/>
       <TextBlock x:Name="SamplingInstructions" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,4,0,10" FontSize="13"/>
       <Grid x:Name="ReferenceSampleLayout">
        <Grid.ColumnDefinitions>
@@ -334,15 +402,17 @@
 
     <Border x:Name="ResultPanel" Style="{StaticResource ReferenceCardStyle}">
      <StackPanel>
-      <TextBlock Text="复核结果" FontSize="18" FontWeight="SemiBold"/>
+      <TextBlock Text="复核结果" Style="{StaticResource ReferenceSectionHeading}"/>
       <TextBlock x:Name="EvaluationStatus" TextWrapping="Wrap" Margin="0,10,0,12"/>
-      <CheckBox x:Name="AcceptReferenceWarning" Visibility="Collapsed" Margin="0,0,0,12" Checked="WarningSelected" Unchecked="WarningSelected" AutomationProperties.AutomationId="ReferenceWarningAcknowledged">
-       <TextBlock Text="我已阅读复核差警告，接受它超过自动通过门槛（但不超过 5 dB）；结果仍为估算，不是精度保证。" TextWrapping="Wrap"/>
-      </CheckBox>
+      <Border x:Name="UsbReviewWarningSurface" Style="{StaticResource UsbWarningSurface}" Visibility="Collapsed">
+       <CheckBox x:Name="AcceptReferenceWarning" Visibility="Collapsed" Checked="WarningSelected" Unchecked="WarningSelected" AutomationProperties.AutomationId="ReferenceWarningAcknowledged">
+        <TextBlock Text="我已阅读复核差警告，接受它超过自动通过门槛（但不超过 5 dB）；结果仍为估算，不是精度保证。" TextWrapping="Wrap"/>
+       </CheckBox>
+      </Border>
      </StackPanel>
     </Border>
 
-    <Expander x:Name="SavedReference" Header="已保存参考与使用说明" HorizontalContentAlignment="Stretch" Margin="0,0,0,8">
+    <Expander x:Name="SavedReference" Header="已保存参考与使用说明" HorizontalContentAlignment="Stretch" Margin="0,0,0,8" Style="{StaticResource UsbCompactExpander}">
      <StackPanel Margin="0,8,0,0">
       <TextBlock x:Name="ProfileStatus" TextWrapping="Wrap" Margin="0,0,0,10"/>
       <TextBlock x:Name="WorkflowNote" Text="手动输入同期 A 加权读数，计算结果用于估算 dB(A)。设备与输入设置变化后参考失效，须重新校准。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,10"/>
@@ -355,12 +425,12 @@
   </ScrollViewer>
   <Border Grid.Row="1" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,1,0,0" Background="{DynamicResource TeacherSurfaceBrush}" Padding="12,8">
    <WrapPanel x:Name="ReferenceFooterActions" HorizontalAlignment="Right" VerticalAlignment="Center">
-    <Button x:Name="BeginDraft" Content="新建参考草稿" Click="BeginClicked" Style="{StaticResource TeacherPrimary}" Padding="14,8" Margin="0,2,10,2" Visibility="{Binding Visibility, ElementName=PreparePanel}"/>
-    <Button x:Name="ContinueDraft" Content="继续当前草稿" Click="ContinueDraftClicked" Style="{StaticResource TeacherButton}" Padding="14,8" Margin="0,2,10,2" Visibility="Collapsed"/>
-    <Button x:Name="StartSample" Content="开始本段采样" Click="StartClicked" Style="{StaticResource TeacherPrimary}" Padding="14,8" Margin="0,2,10,2" AutomationProperties.AutomationId="ReferenceStart" Visibility="{Binding Visibility, ElementName=SamplePanel}"/>
-    <Button Style="{StaticResource TeacherButton}" x:Name="CancelSample" Content="取消本段" Click="CancelClicked" Padding="14,8" Margin="0,2,10,2" Visibility="{Binding Visibility, ElementName=SamplePanel}"/>
-    <Button x:Name="ConfirmProfile" Content="确认并保存估算参考" Click="ConfirmClicked" Style="{StaticResource TeacherPrimary}" Padding="14,8" Margin="0,2,10,2" AutomationProperties.AutomationId="ReferenceConfirm" Visibility="{Binding Visibility, ElementName=ResultPanel}"/>
-    <Button Style="{StaticResource TeacherButton}" x:Name="ReviewSamples" Content="返回采样" Click="SamplingClicked" Padding="14,8" Margin="0,2,0,2" Visibility="{Binding Visibility, ElementName=ResultPanel}"/>
+    <Button x:Name="BeginDraft" Content="新建参考草稿" Click="BeginClicked" Style="{StaticResource UsbFooterPrimary}" Margin="0,2,10,2" Visibility="{Binding Visibility, ElementName=PreparePanel}"/>
+    <Button x:Name="ContinueDraft" Content="继续当前草稿" Click="ContinueDraftClicked" Style="{StaticResource UsbFooterButton}" Margin="0,2,10,2" Visibility="Collapsed"/>
+    <Button x:Name="StartSample" Content="开始本段采样" Click="StartClicked" Style="{StaticResource UsbFooterPrimary}" Margin="0,2,10,2" AutomationProperties.AutomationId="ReferenceStart" Visibility="{Binding Visibility, ElementName=SamplePanel}"/>
+    <Button Style="{StaticResource UsbFooterButton}" x:Name="CancelSample" Content="取消本段" Click="CancelClicked" Margin="0,2,10,2" Visibility="{Binding Visibility, ElementName=SamplePanel}"/>
+    <Button x:Name="ConfirmProfile" Content="确认并保存估算参考" Click="ConfirmClicked" Style="{StaticResource UsbFooterPrimary}" Margin="0,2,10,2" AutomationProperties.AutomationId="ReferenceConfirm" Visibility="{Binding Visibility, ElementName=ResultPanel}"/>
+    <Button Style="{StaticResource UsbFooterButton}" x:Name="ReviewSamples" Content="返回采样" Click="SamplingClicked" Margin="0,2,0,2" Visibility="{Binding Visibility, ElementName=ResultPanel}"/>
    </WrapPanel>
   </Border>
  </Grid>
