@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
+using System.Windows.Interop;
 using NPEduTools.App;
 
 internal static partial class Program
@@ -24,6 +24,8 @@ internal static partial class Program
             Click(main, "ShortcutNav");
             PumpUntil(() => main.IsActive, "shortcut keyboard owner could not get foreground");
             var list = (ListBox)main.FindName("ShortcutList");
+            var editor = (ShortcutEditorView)main.FindName("ShortcutEditor");
+            nint hwnd = new WindowInteropHelper(main).Handle;
             list.SelectedItem = first;
             main.UpdateLayout();
             var row = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem(first);
@@ -32,22 +34,12 @@ internal static partial class Program
                 "the keyboard could not move between shortcut rows");
             list.SelectedItem = first;
 
-            void Edit(Action<ShortcutEditorWindow> change)
+            void Edit()
             {
-                Exception? error = null;
-                main.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
-                {
-                    var editor = Application.Current.Windows.OfType<ShortcutEditorWindow>().SingleOrDefault(window => window.IsVisible);
-                    try
-                    {
-                        Assert(editor is not null && ReferenceEquals(editor.Owner, main), "editor did not open as an owned dialog");
-                        change(editor!);
-                    }
-                    catch (Exception failure) { error = failure; }
-                    finally { if (editor?.IsVisible == true) editor.Close(); }
-                });
                 Click(main, "EditShortcutButton");
-                if (error is not null) throw error;
+                PumpUntil(() => editor.IsVisible && editor.IsKeyboardFocusWithin, "the inline editor did not receive focus");
+                Assert(Window.GetWindow(editor) == main && (PresentationSource.FromVisual(editor) as HwndSource)?.Handle == hwnd,
+                    "shortcut editing opened another native window");
             }
 
             void Focused(Guid id)
@@ -58,14 +50,14 @@ internal static partial class Program
                     "selection or keyboard focus did not return to the expected shortcut");
             }
 
-            Edit(editor => Snapshot(editor, "teacher-shortcut-editor.png"));
+            Edit();
+            Snapshot(main, "teacher-shortcut-editor.png");
+            Click(main, "ShortcutCancel", true);
             Focused(first.Id);
             Assert(catalog.Read()[0] == first, "closing the editor changed the saved shortcut");
-            Edit(editor =>
-            {
-                ((TextBox)editor.FindName("NameBox")).Text = "教学平台 · 常用资源";
-                Click(editor, "ShortcutSave", true);
-            });
+            Edit();
+            ((TextBox)editor.FindName("NameBox")).Text = "教学平台 · 常用资源";
+            Click(main, "ShortcutSave", true);
             Focused(first.Id);
             Assert(catalog.Read()[0].Name == "教学平台 · 常用资源", "editor save did not persist");
             Click(main, "MoveShortcutDown");
@@ -77,7 +69,7 @@ internal static partial class Program
             Focused(first.Id);
             Assert(catalog.Read().Select(item => item.Id).SequenceEqual([second.Id, first.Id]), "undo did not restore the original order");
             Snapshot(main, "teacher-shortcut-list.png");
-            Checks.Add("Shortcut manager keyboard focus: owned edit cancel/save, native row navigation, reorder, deletion neighbour and restored row; isolated local catalog");
+            Checks.Add("Shortcut manager keyboard focus: same-HWND edit cancel/save, native row navigation, reorder, deletion neighbour and restored row; isolated local catalog");
         }
         finally
         {

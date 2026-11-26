@@ -22,6 +22,8 @@ internal static partial class Program
         }
         try { RunShortcutSizeCheck(); }
         catch (Exception error) { failures.Add(new InvalidOperationException("oversized-save: shortcut save failed", error)); }
+        try { RunShortcutRepairWorkspaceChecks(); }
+        catch (Exception error) { failures.Add(new InvalidOperationException("same-window repair: shortcut update failed", error)); }
         if (failures.Count != 0) throw new AggregateException(failures);
     }
 
@@ -62,27 +64,24 @@ internal static partial class Program
 
     private static void RunShortcutEditorCheck(string scenario)
     {
-        var window = new ShortcutEditorWindow();
-        try
-        {
-            ((ComboBox)window.FindName("KindBox")).SelectedIndex = scenario is "empty-name" or "missing-scheme" ? 2 :
+        var editor = new ShortcutEditorView();
+        editor.Begin(null);
+        bool submitted = false;
+        editor.SaveRequested += _ => submitted = true;
+        ((ComboBox)editor.FindName("KindBox")).SelectedIndex = scenario is "empty-name" or "missing-scheme" ? 2 :
                 scenario == "wrong-application" ? 0 : 1;
-            ((TextBox)window.FindName("NameBox")).Text = scenario == "empty-name" ? "" : "隔离快捷项目";
-            ((TextBox)window.FindName("TargetBox")).Text = scenario switch
-            {
-                "missing-scheme" => "example.com",
-                "wrong-application" => @"C:\Isolated\lesson.cmd",
-                "relative-file" => "lesson.pptx",
-                _ => "https://example.com/course"
-            };
-            typeof(ShortcutEditorWindow).GetMethod("SaveClicked", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(window, [window, new RoutedEventArgs()]);
-            Assert(window.Result is null && window.DialogResult != true &&
-                !string.IsNullOrWhiteSpace(((TextBlock)window.FindName("ErrorText")).Text),
-                "invalid editor input throws, accepts a result or fails to explain the error");
-            Checks.Add(scenario + ": actual editor save handler rejects invalid input with inline feedback; no window display or launch");
-        }
-        finally { window.Close(); }
+        ((TextBox)editor.FindName("NameBox")).Text = scenario == "empty-name" ? "" : "隔离快捷项目";
+        ((TextBox)editor.FindName("TargetBox")).Text = scenario switch
+        {
+            "missing-scheme" => "example.com",
+            "wrong-application" => @"C:\Isolated\lesson.cmd",
+            "relative-file" => "lesson.pptx",
+            _ => "https://example.com/course"
+        };
+        ((Button)editor.FindName("SaveButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        Assert(!submitted && !string.IsNullOrWhiteSpace(((TextBlock)editor.FindName("ErrorText")).Text),
+            "invalid editor input throws, accepts a result or fails to explain the error");
+        Checks.Add(scenario + ": actual editor save handler rejects invalid input with inline feedback; no window display or launch");
     }
 
     private static void RunShortcutRecoveryCheck(string scenario)

@@ -391,81 +391,85 @@
           </StackPanel></Expander>
           </StackPanel>
         </ScrollViewer>
-        <Grid x:Name="ShortcutPage" Visibility="Collapsed">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <DockPanel Margin="0,0,0,12">
-            <Button x:Name="AddShortcutButton" DockPanel.Dock="Right" Content="＋ 添加快捷" Style="{DynamicResource TeacherPrimary}"
-             Click="AddShortcutClicked" AutomationProperties.AutomationId="AddShortcut" Margin="8,0,0,0" VerticalAlignment="Center" />
-            <StackPanel>
-              <TextBlock Text="快捷启动" FontSize="27" FontWeight="SemiBold" />
-              <TextBlock x:Name="ShortcutCount" Style="{DynamicResource SettingsHint}" />
-            </StackPanel>
-          </DockPanel>
-          <Border Grid.Row="1" Style="{DynamicResource SettingsGroupSurface}" Padding="6">
-            <Grid>
-              <ListBox x:Name="ShortcutList" BorderThickness="0" Background="Transparent"
-               Foreground="{DynamicResource TeacherTextBrush}" SelectionChanged="ShortcutSelectionChanged"
-               ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.PanningMode="VerticalOnly"
-               KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Contained"
-               AutomationProperties.AutomationId="ShortcutList" AutomationProperties.Name="快捷项列表">
-                <ListBox.ItemContainerStyle>
-                  <Style TargetType="ListBoxItem">
-                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                    <Setter Property="Padding" Value="10,8" />
-                    <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
-                    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
-                      <Grid>
-                        <Border x:Name="SelectionSurface" Background="{DynamicResource TeacherSurfaceBrush}" CornerRadius="6"
-                         BorderBrush="Transparent" BorderThickness="2" Padding="{TemplateBinding Padding}">
-                          <ContentPresenter HorizontalAlignment="Stretch" />
-                        </Border>
-                        <Border x:Name="RowDivider" Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,0"
-                         VerticalAlignment="Bottom" IsHitTestVisible="False" />
-                      </Grid>
-                      <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SelectionSurface" Property="Background" Value="{DynamicResource TeacherHoverBrush}" /></Trigger>
-                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="SelectionSurface" Property="Background" Value="{DynamicResource TeacherSelectedBrush}" /><Setter TargetName="SelectionSurface" Property="BorderBrush" Value="{DynamicResource TeacherAccentBrush}" /><Setter TargetName="RowDivider" Property="Visibility" Value="Collapsed" /></Trigger>
-                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="SelectionSurface" Property="BorderBrush" Value="{DynamicResource TeacherTextBrush}" /></Trigger>
-                      </ControlTemplate.Triggers>
-                    </ControlTemplate></Setter.Value></Setter>
-                  </Style>
-                </ListBox.ItemContainerStyle>
-                <ListBox.ItemTemplate><DataTemplate>
-                  <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                      <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ShortcutContent}" HorizontalContentAlignment="Stretch" />
-                      <TextBlock Text="{Binding Target}" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13"
-                       TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="38" ToolTip="{Binding Target}" Margin="46,3,0,0" />
-                    </StackPanel>
-                    <Button Grid.Column="1" Content="打开" Style="{DynamicResource TeacherQuiet}" Click="OpenShortcutClicked"
-                     AutomationProperties.AutomationId="{Binding OpenId}" AutomationProperties.Name="{Binding Name}" VerticalAlignment="Center" />
-                  </Grid>
-                </DataTemplate></ListBox.ItemTemplate>
-              </ListBox>
-              <StackPanel x:Name="ShortcutEmpty" Margin="18" IsHitTestVisible="False">
-                <TextBlock Text="暂无快捷项" Style="{DynamicResource SettingsLabel}" />
-                <TextBlock Text="可添加教学软件、课件或教学平台网址。" Style="{DynamicResource SettingsHint}" />
+        <Grid x:Name="ShortcutPage" Visibility="Collapsed" SizeChanged="ShortcutLayoutChanged">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="ShortcutEditorColumn" Width="0" />
+          </Grid.ColumnDefinitions>
+          <Grid x:Name="ShortcutListPane">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <DockPanel Margin="0,0,0,12">
+              <Button x:Name="AddShortcutButton" DockPanel.Dock="Right" Content="＋ 添加快捷" Style="{DynamicResource TeacherPrimary}"
+               Click="AddShortcutClicked" AutomationProperties.AutomationId="AddShortcut" Margin="8,0,0,0" VerticalAlignment="Center" />
+              <StackPanel>
+                <TextBlock Text="快捷启动" FontSize="27" FontWeight="SemiBold" />
+                <TextBlock x:Name="ShortcutCount" Style="{DynamicResource SettingsHint}" />
               </StackPanel>
-            </Grid>
-          </Border>
-          <StackPanel Grid.Row="2" Margin="0,8,0,0">
-            <TextBlock x:Name="ShortcutSelectionText" Text="{Binding SelectedItem.Name, ElementName=ShortcutList, TargetNullValue=请选择快捷项, FallbackValue=请选择快捷项}"
-             Style="{DynamicResource SettingsLabel}" TextTrimming="CharacterEllipsis" Margin="0,0,0,4" />
-            <WrapPanel>
-              <Button x:Name="EditShortcutButton" Content="编辑" Style="{DynamicResource TeacherButton}" Click="EditShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="EditShortcut" />
-              <Button x:Name="MoveShortcutUp" Content="上移" Style="{DynamicResource TeacherQuiet}" Click="MoveShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="MoveShortcutUp" />
-              <Button x:Name="MoveShortcutDown" Content="下移" Style="{DynamicResource TeacherQuiet}" Click="MoveShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="MoveShortcutDown" />
-              <Button x:Name="RemoveShortcutButton" Content="移除入口" Style="{DynamicResource TeacherQuiet}" Click="RemoveShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="RemoveShortcut" />
-              <Button x:Name="RepairShortcutButton" Content="编辑此项" Style="{DynamicResource TeacherButton}" Click="RepairShortcutClicked" Visibility="Collapsed" AutomationProperties.AutomationId="RepairShortcut" Margin="0,0,8,4" />
-              <Button x:Name="UndoShortcutDelete" Content="撤销移除" Style="{DynamicResource TeacherButton}" Click="UndoShortcutClicked" Visibility="Collapsed" AutomationProperties.AutomationId="UndoShortcutDelete" Margin="0,0,8,4" />
-              <Button x:Name="ReloadShortcutsButton" Content="重新读取" Style="{DynamicResource TeacherQuiet}" Click="ReloadShortcutsClicked" AutomationProperties.AutomationId="ReloadShortcuts" Margin="0,0,0,4" />
-            </WrapPanel>
-            <TextBlock x:Name="ShortcutMessage" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap"
-             AutomationProperties.AutomationId="ShortcutMessage" AutomationProperties.LiveSetting="Polite">
-              <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
-            </TextBlock>
-          </StackPanel>
+            </DockPanel>
+            <Border Grid.Row="1" Style="{DynamicResource SettingsGroupSurface}" Padding="6">
+              <Grid>
+                <ListBox x:Name="ShortcutList" BorderThickness="0" Background="Transparent"
+                 Foreground="{DynamicResource TeacherTextBrush}" SelectionChanged="ShortcutSelectionChanged"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.PanningMode="VerticalOnly"
+                 KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Contained"
+                 AutomationProperties.AutomationId="ShortcutList" AutomationProperties.Name="快捷项列表">
+                  <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                      <Setter Property="Padding" Value="10,8" />
+                      <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
+                        <Grid>
+                          <Border x:Name="SelectionSurface" Background="{DynamicResource TeacherSurfaceBrush}" CornerRadius="6"
+                           BorderBrush="Transparent" BorderThickness="2" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Stretch" />
+                          </Border>
+                          <Border x:Name="RowDivider" Height="1" Background="{DynamicResource TeacherLineBrush}" Margin="10,0"
+                           VerticalAlignment="Bottom" IsHitTestVisible="False" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SelectionSurface" Property="Background" Value="{DynamicResource TeacherHoverBrush}" /></Trigger>
+                          <Trigger Property="IsSelected" Value="True"><Setter TargetName="SelectionSurface" Property="Background" Value="{DynamicResource TeacherSelectedBrush}" /><Setter TargetName="SelectionSurface" Property="BorderBrush" Value="{DynamicResource TeacherAccentBrush}" /><Setter TargetName="RowDivider" Property="Visibility" Value="Collapsed" /></Trigger>
+                          <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="SelectionSurface" Property="BorderBrush" Value="{DynamicResource TeacherTextBrush}" /></Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate></Setter.Value></Setter>
+                    </Style>
+                  </ListBox.ItemContainerStyle>
+                  <ListBox.ItemTemplate><DataTemplate>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                      <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ShortcutContent}" HorizontalContentAlignment="Stretch"
+                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                      <Button Grid.Column="1" Content="打开" Style="{DynamicResource TeacherQuiet}" Click="OpenShortcutClicked"
+                       AutomationProperties.AutomationId="{Binding OpenId}" AutomationProperties.Name="{Binding Name}" VerticalAlignment="Center" />
+                    </Grid>
+                  </DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel x:Name="ShortcutEmpty" Margin="18" IsHitTestVisible="False">
+                  <TextBlock Text="暂无快捷项" Style="{DynamicResource SettingsLabel}" />
+                  <TextBlock Text="可添加教学软件、课件或教学平台网址。" Style="{DynamicResource SettingsHint}" />
+                </StackPanel>
+              </Grid>
+            </Border>
+            <StackPanel Grid.Row="2" Margin="0,8,0,0">
+              <TextBlock x:Name="ShortcutSelectionText" Text="{Binding SelectedItem.Name, ElementName=ShortcutList, TargetNullValue=请选择快捷项, FallbackValue=请选择快捷项}"
+               Style="{DynamicResource SettingsLabel}" TextTrimming="CharacterEllipsis" Margin="0,0,0,4" />
+              <WrapPanel>
+                <Button x:Name="EditShortcutButton" Content="编辑" Style="{DynamicResource TeacherButton}" Click="EditShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="EditShortcut" />
+                <Button x:Name="MoveShortcutUp" Content="上移" Style="{DynamicResource TeacherQuiet}" Click="MoveShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="MoveShortcutUp" />
+                <Button x:Name="MoveShortcutDown" Content="下移" Style="{DynamicResource TeacherQuiet}" Click="MoveShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="MoveShortcutDown" />
+                <Button x:Name="RemoveShortcutButton" Content="移除入口" Style="{DynamicResource TeacherQuiet}" Click="RemoveShortcutClicked" Margin="0,0,8,4" AutomationProperties.AutomationId="RemoveShortcut" />
+                <Button x:Name="RepairShortcutButton" Content="编辑此项" Style="{DynamicResource TeacherButton}" Click="RepairShortcutClicked" Visibility="Collapsed" AutomationProperties.AutomationId="RepairShortcut" Margin="0,0,8,4" />
+                <Button x:Name="UndoShortcutDelete" Content="撤销移除" Style="{DynamicResource TeacherButton}" Click="UndoShortcutClicked" Visibility="Collapsed" AutomationProperties.AutomationId="UndoShortcutDelete" Margin="0,0,8,4" />
+                <Button x:Name="ReloadShortcutsButton" Content="重新读取" Style="{DynamicResource TeacherQuiet}" Click="ReloadShortcutsClicked" AutomationProperties.AutomationId="ReloadShortcuts" Margin="0,0,0,4" />
+              </WrapPanel>
+              <TextBlock x:Name="ShortcutMessage" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap"
+               AutomationProperties.AutomationId="ShortcutMessage" AutomationProperties.LiveSetting="Polite">
+                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers></Style></TextBlock.Style>
+              </TextBlock>
+            </StackPanel>
+          </Grid>
+          <local:ShortcutEditorView x:Name="ShortcutEditor" Grid.Column="1" Visibility="Collapsed" />
         </Grid>
         <Grid x:Name="SettingsPage" Visibility="Collapsed">
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>

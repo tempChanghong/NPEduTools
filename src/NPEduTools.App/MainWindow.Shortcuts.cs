@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace NPEduTools.App;
 
@@ -12,6 +13,8 @@ public partial class MainWindow
     private ShortcutCatalog _shortcutStore = null!;
     private ShortcutEntry[] _shortcuts = [];
     private (ShortcutEntry[] Items, Guid RemovedId)? _beforeShortcutDelete;
+    private sealed record ShortcutEdit(ShortcutEntry? Original, Guid? Selection);
+    private ShortcutEdit? _shortcutEdit;
     private bool _shortcutsReadable, _shortcutBusy;
     private Guid? _shortcutRepairId;
     private string _shortcutMessage = "";
@@ -19,12 +22,14 @@ public partial class MainWindow
     private void InitializeShortcuts()
     {
         _shortcutStore = new(ShortcutCatalog.PathFor(_pipe));
+        ShortcutEditor.SaveRequested += SaveShortcutDraft;
+        ShortcutEditor.CancelRequested += CancelShortcutDraft;
         ReloadShortcuts();
     }
 
     private void ReloadShortcuts()
     {
-        if (_shortcutBusy) return;
+        if (_shortcutBusy || _shortcutEdit is not null) return;
         try
         {
             _shortcuts = _shortcutStore.Read(); _shortcutsReadable = true;
@@ -55,7 +60,7 @@ public partial class MainWindow
 
     private void RefreshShortcutControls()
     {
-        bool editable = _shortcutsReadable && !_shortcutBusy;
+        bool editable = _shortcutsReadable && !_shortcutBusy && _shortcutEdit is null;
         int index = ShortcutList.SelectedIndex;
         AddShortcutButton.IsEnabled = editable && _shortcuts.Length < ShortcutCatalog.MaximumItems;
         EditShortcutButton.IsEnabled = RemoveShortcutButton.IsEnabled = editable && index >= 0;
@@ -64,6 +69,8 @@ public partial class MainWindow
         UndoShortcutDelete.IsEnabled = editable && _beforeShortcutDelete is not null;
         UndoShortcutDelete.Visibility = _beforeShortcutDelete is null ? Visibility.Collapsed : Visibility.Visible;
         HomeShortcutItems.IsEnabled = ShortcutList.IsEnabled = !_shortcutBusy;
+        ReloadShortcutsButton.IsEnabled = !_shortcutBusy && _shortcutEdit is null;
+        ShortcutEditor?.SetSaveEnabled(_shortcutsReadable && !_shortcutBusy);
         RepairShortcutButton.Visibility = _shortcutRepairId is null ? Visibility.Collapsed : Visibility.Visible;
         RepairShortcutButton.IsEnabled = editable;
         _quick?.SetShortcutStatus(_shortcutMessage, !_shortcutBusy, _shortcutRepairId is not null);
@@ -87,49 +94,108 @@ public partial class MainWindow
         HomeNav.Tag = null; ShortcutNav.Tag = "active";
         PageBreadcrumb.Text = "快捷启动";
         RestoreWindow();
+        if (_shortcutEdit is not null) FocusShortcutDraft();
     }
 
     private void AddShortcutClicked(object sender, RoutedEventArgs e) => EditShortcut(null);
     private void EditShortcutClicked(object sender, RoutedEventArgs e) { if (ShortcutList.SelectedItem is ShortcutEntry entry) EditShortcut(entry); }
     private void EditShortcut(ShortcutEntry? entry)
     {
-        if (!_shortcutsReadable || _shortcutBusy || (entry is null && _shortcuts.Length >= ShortcutCatalog.MaximumItems)) return;
-        Guid? previous = entry?.Id ?? (ShortcutList.SelectedItem as ShortcutEntry)?.Id;
-        ShowShortcutManager();
-        var editor = new ShortcutEditorWindow(entry) { Owner = this };
-        if (editor.ShowDialog() != true || editor.Result is not { } result)
+        if (_shortcutEdit is { } open)
         {
-            FocusShortcut(previous);
+            ShowShortcutManager();
+            if (open.Original?.Id != entry?.Id) ShortcutEditor.ShowError("请先保存或取消当前编辑，再编辑另一项。");
             return;
         }
-        var next = entry is null ? [.. _shortcuts, result] : _shortcuts.Select(item => item.Id == entry.Id ? result : item).ToArray();
-        if (SaveShortcuts(next, result.Id))
+        if (!_shortcutsReadable || _shortcutBusy || (entry is null && _shortcuts.Length >= ShortcutCatalog.MaximumItems)) return;
+        Guid? previous = entry?.Id ?? (ShortcutList.SelectedItem as ShortcutEntry)?.Id;
+        _shortcutEdit = new(entry, previous);
+        ShowShortcutManager();
+        ShortcutList.SelectedItem = _shortcuts.FirstOrDefault(item => item.Id == previous);
+        ShortcutEditor.Begin(entry);
+        UpdateShortcutLayout();
+        RefreshShortcutControls();
+    }
+
+    private void ShortcutLayoutChanged(object sender, SizeChangedEventArgs e) => UpdateShortcutLayout();
+
+    private void UpdateShortcutLayout()
+    {
+        if (ShortcutEditor is null) return;
+        bool editing = _shortcutEdit is not null;
+        bool split = editing && ShortcutPage.ActualWidth >= 840;
+        ShortcutListPane.Visibility = editing && !split ? Visibility.Collapsed : Visibility.Visible;
+        ShortcutEditorColumn.Width = split ? new GridLength(0.95, GridUnitType.Star) : new GridLength(0);
+        Grid.SetColumn(ShortcutEditor, split ? 1 : 0);
+        ShortcutEditor.Margin = split ? new Thickness(16, 0, 0, 0) : new Thickness(0);
+        ShortcutEditor.Visibility = editing ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void FocusShortcutDraft() => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+    {
+        if (ShortcutEditor.IsVisible && _shortcutEdit is not null && IsActive) ShortcutEditor.FocusName();
+    });
+
+    private void SaveShortcutDraft(ShortcutEntry result)
+    {
+        if (_shortcutEdit is not { } edit || _shortcutBusy) return;
+        if (edit.Original is { } original && !_shortcuts.Any(item => item.Id == original.Id))
         {
-            SetShortcutMessage("已保存，主页面与贴边面板已同步。");
-            FocusShortcut(result.Id);
+            ShortcutEditor.ShowError("原快捷项已不存在，当前输入仍保留。请核对后再处理。");
+            return;
         }
-        else FocusShortcut(previous);
+        var next = edit.Original is null ? [.. _shortcuts, result] :
+            _shortcuts.Select(item => item.Id == edit.Original.Id ? result : item).ToArray();
+        if (!WriteShortcuts(next, ShortcutEditor.ShowError)) return;
+        _shortcutEdit = null;
+        UpdateShortcutLayout();
+        ApplySavedShortcuts(next, result.Id);
+        SetShortcutMessage("已保存，首页与贴边面板已同步。");
+        FocusShortcut(result.Id);
+    }
+
+    private void CancelShortcutDraft()
+    {
+        if (_shortcutEdit is not { } edit) return;
+        _shortcutEdit = null;
+        UpdateShortcutLayout();
+        RefreshShortcutControls();
+        FocusShortcut(edit.Selection);
     }
 
     private bool SaveShortcuts(ShortcutEntry[] next, Guid? selection = null)
     {
+        if (!WriteShortcuts(next, message => SetShortcutMessage(message, error: true))) return false;
+        ApplySavedShortcuts(next, selection);
+        return true;
+    }
+
+    private bool WriteShortcuts(ShortcutEntry[] next, Action<string> onError)
+    {
         try
         {
-            _shortcutStore.Save(next); _shortcuts = next; _beforeShortcutDelete = null;
-            PopulateShortcuts(selection); return true;
+            _shortcutStore.Save(next);
+            return true;
         }
         catch (Exception error) when (IsShortcutError(error))
         {
-            SetShortcutMessage(error is InvalidDataException
+            onError(error is InvalidDataException
                 ? $"未能保存更改，列表保持原样。{error.Message}"
-                : "未能保存更改，列表保持原样。请检查配置目录的访问权限。", error: true);
+                : "未能保存更改，列表保持原样。请检查配置文件是否被占用，或目录是否可写。");
             return false;
         }
     }
 
+    private void ApplySavedShortcuts(ShortcutEntry[] next, Guid? selection)
+    {
+        _shortcuts = next;
+        _beforeShortcutDelete = null;
+        PopulateShortcuts(selection);
+    }
+
     private void RemoveShortcutClicked(object sender, RoutedEventArgs e)
     {
-        if (_shortcutBusy || ShortcutList.SelectedItem is not ShortcutEntry entry) return;
+        if (_shortcutBusy || _shortcutEdit is not null || ShortcutList.SelectedItem is not ShortcutEntry entry) return;
         var before = _shortcuts;
         int index = ShortcutList.SelectedIndex;
         var next = _shortcuts.Where(item => item.Id != entry.Id).ToArray();
@@ -142,14 +208,14 @@ public partial class MainWindow
 
     private void UndoShortcutClicked(object sender, RoutedEventArgs e)
     {
-        if (_shortcutBusy || _beforeShortcutDelete is not { } before || !SaveShortcuts(before.Items, before.RemovedId)) return;
+        if (_shortcutBusy || _shortcutEdit is not null || _beforeShortcutDelete is not { } before || !SaveShortcuts(before.Items, before.RemovedId)) return;
         SetShortcutMessage("已恢复移除前的列表。");
         FocusShortcut(before.RemovedId);
     }
 
     private void MoveShortcutClicked(object sender, RoutedEventArgs e)
     {
-        if (_shortcutBusy || ShortcutList.SelectedItem is not ShortcutEntry entry) return;
+        if (_shortcutBusy || _shortcutEdit is not null || ShortcutList.SelectedItem is not ShortcutEntry entry) return;
         int current = ShortcutList.SelectedIndex, nextIndex = current + (ReferenceEquals(sender, MoveShortcutUp) ? -1 : 1);
         if (nextIndex < 0 || nextIndex >= _shortcuts.Length) return;
         var next = _shortcuts.ToArray(); (next[current], next[nextIndex]) = (next[nextIndex], next[current]);
@@ -172,7 +238,12 @@ public partial class MainWindow
         if (!AddShortcutButton.Focus()) ReloadShortcutsButton.Focus();
     }
 
-    private void ShortcutSelectionChanged(object sender, SelectionChangedEventArgs e) { if (AddShortcutButton is not null) RefreshShortcutControls(); }
+    private void ShortcutSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_shortcutEdit is { } edit && (ShortcutList.SelectedItem as ShortcutEntry)?.Id != edit.Selection)
+            ShortcutList.SelectedItem = _shortcuts.FirstOrDefault(item => item.Id == edit.Selection);
+        if (AddShortcutButton is not null) RefreshShortcutControls();
+    }
     private void ReloadShortcutsClicked(object sender, RoutedEventArgs e) => ReloadShortcuts();
     private void RepairShortcutClicked(object sender, RoutedEventArgs e) => RepairShortcut();
     private void RepairShortcut()

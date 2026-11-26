@@ -56,8 +56,7 @@ internal static partial class Program
             ("quick-calibration",()=>new NoiseCalibrationWindow(pipe)),
             ("reference-calibration",()=>new NoiseReferenceWindow(pipe)),
             ("usb-meter",()=>new SoundMeterWindow(pipe)),
-            ("usb-reference",()=>new NoiseReferenceWindow(pipe,"isolated-meter")),
-            ("shortcut",()=>new ShortcutEditorWindow())
+            ("usb-reference",()=>new NoiseReferenceWindow(pipe,"isolated-meter"))
         };
         using var ownerScope=new BoundsOwnerScope();
         foreach(var item in factories)
@@ -82,7 +81,7 @@ internal static partial class Program
                 window.MinWidth=Math.Min(window.MinWidth*scale,1264);window.MinHeight=Math.Min(window.MinHeight*scale,664);
                 window.Width=Math.Min(designW*scale,1264);window.Height=Math.Min(designH*scale,664);window.UpdateLayout();
                 Assert(window.ActualHeight<=664 && window.ActualWidth<=1264,item.Name+" cannot shrink within simulated 200% work area");
-                if(item.Name is "study" or "reference-calibration" or "usb-meter" or "usb-reference" or "automatic-recording" or "shortcut") Snapshot(window,item.Name+"-simulated-200.png");
+                if(item.Name is "study" or "reference-calibration" or "usb-meter" or "usb-reference" or "automatic-recording") Snapshot(window,item.Name+"-simulated-200.png");
                 if(item.Name=="usb-reference")
                 {
                     ((ComboBox)window.FindName("WorkflowChoice")).SelectedValue="Stable";
@@ -129,15 +128,7 @@ internal static partial class Program
             });
             Checks.Add(item.Name+": common sizing, native caption visibility, simulated 2K/200%, off-screen recovery");
         }
-        // Automatic height must remain scrollable when validation text expands.
-        var shortcut=new ShortcutEditorWindow();
-        ExerciseBounds(shortcut,window=>{
-            Assert(window.SizeToContent==SizeToContent.Manual && window.Content is ScrollViewer,"auto-size dialog still grows outside work area");
-            ((TextBlock)window.FindName("ErrorText")).Text=string.Join("\n",Enumerable.Repeat("隔离测试：长错误消息",80));window.UpdateLayout();
-            PumpUntil(()=>((ScrollViewer)window.Content).ScrollableHeight>0,"long validation text has no reachable scroll viewport");
-            Snapshot(window,"shortcut-long-error-scroll.png");window.Close();
-        });
-        Checks.Add("Auto-height shortcut editor keeps long validation text reachable through scrolling");
+        RunInlineShortcutBoundsCheck();
     }
     private static void ExerciseBounds(Window window,Action<Window> test)
     {
