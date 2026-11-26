@@ -25,6 +25,7 @@ public partial class RecordingWindow : Window
     private readonly string _preferencesPath;
     private bool _shutdown, _readable = true, _probing, _viewReady, _editing, _probeWhenIdle;
     internal Action? WorkspaceReturn { get; init; }
+    private Action? _returnToPlan;
     private string? _stateError;
     private string? _lastVisiblePhase;
     private string? _deviceSelectionError;
@@ -224,9 +225,33 @@ public partial class RecordingWindow : Window
         return false;
     }
     private void SaveSettingsClicked(object sender, RoutedEventArgs e)
-    { if (OptionsFromForm() is { } options) { if (SavePreferences(options)) _editing = false; Apply(_client.State); } }
-    internal void ShowSettingsPanel() { if (!_client.State.Active) { RecordingPreferenceFeedback.Text = ""; _editing = true; Apply(_client.State); } }
-    private void EditSettingsClicked(object sender, RoutedEventArgs e) { RecordingPreferenceFeedback.Text = ""; _editing = !_editing; Apply(_client.State); }
+    {
+        if (OptionsFromForm() is not { } options) return;
+        if (SavePreferences(options) && _returnToPlan is null) _editing = false;
+        Apply(_client.State);
+    }
+    internal void ShowSettingsPanel(Action? returnToPlan = null)
+    {
+        _returnToPlan = returnToPlan;
+        if (returnToPlan is null && _client.State.Active) return;
+        RecordingPreferenceFeedback.Text = "";
+        _editing = true;
+        Apply(_client.State);
+    }
+    internal void ClearPlanSettingsReturn()
+    {
+        if (_returnToPlan is null) return;
+        _returnToPlan = null;
+        _editing = false;
+        Apply(_client.State);
+    }
+    private void EditSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        if (_returnToPlan is { } back) { ClearPlanSettingsReturn(); back(); return; }
+        RecordingPreferenceFeedback.Text = "";
+        _editing = !_editing;
+        Apply(_client.State);
+    }
     private void UpdateReadySummary()
     {
         var deviceError = DeviceSelectionError();
@@ -262,13 +287,16 @@ public partial class RecordingWindow : Window
         if (_preparingStart && (!available || state.Active)) _startGeneration++;
         if (_viewReady && _probeWhenIdle && !state.Active && available && !_probing)
         { _probeWhenIdle = false; _ = ProbeAsync(); }
-        RecordingHeading.Text = !available ? "录制状态未确认" : state.Active ? state.Control?.Owner == "Automatic" ? "自动录课进行中" : "当前录课" : "立即录制";
+        bool fromPlan = _returnToPlan is not null;
+        RecordingHeading.Text = !available ? "录制状态未确认" : state.Active ? state.Control?.Owner == "Automatic" ? "自动录课进行中" : "当前录课" : fromPlan ? "录制设置" : "立即录制";
         LiveRecordingClock.Visibility = state.Active ? Visibility.Visible : Visibility.Collapsed;
         RecordingClock.Visibility = state.Active ? Visibility.Collapsed : Visibility.Visible;
         RecordingSettings.Visibility = !state.Active && _editing ? Visibility.Visible : Visibility.Collapsed;
         IdleRecordingSummary.Visibility = !state.Active && !_editing ? Visibility.Visible : Visibility.Collapsed;
         EditSettings.Content = _editing ? "返回录制" : "修改录制设置";
-        SaveSettings.Visibility = ReturnRecordingSettings.Visibility = !state.Active && _editing ? Visibility.Visible : Visibility.Collapsed;
+        SaveSettings.Visibility = !state.Active && _editing ? Visibility.Visible : Visibility.Collapsed;
+        ReturnRecordingSettings.Visibility = fromPlan || !state.Active && _editing ? Visibility.Visible : Visibility.Collapsed;
+        ReturnRecordingSettings.Content = fromPlan ? "返回自动安排" : "返回录制";
         UpdateReadySummary();
         RecordingClock.Text = available ? TimeSpan.FromSeconds(Math.Max(0, state.Seconds)).ToString(@"hh\:mm\:ss") : "—";
         var phase = HomeRecordingPresentation.Phase(state.Phase, available);
@@ -287,7 +315,7 @@ public partial class RecordingWindow : Window
         RecordingSettings.IsEnabled = available && !state.Active && !_probing && !_preparingStart;
         EditSettings.IsEnabled = !_preparingStart;
         UpdateSound();
-        RecordStart.Visibility = state.Active ? Visibility.Collapsed : Visibility.Visible;
+        RecordStart.Visibility = state.Active || fromPlan ? Visibility.Collapsed : Visibility.Visible;
         RecordStart.IsEnabled = available && !state.Active && !_probing && !_preparingStart && _environment?.Ready == true;
         RecordStart.Content = _preparingStart ? "正在核对录制…" : "开始录制";
         SaveSettings.IsEnabled = RecordStart.IsEnabled;

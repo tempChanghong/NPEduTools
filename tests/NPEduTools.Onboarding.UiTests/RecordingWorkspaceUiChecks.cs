@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using NPEduTools.App;
 using NPEduTools.Contracts;
+using NPEduTools.Core;
 
 internal static partial class Program
 {
@@ -22,6 +23,7 @@ internal static partial class Program
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Application.Current.Dispatcher));
         string pipe = "NPEduTools.Test.recording-workspace." + Guid.NewGuid().ToString("N");
         string preferences = StartupPreferencesStore.PathFor(pipe);
+        string plansPath = preferences.Replace(".startup.json", ".recording-plans.json", StringComparison.Ordinal);
         using var stop = new CancellationTokenSource();
         var requests = new ConcurrentQueue<HostRequest>();
         RecordingState state = new("Idle", "隔离后台准备录制");
@@ -29,6 +31,7 @@ internal static partial class Program
         Guid bridge = Guid.NewGuid(), connection = Guid.NewGuid(), profile = Guid.NewGuid(), firstSubject = Guid.NewGuid(), secondSubject = Guid.NewGuid();
         var date = new DateOnly(2026, 10, 13);
         var start = new DateTimeOffset(date.ToDateTime(new TimeOnly(7, 59)), TimeSpan.Zero);
+        var upcoming = new UpcomingRecording("语文", start.AddMinutes(1), start.AddMinutes(46));
         var elapsed = Stopwatch.StartNew();
         int sequence = 0, probes = 0;
         bool offline = false;
@@ -51,13 +54,19 @@ internal static partial class Program
                     Assert(Protocol.Validate(request) is null, "workspace sent invalid protocol parameters");
                     if (offline) continue;
                     SchoolClockFrame? frame = null;
-                    if (request.Capability == "classisland.school-clock")
+                    DayForecast? forecast = null;
+                    if (request.Capability is "classisland.school-clock" or "classisland.day-plan")
                     {
                         var now = start.Add(elapsed.Elapsed);
-                        var schedule = new DaySchedule(profile, profile, profile, "隔离课表", date, "fixture-1", now, true, true, "模拟学校时间",
-                            [new(1, firstSubject, "周测", start.AddMinutes(-29), start.AddMinutes(1), true),
-                             new(2, secondSubject, "语文", start.AddMinutes(1), start.AddMinutes(46), true)]);
-                        frame = new(connection, bridge, ++sequence, 0, now, 0, "Advancing", "隔离学校时钟", schedule);
+                        var schoolDate = request.SchoolDate ?? date;
+                        var dayStart = start.AddDays(schoolDate.DayNumber - date.DayNumber);
+                        var schedule = new DaySchedule(profile, profile, profile, "隔离课表", schoolDate, "fixture-1", now, true, true, "模拟学校时间",
+                            [new(1, firstSubject, "周测", dayStart.AddMinutes(-29), dayStart.AddMinutes(1), true),
+                             new(2, secondSubject, "语文", dayStart.AddMinutes(1), dayStart.AddMinutes(46), true),
+                             new(3, secondSubject, "阅读", dayStart.AddMinutes(56), dayStart.AddMinutes(101), true),
+                             new(4, firstSubject, "自习", dayStart.AddMinutes(111), dayStart.AddMinutes(156), true)]);
+                        if (request.SchoolDate is not null) forecast = new(bridge, date, schoolDate, schedule);
+                        else frame = new(connection, bridge, ++sequence, 0, now, 0, "Advancing", "隔离学校时钟", schedule);
                     }
                     else if (request.Recording is { } command)
                     {
@@ -74,10 +83,11 @@ internal static partial class Program
                     else if (request.Automatic is { } autoCommand && autoCommand.Action is not "lease")
                     {
                         automatic = automatic with { Enabled = autoCommand.Action == "enable" || automatic.Enabled && autoCommand.Action != "disable", ClientId = autoCommand.ClientId };
-                        if (autoCommand.Action == "skip-upcoming") automatic = automatic with { Message = "隔离后台已跳过下一节" };
+                        if (autoCommand.Action == "enable") automatic = automatic with { Message = "自动录课已开启", NextState = "Ready", Next = upcoming };
+                        if (autoCommand.Action == "skip-upcoming") automatic = automatic with { Message = "隔离后台已跳过下一节", NextState = "None", Next = null };
                     }
                     await Protocol.WriteAsync(channel, new HostResponse(Protocol.Version, request.RequestId, "Succeeded", null,
-                        "隔离回执", Recording: state, Automatic: automatic, SchoolClock: frame), stop.Token);
+                        "隔离回执", Recording: state, Automatic: automatic, SchoolClock: frame, Forecast: forecast), stop.Token);
                 }
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
@@ -102,6 +112,13 @@ internal static partial class Program
                 PumpUntil(Available, "recording status was not loaded");
                 Click(main, "RecordingNav");
                 Assert(((FrameworkElement)main.FindName("RecordingPlanHost")).IsVisible && probes == 0, "idle recording navigation did not default to today's schedule");
+                var plan = Field<AutoRecordingWindow>("_autoRecordingWindow");
+                var grid = (DataGrid)plan.FindName("Plans");
+                PumpUntil(() => grid.Items.Count == 4 && Button(plan, "TomorrowButton").IsEnabled, "embedded automatic page did not load its schedule and school clock");
+                CaptureRecordingPlanFirstScreen(main, plan, 840, 600, "automatic-first-840-600.png");
+                Assert(!Button(plan, "RealSkip").IsVisible && Button(plan, "ToggleReal").Content.ToString() == "开启自动录课",
+                    "disabled automatic recording offered a skip or hid enable");
+                Checks.Add("840×600 initial plan: master state and date are visible with three fully readable course rows and the main window's three caption buttons");
                 Click(main, "RecordingManualTab");
                 var manual = Field<RecordingWindow>("_recordingWindow");
                 PumpUntil(() => Button(manual, "RecordStart").IsEnabled, "embedded device probe did not populate options");
@@ -137,14 +154,15 @@ internal static partial class Program
                 Assert(!state.Active && requests.All(r => r.Recording is null), "invalid folder action changed recording state");
                 ((TextBox)manual.FindName("OutputDirectory")).Text = originalDirectory;
                 Checks.Add("Actual recording folder button: a blank editable directory gives feedback without launching anything or mutating the recording session");
+                Click(main, "RecordingPlanTab");
+                CheckRecordingSettingsRoundTrip(main, plan, manual, grid, date);
+                Click(main, "RecordingManualTab");
                 Click(manual, "RecordStart");
                 PumpUntil(() => state.Active && Button(manual, "RecordStop").IsEnabled, "synthetic recording did not start");
                 Assert(((FrameworkElement)manual.FindName("RecordingSettings")).Visibility == Visibility.Collapsed,
                     "live recording still displays setup form");
                 int mutations = requests.Count(r => r.Recording is not null || r.Automatic?.Action is not (null or "lease"));
                 Click(main, "RecordingPlanTab");
-                var plan = Field<AutoRecordingWindow>("_autoRecordingWindow");
-                PumpUntil(() => ((DataGrid)plan.FindName("Plans")).Items.Count == 2, "embedded automatic page did not load school schedule");
                 CheckRecordingPlanScroll((DataGrid)plan.FindName("Plans"));
                 Assert(state.Active && requests.Count(r => r.Recording is not null || r.Automatic?.Action is not (null or "lease")) == mutations,
                     "switching to schedule mutated recording state");
@@ -190,13 +208,20 @@ internal static partial class Program
                 root.LayoutTransform = fullScale;
                 Checks.Add("Ready-to-use recording controls stay in the footer after scrolling at 760x520 and 80-percent content density, with 44-DIP hit targets");
                 Click(main, "RecordingPlanTab");
+                Click(plan, "ToggleReal");
+                PumpUntil(() => automatic.Enabled && Button(plan, "RealSkip").IsVisible && Button(plan, "RealSkip").IsEnabled,
+                    "confirmed upcoming course did not reveal skip action");
+                CaptureRecordingPlanFirstScreen(main, plan, 1280, 700, "automatic-upcoming-1280-700.png");
+                CaptureRecordingPlanFirstScreen(main, plan, 840, 600, "automatic-upcoming-840-600.png");
                 Click(plan, "RealSkip");
                 PumpUntil(() => requests.Any(r => r.Automatic?.Action == "skip-upcoming"), "skip-next action used the old stop-current command");
                 Assert(state.Active && !requests.Any(r => r.Recording?.Action == "stop"), "skip upcoming ended active recording");
-                var grid = (DataGrid)plan.FindName("Plans"); grid.SelectedItem = grid.Items[1];
-                ((Button)Find(planContent(plan), "AutoExclude")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-                Assert(!automatic.Enabled && File.Exists(preferences.Replace(".startup.json", ".recording-plans.json", StringComparison.Ordinal)),
-                    "saving daily arrangement enabled recording or was not persisted");
+                PumpUntil(() => Button(plan, "ToggleReal").IsEnabled && !Button(plan, "RealSkip").IsVisible, "skip receipt did not retire stale action");
+                Click(plan, "ToggleReal");
+                PumpUntil(() => !automatic.Enabled && Equals(Button(plan, "ToggleReal").Content, "开启自动录课"), "disable did not settle before day edit");
+                CheckRecordingDayOverride(main, plan, grid, plansPath);
+                Assert(!automatic.Enabled && requests.Count(r => r.Automatic?.Action == "enable") == 1,
+                    "saving daily arrangement enabled recording");
                 Checks.Add("Embedded actual controllers/private pipe: synthetic probe, start/pause/resume, page navigation keeps session and shared client; day save does not enable, skip upcoming does not stop current");
                 Snapshot(main, "recording-workspace-today.png");
                 offline = true;
@@ -222,7 +247,7 @@ internal static partial class Program
                     Click(manual, "EditSettings"); main.UpdateLayout(); Reachable(main, Button(manual, "SaveSettings"));
                     Click(manual, "SaveSettings");
                     Click(main, "RecordingPlanTab"); main.UpdateLayout();
-                    Reachable(main, Button(plan, "RealSkip")); Reachable(main, Button(plan, "ToggleReal"));
+                    Reachable(main, Button(plan, "ToggleReal"));
                     var scroll = (ScrollViewer)plan.FindName("DayScroll");
                     Assert(scroll.ViewportHeight >= 100, "compact day page has no usable scroll viewport");
                     scroll.ScrollToBottom(); main.UpdateLayout();
@@ -257,9 +282,109 @@ internal static partial class Program
                 string path = preferences.Replace(".startup.json", suffix, StringComparison.Ordinal);
                 if (File.Exists(path)) File.Delete(path);
             }
+            File.Delete(plansPath + ".tmp");
             SynchronizationContext.SetSynchronizationContext(previous);
         }
     }
+    private static void CaptureRecordingPlanFirstScreen(MainWindow main, AutoRecordingWindow plan, int width, int height, string file)
+    {
+        var original = (main.Width, main.Height);
+        main.Width = width;
+        main.Height = height;
+        var day = (ScrollViewer)plan.FindName("DayScroll");
+        day.ScrollToTop();
+        main.UpdateLayout();
+        var grid = (DataGrid)plan.FindName("Plans");
+        PumpUntil(() => grid.ItemContainerGenerator.ContainerFromIndex(2) is DataGridRow,
+            "three plan rows were not realized in the initial viewport");
+        Reachable(main, (FrameworkElement)plan.FindName("PlanDate"));
+        Reachable(main, Button(plan, "ToggleReal"));
+        if (Button(plan, "RealSkip").IsVisible) Reachable(main, Button(plan, "RealSkip"));
+        foreach (string id in new[] { "MinimizeWindow", "MaximizeRestoreWindow", "CloseWindow" })
+            Reachable(main, (FrameworkElement)Find(main, id));
+        Assert(Math.Abs(main.ActualWidth - width) < 1 && Math.Abs(main.ActualHeight - height) < 1 && day.VerticalOffset == 0,
+            "the initial plan proof was not at the requested size and top of the page");
+        var viewport = FlowElements<ScrollContentPresenter>(day).First();
+        Snapshot(main, file);
+        for (int i = 0; i < 3; i++)
+        {
+            var row = (DataGridRow)grid.ItemContainerGenerator.ContainerFromIndex(i);
+            var bounds = row.TransformToAncestor(viewport).TransformBounds(new Rect(row.RenderSize));
+            Assert(bounds.Top >= 0 && bounds.Bottom <= viewport.ActualHeight + 1,
+                $"course row {i + 1} was clipped in the initial viewport at {width}x{height}: {bounds.Top:0}–{bounds.Bottom:0} out of {viewport.ActualHeight:0}");
+        }
+        Assert(!plan.IsVisible, "automatic plan opened a second native window");
+        (main.Width, main.Height) = original;
+        main.UpdateLayout();
+    }
+
+    private static void CheckRecordingSettingsRoundTrip(MainWindow main, AutoRecordingWindow plan, RecordingWindow manual, DataGrid grid, DateOnly date)
+    {
+        var original = (main.Width, main.Height);
+        (main.Width, main.Height) = (840, 600);
+        var settings = (Button)Find(planContent(plan), "AutoRecordingSettings");
+        PumpUntil(() => Button(plan, "TomorrowButton").IsEnabled, "clock not ready for choosing tomorrow");
+        Click(plan, "TomorrowButton");
+        var datePicker = (DatePicker)plan.FindName("PlanDate");
+        PumpUntil(() => grid.Items.Count == 4 && ((TextBlock)plan.FindName("DateStatus")).Text.Contains("到当天重新核对"), "tomorrow's forecast was not shown");
+        var expectedDate = date.AddDays(1).ToDateTime(TimeOnly.MinValue);
+        Assert(datePicker.SelectedDate == expectedDate, "test failed to choose tomorrow");
+        grid.SelectedIndex = 2;
+        var editor = (Expander)Find(planContent(plan), "AutoDatedEditor");
+        editor.IsExpanded = true;
+        var draft = (TextBox)plan.FindName("DatedName");
+        draft.Text = "明天的临时草稿";
+        var scroll = (ScrollViewer)plan.FindName("DayScroll");
+        scroll.ScrollToBottom(); main.UpdateLayout();
+        PumpUntil(() => scroll.VerticalOffset > 1, "test failed to scroll before changing recording settings");
+        double offset = scroll.VerticalOffset;
+        settings.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        var back = Button(manual, "ReturnRecordingSettings");
+        Assert(back.IsVisible && Equals(back.Content, "返回自动安排") && !manual.IsVisible && !Button(manual, "RecordStart").IsVisible,
+            "plan settings lost its same-window return or offered manual start");
+        Click(manual, "SaveSettings");
+        Assert(back.IsVisible && ((TextBlock)manual.FindName("RecordingPreferenceFeedback")).Text.Contains("已保存"),
+            "saving recording sources lost its receipt or return to the plan");
+        Click(manual, "ReturnRecordingSettings");
+        PumpUntil(() => settings.IsKeyboardFocused && Math.Abs(scroll.VerticalOffset - offset) < 2,
+            "return did not restore the origin focus and reading position");
+        Assert(datePicker.SelectedDate == expectedDate && grid.SelectedIndex == 2 && editor.IsExpanded && draft.Text == "明天的临时草稿",
+            "return reset the date, selected course or unsaved time slot");
+        Snapshot(main, "automatic-settings-return-840-600.png");
+        editor.IsExpanded = false;
+        Click(plan, "TodayButton");
+        PumpUntil(() => datePicker.SelectedDate == date.ToDateTime(TimeOnly.MinValue), "return test did not reset fixture date");
+        (main.Width, main.Height) = original;
+        main.UpdateLayout();
+        Checks.Add("Actual same-window recording settings save and return preserves tomorrow, selected course, scroll offset, initiating focus and unsaved fixed time slot");
+    }
+
+    private static void CheckRecordingDayOverride(MainWindow main, AutoRecordingWindow plan, DataGrid grid, string plansPath)
+    {
+        grid.SelectedIndex = 1;
+        main.UpdateLayout();
+        var feedback = (TextBlock)plan.FindName("DayOverrideFeedback");
+        var action = (Button)Find(planContent(plan), "AutoExclude");
+        var bytes = File.ReadAllBytes(plansPath);
+        using (new FileStream(plansPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            action.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Assert(feedback.Text.Contains("未应用修改") && grid.SelectedIndex == 1 && File.ReadAllBytes(plansPath).SequenceEqual(bytes),
+                "locked plan did not show inline failure or disturbed the saved plan and selection");
+        }
+        action.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        var saved = new RecordingPlanBookStore(plansPath).Read().Overrides;
+        Assert(feedback.Text.Contains("语文 · 已保存当天不录") && saved is [{ Number: 2, Mode: "Exclude" }],
+            "retry did not save the selected course or show its inline receipt");
+        feedback.BringIntoView();
+        main.UpdateLayout();
+        Reachable(main, feedback);
+        Snapshot(main, "automatic-day-override.png");
+        grid.SelectedIndex = 2;
+        Assert(feedback.Text.Length == 0, "the previous course receipt followed the new selection");
+        Checks.Add("Plan file lock fails in place and keeps the original chosen course; retry commits only that course and its feedback disappears when another course is selected");
+    }
+
     private static void CheckRecordingPlanScroll(DataGrid plans)
     {
         var subjectMinimum = plans.Columns[0].MinWidth;

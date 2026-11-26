@@ -45,8 +45,7 @@ internal static partial class HomeRecordingPresentation
         if (!confirmed) return "后台尚未确认录课安排";
         if (!state.Enabled) return "自动录课未开启；保存安排不会自动开始";
         if (state.SuspendedByMode || state.NextState == "Suspended") return "当前模式暂停自动录课，计划保留";
-        if (state.NextState == "Ready" && state.Next is { ClockSource: "ClassIsland" } next &&
-            !string.IsNullOrWhiteSpace(next.Subject) && next.Start.Offset == TimeSpan.Zero && next.End.Offset == TimeSpan.Zero && next.End > next.Start)
+        if (ConfirmedNext(state) is { } next)
             return $"{next.Subject} · {next.Start:yyyy-MM-dd HH:mm}–" + (next.Start.Date == next.End.Date ? $"{next.End:HH:mm}" : $"{next.End:yyyy-MM-dd HH:mm}") + " · ClassIsland 时间";
         return state.NextState switch
         {
@@ -57,4 +56,9 @@ internal static partial class HomeRecordingPresentation
             _ => "后台未提供可确认的下一项，请查看安排"
         };
     }
+
+    public static UpcomingRecording? ConfirmedNext(AutomaticRecordingState state) =>
+        state is { Enabled: true, SuspendedByMode: false, NextState: "Ready", Next: { ClockSource: "ClassIsland" } next } &&
+        !string.IsNullOrWhiteSpace(next.Subject) && next.Start.Offset == TimeSpan.Zero && next.End.Offset == TimeSpan.Zero && next.End > next.Start
+            ? next : null;
 }

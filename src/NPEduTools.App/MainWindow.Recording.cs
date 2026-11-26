@@ -20,8 +20,10 @@ public partial class MainWindow
     {
         RecordingWorkspace.Visibility = Visibility.Collapsed;
         RecordingNav.Tag = null;
+        _recordingWindow?.ClearPlanSettingsReturn();
     }
-    private void ShowRecordingWorkspace(string tab)
+    private void ShowRecordingWorkspace(string tab) => ShowRecordingWorkspaceCore(tab, false);
+    private void ShowRecordingWorkspaceCore(string tab, bool returningFromSettings)
     {
         if (_recording is null) return;
         _quick?.Collapse(false);
@@ -43,11 +45,11 @@ public partial class MainWindow
         {
             if (_autoRecordingWindow is null)
             {
-                _autoRecordingWindow = new AutoRecordingWindow(_pipe, _recording, ShowRecordingSettings)
+                _autoRecordingWindow = new AutoRecordingWindow(_pipe, _recording, ShowRecordingSettingsFromPlan)
                 { WorkspaceReturn = () => SelectPage(false) };
                 RecordingPlanHost.Content = new WorkspacePanel(_autoRecordingWindow, this);
             }
-            _autoRecordingWindow.ShowWorkspaceSection(tab == "Records");
+            _autoRecordingWindow.ShowWorkspaceSection(tab == "Records", returningFromSettings);
         }
         RestoreWindow();
     }
@@ -62,6 +64,15 @@ public partial class MainWindow
     private void OpenRecordingClicked(object sender, RoutedEventArgs e) => ShowRecordingSettings();
     private void ShowRecording() => ShowRecordingWorkspace("Manual");
     private void ShowRecordingSettings() { ShowRecording(); _recordingWindow?.ShowSettingsPanel(); }
+    private void ShowRecordingSettingsFromPlan()
+    {
+        ShowRecording();
+        _recordingWindow?.ShowSettingsPanel(() =>
+        {
+            ShowRecordingWorkspaceCore("Plan", true);
+            _autoRecordingWindow?.RestoreSettingsOrigin();
+        });
+    }
     private void RefreshRecording(RecordingState state)
     {
         var phase = HomeRecordingPresentation.Phase(state.Phase, _recording.StateAvailable);

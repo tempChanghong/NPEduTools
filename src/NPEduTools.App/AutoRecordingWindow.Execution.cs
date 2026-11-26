@@ -72,28 +72,24 @@ public partial class AutoRecordingWindow
     {
         RealStatus.Text = (_realRecording.AutomaticAvailable ? state.Message : "录制后台连接中断或尚未确认；自动录课状态未知。") + (state.Error is null ? "" : " · " + state.Error);
         ToggleReal.Content = state.Enabled ? "关闭自动录课" : "开启自动录课";
+        ToggleReal.SetResourceReference(StyleProperty, state.Enabled ? "TeacherButton" : "TeacherPrimary");
         ToggleReal.ToolTip = state.SuspendedByMode ? "课堂模式暂停仍然有效；开启总开关不会解除暂停。" : "使用已保存的录制设置，按计划和学校时间执行。";
         RefreshAutomaticControls();
-        RealSkipDay.Content = state.SkipDate is not null && state.SkipDate == _today ? "恢复今日自动录制" : "今天不再录制";
+        bool skippedToday = state.SkipDate is not null && state.SkipDate == _today;
+        RealSkipDay.Content = skippedToday ? "恢复今日自动录制" : "今天不再录制";
+        RealSkipDay.ToolTip = skippedToday ? "恢复今天余下的自动录课安排。" : "今天不再自动录制，并结束正在进行的自动录课。";
         if (!_recordRows.SequenceEqual(state.Recent)) { _recordRows = state.Recent; RefreshRecordRows(); }
-        RefreshAutomaticOverview();
-    }
-
-    private void RefreshAutomaticOverview()
-    {
-        var clock = _clock.Read(Elapsed);
-        PlanClockOverview.Text = clock is { CanStart: true, Now: { } now }
-            ? $"ClassIsland 学校时间 · {now:HH:mm:ss}"
-            : "ClassIsland 学校时间待确认";
-        var state = _realRecording.Automatic;
-        NextPlanOverview.Text = !clock.CanStart && state.NextState == "Ready"
-            ? "下一项 · 学校时间待确认"
-            : "下一项 · " + HomeRecordingPresentation.Next(state, _realRecording.AutomaticAvailable);
+        bool confirmed = _realRecording.AutomaticAvailable;
+        NextPlanOverview.Text = confirmed && !state.Enabled ? "保存安排后可手动开启自动录课" :
+            (confirmed && HomeRecordingPresentation.ConfirmedNext(state) is not null ? "下一节  " : "") + HomeRecordingPresentation.Next(state, confirmed);
     }
     private void RefreshAutomaticControls()
     {
         bool available = !_automaticChanging && _realRecording.StateAvailable && _realRecording.AutomaticAvailable;
-        ToggleReal.IsEnabled = RealSkip.IsEnabled = RealSkipDay.IsEnabled = available;
+        ToggleReal.IsEnabled = RealSkipDay.IsEnabled = available;
+        bool canSkip = _realRecording.AutomaticAvailable && HomeRecordingPresentation.ConfirmedNext(_realRecording.Automatic) is not null;
+        RealSkip.Visibility = canSkip ? Visibility.Visible : Visibility.Collapsed;
+        RealSkip.IsEnabled = available && canSkip;
     }
     private static string PhaseLabel(string phase) => phase switch
     {
@@ -125,6 +121,9 @@ public partial class AutoRecordingWindow
         }
         catch (Exception error) when (error is not OutOfMemoryException) { SetAutomaticFeedback("录制设置无法读取：" + error.Message); }
     }
-    private async void RealSkipClicked(object sender, RoutedEventArgs e) => await AutomaticActionAsync("skip-upcoming");
+    private async void RealSkipClicked(object sender, RoutedEventArgs e)
+    {
+        if (RealSkip.IsEnabled) await AutomaticActionAsync("skip-upcoming");
+    }
     private async void RealSkipDayClicked(object sender, RoutedEventArgs e) => await AutomaticActionAsync(_realRecording.Automatic.SkipDate is not null && _realRecording.Automatic.SkipDate == _today ? "resume-day" : "skip-day");
 }

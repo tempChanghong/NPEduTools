@@ -30,7 +30,7 @@ internal static partial class Program
         void Set(string name, object value) => typeof(AutoRecordingWindow).GetField(name, flags)!.SetValue(window, value);
         void Save() => typeof(AutoRecordingWindow).GetMethod("Save", flags)!.Invoke(window, null);
         bool Change(Func<RecordingPlanBook, RecordingPlanBook> change, string message) =>
-            (bool)typeof(AutoRecordingWindow).GetMethod("ChangeBook", flags)!.Invoke(window, [change, message])!;
+            (bool)typeof(AutoRecordingWindow).GetMethod("ChangeBook", flags)!.Invoke(window, [change, message, null])!;
         string Feedback() => ((TextBlock)window!.FindName("ErrorText")).Text;
         try
         {

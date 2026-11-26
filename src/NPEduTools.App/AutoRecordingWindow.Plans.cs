@@ -17,6 +17,7 @@ public partial class AutoRecordingWindow
     private DayForecast? _forecast;
     private Guid _bridgeInstance;
     private Guid? _editingDated;
+    private (DateOnly Date, string Key, string Message, bool Error)? _dayOverrideResult;
     private bool _ready, _setting, _followToday = true, _calendarReading;
     private int _calendarGeneration;
     private DaySchedule? ViewSource => _viewDate == _today ? _source : _forecast?.Schedule;
@@ -102,9 +103,14 @@ public partial class AutoRecordingWindow
     }
     private static TimeOnly ParseTime(string text) => TimeOnly.TryParseExact(text.Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
         ? time : throw new InvalidDataException("时间请填写 HH:mm，例如 09:58。");
-    private bool ChangeBook(Func<RecordingPlanBook, RecordingPlanBook> change, string message)
+    private bool ChangeBook(Func<RecordingPlanBook, RecordingPlanBook> change, string message, Action<string, bool>? feedback = null)
     {
         if (!_writable) return false;
+        void Report(string text, bool error)
+        {
+            if (feedback is null) ErrorText.Text = text;
+            else feedback(text, error);
+        }
         try
         {
             var next = change(_book);
@@ -113,12 +119,11 @@ public partial class AutoRecordingWindow
             _bookStore.Save(next); _book = next; _savedBook = next;
             RebuildPlans(); _preview.Tick(_source, _plans, _clock.Read(Elapsed), Elapsed); Save(); Render();
             // The plan has committed even if saving the resulting trial history fails.
-            ErrorText.Text = _writable ? message :
-                "录课计划已保存，但试运行记录无法保存，试运行已停止。请检查文件夹权限及剩余空间。";
+            Report(_writable ? message : "录课计划已保存，但试运行记录无法保存，试运行已停止。请检查文件夹权限及剩余空间。", !_writable);
             return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or FormatException or OverflowException)
-        { ErrorText.Text = "未应用修改：" + error.Message; return false; }
+        { Report("未应用修改：" + error.Message, true); return false; }
     }
     private void NewRuleClicked(object sender, RoutedEventArgs e)
     {
@@ -235,7 +240,7 @@ public partial class AutoRecordingWindow
     private void OverrideClicked(object sender, RoutedEventArgs e)
     {
         if (_viewDate is not { } date || ViewSource is not { } source || Plans.SelectedItem is not PlanRow row) return;
-        var plan = ViewPlans.First(p => p.Key == row.Key); if (plan.Fixed) { ErrorText.Text = "固定时段请在下方编辑或删除。"; return; }
+        if (ViewPlans.FirstOrDefault(p => p.Key == row.Key) is not { Fixed: false } plan) return;
         string mode = (string)((Button)sender).Tag;
         ChangeBook(b =>
         {
@@ -244,7 +249,13 @@ public partial class AutoRecordingWindow
             if (!plan.Lesson.Enabled) throw new InvalidDataException("课程已停用或不存在，只能恢复继承以清除旧安排。");
             return b with { Overrides = remaining.Append(new(Guid.NewGuid(), source.ProfileId, date, plan.Lesson.Number,
                 plan.Lesson.Start, plan.Lesson.End, plan.Lesson.Subject, mode, (int)LeadMinutes.SelectedItem, (int)TailMinutes.SelectedItem)).ToArray() };
-        }, "单日安排已保存；到当天会重新核对生效课表。");
+        }, mode == "Inherit" ? $"{row.Subject} · 已恢复每周安排。" :
+            $"{row.Subject} · 已保存当天{(mode == "Include" ? "录制" : "不录")}，执行前会核对生效课表。",
+            (message, error) =>
+            {
+                _dayOverrideResult = (date, row.Key, message, error);
+                RefreshDayOverride();
+            });
     }
     private void OnlyExplicitClicked(object sender, RoutedEventArgs e)
     {
@@ -254,12 +265,26 @@ public partial class AutoRecordingWindow
     }
     private void PlanSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (!_ready || Plans.SelectedItem is not PlanRow row) return;
+        if (!_ready) return;
+        RefreshDayOverride();
+        if (Plans.SelectedItem is not PlanRow row) return;
         var item = _book.Dated.FirstOrDefault(d => row.Key == $"fixed/{d.Id:N}/{d.Date:yyyy-MM-dd}");
         // Refreshing the selected row's status must not reload over an unsaved draft.
         if (item is not null && item.Id == _editingDated) return;
         _editingDated = item?.Id;
         if (item is not null) { DatedName.Text = item.Name; DatedStart.Text = item.Start.ToString("HH:mm"); DatedEnd.Text = item.End.ToString("HH:mm"); }
+    }
+    private void RefreshDayOverride()
+    {
+        var row = Plans.SelectedItem as PlanRow;
+        DayOverrideActions.IsEnabled = _writable && ViewSource is not null && row is not null &&
+            !row.Key.StartsWith("fixed/", StringComparison.Ordinal);
+        if (_dayOverrideResult is { } result && result.Date == _viewDate && result.Key == row?.Key)
+        {
+            DayOverrideFeedback.Text = result.Message;
+            DayOverrideFeedback.SetResourceReference(TextBlock.ForegroundProperty, result.Error ? "TeacherErrorBrush" : "TeacherAccentBrush");
+        }
+        else DayOverrideFeedback.Text = "";
     }
     private void NewDatedClicked(object sender, RoutedEventArgs e) { _editingDated = null; Plans.SelectedItem = null; DatedName.Text = "单次录课"; }
     private void SaveDatedClicked(object sender, RoutedEventArgs e)

@@ -82,7 +82,7 @@ internal static partial class Program
             quick.OpenPanel(); quick.UpdateLayout();
             Click(quick, "QuickRecordingPlan", automation: true);
             main.UpdateLayout();
-            Assert(main.IsVisible && main.WindowState == WindowState.Normal, scenario + ": quick navigation did not restore the main window");
+            PumpUntil(() => main.IsVisible && main.WindowState == WindowState.Normal, scenario + ": quick navigation did not restore the main window");
             var plan = WorkspaceField<AutoRecordingWindow>(main, "_autoRecordingWindow");
             PumpUntil(() => ((TextBlock)plan.FindName("SourceStatus")).Text.Contains("日程暂不可用"), scenario + ": embedded plan did not settle its school-clock read");
             if (scenario == "repeated")

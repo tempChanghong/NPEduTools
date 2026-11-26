@@ -195,7 +195,8 @@ internal static partial class Program
             PumpUntil(() => Available() && Text("RealStatus").Contains(recovered.Message), "fresh poll did not recover automatic state");
             Assert(observations.Skip(beforeOldReply).All(state => state.Message != enabled.Message), "pre-command status briefly restored an obsolete automatic state");
             Assert(commands == 1 && Button(window, "ToggleReal").Content.ToString() == "开启自动录课", "recovery replayed mutation or retained wrong master toggle");
-            Assert(Button(window, "RealSkip").IsEnabled && Button(window, "RealSkipDay").IsEnabled, "fresh reconciliation did not restore automatic operations");
+            Assert(!Button(window, "RealSkip").IsEnabled && Button(window, "RealSkipDay").IsEnabled,
+                "fresh reconciliation did not restore the day action or exposed skip without a confirmed upcoming course");
             timeout.Cancel();
             PumpUntil(() => recovery.IsCompleted, "recovery test server did not stop");
             recovery.GetAwaiter().GetResult();

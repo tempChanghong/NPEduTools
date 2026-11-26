@@ -42,7 +42,8 @@ internal static partial class Program
                     new(2026, 10, 7, 10, 0, 0, TimeSpan.FromHours(8)),
                     new(2026, 10, 7, 10, 40, 0, TimeSpan.FromHours(8)),
                     "隔离测试课程", Guid.NewGuid(), "Recorded", "已保存", OutputFile: "fixture.mp4");
-                var active = idle with { Enabled = true, Message = "正在自动录制：隔离测试课程", Recent = [record] };
+                var active = idle with { Enabled = true, Message = "正在自动录制：隔离测试课程", Recent = [record],
+                    Next = new("隔离下一节", record.End.ToUniversalTime(), record.End.ToUniversalTime().AddMinutes(40)), NextState = "Ready" };
                 Show(active);
                 Assert(Text("RealStatus").Contains(active.Message), "a previous operation error masks the fresh recording status");
                 Assert(Text("AutomaticFeedbackText").Contains(validation), "validation feedback vanished instead of remaining separate from live status");
@@ -107,6 +108,7 @@ internal static partial class Program
 
                 Show(active with { Message = "课堂模式暂停自动录课", SuspendedByMode = true });
                 Assert(Button(owner, "ToggleReal").ToolTip.ToString()!.Contains("暂停仍然有效"), "mode suspension warning changed");
+                Assert(!Button(owner, "RealSkip").IsVisible, "a suspended recording schedule still offered skip");
                 Click(owner, "AutoRecordingSettings", true);
                 Assert(settingsOpened == 1, "settings action no longer uses the existing entry point");
                 Show(idle);

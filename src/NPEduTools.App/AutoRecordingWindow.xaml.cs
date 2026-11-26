@@ -15,12 +15,27 @@ public partial class AutoRecordingWindow : Window
     private sealed record PlanRow(string Key, int Number, string Subject, string ClassTime, string CaptureTime, string Status, string SimulationStatus)
     { public string TimeSummary => ClassTime + (CaptureTime == "不安排录制" ? "\n不安排录制" : "\n录 " + CaptureTime); }
     internal Action? WorkspaceReturn { get; init; }
-    internal void ShowWorkspaceSection(bool records)
+    private Button? _settingsOrigin;
+    private double _settingsDayOffset;
+    internal void ShowWorkspaceSection(bool records, bool returningFromSettings)
     {
         ((TabItem)AutoSections.Items[4]).Visibility = records ? Visibility.Visible : Visibility.Collapsed;
         AutoSections.Tag = records ? "Records" : null;
-        AutoSections.SelectedIndex = records ? 4 : 0;
+        if (records) AutoSections.SelectedIndex = 4;
+        else if (!returningFromSettings) AutoSections.SelectedIndex = 0;
         AutoOverview.Visibility = AutoFooter.Visibility = records ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    internal void RestoreSettingsOrigin()
+    {
+        var origin = _settingsOrigin;
+        _settingsOrigin = null;
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (origin?.IsVisible != true) return;
+            if (DayScroll.IsVisible) DayScroll.ScrollToVerticalOffset(_settingsDayOffset);
+            origin.Focus();
+        });
     }
     private readonly string _pipe;
     private readonly RecordingPreviewStore _store;
@@ -72,7 +87,18 @@ public partial class AutoRecordingWindow : Window
             Save(); Render(changed);
             if (WorkspacePanel.Visible(this) || _preview.Enabled) await ReadAsync();
         };
-        Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); };
+        Loaded += async (_, _) =>
+        {
+            AutoHideButton.Visibility = WorkspaceReturn is null ? Visibility.Visible : Visibility.Collapsed;
+            _timer.Start();
+            await ReadAsync();
+        };
+        AutoSummaryGrid.SizeChanged += (_, e) =>
+        {
+            bool compact = e.NewSize.Width < 660;
+            Grid.SetRow(AutoPrimaryActions, compact ? 1 : 0);
+            Grid.SetColumn(AutoPrimaryActions, compact ? 0 : 1);
+        };
         Microsoft.Win32.SystemEvents.PowerModeChanged += PowerModeChanged;
         Closing += (_, e) => { if (!_shutdown) { e.Cancel = true; Hide(); } };
     }
@@ -168,12 +194,14 @@ public partial class AutoRecordingWindow : Window
         TodayButton.Tag = selectedDay == 0 ? "active" : null;
         TomorrowButton.Tag = selectedDay == 1 ? "active" : null;
         AfterTomorrowButton.Tag = selectedDay == 2 ? "active" : null;
-        RefreshAutomaticOverview();
         SkipLesson.IsEnabled = _writable && _viewDate == _today;
         OnlyExplicit.IsEnabled = _writable && ViewSource is { ProfileId: var profile } && profile != Guid.Empty;
         OnlyExplicit.IsChecked = _book.Days.Any(d => d.Date == _viewDate && d.ProfileId == ViewSource?.ProfileId && d.OnlyExplicit);
-        if (!rows) return;
-        DateStatus.Text = _viewDate is { } selectedDate ? $"{selectedDate:yyyy-MM-dd} · {(_viewDate == _today ? "当天生效安排（按 ClassIsland 学校时间执行）" : _forecast is null ? "预计课表未加载；可编辑固定时段" : "预计课表，到当天重新核对")}" : "等待学校日期；也可选明确日期编辑草稿";
+        if (!rows) { RefreshDayOverride(); return; }
+        DateStatus.Text = _viewDate is not { } selectedDate ? "等待学校日期；也可选明确日期编辑草稿" : $"{selectedDate:yyyy-MM-dd} · " +
+            (_viewDate != _today ? _forecast is null ? "预计课表未加载；可编辑固定时段" : "预计课表，到当天重新核对" :
+                ViewSource is null ? "当天课表暂不可用；可编辑固定时段" :
+                !ViewSource.Enabled ? "ClassIsland 当天课表未启用" : "当天生效安排（ClassIsland 学校时间）");
         string? selected = (Plans.SelectedItem as PlanRow)?.Key;
         var viewPlans = ViewPlans;
         int unresolved = viewPlans.Count(p => p.Conflict), adjusted = viewPlans.Count(p => !p.Conflict && !string.IsNullOrEmpty(p.OverlapNotice));
@@ -187,6 +215,7 @@ public partial class AutoRecordingWindow : Window
             _preview.State.Active?.Plan.Key == p.Key ? "模拟录制中" : _preview.IsMarked(ViewSource?.ProfileId ?? Guid.Empty, p, viewPlans) ? "已试运行 / 已模拟跳过" : "未模拟")).ToArray();
         Plans.ItemsSource = items;
         if (selected is not null) Plans.SelectedItem = items.FirstOrDefault(i => i.Key == selected);
+        RefreshDayOverride();
         Events.ItemsSource = _preview.State.Events.Reverse().Select(e => $"{(e.At is { } at ? at.ToString("MM-dd HH:mm:ss") + " 学校时间" : "学校时间未知")}  {e.Action} · {e.Subject}｜{e.Message.Replace("预演", "试运行", StringComparison.Ordinal)}").ToArray();
     }
     // Translate known rehearsal status labels only; preserve user-provided course names.
@@ -223,5 +252,10 @@ public partial class AutoRecordingWindow : Window
     private void SubjectsChanged(object sender, RoutedEventArgs e) { if (Subjects is not null) Subjects.IsEnabled = AllSubjects.IsChecked != true; }
     private async void RefreshClicked(object sender, RoutedEventArgs e) { await ReadAsync(); await ReadCalendarAsync(true); }
     private void HideClicked(object sender, RoutedEventArgs e) { if (WorkspaceReturn is { } back) back(); else Hide(); }
-    private void RecordingSettingsClicked(object sender, RoutedEventArgs e) => _openRecordingSettings();
+    private void RecordingSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        _settingsOrigin = sender as Button;
+        _settingsDayOffset = DayScroll.VerticalOffset;
+        _openRecordingSettings();
+    }
 }
