@@ -89,6 +89,7 @@ public partial class MainWindow
             try { await Task.Delay(1000, _lifetime.Token); } catch (OperationCanceledException) { break; }
         }
         _schoolNotification?.InvalidateNotice("学校互联后台已停止。请关闭此窗口，重新启动 NPEduTools 后再核对通知。");
+        InvalidateNotificationReader("学校互联后台已停止，正文已隐藏。");
     }
 
     private async Task<bool> VerifySchoolNotificationAsync(SchoolNotificationWindow window, string? scope, NpepNotice notice)
@@ -208,11 +209,15 @@ public partial class MainWindow
 
     private async Task OpenSchoolNotificationAsync(object sender)
     {
+        if (_lifetime.IsCancellationRequested || sender is not Button { Tag: NpepNoticeSummary summary } || _inboxScope is not { } scope) return;
+        if (!summary.PopupEnabled || summary.Dismissed)
+        {
+            await OpenNotificationReaderAsync(scope, summary);
+            return;
+        }
         if (_schoolNotification is not null) { _schoolNotification.Activate(); return; }
         if (_notificationPreview is not null) { _notificationPreview.Activate(); return; }
-        if (_notificationOpening || _lifetime.IsCancellationRequested) return;
-        if (sender is not Button { Tag: NpepNoticeSummary summary } || _inboxScope is null) return;
-        var scope = _inboxScope;
+        if (_notificationOpening) return;
         var navigationVersion = _inboxNavigationVersion;
         try
         {

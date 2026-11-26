@@ -21,6 +21,7 @@ internal static partial class Program
         {
             RunNotificationAuditChecks();
             RunNotificationPresentationChecks();
+            RunNotificationReaderChecks();
             RunLongNotificationChecks();
             RunNotificationEntryOrdering(previewFirst: false, stale: false);
             RunNotificationEntryOrdering(previewFirst: false, stale: true);
@@ -30,18 +31,16 @@ internal static partial class Program
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
 
-    private static void ShowNotificationSettings(MainWindow main)
+    private static void ShowNotificationSettings(MainWindow main, bool expandPreview = true)
     {
-        // Isolate the notification cards from unrelated connection and remote-exam services.
-        ((FrameworkElement)main.FindName("HomePage")).Visibility = Visibility.Collapsed;
-        ((FrameworkElement)main.FindName("SettingsPage")).Visibility = Visibility.Visible;
+        // The fixture pipe serves notifications only. Reveal the school settings shell, then use its real entry.
+        ((FrameworkElement)main.FindName("NpepSettingsPanel")).Visibility = Visibility.Visible;
         ((FrameworkElement)main.FindName("GeneralSettingsPanel")).Visibility = Visibility.Collapsed;
-        var panel = (StackPanel)main.FindName("NpepSettingsPanel");
-        panel.Visibility = Visibility.Visible;
-        var inbox = (FrameworkElement)main.FindName("NotificationInboxCard");
-        var preview = (FrameworkElement)main.FindName("NotificationPreviewActions");
-        foreach (FrameworkElement child in panel.Children)
-            child.Visibility = child == inbox || child.IsAncestorOf(preview) ? Visibility.Visible : Visibility.Collapsed;
+        typeof(MainWindow).GetMethod("SelectPage", NoticeMembers)!.Invoke(main, [true]);
+        main.UpdateLayout();
+        Assert(Button(main, "NotificationWorkspaceEntry").IsVisible, "school connection does not expose the inbox entry");
+        Click(main, "NotificationWorkspaceEntry");
+        if (expandPreview) ((Expander)main.FindName("NotificationPreviewExpander")).IsExpanded = true;
         main.UpdateLayout();
     }
 
@@ -81,7 +80,6 @@ internal static partial class Program
         {
             Exercise(main, _ =>
             {
-                Click(main, "HomeSchoolConnection", automation: true);
                 ShowNotificationSettings(main);
                 main.Width = 1040;
                 main.Height = 760;
@@ -98,7 +96,8 @@ internal static partial class Program
                 var range = (TextBlock)main.FindName("NotificationPageRange");
                 var combo = (ComboBox)main.FindName("NotificationPreviewPriority");
                 var previewButton = Button(main, "NotificationPreviewButton");
-                var scroll = (ScrollViewer)main.FindName("SettingsScroll");
+                var scroll = (ScrollViewer)main.FindName("NotificationListScroll");
+                var reader = (FrameworkElement)main.FindName("NotificationReaderPane");
                 ApplyNoticePage(main, state);
                 main.UpdateLayout();
                 Assert(range.Text == "第 1–4 条，共 4 条" && (combo.SelectedItem as ComboBoxItem)?.Tag as string == "Normal",
@@ -114,7 +113,7 @@ internal static partial class Program
                 ApplyNoticePage(main, state);
                 scroll.ScrollToTop();
                 main.UpdateLayout();
-                Assert((string?)list.Tag != "compact" && Grid.GetRow(previewButton) == 0, "standard window used compact notice layout");
+                Assert(reader.IsVisible && Grid.GetColumn(reader) == 1, "standard window did not expose its same-window reading column");
                 Snapshot(main, "inbox-standard.png");
                 previewButton.BringIntoView(); main.UpdateLayout();
                 Snapshot(main, "inbox-standard-preview.png");
@@ -123,7 +122,7 @@ internal static partial class Program
                 main.Width = 760; main.Height = 520;
                 previewButton.BringIntoView();
                 main.UpdateLayout();
-                Assert((string?)list.Tag == "compact" && Grid.GetRow(previewButton) == 1,
+                Assert(!reader.IsVisible && Grid.GetColumn(reader) == 0 && (string?)list.Tag == "compact" && Grid.GetRow(previewButton) == 1,
                     $"narrow notification card did not reflow (window {main.ActualWidth}, list {list.ActualWidth}, preview row {Grid.GetRow(previewButton)})");
                 Assert(combo.ActualHeight >= 44 && previewButton.ActualHeight >= 44 && NoticeRow(main, 0).ActualHeight >= 44,
                     "narrow controls are smaller than the intended touch targets");

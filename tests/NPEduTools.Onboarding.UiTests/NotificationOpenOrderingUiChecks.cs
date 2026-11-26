@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.IO;
 using System.Reflection;
 using System.Windows.Controls;
 using NPEduTools.App;
@@ -33,6 +34,8 @@ internal static partial class Program
         var notice = new NpepNoticeSummary("old-notice", 1, "隔离旧通知", "MINOR", false, false);
         var items = (ItemsControl)window.FindName("NotificationInboxItems");
         var message = (TextBlock)window.FindName("NotificationInboxMessage");
+        var readerStatus = (TextBlock)window.FindName("NotificationReaderStatus");
+        var readerBody = (TextBlock)window.FindName("NotificationReaderBody");
         object? Field(string name) => typeof(MainWindow).GetField(name, flags)!.GetValue(window);
         void Set(string name, object value) => typeof(MainWindow).GetField(name, flags)!.SetValue(window, value);
         async Task<HostRequest> Read(NamedPipeServerStream server)
@@ -52,6 +55,7 @@ internal static partial class Program
             {
                 try
                 {
+                    ShowNotificationSettings(window, expandPreview: false);
                     Set("_inboxScope", oldScope); Set("_inboxOffset", 10); Set("_inboxNext", 20);
                     items.ItemsSource = new[] { notice }; message.Text = "隔离原列表";
                     Button(owner, "NotificationPrevious").IsEnabled = Button(owner, "NotificationNext").IsEnabled = true;
@@ -79,11 +83,15 @@ internal static partial class Program
                     int currentOffset = (int)Field("_inboxOffset")!;
                     string? currentScope = Field("_inboxScope") as string;
                     if (response == "disconnected") manualServer.Disconnect();
-                    else Write(manualServer, request, new(oldScope, "ONLINE", "隔离无法打开的旧通知", 0, []), response == "version");
+                    else
+                    {
+                        try { Write(manualServer, request, new(oldScope, "ONLINE", "隔离无法打开的旧通知", 0, []), response == "version"); }
+                        catch (IOException) when (change != "unchanged") { /* the obsolete reader cancelled its transport */ }
+                    }
                     PumpUntil(() => opening.IsCompleted, "manual open did not settle"); opening.GetAwaiter().GetResult();
-                    Assert(change == "unchanged"
-                        ? message.Text.Contains(response == "not-presentable" ? "通知已变化" : "无法打开")
-                        : message.Text == currentMessage, "an obsolete manual open overwrote the latest list/loading message");
+                    Assert(message.Text == currentMessage && readerBody.Text.Length == 0 &&
+                        (change != "unchanged" || readerStatus.Text.Contains("无法在线核对")),
+                        "an obsolete or failed manual open overwrote the list, exposed a body, or left no reader error");
                     Assert(ReferenceEquals(items.ItemsSource, currentItems) && (int)Field("_inboxOffset")! == currentOffset &&
                         Field("_inboxScope") as string == currentScope, "manual failure changed current rows, page or scope");
                     Assert(Field("_schoolNotification") is null && Field("_shownNotice") is null && !(bool)Field("_notificationOpening")!,

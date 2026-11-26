@@ -71,12 +71,7 @@ internal static partial class Program
             {
                 try
                 {
-                    ((FrameworkElement)owner.FindName("HomePage")).Visibility = Visibility.Collapsed;
-                    ((FrameworkElement)owner.FindName("SettingsPage")).Visibility = Visibility.Visible;
-                    var panel = (StackPanel)owner.FindName("NpepSettingsPanel"); panel.Visibility = Visibility.Visible;
-                    // Keep only the real notification card in this fixture.
-                    foreach (FrameworkElement child in panel.Children.Cast<FrameworkElement>().Take(3)) child.Visibility = Visibility.Collapsed;
-                    ((FrameworkElement)owner.FindName("GeneralSettingsPanel")).Visibility = Visibility.Collapsed;
+                    ShowNotificationSettings(window, expandPreview: false);
                     typeof(MainWindow).GetField("_inboxOffset", flags)!.SetValue(window, 10);
                     var read = Read();
                     poll = (Task)typeof(MainWindow).GetMethod("NotificationPollAsync", flags)!.Invoke(window, null)!;

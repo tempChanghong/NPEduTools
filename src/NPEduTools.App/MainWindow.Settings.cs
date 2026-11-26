@@ -52,6 +52,7 @@ public partial class MainWindow
 
     private void SelectSettingsCategory(string category)
     {
+        HideNotificationWorkspace();
         GeneralSettingsPanel.Visibility = category == "General" ? Visibility.Visible : Visibility.Collapsed;
         TeachingSettingsPanel.Visibility = category == "Teaching" ? Visibility.Visible : Visibility.Collapsed;
         ConnectionsSettingsPanel.Visibility = category == "Connections" ? Visibility.Visible : Visibility.Collapsed;
@@ -78,10 +79,12 @@ public partial class MainWindow
     {
         bool settingsVisible = SettingsPage.Visibility == Visibility.Visible;
         bool school = NpepSettingsPanel.Visibility == Visibility.Visible;
+        bool notifications = school && NotificationWorkspace.Visibility == Visibility.Visible;
         ClassroomSettingsBack.Visibility = settingsVisible && ConnectionsSettingsPanel.Visibility == Visibility.Visible && _classroomSettingsReturn is not null
             ? Visibility.Visible : Visibility.Collapsed;
         SettingsCategoryTabs.Visibility = school ? Visibility.Collapsed : Visibility.Visible;
-        SettingsHeading.Text = school ? "学校互联" : "设备与连接";
+        NotificationWorkspaceEntrySlot.Visibility = settingsVisible && school && !notifications ? Visibility.Visible : Visibility.Collapsed;
+        SettingsHeading.Text = notifications ? "学校通知" : school ? "学校互联" : "设备与连接";
         NpepSettingsTab.Tag = settingsVisible && school ? "active" : null;
         SettingsNav.Tag = settingsVisible && !school ? "active" : null;
         if (settingsVisible) PageBreadcrumb.Text = SettingsHeading.Text;

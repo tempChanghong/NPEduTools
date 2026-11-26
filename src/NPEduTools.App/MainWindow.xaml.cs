@@ -41,7 +41,7 @@ public partial class MainWindow : Window
         _pipe = pipe;
         _upstream = upstream;
         InitializeComponent();
-        NotificationInboxCard.IsVisibleChanged += (_, e) => { if (!(bool)e.NewValue) _inboxNavigationVersion++; };
+        InitializeNotificationWorkspace();
         InitializeDensity(initializeServices);
         InitializeStudyWorkspace();
         InitializeBridgeClock();
@@ -196,6 +196,7 @@ public partial class MainWindow : Window
         ShortcutPage.Visibility = Visibility.Collapsed;
         ShortcutNav.Tag = null;
         HomePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
+        if (!settings) HideNotificationWorkspace();
         SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
         HomeNav.Tag = settings ? null : "active";
         UpdateSettingsNavigation();

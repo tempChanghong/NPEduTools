@@ -74,7 +74,7 @@ internal static partial class Program
                     initial.Expect(ForNotice("get"));
                     if (leaveInbox)
                     {
-                        Click(main, "GeneralSettingsTab");
+                        Click(main, "NotificationWorkspaceBack");
                         ShowNotificationSettings(main);
                         initial.Reply(inbox);
                         PumpUntil(() => !Opening(), "leaving the inbox did not release presentation");

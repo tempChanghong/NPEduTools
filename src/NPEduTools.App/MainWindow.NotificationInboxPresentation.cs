@@ -45,6 +45,7 @@ public partial class MainWindow
             range = online ? $"第 {first}–{last} 条，共 {inbox.Total} 条" : $"缓存列表第 {first}–{last} 条";
         }
         SetNotificationInboxPage(scope, _inboxOffset, inbox.NextOffset, inbox.Items, status, range);
+        ObserveNotificationReaderInbox(inbox);
     }
 
     private void ClearNotificationInbox(int offset, string status) =>
@@ -53,6 +54,7 @@ public partial class MainWindow
     private void SelectNotificationPage(int offset)
     {
         if (offset == _inboxOffset) return;
+        ResetNotificationReader();
         SetNotificationInboxPage(null, offset, null, null, "正在读取通知列表…", "", awaitingSelectedPage: true);
     }
 
@@ -66,7 +68,11 @@ public partial class MainWindow
         var focusedRow = (focused as Button)?.Tag as NpepNoticeSummary;
         int focusedIndex = focusedRow is null ? -1 : NotificationInboxItems.Items.IndexOf(focusedRow);
         bool sameScope = scope == _inboxScope;
-        if (!sameScope || offset != _inboxOffset) _inboxNavigationVersion++;
+        if (!sameScope || offset != _inboxOffset)
+        {
+            _inboxNavigationVersion++;
+            InvalidateNotificationReader("通知所属范围已变化，请返回列表。");
+        }
         bool replaceRows = !sameScope || !NotificationInboxItems.Items.Cast<NpepNoticeSummary>().SequenceEqual(rows ?? []);
         _inboxScope = scope;
         _inboxNext = next;
@@ -126,11 +132,16 @@ public partial class MainWindow
     {
         if (!IsActive || _lifetime.IsCancellationRequested || NotificationPresentationActive ||
             !NotificationInboxItems.IsVisible || version != _inboxNavigationVersion || scope != _inboxScope) return;
+        if (!FocusNotificationRow(notice.PublicationId, notice.Revision)) NotificationInboxMessage.Focus();
+    }
+
+    private bool FocusNotificationRow(string publicationId, long revision)
+    {
         var rows = NotificationInboxItems.Items;
         for (int i = 0; i < rows.Count; i++)
-            if (rows[i] is NpepNoticeSummary row && row.PublicationId == notice.PublicationId &&
-                row.Revision == notice.Revision && FocusNotificationRow(i)) return;
-        NotificationInboxMessage.Focus();
+            if (rows[i] is NpepNoticeSummary row && row.PublicationId == publicationId &&
+                row.Revision == revision && FocusNotificationRow(i)) return true;
+        return false;
     }
 
     private bool FocusNotificationRow(int index)

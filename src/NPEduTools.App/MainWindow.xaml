@@ -479,6 +479,12 @@
                     Click="ReturnToClassroomCheckClicked" AutomationProperties.AutomationId="ReturnToClassroomCheck" />
             <TextBlock x:Name="SettingsHeading" Text="设备与连接" FontSize="30" FontWeight="SemiBold" VerticalAlignment="Center"
                        Focusable="True" KeyboardNavigation.IsTabStop="False" AutomationProperties.HeadingLevel="Level1" />
+            <StackPanel x:Name="NotificationWorkspaceEntrySlot" Orientation="Horizontal" Visibility="Collapsed" VerticalAlignment="Center" Margin="12,0,0,0">
+              <Button x:Name="NotificationWorkspaceEntry" Content="学校通知" Style="{DynamicResource TeacherButton}"
+                      Visibility="{Binding DataContext.ShowCompanionTools, ElementName=SettingsSchoolConnection, Converter={StaticResource SchoolToolsVisibility}, FallbackValue=Visible}"
+                      Click="NotificationWorkspaceEntryClicked" VerticalAlignment="Center"
+                      AutomationProperties.AutomationId="NotificationWorkspaceEntry" />
+            </StackPanel>
           </WrapPanel>
           <WrapPanel x:Name="SettingsCategoryTabs" Grid.Row="1" Margin="0,0,0,12">
             <Button x:Name="GeneralSettingsTab" Content="常规" Tag="active" Style="{StaticResource Navigation}" Click="GeneralSettingsClicked" AutomationProperties.AutomationId="GeneralSettingsTab" Margin="0,0,8,0" />
@@ -521,111 +527,6 @@
                   <Expander Header="最近操作记录（历史回执）" Margin="0,12,0,0"><local:RemoteExamHistoryView x:Name="RemoteExamHistory" /></Expander>
                 </StackPanel>
               </Expander>
-              <Border x:Name="NotificationInboxCard" Style="{StaticResource Surface}"
-                      Visibility="{Binding DataContext.ShowCompanionTools, ElementName=SettingsSchoolConnection, Converter={StaticResource SchoolToolsVisibility}, FallbackValue=Visible}"
-                      Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
-                      Initialized="NotificationInboxInitialized" Loaded="NotificationInboxLoaded" Unloaded="NotificationInboxUnloaded">
-                <StackPanel SizeChanged="NotificationInboxSizeChanged" TextElement.FontFamily="{DynamicResource TeacherFont}"
-                            TextElement.Foreground="{DynamicResource TeacherTextBrush}">
-                  <TextBlock Text="学校通知" FontSize="20" FontWeight="SemiBold" />
-                  <TextBlock x:Name="NotificationInboxMessage" Text="正在读取通知状态…" TextWrapping="Wrap"
-                             Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,12" Focusable="True" KeyboardNavigation.IsTabStop="False"
-                             AutomationProperties.AutomationId="NotificationInboxMessage" AutomationProperties.LiveSetting="Polite" />
-                  <ItemsControl x:Name="NotificationInboxItems">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate>
-                        <Border BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,0,0,1" Padding="0,3">
-                          <Button x:Name="NotificationInboxRow" Tag="{Binding}" Click="OpenSchoolNotificationClicked" Style="{DynamicResource TeacherQuiet}"
-                                  Padding="10,8" HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Title}"
-                                  AutomationProperties.HelpText="{Binding DisplayLabel}">
-                            <Grid>
-                              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                              <Border x:Name="LevelBadge" CornerRadius="4" BorderThickness="1" BorderBrush="{Binding Foreground, ElementName=LevelText}"
-                                      Padding="8,3" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="0,0,12,0">
-                                <TextBlock x:Name="LevelText" Text="次要" FontSize="13" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource NotificationMinorBrush}" />
-                              </Border>
-                              <StackPanel x:Name="NoticeRowText" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource TeacherTextBrush}" TextWrapping="Wrap" />
-                                <TextBlock x:Name="NoticeRowState" Text="仅在列表显示" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}"
-                                           TextWrapping="Wrap" Margin="0,3,0,0" />
-                              </StackPanel>
-                              <TextBlock Grid.Column="2" Text="打开 ›" VerticalAlignment="Center" FontSize="13"
-                                         Foreground="{DynamicResource TeacherAccentBrush}" />
-                            </Grid>
-                          </Button>
-                        </Border>
-                        <DataTemplate.Triggers>
-                          <DataTrigger Binding="{Binding Priority}" Value="NORMAL">
-                            <Setter TargetName="LevelText" Property="Text" Value="普通" /><Setter TargetName="LevelText" Property="Foreground" Value="{DynamicResource NotificationNormalBrush}" />
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding Priority}" Value="IMPORTANT">
-                            <Setter TargetName="LevelText" Property="Text" Value="重要" /><Setter TargetName="LevelText" Property="Foreground" Value="{DynamicResource NotificationImportantBrush}" />
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding Priority}" Value="URGENT">
-                            <Setter TargetName="LevelText" Property="Text" Value="紧急" /><Setter TargetName="LevelText" Property="Foreground" Value="{DynamicResource NotificationUrgentBrush}" />
-                          </DataTrigger>
-                          <DataTrigger Binding="{Binding PopupEnabled}" Value="True"><Setter TargetName="NoticeRowState" Property="Text" Value="弹窗通知" /></DataTrigger>
-                          <DataTrigger Binding="{Binding Dismissed}" Value="True"><Setter TargetName="NoticeRowState" Property="Text" Value="已手动关闭" /></DataTrigger>
-                          <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="compact">
-                            <Setter TargetName="NoticeRowText" Property="Grid.Row" Value="1" />
-                            <Setter TargetName="NoticeRowText" Property="Grid.Column" Value="0" />
-                            <Setter TargetName="NoticeRowText" Property="Grid.ColumnSpan" Value="3" />
-                            <Setter TargetName="NoticeRowText" Property="Margin" Value="0,8,0,0" />
-                          </DataTrigger>
-                        </DataTemplate.Triggers>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <TextBlock x:Name="NotificationPageRange" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}"
-                             AutomationProperties.AutomationId="NotificationPageRange">
-                    <TextBlock.Style>
-                      <Style TargetType="TextBlock">
-                        <Setter Property="Margin" Value="0,12,0,0" />
-                        <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers>
-                      </Style>
-                    </TextBlock.Style>
-                  </TextBlock>
-                  <WrapPanel x:Name="NotificationPager" Margin="0,10,0,0" Visibility="Collapsed">
-                    <Button x:Name="NotificationPrevious" Content="上一页" Click="NotificationPreviousClicked" Style="{DynamicResource TeacherButton}"
-                            IsEnabled="False" Margin="0,0,8,4" AutomationProperties.AutomationId="NotificationPrevious" />
-                    <Button x:Name="NotificationNext" Content="下一页" Click="NotificationNextClicked" Style="{DynamicResource TeacherButton}"
-                            IsEnabled="False" Margin="0,0,0,4" AutomationProperties.AutomationId="NotificationNext" />
-                  </WrapPanel>
-                </StackPanel>
-              </Border>
-              <Border Style="{StaticResource Surface}" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
-                      Visibility="{Binding DataContext.ShowCompanionTools, ElementName=SettingsSchoolConnection, Converter={StaticResource SchoolToolsVisibility}, FallbackValue=Visible}">
-                <StackPanel TextElement.FontFamily="{DynamicResource TeacherFont}" TextElement.Foreground="{DynamicResource TeacherTextBrush}">
-                  <TextBlock Text="本地样式预览" FontSize="17" FontWeight="SemiBold" />
-                  <TextBlock Text="预览仅在本机显示。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,12" />
-                  <Grid x:Name="NotificationPreviewActions" SizeChanged="NotificationPreviewSizeChanged">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <ComboBox x:Name="NotificationPreviewPriority" SelectedIndex="1" Style="{DynamicResource SettingsChoice}" MinHeight="44" Width="220"
-                              HorizontalAlignment="Left" VerticalContentAlignment="Center" Padding="10,6"
-                              AutomationProperties.Name="预览等级" AutomationProperties.AutomationId="NotificationPreviewPriority">
-                      <ComboBoxItem Tag="Minor">次要</ComboBoxItem>
-                      <ComboBoxItem Tag="Normal">普通</ComboBoxItem>
-                      <ComboBoxItem Tag="Important">重要</ComboBoxItem>
-                      <ComboBoxItem Tag="Urgent">紧急</ComboBoxItem>
-                    </ComboBox>
-                    <Button x:Name="NotificationPreviewButton" Grid.Column="1" Content="预览通知" Style="{DynamicResource TeacherButton}"
-                            Click="NotificationPreviewClicked" Margin="12,0,0,0" HorizontalAlignment="Left"
-                            AutomationProperties.AutomationId="NotificationPreviewButton" />
-                  </Grid>
-                  <TextBlock x:Name="NotificationPreviewMessage" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap"
-                             AutomationProperties.AutomationId="NotificationPreviewMessage" AutomationProperties.LiveSetting="Polite">
-                    <TextBlock.Style>
-                      <Style TargetType="TextBlock">
-                        <Setter Property="Margin" Value="0,8,0,0" />
-                        <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers>
-                      </Style>
-                    </TextBlock.Style>
-                  </TextBlock>
-                </StackPanel>
-              </Border>
             </StackPanel>
             <StackPanel x:Name="GeneralSettingsPanel">
             <Border Style="{StaticResource Surface}">
@@ -840,6 +741,195 @@
             </StackPanel>
           </StackPanel>
           </ScrollViewer>
+          <Grid x:Name="NotificationWorkspace" Grid.Row="2" Visibility="Collapsed" SizeChanged="NotificationWorkspaceSizeChanged">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Button x:Name="NotificationWorkspaceBack" Grid.Row="0" Content="← 返回学校互联" Style="{DynamicResource TeacherQuiet}"
+                    Click="NotificationWorkspaceBackClicked" HorizontalAlignment="Left" Margin="0,0,0,8"
+                    AutomationProperties.AutomationId="NotificationWorkspaceBack" />
+            <Grid x:Name="NotificationReaderLayout" Grid.Row="1">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="0" />
+              </Grid.ColumnDefinitions>
+              <Grid x:Name="NotificationListPane" Grid.Column="0">
+                <ScrollViewer x:Name="NotificationListScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+                  <StackPanel>
+                    <Border x:Name="NotificationInboxCard" Style="{StaticResource Surface}"
+                            Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
+                            Initialized="NotificationInboxInitialized" Loaded="NotificationInboxLoaded" Unloaded="NotificationInboxUnloaded">
+                      <StackPanel SizeChanged="NotificationInboxSizeChanged" TextElement.FontFamily="{DynamicResource TeacherFont}"
+                                  TextElement.Foreground="{DynamicResource TeacherTextBrush}">
+                        <TextBlock Text="通知列表" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock x:Name="NotificationInboxMessage" Text="正在读取通知状态…" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,12" Focusable="True" KeyboardNavigation.IsTabStop="False"
+                                   AutomationProperties.AutomationId="NotificationInboxMessage" AutomationProperties.LiveSetting="Polite" />
+                        <ItemsControl x:Name="NotificationInboxItems">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <Border BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="0,0,0,1" Padding="0,3">
+                                <Button x:Name="NotificationInboxRow" Tag="{Binding}" Click="OpenSchoolNotificationClicked" Style="{DynamicResource TeacherQuiet}"
+                                        Padding="10,8" HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Title}"
+                                        AutomationProperties.HelpText="{Binding DisplayLabel}">
+                                  <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                    <Border x:Name="LevelBadge" CornerRadius="4" BorderThickness="1" BorderBrush="{Binding Foreground, ElementName=LevelText}"
+                                            Padding="8,3" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="0,0,12,0">
+                                      <TextBlock x:Name="LevelText" Text="次要" FontSize="13" FontWeight="SemiBold"
+                                                 Foreground="{DynamicResource NotificationMinorBrush}" />
+                                    </Border>
+                                    <StackPanel x:Name="NoticeRowText" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                      <TextBlock Text="{Binding Title}" Foreground="{DynamicResource TeacherTextBrush}" TextWrapping="Wrap" />
+                                      <TextBlock x:Name="NoticeRowState" Text="仅在列表显示" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}"
+                                                 TextWrapping="Wrap" Margin="0,3,0,0" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="NoticeRowAction" Grid.Column="2" Text="查看 ›" VerticalAlignment="Center" FontSize="13"
+                                               Foreground="{DynamicResource TeacherAccentBrush}" />
+                                  </Grid>
+                                </Button>
+                              </Border>
+                              <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Priority}" Value="NORMAL">
+                                  <Setter TargetName="LevelText" Property="Text" Value="普通" /><Setter TargetName="LevelText" Property="Foreground" Value="{DynamicResource NotificationNormalBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Priority}" Value="IMPORTANT">
+                                  <Setter TargetName="LevelText" Property="Text" Value="重要" /><Setter TargetName="LevelText" Property="Foreground" Value="{DynamicResource NotificationImportantBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Priority}" Value="URGENT">
+                                  <Setter TargetName="LevelText" Property="Text" Value="紧急" /><Setter TargetName="LevelText" Property="Foreground" Value="{DynamicResource NotificationUrgentBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PopupEnabled}" Value="True"><Setter TargetName="NoticeRowState" Property="Text" Value="弹窗通知" /></DataTrigger>
+                                <DataTrigger Binding="{Binding Dismissed}" Value="True"><Setter TargetName="NoticeRowState" Property="Text" Value="已手动关闭" /></DataTrigger>
+                                <MultiDataTrigger>
+                                  <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding PopupEnabled}" Value="True" />
+                                    <Condition Binding="{Binding Dismissed}" Value="False" />
+                                  </MultiDataTrigger.Conditions>
+                                  <Setter TargetName="NoticeRowAction" Property="Text" Value="处理 ›" />
+                                </MultiDataTrigger>
+                                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="compact">
+                                  <Setter TargetName="NoticeRowText" Property="Grid.Row" Value="1" />
+                                  <Setter TargetName="NoticeRowText" Property="Grid.Column" Value="0" />
+                                  <Setter TargetName="NoticeRowText" Property="Grid.ColumnSpan" Value="3" />
+                                  <Setter TargetName="NoticeRowText" Property="Margin" Value="0,8,0,0" />
+                                </DataTrigger>
+                              </DataTemplate.Triggers>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="NotificationPageRange" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}"
+                                   AutomationProperties.AutomationId="NotificationPageRange">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Setter Property="Margin" Value="0,12,0,0" />
+                              <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
+                        <WrapPanel x:Name="NotificationPager" Margin="0,10,0,0" Visibility="Collapsed">
+                          <Button x:Name="NotificationPrevious" Content="上一页" Click="NotificationPreviousClicked" Style="{DynamicResource TeacherButton}"
+                                  IsEnabled="False" Margin="0,0,8,4" AutomationProperties.AutomationId="NotificationPrevious" />
+                          <Button x:Name="NotificationNext" Content="下一页" Click="NotificationNextClicked" Style="{DynamicResource TeacherButton}"
+                                  IsEnabled="False" Margin="0,0,0,4" AutomationProperties.AutomationId="NotificationNext" />
+                        </WrapPanel>
+                      </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource Surface}" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" Margin="0,10,0,0">
+                      <Expander x:Name="NotificationPreviewExpander" Header="本地样式预览" Style="{DynamicResource TeacherExpander}" IsExpanded="False"
+                                AutomationProperties.Name="本地样式预览" AutomationProperties.AutomationId="NotificationPreviewExpander">
+                        <StackPanel Margin="0,8,0,0" TextElement.FontFamily="{DynamicResource TeacherFont}" TextElement.Foreground="{DynamicResource TeacherTextBrush}">
+                          <TextBlock Text="预览仅在本机显示。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,10" />
+                          <Grid x:Name="NotificationPreviewActions" SizeChanged="NotificationPreviewSizeChanged">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <ComboBox x:Name="NotificationPreviewPriority" SelectedIndex="1" Style="{DynamicResource SettingsChoice}" MinHeight="44" Width="220"
+                                      HorizontalAlignment="Left" VerticalContentAlignment="Center" Padding="10,6"
+                                      AutomationProperties.Name="预览等级" AutomationProperties.AutomationId="NotificationPreviewPriority">
+                              <ComboBoxItem Tag="Minor">次要</ComboBoxItem>
+                              <ComboBoxItem Tag="Normal">普通</ComboBoxItem>
+                              <ComboBoxItem Tag="Important">重要</ComboBoxItem>
+                              <ComboBoxItem Tag="Urgent">紧急</ComboBoxItem>
+                            </ComboBox>
+                            <Button x:Name="NotificationPreviewButton" Grid.Column="1" Content="预览通知" Style="{DynamicResource TeacherButton}"
+                                    Click="NotificationPreviewClicked" Margin="12,0,0,0" HorizontalAlignment="Left"
+                                    AutomationProperties.AutomationId="NotificationPreviewButton" />
+                          </Grid>
+                          <TextBlock x:Name="NotificationPreviewMessage" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap"
+                                     AutomationProperties.AutomationId="NotificationPreviewMessage" AutomationProperties.LiveSetting="Polite">
+                            <TextBlock.Style>
+                              <Style TargetType="TextBlock">
+                                <Setter Property="Margin" Value="0,8,0,0" />
+                                <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers>
+                              </Style>
+                            </TextBlock.Style>
+                          </TextBlock>
+                        </StackPanel>
+                      </Expander>
+                    </Border>
+                  </StackPanel>
+                </ScrollViewer>
+              </Grid>
+              <Grid x:Name="NotificationReaderPane" Grid.Column="1" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Button x:Name="NotificationReaderBack" Grid.Row="0" Content="← 返回通知列表" Style="{DynamicResource TeacherQuiet}"
+                        Click="NotificationReaderBackClicked" HorizontalAlignment="Left" Margin="0,0,0,8" Visibility="Collapsed"
+                        AutomationProperties.AutomationId="NotificationReaderBack" />
+                <Border Grid.Row="1" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" Padding="0">
+                  <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource Surface}">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Text, ElementName=NotificationReaderBody}" Value="">
+                          <Setter Property="VerticalAlignment" Value="Top" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Border.Style>
+                  <ScrollViewer x:Name="NotificationReaderScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                PanningMode="VerticalOnly" Focusable="True" Padding="18,16">
+                    <StackPanel TextElement.FontFamily="{DynamicResource TeacherFont}" TextElement.Foreground="{DynamicResource TeacherTextBrush}">
+                      <TextBlock x:Name="NotificationReaderStatus" Text="选择一条通知查看正文。" FontSize="14" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap"
+                                 Focusable="True" KeyboardNavigation.IsTabStop="False"
+                                 AutomationProperties.AutomationId="NotificationReaderStatus" AutomationProperties.LiveSetting="Polite">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Setter Property="Margin" Value="0,0,0,6" />
+                            <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                      <TextBlock x:Name="NotificationReaderTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"
+                                 Focusable="True" KeyboardNavigation.IsTabStop="False"
+                                 AutomationProperties.AutomationId="NotificationReaderTitle" AutomationProperties.HeadingLevel="Level2">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Setter Property="Margin" Value="0,0,0,6" />
+                            <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                      <TextBlock x:Name="NotificationReaderMeta" Text="" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap"
+                                 AutomationProperties.AutomationId="NotificationReaderMeta">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Setter Property="Margin" Value="0,0,0,12" />
+                            <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger></Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                      <TextBlock x:Name="NotificationReaderBody" Text="" FontSize="15" LineHeight="24" TextWrapping="Wrap"
+                                 AutomationProperties.AutomationId="NotificationReaderBody" />
+                    </StackPanel>
+                  </ScrollViewer>
+                </Border>
+              </Grid>
+            </Grid>
+          </Grid>
                 <TextBlock Grid.Row="3" x:Name="StartupPreferencesMessage" Foreground="#147D68" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0" AutomationProperties.AutomationId="StartupPreferencesMessage" />
         </Grid>
         <local:AboutPage x:Name="AboutPageView" Visibility="Collapsed" />

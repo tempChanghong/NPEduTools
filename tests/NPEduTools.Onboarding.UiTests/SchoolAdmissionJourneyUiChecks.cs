@@ -238,7 +238,7 @@ internal static partial class Program
                     }
                     foreach (string id in new[] { "MinimizeWindow", "MaximizeRestoreWindow", "CloseWindow" })
                         Assert(((Button)Find(window, id)).IsVisible, "school admission lost its main caption " + id);
-                    Assert(((FrameworkElement)window.FindName("NotificationInboxCard")).IsVisible == (phase == "bound"),
+                    Assert(((FrameworkElement)window.FindName("NotificationWorkspaceEntry")).IsVisible == (phase == "bound"),
                         "connected-only controls were competing with the current application or missing once connected");
                     if (phase == "selected")
                     {
