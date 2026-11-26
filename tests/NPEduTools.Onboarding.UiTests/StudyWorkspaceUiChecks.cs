@@ -12,6 +12,7 @@ internal static partial class Program
 {
     private static void RunStudyWorkspaceChecks()
     {
+        RunSchoolStudyOverviewChecks();
         RunWorkspaceReportThresholdChecks();
         RunStudyReturnChecks();
         var previous = SynchronizationContext.Current;

@@ -68,6 +68,8 @@ internal static partial class Program
                 Click(main, "StudyNav");
                 Click(main, "SchoolWorkspaceTab");
                 var school = WorkspaceField<StudyMonitoringWindow>(main, "_studyMonitoringWindow");
+                ((Expander)school.FindName("CalibrationExpander")).IsExpanded = true;
+                main.UpdateLayout();
                 var entry = Button(school, "QuickCalibrationButton");
                 var hwnd = new WindowInteropHelper(main).Handle;
                 Click(school, "QuickCalibrationButton");

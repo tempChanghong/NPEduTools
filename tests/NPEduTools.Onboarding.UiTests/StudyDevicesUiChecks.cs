@@ -107,12 +107,24 @@ internal static partial class Program
                 owner.Width = 660; owner.Height = 600;
                 var pageScroll = (ScrollViewer)owner.FindName("PageScroll");
                 pageScroll.ScrollToTop(); owner.UpdateLayout();
+                var calibrationGroup = (Expander)owner.FindName("CalibrationExpander");
                 var calibration = Button(owner, "OpenMeterCalibration");
-                var actionPoint = calibration.TranslatePoint(new Point(), owner);
-                Assert(actionPoint.X >= 0 && actionPoint.X + calibration.ActualWidth <= owner.ActualWidth &&
-                    calibration.TranslatePoint(new(), pageScroll).Y + calibration.ActualHeight <= pageScroll.ActualHeight,
-                    "common calibration action is clipped or below the first viewport in compact layout");
+                Assert(calibrationGroup.IsVisible && !calibrationGroup.IsExpanded && !calibration.IsVisible,
+                    "compact monitoring should show the calibration summary before its actions");
                 Snapshot(owner, "study-monitoring-compact-active.png");
+                calibrationGroup.IsExpanded = true;
+                owner.UpdateLayout();
+                calibration.BringIntoView();
+                PumpUntil(() =>
+                {
+                    var actionPoint = calibration.TranslatePoint(new Point(), owner);
+                    var actionY = calibration.TranslatePoint(new Point(), pageScroll).Y;
+                    return calibration.IsVisible && calibration.ActualHeight > 0 && actionPoint.X >= 0 &&
+                        actionPoint.X + calibration.ActualWidth <= owner.ActualWidth + 1 && actionY >= -1 &&
+                        actionY + calibration.ActualHeight <= pageScroll.ViewportHeight + 1;
+                },
+                    "the common calibration action cannot be reached in the expanded compact layout");
+                calibrationGroup.IsExpanded = false;
                 devicesPanel.IsExpanded = true; owner.UpdateLayout();
                 Assert(picker.IsVisible && captures == 0, "expanding shared device settings started capture or hid controls");
                 devicesPanel.IsExpanded = false;

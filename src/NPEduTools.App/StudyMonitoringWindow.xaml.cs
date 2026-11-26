@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using NPEduTools.Contracts;
 using NPEduTools.Core;
@@ -16,6 +17,7 @@ public partial class StudyMonitoringWindow : Window
     private bool _reading;
     private bool _returning;
     private bool _stopping;
+    private bool _nextFirst;
     private ScheduledStop? _stopTarget;
     private readonly StudyDisplayReturn _returnDisplay = new();
     private readonly NoiseCalibrationRead _calibrationRead = new();
@@ -45,6 +47,7 @@ public partial class StudyMonitoringWindow : Window
     {
         _pipe = pipe; _noise = noise; InitializeComponent(); Devices.Bind(pipe);
         DesktopDialogSizing.Attach(this, pipe);
+        PageScroll.SizeChanged += (_, args) => ArrangeOverview(args.NewSize.Width);
         Devices.StatusChanged += (_, _) => DeviceWorkspaceStatus.Text = DeviceSummary.Text = Devices.Summary;
         _timer.Tick += async (_, _) => { if (WorkspacePanel.Visible(this)) await ReadAsync(); };
         Loaded += async (_, _) => { _timer.Start(); await ReadAsync(); if (!_lifetime.IsCancellationRequested && WorkspacePanel.Visible(this)) await Devices.RefreshAsync(); };
@@ -60,6 +63,18 @@ public partial class StudyMonitoringWindow : Window
         return Devices;
     }
     private void OpenDevicesClicked(object sender, RoutedEventArgs e) => OpenDevicesWorkspace?.Invoke();
+    private void ArrangeOverview(double contentWidth)
+    {
+        // Compact density can increase the measured content width without adding space to the window.
+        bool wide = contentWidth >= 760 && WorkspacePanel.DialogOwner(this).ActualWidth >= 930;
+        OverviewGapColumn.Width = new GridLength(wide ? 12 : 0);
+        OverviewSecondaryColumn.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        int currentRow = _nextFirst ? 1 : 0;
+        Grid.SetRow(StudyScheduleCard, currentRow);
+        Grid.SetRow(StudyRuntimeCard, wide ? currentRow : currentRow + 1);
+        Grid.SetColumn(StudyRuntimeCard, wide ? 2 : 0);
+        Grid.SetRow(StudyNextBanner, _nextFirst ? 0 : wide ? 1 : 2);
+    }
     private async Task ReadAsync()
     {
         if (_reading || _returning || _stopping || _lifetime.IsCancellationRequested) return;
@@ -81,7 +96,7 @@ public partial class StudyMonitoringWindow : Window
     private async Task<(HostResponse Study, ScheduledStop? Target)> ReadStopTargetAsync(CancellationToken token)
     {
         var study = await _calibrationRead.RequestAsync(_pipe, new(1, Guid.NewGuid(), "study.status"), token);
-        if (study is { Outcome: "Succeeded", Study: { PolicyState: "APPLIED", Phase: "Active", ClockReady: true, Window: { } window,
+        if (study is { Outcome: "Succeeded", Study: { PolicyState: "APPLIED", Phase: "Active", ClockReady: true, SchoolNow: not null, Window: { } window,
                 Display.Selected: true, Execution: { Owner: "Schedule", State: "Starting" or "Active", SessionId: { } session, ClockReady: true } execution } school,
                 Noise: { State: "Starting" or "Active", SessionId: { } noiseSession } noise } && session == noiseSession &&
             MatchesWindow(school, window, execution))
@@ -132,9 +147,13 @@ public partial class StudyMonitoringWindow : Window
         StopRule.Text = "停止本场：" + (blocked ?? ClassroomActionAccess.Describe(mode));
         if (target is { Legacy: true })
         {
+            _nextFirst = false;
+            ArrangeOverview(PageScroll.ActualWidth);
             StudyPhase.Text = target.Name;
             StudySchedule.Text = $"当前时段 {StudySchedulePresentation.Span(target.Window)}";
+            StudySchedule.Visibility = Visibility.Visible;
             StudyNext.Text = "后续时段请核对原定时排程。";
+            StudyNextBanner.Visibility = Visibility.Visible;
             StudyCapture.Text = "本场定时监测正在启动或采集";
         }
     }
@@ -192,26 +211,58 @@ public partial class StudyMonitoringWindow : Window
     }
     internal void Render(StudyHostState? state)
     {
-        _returnDisplay.Observe(state);
+        bool enabled = state is
+            { PolicyState: "APPLIED", Phase: not "Disabled", Reason: not ("NOT_CONFIGURED" or "INVALID_STUDY_CALENDAR") };
+        bool clockConfirmed = enabled && state is { ClockReady: true, SchoolNow: not null };
+        bool clockPending = enabled && !clockConfirmed;
+        _nextFirst = clockConfirmed && state is
+            { Phase: "Outside" or "Ended", Next: not null, Reason: not ("OFFLINE_CONTINUING" or "EXAM_PAUSED") };
+        ArrangeOverview(PageScroll.ActualWidth);
+
+        _returnDisplay.Observe(clockConfirmed ? state : null);
         ReturnStudyButton.Visibility = _returnDisplay.Available ? Visibility.Visible : Visibility.Collapsed;
         ReturnStudyButton.IsEnabled = !_returning && _returnDisplay.Available;
-        StudyPhase.Text = state is null || state.PolicyState != "APPLIED" ? StudySchedulePresentation.Unavailable(state) :
-            state.Phase switch { "Preparing" => "准备自习", "Active" => "自习进行中", "Ended" => "自习结束", "Outside" => "当前不在自习时段", _ => "自习暂不可执行" };
+        StudyPhase.Text = state switch
+        {
+            null or { PolicyState: not "APPLIED" } => StudySchedulePresentation.Unavailable(state),
+            { Reason: "NOT_CONFIGURED" } => "学校尚未配置本班自习",
+            { Reason: "INVALID_STUDY_CALENDAR" } => "学校自习安排无效",
+            { Phase: "Disabled" } => "当前模式未启用定时自习",
+            { Mode: "Exam" } when clockPending => "考试模式时间待确认",
+            _ when clockPending => "学校时间待确认",
+            { Phase: "Preparing" } => "准备自习",
+            { Phase: "Active" } => "自习进行中",
+            { Phase: "Ended" } => "自习结束",
+            { Phase: "Outside" } => "当前不在自习时段",
+            _ => "自习暂不可执行"
+        };
         StudyConfiguration.Text = StudySchedulePresentation.Configuration(state);
         StudyPhase.ToolTip = state?.Reason;
-        StudySchedule.Text = state?.ClockReady == true && state.SchoolNow is { } now ? $"{(state.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")} {now:yyyy-MM-dd HH:mm:ss}" +
-            (state.Window is { } w ? $"　当前时段 {StudySchedulePresentation.Span(w)}" : "") : state?.Mode == "Exam" ? "考试模式 Windows 时间尚未确认；不会自行启动。" : "学校时间未确认；不会按 Windows 时间自行启动。";
+        StudySchedule.Text = state switch
+        {
+            { Mode: "Exam" } when clockPending => "已收到学校安排，Windows 时间尚未确认。当前安排不会自行启动。",
+            _ when clockPending => "已收到学校安排，ClassIsland 时间尚未确认。当前安排不会按 Windows 时间自行启动。",
+            { Reason: "INVALID_STUDY_CALENDAR" } => "请联系学校管理员核对本班安排。",
+            { SchoolNow: { } now } when clockConfirmed =>
+                (state.Window is { } w ? $"当前时段 {StudySchedulePresentation.Span(w)}\n" : "") +
+                $"{(state.Mode == "Exam" ? "考试模式 · Windows 时间" : "日常模式 · ClassIsland 时间")} {now:yyyy-MM-dd HH:mm:ss}",
+            _ => ""
+        };
+        StudySchedule.Visibility = StudySchedule.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         StudyNext.Text = StudySchedulePresentation.Next(state);
+        StudyNextBanner.Visibility = clockConfirmed ? Visibility.Visible : Visibility.Collapsed;
+        StudyNextBanner.SetResourceReference(Border.BackgroundProperty, _nextFirst ? "TeacherSurfaceBrush" : "TeacherPageBrush");
+        StudyNext.FontWeight = _nextFirst ? FontWeights.SemiBold : FontWeights.Normal;
         StudyCapture.Text = state?.Execution?.Reason == "MICROPHONE_DISCONNECTED" ? "麦克风已断开 · 等待原设备重连" :
-            state is { PolicyState: "APPLIED", ClockReady: true, Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "正在采集 · 已收到新鲜采样" :
-            state is { PolicyState: "APPLIED", ClockReady: true, Display.Selected: true, Window: { } window,
+            clockConfirmed && state is { Phase: "Active", Execution: { Owner: "Schedule", State: "Active", SignalFresh: true } } ? "正在采集 · 已收到新鲜采样" :
+            clockConfirmed && state is { Display.Selected: true, Window: { } window,
                 Execution: { Owner: "None", Reason: "WINDOW_SKIPPED", State: not ("Active" or "Starting" or "Stopping") } stopped } && MatchesWindow(state, window, stopped) ? "本场监测已停止" :
-            state?.Execution is { Owner: "Manual" } ? "当前为手动采样" : state?.Execution is { State: "Starting" } ? "启动中 · 等待有效采样" :
+            state?.Execution is { Owner: "Manual" } ? "当前为手动采样" : clockConfirmed && state?.Execution is { State: "Starting" } ? "启动中 · 等待有效采样" :
             "采集状态待确认";
-        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先 · 自习展示暂缓" : state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
+        StudyPresentation.Text = state?.ProjectionPriority == true ? "考试放映优先 · 自习展示暂缓" : clockConfirmed && state?.Display is { Selected: true, HiddenRemainingSeconds: > 0 } d ? d.IdleReady == false ?
             "已收起 · 输入状态待确认" :
             $"已收起 · 再闲置约 {Math.Ceiling(d.HiddenRemainingSeconds / 60)} 分钟返回" :
-            state?.Display is { Available: true } ? "满足展示条件 · 可见性待回执确认" : "等待有效安排与时间";
+            clockConfirmed && state?.Display is { Available: true } ? "满足展示条件 · 可见性待回执确认" : "等待有效安排与时间";
         StudyCapture.ToolTip = state?.Execution is { Owner: "Manual" } ? "学校定时自习没有接管该手动会话。" : "只有当前执行状态与新鲜采样均确认，才显示正在采集。";
         StudyPresentation.ToolTip = "临时收起后连续无操作十分钟返回，操作会重新计时；后台采集和照片策略继续。满足展示条件不等于窗口已经可见。";
     }
