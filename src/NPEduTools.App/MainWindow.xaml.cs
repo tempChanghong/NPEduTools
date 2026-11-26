@@ -216,6 +216,11 @@ public partial class MainWindow : Window
     }
     private void DockLeftClicked(object sender, RoutedEventArgs e) => _quick?.SetSide(true);
     private void DockRightClicked(object sender, RoutedEventArgs e) => _quick?.SetSide(false);
+    private void SyncDockSide(bool leftSide)
+    {
+        DockLeft.IsChecked = leftSide;
+        DockRight.IsChecked = !leftSide;
+    }
 
     private void HideToEdge()
     {

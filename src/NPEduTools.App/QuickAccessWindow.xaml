@@ -46,7 +46,7 @@
       </StackPanel>
     </Border>
     <Border x:Name="PanelSurface" Visibility="Collapsed" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,8,0">
-      <Grid>
+      <Grid><Grid x:Name="QuickPanelContent">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <StackPanel Margin="0,0,0,8">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -54,12 +54,6 @@
             <Button x:Name="LayoutButton" Grid.Column="1" Content="布局" FontSize="13" Padding="10,6" Margin="0,0,4,0" Style="{DynamicResource TeacherQuiet}" Click="LayoutClicked" AutomationProperties.AutomationId="QuickLayout" AutomationProperties.Name="布局与位置选项" />
             <Button x:Name="CollapseButton" Grid.Column="2" Content="›" FontSize="25" Width="44" Padding="0" Style="{DynamicResource TeacherQuiet}" Click="CollapseClicked" ToolTip="收起快捷面板" AutomationProperties.AutomationId="CollapseQuick" AutomationProperties.Name="收起快捷面板" />
           </Grid>
-          <Border x:Name="LayoutOptions" Visibility="Collapsed" Background="{DynamicResource TeacherPageBrush}" BorderBrush="{DynamicResource TeacherLineBrush}" BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,8,0,0">
-            <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
-              <Button x:Name="LayoutShape" Style="{DynamicResource TeacherButton}" Content="缩成把手" Padding="8,7" Margin="0,0,3,0" Click="LayoutShapeClicked" AutomationProperties.AutomationId="QuickLayoutShape" />
-              <Button x:Name="LayoutMove" Grid.Column="1" Style="{DynamicResource TeacherButton}" Content="调整位置" Padding="8,7" Margin="3,0,0,0" Click="LayoutMoveClicked" AutomationProperties.AutomationId="QuickLayoutMove" />
-            </Grid>
-          </Border>
         </StackPanel>
         <Border Grid.Row="1" Background="{DynamicResource TeacherPageBrush}" CornerRadius="8" Padding="3" Margin="0,0,0,8"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
           <Button x:Name="ToolsTab" Style="{DynamicResource TeacherTab}" Content="课堂工具" Padding="8" Click="ToolsTabClicked" AutomationProperties.AutomationId="QuickToolsTab" Margin="0,0,3,0" />
@@ -193,6 +187,53 @@
           <Button x:Name="ShortcutsFooter" Grid.ColumnSpan="3" Content="管理快捷启动  →" MinHeight="55" MinWidth="55" Padding="6,5"
                   Style="{DynamicResource TeacherQuiet}" Click="ManageShortcutsClicked" ToolTip="管理快捷启动"
                   AutomationProperties.Name="管理快捷启动" AutomationProperties.AutomationId="QuickManageShortcuts" />
+        </Grid>
+      </Grid>
+        <Grid x:Name="LayoutOptions" Visibility="Collapsed" AutomationProperties.AutomationId="QuickLayoutPanel">
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition /></Grid.RowDefinitions>
+          <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition /></Grid.ColumnDefinitions>
+            <Button x:Name="LayoutBack" Style="{DynamicResource TeacherQuiet}" Content="‹ 返回" FontSize="14"
+                    MinWidth="76" MinHeight="55" Padding="12,0" Margin="0,0,8,0"
+                    Click="LayoutBackClicked" AutomationProperties.AutomationId="QuickLayoutBack"
+                    AutomationProperties.Name="返回课堂快捷" />
+            <TextBlock Grid.Column="1" Text="侧栏布局" Foreground="{DynamicResource TeacherTextBrush}"
+                       FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </Grid>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+            <StackPanel>
+              <Border Style="{DynamicResource SettingsGroupSurface}" Padding="12" Margin="0,0,0,12">
+                <StackPanel>
+                  <TextBlock Text="停靠位置" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,8" />
+                  <Border Background="{DynamicResource TeacherPageBrush}" CornerRadius="8" Padding="4">
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+                      <Button x:Name="LayoutLeft" Style="{DynamicResource TeacherTab}" Content="靠左"
+                              MinHeight="55" Padding="12,8" Margin="0,0,4,0" Click="LayoutSideClicked"
+                              AutomationProperties.AutomationId="QuickLayoutLeft" AutomationProperties.Name="停靠到左侧" />
+                      <Button x:Name="LayoutRight" Grid.Column="1" Style="{DynamicResource TeacherTab}" Content="靠右"
+                              MinHeight="55" Padding="12,8" Margin="4,0,0,0" Click="LayoutSideClicked"
+                              AutomationProperties.AutomationId="QuickLayoutRight" AutomationProperties.Name="停靠到右侧" />
+                    </Grid>
+                  </Border>
+                  <TextBlock x:Name="LayoutSaveError" Text="未能保存侧栏位置，请重试。" Visibility="Collapsed" TextWrapping="Wrap"
+                             Margin="0,8,0,0" Foreground="{DynamicResource TeacherErrorBrush}"
+                             AutomationProperties.AutomationId="QuickLayoutSaveError" />
+                </StackPanel>
+              </Border>
+              <Border Style="{DynamicResource SettingsGroupSurface}" Padding="12">
+                <StackPanel>
+                  <TextBlock Text="形态与微调" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,8" />
+                  <Button x:Name="LayoutShape" Style="{DynamicResource TeacherButton}" Content="缩成把手"
+                          MinHeight="55" Padding="12,8" Margin="0,0,0,10" HorizontalAlignment="Stretch"
+                          Click="LayoutShapeClicked" AutomationProperties.AutomationId="QuickLayoutShape" />
+                  <Button x:Name="LayoutMove" Style="{DynamicResource TeacherButton}" Content="拖动微调"
+                          MinHeight="55" Padding="12,8" HorizontalAlignment="Stretch"
+                          Click="LayoutMoveClicked" AutomationProperties.AutomationId="QuickLayoutMove" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
         </Grid>
       </Grid>
     </Border>

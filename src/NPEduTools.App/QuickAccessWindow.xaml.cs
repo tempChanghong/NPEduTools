@@ -87,6 +87,7 @@ public partial class QuickAccessWindow : Window
         WireDrawTouch();
         InitializePptStrip();
         InitializeRecordingControls();
+        InitializeLayoutOptions();
         SelectShortcutPage(false); RefreshCompact();
         _foregroundChanged = (_, _, window, _, _, _, _) => RememberExternalForeground(window);
         _idleTimer.Tick += (_, _) => RefreshHandleOpacity();
@@ -112,7 +113,7 @@ public partial class QuickAccessWindow : Window
                 Collapse(false);
         });
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Collapse(); } };
-        DpiChanged += (_, _) => Dispatcher.BeginInvoke(Position);
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => { CancelLayoutSidePress(); Position(); });
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplayChanged;
         Closed += (_, _) =>
         {
@@ -143,16 +144,15 @@ public partial class QuickAccessWindow : Window
         EdgeHandle.LostTouchCapture += (_, e) => { if (_handleTouch == e.TouchDevice) { _handleTouch = null; CancelHandlePress(); } };
         PreviewTouchDown += (_, e) =>
         {
-            if ((_handleTouch ?? _drawTouch ?? _pptTouch ?? RecordingTouch) is { } active && active != e.TouchDevice) e.Handled = true;
+            if ((_handleTouch ?? _drawTouch ?? _pptTouch ?? RecordingTouch ?? _layoutTouch) is { } active && active != e.TouchDevice) e.Handled = true;
         };
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;
-            if (LayoutOptions.Visibility == Visibility.Visible)
+            if (IsLayoutOpen)
             {
                 AbortHandleGesture();
-                LayoutOptions.Visibility = Visibility.Collapsed;
-                LayoutButton.Focus();
+                CloseLayoutOptions(refocus: true);
             }
             else if (!DismissRecordingConfirmation(refocus: true)) Collapse();
             e.Handled = true;
@@ -186,6 +186,7 @@ public partial class QuickAccessWindow : Window
 
     private void DisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() =>
     {
+        CancelLayoutSidePress();
         if (_moveOrigin is not null) Collapse();
         else Position();
     });
@@ -218,7 +219,8 @@ public partial class QuickAccessWindow : Window
             {
                 content.LayoutTransform = new ScaleTransform(density, density);
                 double target = MinimumTouchTarget / density;
-                foreach (var button in new[] { LayoutButton, LayoutShape, LayoutMove, ToolsTab, ShortcutsTab, CollapseButton, PowerButton, PauseButton })
+                foreach (var button in new[] { LayoutButton, LayoutBack, LayoutLeft, LayoutRight, LayoutShape, LayoutMove,
+                    ToolsTab, ShortcutsTab, CollapseButton, PowerButton, PauseButton })
                 {
                     button.MinWidth = target;
                     button.MinHeight = target;
@@ -227,6 +229,7 @@ public partial class QuickAccessWindow : Window
                     RecordingCancelStop, AutomaticSkipDay, SettingsFooter })
                     button.MinHeight = target;
                 CancelRecordingPress();
+                CancelLayoutSidePress();
                 ArrangePptActions();
             }
             // Shrink the panel with the user's density, but keep the rail and
@@ -309,7 +312,7 @@ public partial class QuickAccessWindow : Window
         bool wasExpanded = _expanded;
         if (wasExpanded) ShortcutViewRevision++;
         _expanded = false; RefreshCompact(); RefreshTaskOrder(); RefreshRecordingControlSlot(); RefreshStudyNextSlot();
-        LayoutOptions.Visibility = Visibility.Collapsed;
+        CloseLayoutOptions();
         PanelSurface.BeginAnimation(OpacityProperty, null);
         PanelSurface.Visibility = Visibility.Collapsed;
         RefreshRail();
@@ -319,6 +322,7 @@ public partial class QuickAccessWindow : Window
     }
 
     public bool LeftSide => _placement.LeftSide;
+    internal event Action<bool>? SideChanged;
 
     private Action? _onboarding;
     public void SetOnboardingAction(Action action, bool pending)
@@ -332,9 +336,20 @@ public partial class QuickAccessWindow : Window
 
     public void SetSide(bool leftSide)
     {
+        if (_closing) return;
+        var current = _moveOrigin ?? _placement;
+        if (current.LeftSide == leftSide) return;
+        var next = current with { LeftSide = leftSide };
+        if (!TrySavePlacement(next))
+        {
+            if (IsLayoutOpen) LayoutSaveError.Visibility = Visibility.Visible;
+            SideChanged?.Invoke(current.LeftSide);
+            return;
+        }
         Collapse();
-        _placement = _placement with { LeftSide = leftSide };
-        HandleActivity(); RefreshHandleLabel(); Position(); Save();
+        _placement = next;
+        HandleActivity(); RefreshHandleLabel(); Position();
+        SideChanged?.Invoke(leftSide);
     }
 
     public void Shutdown() { Collapse(); _closing = true; _idleTimer.Stop(); Close(); }
@@ -417,15 +432,18 @@ public partial class QuickAccessWindow : Window
         }
     }
 
-    private void Save()
+    private void Save() => TrySavePlacement(_placement);
+
+    private bool TrySavePlacement(Placement placement)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
-            File.WriteAllText(_settingsPath + ".tmp", JsonSerializer.Serialize(_placement));
+            File.WriteAllText(_settingsPath + ".tmp", JsonSerializer.Serialize(placement));
             File.Move(_settingsPath + ".tmp", _settingsPath, true);
+            return true;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
     }
 
     public void Update(TouchAssistState? state, string status, bool available, string classIslandStatus, bool canStart, string startLabel = "启动")
@@ -445,9 +463,6 @@ public partial class QuickAccessWindow : Window
         if (_moveOrigin is not null || _expanded) Collapse();
         else OpenPanel();
     }
-
-    private void LayoutClicked(object sender, RoutedEventArgs e) =>
-        LayoutOptions.Visibility = LayoutOptions.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
 
     private void LayoutShapeClicked(object sender, RoutedEventArgs e) => SetCompact(!_placement.Compact);
 
@@ -598,6 +613,7 @@ public partial class QuickAccessWindow : Window
     private void ShortcutsTabClicked(object sender, RoutedEventArgs e) => SelectShortcutPage(true);
     private void SelectShortcutPage(bool shortcuts)
     {
+        CloseLayoutOptions();
         if (_shortcutsSelected != shortcuts)
         {
             ShortcutViewRevision++;

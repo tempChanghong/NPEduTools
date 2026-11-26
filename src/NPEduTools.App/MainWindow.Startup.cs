@@ -54,8 +54,8 @@ public partial class MainWindow
         RefreshRecording(_recording.State);
         RefreshShortcutControls();
         _quick.Show();
-        DockLeft.IsChecked = _quick.LeftSide;
-        DockRight.IsChecked = !_quick.LeftSide;
+        _quick.SideChanged += SyncDockSide;
+        SyncDockSide(_quick.LeftSide);
         RefreshQuick();
         if (!guardRecovery && (!atLogin || !_startupPreferences.EdgeOnlyAtLogin)) Show();
         _watch = WatchAsync(_lifetime.Token);

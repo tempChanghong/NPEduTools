@@ -18,6 +18,7 @@ internal static partial class Program
         var panel = (FrameworkElement)quick.FindName("PanelSurface");
         if (!panel.IsVisible) quick.OpenPanel();
         if (!Button(quick, "LayoutMove").IsVisible) Click(quick, "LayoutButton");
+        quick.UpdateLayout();
         Assert(Button(quick, "LayoutMove").IsVisible, "the move action is not available");
         Click(quick, "LayoutMove");
         quick.UpdateLayout();

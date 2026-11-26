@@ -77,8 +77,11 @@ internal static partial class Program
                 quick.Collapse(false); quick.SetCompact(false); quick.UpdateLayout();
                 foreach (string name in new[] { "EdgeHandle", "RailFold", "RailTools", "RailShortcuts", "RailSecRandom", "RailSettings" })
                     CheckTouchTarget(name);
-                quick.OpenPanel(); Click(quick, "LayoutButton"); quick.UpdateLayout();
-                foreach (string name in new[] { "EdgeHandle", "CollapseButton", "ToolsTab", "ShortcutsTab", "LayoutButton", "LayoutShape", "LayoutMove" })
+                quick.OpenPanel(); quick.UpdateLayout();
+                foreach (string name in new[] { "EdgeHandle", "CollapseButton", "ToolsTab", "ShortcutsTab", "LayoutButton" })
+                    CheckTouchTarget(name);
+                Click(quick, "LayoutButton"); quick.UpdateLayout();
+                foreach (string name in new[] { "LayoutBack", "LayoutLeft", "LayoutRight", "LayoutShape", "LayoutMove" })
                     CheckTouchTarget(name);
                 if (density == .8) Snapshot(quick, "screen-edge-layout-options.png");
             }

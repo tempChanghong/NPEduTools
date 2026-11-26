@@ -78,7 +78,7 @@ internal static partial class Program
     }
 
     // Opt-in integration check. Only create and close our own unsaved presentation.
-    private static void RunQuickSlideShowChecks(bool drawReceipt = false, bool classroomTools = false, bool recordingControls = false)
+    private static void RunQuickSlideShowChecks(bool drawReceipt = false, bool classroomTools = false, bool recordingControls = false, bool layoutSide = false)
     {
         var existing = Process.GetProcessesByName("POWERPNT");
         bool startedOffice = existing.Length == 0;
@@ -134,6 +134,11 @@ internal static partial class Program
             if (recordingControls)
             {
                 RunQuickRecordingControlChecks(slideHandle);
+                return;
+            }
+            if (layoutSide)
+            {
+                RunQuickLayoutSideChecks(slideHandle, () => (int)show.View.CurrentShowPosition);
                 return;
             }
 
