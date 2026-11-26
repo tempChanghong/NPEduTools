@@ -14,6 +14,7 @@ public partial class MainWindow
     private string _workspaceTab = "Manual";
     private string _homeStudyTarget = "Manual";
     private Window? _workspaceCalibrationController;
+    private NoiseCalibrationWindow? _workspaceQuickCalibrationController;
     private NoiseReferenceWindow? _workspaceManualReferenceController;
     private StudySeatingUploadWindow? _workspaceSeatingController;
     private long _workspaceReportGeneration;
@@ -27,6 +28,7 @@ public partial class MainWindow
             CancelWorkspaceReports();
             _workspaceSeatingController?.Dismiss();
             _workspaceManualReferenceController?.Close();
+            _workspaceQuickCalibrationController?.Close();
         };
     }
     private void RefreshWorkspaceHome()
@@ -76,7 +78,7 @@ public partial class MainWindow
     {
         CancelWorkspaceReports();
         StudyWorkspace.Visibility = WorkspaceCalibration.Visibility = WorkspaceSeating.Visibility =
-            WorkspaceManualReference.Visibility = Visibility.Collapsed;
+            WorkspaceManualReference.Visibility = WorkspaceQuickCalibration.Visibility = Visibility.Collapsed;
         StudyNav.Tag = null;
         if (!keepCalibration) CloseWorkspaceCalibration();
     }
@@ -108,6 +110,7 @@ public partial class MainWindow
             _studyMonitoringWindow = new StudyMonitoringWindow(_pipe, () => ShowStudyWorkspace("Manual"))
             {
                 OpenCalibration = ShowWorkspaceCalibration,
+                OpenQuickCalibration = ShowWorkspaceQuickCalibration,
                 OpenManualReference = ShowWorkspaceManualReference,
                 OpenSeatingWorkspace = ShowWorkspaceSeating
             };
@@ -225,6 +228,38 @@ public partial class MainWindow
         var meter = new SoundMeterWindow(_pipe) { OpenWorkspaceReference = ShowWorkspaceReference };
         SetWorkspaceCalibration(meter);
         RestoreWindow();
+    }
+
+    private void ShowWorkspaceQuickCalibration()
+    {
+        if (WorkspaceQuickCalibration.Visibility == Visibility.Visible) return;
+        SelectPage(false);
+        HomePage.Visibility = Visibility.Collapsed;
+        HomeNav.Tag = null;
+        StudyNav.Tag = "active";
+        PageBreadcrumb.Text = "自习 / 快速校准";
+        if (_workspaceQuickCalibrationController is null)
+        {
+            var controller = new NoiseCalibrationWindow(_pipe);
+            _workspaceQuickCalibrationController = controller;
+            WorkspaceQuickCalibrationHost.Content = new WorkspacePanel(controller, this, controller.WorkspaceVisibilityChanged);
+        }
+        WorkspaceQuickCalibration.Visibility = Visibility.Visible;
+        RestoreWindow();
+        WorkspaceQuickCalibrationBack.Focus();
+    }
+
+    private void ReturnFromQuickCalibrationClicked(object sender, RoutedEventArgs e)
+    {
+        ShowStudyWorkspace("School");
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (SchoolWorkspaceHost.IsVisible && _studyMonitoringWindow?.QuickCalibrationButton is { IsVisible: true } button)
+            {
+                button.BringIntoView();
+                button.Focus();
+            }
+        }, DispatcherPriority.Input);
     }
     private void RestoreWorkspaceCalibration()
     {

@@ -261,6 +261,13 @@
           </WrapPanel></Border>
         </Grid>
         <Grid x:Name="WorkspaceCalibration" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><Button Content="← 返回自习" Click="ReturnFromCalibrationClicked" Style="{StaticResource Quiet}" HorizontalAlignment="Left" Margin="0,0,0,10"/><ContentControl x:Name="WorkspaceCalibrationHost" Grid.Row="1"/></Grid>
+        <Grid x:Name="WorkspaceQuickCalibration" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <Button x:Name="WorkspaceQuickCalibrationBack" Content="← 返回学校定时自习" Click="ReturnFromQuickCalibrationClicked"
+                  Style="{DynamicResource TeacherButton}" HorizontalAlignment="Left" Margin="0,0,0,8"
+                  AutomationProperties.AutomationId="QuickCalibrationWorkspaceBack"/>
+          <ContentControl x:Name="WorkspaceQuickCalibrationHost" Grid.Row="1"/>
+        </Grid>
         <Grid x:Name="WorkspaceManualReference" Visibility="Collapsed">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
           <Button x:Name="WorkspaceManualReferenceBack" Content="← 返回学校定时自习" Click="ReturnFromManualReferenceClicked"

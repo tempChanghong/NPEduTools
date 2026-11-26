@@ -1,56 +1,277 @@
 <Window x:Class="NPEduTools.App.NoiseCalibrationWindow"
- xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="快速校准 · NPEduTools" Width="920" Height="820" MinWidth="760" MinHeight="620"
- WindowStartupLocation="CenterOwner" Background="{DynamicResource TeacherPageBrush}" Foreground="{DynamicResource TeacherTextBrush}" FontFamily="{DynamicResource TeacherFont}">
- <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="28">
-  <TextBlock Text="快速校准" FontSize="28" FontWeight="SemiBold"/>
-  <TextBlock Text="选择自然发生的场景，不必等待绝对安静，也不用同学配合。每段采样 15 秒，仅保存电平统计；场景名称不代表系统能识别聊天或说话者。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,18"/>
-  <Border Style="{StaticResource SettingsGroupSurface}" Padding="20" Margin="0,0,0,14"><StackPanel>
-   <DockPanel><Button Style="{StaticResource TeacherButton}" x:Name="RefreshStatus" DockPanel.Dock="Right" Content="刷新并验证口令" Click="RefreshClicked" Padding="14,6"/>
-    <TextBlock x:Name="DeviceStatus" Text="正在读取设备…" FontSize="17" TextWrapping="Wrap"/></DockPanel>
-   <TextBlock x:Name="ProfileStatus" TextWrapping="Wrap" Margin="0,9,0,0"/>
-   <TextBlock Text="请保持麦克风位置、Windows 输入音量和增强设置不变。更换麦克风、增益、采样格式或学校配置后，旧阈值将停止应用；移动麦克风或改变驱动增强时请重新校准。" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,10,0,0"/>
-   <WrapPanel Margin="0,14,0,0" VerticalAlignment="Center">
-    <TextBlock x:Name="ManagementLabel" Text="管理口令" VerticalAlignment="Center" Margin="0,0,12,0"/>
-    <PasswordBox Style="{StaticResource TeacherInput}" x:Name="ManagementSecret" Width="240" MaxLength="128" AutomationProperties.AutomationId="CalibrationSecret"/>
-    <Button Style="{StaticResource TeacherButton}" x:Name="ConfigureManagement" Content="设置管理口令" Click="ManagementClicked" Margin="12,0,0,0" Padding="12,6"/>
-   </WrapPanel>
-   <TextBlock x:Name="ManagementHint" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,0"/>
-  </StackPanel></Border>
-  <Border Style="{StaticResource SettingsGroupSurface}" Padding="20" Margin="0,0,0,14"><StackPanel>
-   <DockPanel><Button Style="{StaticResource TeacherButton}" x:Name="BeginDraft" DockPanel.Dock="Right" Content="新建校准草稿" Click="BeginClicked" Padding="14,6"/>
-    <TextBlock Text="场景采样" FontSize="19" FontWeight="SemiBold"/></DockPanel>
-   <Grid Margin="0,14,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-    <StackPanel><TextBlock Text="现场场景"/><ComboBox Style="{DynamicResource SettingsChoice}" x:Name="SceneChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0"/></StackPanel>
-    <StackPanel Grid.Column="2"><TextBlock Text="管理员希望如何处理"/><ComboBox Style="{DynamicResource SettingsChoice}" x:Name="LabelChoice" DisplayMemberPath="Name" SelectedValuePath="Id" Margin="0,6,0,0"/></StackPanel>
-   </Grid>
-   <WrapPanel Margin="0,14,0,8">
-    <Button Style="{StaticResource TeacherButton}" x:Name="StartSample" Content="采样 15 秒" Click="StartClicked" Padding="16,7" AutomationProperties.AutomationId="CalibrationStart"/>
-    <Button Style="{StaticResource TeacherButton}" x:Name="CancelSample" Content="取消本段" Click="CancelClicked" Padding="16,7" Margin="12,0,0,0"/>
-   </WrapPanel>
-   <ProgressBar x:Name="SamplingProgress" Minimum="0" Maximum="15" Height="5"/>
-   <TextBlock x:Name="SamplingStatus" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,8,0,8"/>
-   <ListBox x:Name="SampleList" Height="174" SelectionChanged="SampleSelected" DisplayMemberPath="Description" AutomationProperties.AutomationId="CalibrationSamples"/>
-   <WrapPanel Margin="0,12,0,0">
-    <Button Style="{StaticResource TeacherButton}" x:Name="RelabelSample" Content="按当前选择重新标记" Click="RelabelClicked" Padding="12,6"/>
-    <Button Style="{StaticResource TeacherButton}" x:Name="RemoveSample" Content="删除所选样本" Click="RemoveClicked" Padding="12,6" Margin="12,0,0,0"/>
-   </WrapPanel>
-  </StackPanel></Border>
-  <Border Style="{StaticResource SettingsGroupSurface}" Padding="20"><StackPanel>
-   <TextBlock Text="确认本机双阈值" FontSize="19" FontWeight="SemiBold"/>
-   <TextBlock x:Name="SuggestionStatus" TextWrapping="Wrap" Margin="0,10,0,12"/>
-   <WrapPanel>
-    <StackPanel Margin="0,0,24,0"><TextBlock Text="第二阈值 · 视觉提醒（dBFS）"/><TextBox Style="{StaticResource TeacherInput}" x:Name="MediumThreshold" Width="190" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="8" AutomationProperties.AutomationId="CalibrationMedium"/></StackPanel>
-    <StackPanel><TextBlock Text="第一阈值 · 纪律提醒（dBFS）"/><TextBox Style="{StaticResource TeacherInput}" x:Name="HighThreshold" Width="190" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="8" AutomationProperties.AutomationId="CalibrationHigh"/></StackPanel>
-   </WrapPanel>
-   <TextBlock Text="dBFS 越接近 0，信号越强；第一阈值须高于第二阈值至少 1 dB。快速校准不生成实际 dB(A)。确认只影响当前大屏、麦克风及学校配置；提醒持续时间与限频仍由学校后台决定。" TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="13" Margin="0,12,0,0"/>
-   <WrapPanel Margin="0,14,0,0">
-    <Button Style="{StaticResource TeacherButton}" x:Name="UseSuggestion" Content="填入建议值" Click="SuggestionClicked" Padding="12,7"/>
-    <Button Style="{StaticResource TeacherButton}" x:Name="ConfirmThresholds" Content="确认并保存本机阈值" Click="ConfirmClicked" Padding="12,7" Margin="12,0,0,0" AutomationProperties.AutomationId="CalibrationConfirm"/>
-    <Button Style="{StaticResource TeacherButton}" x:Name="ClearThresholds" Content="恢复学校阈值" Click="ClearClicked" Padding="12,7" Margin="12,0,0,0"/>
-   </WrapPanel>
-   <TextBlock x:Name="OperationMessage" TextWrapping="Wrap" Foreground="{DynamicResource TeacherWarningBrush}" Margin="0,12,0,0" AutomationProperties.AutomationId="CalibrationMessage"/>
-  </StackPanel></Border>
- </StackPanel></ScrollViewer>
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="快速校准 · NPEduTools" Width="960" Height="740" MinWidth="520" MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource TeacherPageBrush}"
+        Foreground="{DynamicResource TeacherTextBrush}"
+        FontFamily="{DynamicResource TeacherFont}"
+        UseLayoutRounding="True">
+ <Grid x:Name="CalibrationRoot" SizeChanged="CalibrationLayoutChanged">
+  <Grid.Resources>
+   <Style x:Key="CompactCalibrationExpander" TargetType="Expander">
+    <Setter Property="Foreground" Value="{DynamicResource TeacherTextBrush}"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+     <Setter.Value>
+      <ControlTemplate TargetType="Expander">
+       <StackPanel>
+        <ToggleButton x:Name="HeaderSite"
+                      Content="{TemplateBinding Header}"
+                      Foreground="{TemplateBinding Foreground}"
+                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                      AutomationProperties.Name="{Binding (AutomationProperties.Name), RelativeSource={RelativeSource TemplatedParent}}"
+                      MinHeight="34" Cursor="Hand" HorizontalContentAlignment="Stretch">
+         <ToggleButton.Template>
+          <ControlTemplate TargetType="ToggleButton">
+           <Border x:Name="Frame" Background="{DynamicResource TeacherSurfaceBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
+                   BorderThickness="1" CornerRadius="6" Padding="10,5">
+            <DockPanel>
+             <Path x:Name="Chevron" Data="M 0,0 L 4,4 L 8,0" Stroke="{DynamicResource TeacherMutedBrush}"
+                   StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+             <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+            </DockPanel>
+           </Border>
+           <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+             <Setter TargetName="Frame" Property="Background" Value="{DynamicResource TeacherHoverBrush}"/>
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+             <Setter TargetName="Chevron" Property="Data" Value="M 0,4 L 4,0 L 8,4"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+             <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource TeacherTextBrush}"/>
+             <Setter TargetName="Frame" Property="BorderThickness" Value="2"/>
+            </Trigger>
+           </ControlTemplate.Triggers>
+          </ControlTemplate>
+         </ToggleButton.Template>
+        </ToggleButton>
+        <ContentPresenter x:Name="ExpandSite" Visibility="Collapsed" Margin="0,6,0,0"/>
+       </StackPanel>
+       <ControlTemplate.Triggers>
+        <Trigger Property="IsExpanded" Value="True">
+         <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+        </Trigger>
+       </ControlTemplate.Triggers>
+      </ControlTemplate>
+     </Setter.Value>
+    </Setter>
+   </Style>
+  </Grid.Resources>
+
+  <ScrollViewer x:Name="CalibrationScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+   <StackPanel Margin="14,8,14,12">
+    <!-- Compact header: active microphone, calibration status, and refresh -->
+    <DockPanel Margin="0,0,0,6">
+     <Button Style="{StaticResource TeacherQuiet}" x:Name="RefreshStatus" DockPanel.Dock="Right"
+             Content="刷新状态" Click="RefreshClicked" MinHeight="34" Padding="10,4" FontSize="13.5"
+             VerticalAlignment="Center" Margin="10,0,0,0" AutomationProperties.Name="刷新状态"/>
+     <StackPanel VerticalAlignment="Center">
+      <TextBlock x:Name="DeviceStatus" Text="正在读取设备…" FontSize="14.5" FontWeight="SemiBold"
+                 TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+      <TextBlock x:Name="ProfileStatus" Text="未校准 · 尚未确认本机阈值" FontSize="12.5"
+                 Foreground="{DynamicResource TeacherMutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+     </StackPanel>
+    </DockPanel>
+
+    <!-- Collapsible credentials and device stability note (expandable by C# when protection or setup requires) -->
+    <Expander x:Name="CredentialsExpander" Header="管理口令与设备说明" IsExpanded="False"
+              Style="{StaticResource CompactCalibrationExpander}" Margin="0,0,0,6"
+              AutomationProperties.Name="管理口令与设备说明">
+     <Border Style="{StaticResource SettingsGroupSurface}" Padding="12,10">
+      <StackPanel ToolTip="请保持麦克风位置、Windows 输入音量和增强设置不变。改动后请重新校准。"
+                  AutomationProperties.HelpText="请保持麦克风位置、Windows 输入音量和增强设置不变。改动后请重新校准。">
+       <WrapPanel VerticalAlignment="Center">
+        <TextBlock x:Name="ManagementLabel" Text="管理口令" VerticalAlignment="Center" Margin="0,0,10,4"/>
+        <PasswordBox Style="{StaticResource TeacherInput}" x:Name="ManagementSecret" Width="210" MinHeight="36"
+                     MaxLength="128" Margin="0,0,10,4"
+                     AutomationProperties.AutomationId="CalibrationSecret" AutomationProperties.Name="管理口令"/>
+        <Button Style="{StaticResource TeacherButton}" x:Name="ConfigureManagement" Content="设置管理口令"
+                Click="ManagementClicked" MinHeight="36" Padding="12,4" Margin="0,0,0,4"/>
+       </WrapPanel>
+       <TextBlock x:Name="ManagementHint" TextWrapping="Wrap" FontSize="12.5"
+                  Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,4,0,0"/>
+      </StackPanel>
+     </Border>
+    </Expander>
+
+    <!-- Prominent top feedback strip (auto-hidden when empty) -->
+    <TextBlock x:Name="OperationMessage" TextWrapping="Wrap" FontSize="13"
+               Foreground="{DynamicResource TeacherWarningBrush}" Margin="0,0,0,6"
+               AutomationProperties.AutomationId="CalibrationMessage" AutomationProperties.Name="校准操作提示">
+     <TextBlock.Style>
+      <Style TargetType="TextBlock">
+       <Style.Triggers>
+        <Trigger Property="Text" Value="">
+         <Setter Property="Visibility" Value="Collapsed"/>
+        </Trigger>
+       </Style.Triggers>
+      </Style>
+     </TextBlock.Style>
+    </TextBlock>
+
+    <!-- Narrow-mode task switcher (managed by C# in CalibrationLayoutChanged) -->
+    <UniformGrid x:Name="CompactTabs" Columns="2" Visibility="Collapsed" Margin="0,0,0,6">
+     <Button Style="{StaticResource TeacherTab}" x:Name="SamplingTab" Content="采样" Tag="active"
+             Click="SamplingTabClicked" MinHeight="36" Padding="10,5" Margin="0,0,4,0"
+             AutomationProperties.Name="采样"/>
+     <Button Style="{StaticResource TeacherTab}" x:Name="ThresholdTab" Content="阈值复核"
+             Click="ThresholdTabClicked" MinHeight="36" Padding="10,5" Margin="4,0,0,0"
+             AutomationProperties.Name="阈值复核"/>
+    </UniformGrid>
+
+    <!-- Shared dual-pane workspace: side-by-side when wide, tabbed single-pane when narrow -->
+    <Grid x:Name="CalibrationLayout">
+     <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="*"/>
+     </Grid.ColumnDefinitions>
+
+     <!-- Left / Sampling Pane -->
+     <Border x:Name="SamplingPane" Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingsGroupSurface}" Padding="14,10" VerticalAlignment="Top">
+      <StackPanel>
+       <DockPanel Margin="0,0,0,8">
+        <Button Style="{StaticResource TeacherQuiet}" x:Name="BeginDraft" DockPanel.Dock="Right"
+                Content="新建草稿" Click="BeginClicked" MinHeight="32" Padding="10,4" FontSize="13"
+                AutomationProperties.Name="新建校准草稿"/>
+        <TextBlock Text="场景采样" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+       </DockPanel>
+
+       <Grid>
+        <Grid.ColumnDefinitions>
+         <ColumnDefinition Width="*"/>
+         <ColumnDefinition Width="10"/>
+         <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+         <TextBlock Text="现场场景" FontSize="12.5" Foreground="{DynamicResource TeacherMutedBrush}"/>
+         <ComboBox Style="{DynamicResource SettingsChoice}" x:Name="SceneChoice" DisplayMemberPath="Name"
+                   SelectedValuePath="Id" MinHeight="36" Margin="0,4,0,0" AutomationProperties.Name="现场场景"
+                   ToolTip="每段只保存电平统计。场景由管理员判断，不识别说话者。"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+         <TextBlock Text="管理员希望如何处理" FontSize="12.5" Foreground="{DynamicResource TeacherMutedBrush}"/>
+         <ComboBox Style="{DynamicResource SettingsChoice}" x:Name="LabelChoice" DisplayMemberPath="Name"
+                   SelectedValuePath="Id" MinHeight="36" Margin="0,4,0,0" AutomationProperties.Name="管理员希望如何处理"/>
+        </StackPanel>
+       </Grid>
+
+       <WrapPanel Margin="0,10,0,6">
+        <Button Style="{StaticResource TeacherPrimary}" x:Name="StartSample" Content="采样 15 秒"
+                Click="StartClicked" MinHeight="38" Padding="16,5"
+                AutomationProperties.AutomationId="CalibrationStart" AutomationProperties.Name="采样 15 秒"/>
+        <Button Style="{StaticResource TeacherButton}" x:Name="CancelSample" Content="取消本段"
+                Click="CancelClicked" MinHeight="38" Padding="14,5" Margin="8,0,0,0"
+                AutomationProperties.Name="取消本段采样"/>
+       </WrapPanel>
+
+       <ProgressBar x:Name="SamplingProgress" Minimum="0" Maximum="15" Height="5"
+                    AutomationProperties.Name="15 秒采样进度"/>
+       <TextBlock x:Name="SamplingStatus" Text="每段采样 15 秒，仅保存电平统计；可随时补采。"
+                  TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,6,0,8"/>
+
+       <!-- Compact always-visible sample coverage summary (acceptable / visual / discipline) -->
+       <Border Background="{DynamicResource TeacherPageBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
+               BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,8">
+        <TextBlock x:Name="SampleCoverage" Text="尚未记录有效样本（建议采集可接受与需提醒场景）"
+                   TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TeacherTextBrush}"
+                   AutomationProperties.Name="已采样本摘要"/>
+       </Border>
+
+       <!-- Low-emphasis on-demand engineering details and sample editing -->
+       <Expander x:Name="SampleDetailsExpander" Header="样本明细与重标 / 删除" IsExpanded="False"
+                 Style="{StaticResource CompactCalibrationExpander}"
+                 AutomationProperties.Name="样本明细与重标或删除">
+        <StackPanel>
+         <ListBox x:Name="SampleList" Height="138" SelectionChanged="SampleSelected"
+                  DisplayMemberPath="Description"
+                  AutomationProperties.AutomationId="CalibrationSamples" AutomationProperties.Name="已采样本列表"/>
+         <WrapPanel Margin="0,8,0,0">
+          <Button Style="{StaticResource TeacherButton}" x:Name="RelabelSample" Content="按当前选择重新标记"
+                  Click="RelabelClicked" MinHeight="34" Padding="10,4" FontSize="13"/>
+          <Button Style="{StaticResource TeacherQuiet}" x:Name="RemoveSample" Content="删除所选样本"
+                  Click="RemoveClicked" MinHeight="34" Padding="10,4" FontSize="13" Margin="8,0,0,0"/>
+         </WrapPanel>
+        </StackPanel>
+       </Expander>
+      </StackPanel>
+     </Border>
+
+     <!-- Right / Threshold Review Pane -->
+     <Border x:Name="ThresholdPane" Grid.Row="0" Grid.Column="1" Style="{StaticResource SettingsGroupSurface}" Padding="14,10" VerticalAlignment="Top">
+      <StackPanel>
+       <TextBlock x:Name="ThresholdHeading" Text="阈值复核" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+
+       <!-- 1. Currently applied (read-only) -->
+       <Border Background="{DynamicResource TeacherPageBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
+               BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,6">
+        <StackPanel>
+         <TextBlock Text="当前生效（本机）" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"/>
+         <TextBlock x:Name="AppliedValues" Text="尚未应用本机阈值" FontSize="13.5" FontWeight="SemiBold"
+                    TextWrapping="Wrap" Margin="0,2,0,0" AutomationProperties.Name="当前生效本机阈值"/>
+        </StackPanel>
+       </Border>
+
+       <!-- 2. System suggestion (directly shown; button only populates inputs) -->
+       <Border Background="{DynamicResource TeacherSelectedBrush}" BorderBrush="{DynamicResource TeacherLineBrush}"
+               BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,10">
+        <DockPanel>
+         <Button Style="{StaticResource TeacherButton}" x:Name="UseSuggestion" DockPanel.Dock="Right"
+                 Content="填入建议值" Click="SuggestionClicked" MinHeight="32" Padding="10,4" FontSize="13"
+                 VerticalAlignment="Center" Margin="8,0,0,0"
+                 ToolTip="仅将建议值填入下方输入框，不会立即保存或生效"
+                 AutomationProperties.Name="将系统建议值填入输入框"/>
+         <StackPanel>
+          <TextBlock Text="系统建议（仅供参考，未保存）" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}"/>
+          <TextBlock x:Name="SuggestedValues" Text="采样后生成建议值" FontSize="13.5" FontWeight="SemiBold"
+                     Foreground="{DynamicResource TeacherSelectedTextBrush}" TextWrapping="Wrap" Margin="0,2,0,0"
+                     AutomationProperties.Name="系统建议阈值"/>
+          <TextBlock x:Name="SuggestionStatus" TextWrapping="Wrap" FontSize="12"
+                     Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,2,0,0"/>
+         </StackPanel>
+        </DockPanel>
+       </Border>
+
+       <!-- 3. Pending dual-threshold inputs to save -->
+       <TextBlock Text="待保存阈值（dBFS）" FontSize="12.5" FontWeight="SemiBold" Margin="0,0,0,6"/>
+       <Grid>
+        <Grid.ColumnDefinitions>
+         <ColumnDefinition Width="*"/>
+         <ColumnDefinition Width="10"/>
+         <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+         <TextBlock Text="第二阈值 · 视觉提醒" FontSize="12.5" Foreground="{DynamicResource TeacherMutedBrush}"/>
+         <TextBox Style="{StaticResource TeacherInput}" x:Name="MediumThreshold" MinHeight="38" Margin="0,4,0,0"
+                  Padding="8,5" AutomationProperties.AutomationId="CalibrationMedium"
+                  AutomationProperties.Name="第二阈值 视觉提醒 dBFS"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+         <TextBlock Text="第一阈值 · 纪律提醒" FontSize="12.5" Foreground="{DynamicResource TeacherMutedBrush}"/>
+         <TextBox Style="{StaticResource TeacherInput}" x:Name="HighThreshold" MinHeight="38" Margin="0,4,0,0"
+                  Padding="8,5" AutomationProperties.AutomationId="CalibrationHigh"
+                  AutomationProperties.Name="第一阈值 纪律提醒 dBFS"/>
+        </StackPanel>
+       </Grid>
+
+       <DockPanel Margin="0,10,0,0">
+        <Button Style="{StaticResource TeacherQuiet}" x:Name="ClearThresholds" DockPanel.Dock="Right"
+                Content="恢复学校阈值" Click="ClearClicked" MinHeight="38" Padding="10,5" FontSize="13"
+                Margin="8,0,0,0" AutomationProperties.Name="恢复学校阈值"/>
+        <Button Style="{StaticResource TeacherPrimary}" x:Name="ConfirmThresholds"
+                Content="确认并保存本机阈值" Click="ConfirmClicked" MinHeight="38" Padding="14,5"
+                HorizontalAlignment="Left"
+                AutomationProperties.AutomationId="CalibrationConfirm" AutomationProperties.Name="确认并保存本机阈值"/>
+       </DockPanel>
+       <TextBlock Text="纪律阈值须高于视觉阈值至少 1 dB。仅保存本机 dBFS 阈值，不生成 dB(A)。"
+                  ToolTip="dBFS 越接近 0，信号越强。提醒持续时间和限频由学校配置决定。"
+                  TextWrapping="Wrap" Foreground="{DynamicResource TeacherMutedBrush}" FontSize="12" Margin="0,8,0,0"/>
+      </StackPanel>
+     </Border>
+    </Grid>
+   </StackPanel>
+  </ScrollViewer>
+ </Grid>
 </Window>

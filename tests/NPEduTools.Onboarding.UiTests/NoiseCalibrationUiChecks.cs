@@ -92,7 +92,7 @@ internal static partial class Program
                 Assert(effective.RedLineDbfs != policy.RedLineDbfs && effective.DisciplineCooldownSeconds == 600 &&
                     effective.HighContinuousSeconds == 5, "calibration changed school timing or failed to replace only local lines");
                 Snapshot(owner, "quick-calibration-confirmed.png");
-                ((ScrollViewer)owner.Content).ScrollToEnd(); owner.UpdateLayout();
+                ((ScrollViewer)owner.FindName("CalibrationScroll")).ScrollToEnd(); owner.UpdateLayout();
                 Snapshot(owner, "quick-calibration-thresholds.png");
                 Checks.Add("Actual WPF/private Host pipe: five optional scenes, separate judgements, two simulated 15-second samples, suggestion fill, management verification and local dual-threshold confirmation");
                 var savedCapture = capture;
