@@ -10,12 +10,14 @@ namespace NPEduTools.App;
 
 public partial class NoiseWindow : Window
 {
+    private const string UnconfirmedManualResult = "请求结果待确认，恢复连接后将自动核对。";
     private readonly string _pipe;
     private readonly CancellationTokenSource _lifetime = new();
     private NoiseState? _state;
     private ManualStudyState? _manual;
     private readonly StudyDisplayReturn _returnDisplay = new();
     private bool _closing, _busy, _connected;
+    private bool _manualResultUnconfirmed;
     private ManualStudyCommand? _pendingManualCommand;
     private string? _timeValidationMessage;
     private long _uiOperation;
@@ -27,6 +29,7 @@ public partial class NoiseWindow : Window
     {
         _pipe = pipe;
         InitializeComponent();
+        ManualPageScroll.SizeChanged += (_, args) => ArrangeManualPage(args.NewSize.Width);
         ManualStartDate.SelectedDate = ManualEndDate.SelectedDate = DateTime.Today;
         DesktopDialogSizing.Attach(this, pipe);
         Closing += (_, args) => { if (!_closing) { args.Cancel = true; Hide(); } };
@@ -45,6 +48,17 @@ public partial class NoiseWindow : Window
         _ = PollAsync();
     }
     public void Shutdown() { _closing = true; Close(); }
+    private void ArrangeManualPage(double width)
+    {
+        // The main window scales its content on compact displays, which can inflate the
+        // layout width seen by this scroll viewer. Use the window width as a second limit.
+        bool wide = ManualConfiguration.Visibility == Visibility.Visible &&
+            width >= 760 && WorkspacePanel.DialogOwner(this).ActualWidth >= 930;
+        ManualSideColumn.Width = new GridLength(wide ? 276 : 0);
+        Grid.SetColumn(ManualSidePanel, wide ? 1 : 0);
+        ManualSidePanel.Margin = wide ? new Thickness(10, 0, 0, 0) : new Thickness();
+        Grid.SetRow(ManualConfiguration, wide ? 1 : 2);
+    }
     internal void WorkspaceVisibilityChanged(bool visible)
     {
         if (_lifetime.IsCancellationRequested) return;
@@ -89,6 +103,11 @@ public partial class NoiseWindow : Window
                     _manual=manual.Outcome == "Succeeded" && System.Diagnostics.Stopwatch.GetElapsedTime(manualAt).TotalSeconds < 3.5 ? manual.ManualStudy : null;
                     _returnDisplay.Observe(_manual is not null ? manual.Study : null);
                     bool signalFresh = System.Diagnostics.Stopwatch.GetElapsedTime(calibrationAt).TotalSeconds < 3.5;
+                    if (_manual is not null && signalFresh && response.Noise is not null && _manualResultUnconfirmed)
+                    {
+                        _manualResultUnconfirmed = false;
+                        if (MessageText.Text == UnconfirmedManualResult) MessageText.Text = "";
+                    }
                     RenderWithCalibration(signalFresh ? response.Noise : null, signalFresh ? response.NoiseCalibrationStatus : null);
                     if (!signalFresh)
                     {
@@ -100,7 +119,7 @@ public partial class NoiseWindow : Window
                         DisplayStatusText.Text = response.NoiseDisplay is { } display
                             ? display.Message + (display.ErrorCode is { } code ? $"（{code}）" : "")
                             : "当前后台不支持原生备用展示，请更新并重启后台。";
-                    if (response.Outcome == "Rejected") MessageText.Text = response.Message;
+                    if (response.Outcome == "Rejected" && !_manualResultUnconfirmed) MessageText.Text = response.Message;
                 }
             }
             catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or TimeoutException or OperationCanceledException or JsonException)
@@ -130,18 +149,23 @@ public partial class NoiseWindow : Window
         ManualStatus.Text = ManualStudyPresentation.Details(_manual);
         if (_state?.State == "Idle")
             StateText.Text = !live && Microphone.SelectedItem is NoiseDevice selected ? $"监测麦克风　{selected.Name}" : "";
-        ManualConfiguration.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
+        var configurationVisibility = live ? Visibility.Collapsed : Visibility.Visible;
+        if (ManualConfiguration.Visibility != configurationVisibility)
+        {
+            ManualConfiguration.Visibility = configurationVisibility;
+            ArrangeManualPage(ManualPageScroll.ActualWidth);
+        }
         ManualConfiguration.IsEnabled = !_busy;
         StartButton.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
         StartButton.Content = UseStart.IsChecked == true ? "保存预约" : "开始自习";
         if (_pendingManualCommand is { Action: "start" } pending)
             StartButton.Content = pending.StartUtc.HasValue ? "正在保存预约…" : "正在启动…";
-        StartButton.IsEnabled = _connected && !_busy && canArrange && !captureBusy && !needsDevice;
+        StartButton.IsEnabled = _connected && !_busy && !_manualResultUnconfirmed && canArrange && !captureBusy && !needsDevice;
         StopButton.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
         StopButton.Content = reservation ? "取消预约" : "结束手动自习";
         if (_pendingManualCommand?.Action == "end" || phase == "Stopping")
             StopButton.Content = reservation ? "正在取消预约…" : "正在结束…";
-        StopButton.IsEnabled = _connected && !_busy && live && phase != "Stopping" && _manual?.SessionId is not null;
+        StopButton.IsEnabled = _connected && !_busy && !_manualResultUnconfirmed && live && phase != "Stopping" && _manual?.SessionId is not null;
         ReturnStudyButton.Visibility = canReturn ? Visibility.Visible : Visibility.Collapsed;
         ReturnStudyButton.IsEnabled = _connected && !_busy && canReturn;
         ManualReportButton.Visibility = OpenWorkspaceReport is not null && phase is ("Ended" or "Stopped") ? Visibility.Visible : Visibility.Collapsed;
@@ -150,10 +174,11 @@ public partial class NoiseWindow : Window
         ManualCalibrationLink.Visibility = OpenWorkspaceCalibration is null ? Visibility.Collapsed : Visibility.Visible;
         ManualChooseDevice.Visibility = needsDevice ? Visibility.Visible : Visibility.Collapsed;
         string hint = "";
-        if (!canArrange && !live) hint = "等待后台确认会话状态。";
+        if (!canArrange && !live && !_manualResultUnconfirmed) hint = "等待后台确认会话状态。";
         else if (needsDevice) hint = Microphone.HasItems ? "开始前请选择麦克风。" : "未找到可用麦克风，请连接设备后刷新。";
         else if (canArrange && captureBusy) hint = "采集设备正在使用中。";
         ManualActionHint.Text = hint;
+        if (_manualResultUnconfirmed && !_busy) MessageText.Text = UnconfirmedManualResult;
         Microphone.IsEnabled = !_busy && !captureBusy && !live;
         RefreshButton.IsEnabled = !_busy && !captureBusy;
         SaveDeviceButton.IsEnabled = StartButton.IsEnabled;
@@ -190,8 +215,8 @@ public partial class NoiseWindow : Window
             LevelText.Text = "—"; LevelBar.Value = -100; QualityText.Text = "未知";
             LevelHintText.Text = "";
             StateHintText.Text = "旧读数不代表当前状态。恢复连接后可查询或停止，请勿重复启动。";
-            StateHintText.Visibility = Visibility.Visible;
-            MessageText.Text = "";
+            StateHintText.Visibility = _manualResultUnconfirmed ? Visibility.Collapsed : Visibility.Visible;
+            if (!_manualResultUnconfirmed) MessageText.Text = "";
             SummaryTitle.Text = "监测统计（状态未知）";
             SummaryText.Text = "后台连接中断，暂不展示旧统计。恢复连接后重新读取；不能据此判断监测已经停止。";
             EstimateText.Text = "估算状态待确认";
@@ -345,7 +370,6 @@ public partial class NoiseWindow : Window
         _busy = true;
         long operation = ++_uiOperation;
         bool Current() => !_lifetime.IsCancellationRequested && operation == _uiOperation && WorkspacePanel.Visible(this);
-        bool sent = false;
         _timeValidationMessage = null;
         MessageText.Text = command.Action == "start" ? "正在核对发起手动自习的权限…" : "";
         _returnDisplay.Observe(null);
@@ -371,15 +395,15 @@ public partial class NoiseWindow : Window
             MessageText.Text = "";
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             deadline.CancelAfter(5000);
-            sent = true;
+            _manualResultUnconfirmed = true;
             var reply = await HostClient.RequestAsync(_pipe, request, deadline.Token);
             if (!Current()) return;
             if (reply.Outcome == "Succeeded" && (reply.ManualStudy is null || reply.Noise is null))
             {
                 Render(null);
-                MessageText.Text = "后台已受理。正在核对手动自习与采集状态。";
                 return;
             }
+            _manualResultUnconfirmed = false;
             if (reply.ManualStudy is not null) _manual = reply.ManualStudy;
             if (reply.Noise is not null) Render(reply.Noise);
             // Successful commands already have a phase, time and reason in the session panel.
@@ -391,7 +415,7 @@ public partial class NoiseWindow : Window
             if (Current())
             {
                 Render(null);
-                MessageText.Text = sent ? "请求结果待确认，请等待后台状态恢复。" : "无法核实发起权限。请检查后台连接后重新提交。";
+                if (!_manualResultUnconfirmed) MessageText.Text = "无法核实发起权限。请检查后台连接后重新提交。";
             }
         }
         finally

@@ -32,9 +32,29 @@ internal static partial class Program
         var manual = new ManualStudyService(noise, () => (null, false, StudyFixture()), () => false, folder, background: false);
         var devices = new StudyDeviceService(() => [], folder);
         string pipe = "NPEduTools.Test.workspace." + Guid.NewGuid().ToString("N");
+        string hostPipe = pipe + ".host";
         using var stop = new CancellationTokenSource();
-        var server = Task.Run(() => new PipeServer(pipe, new DeviceReader(), _ => { }, noise: noise,
+        var server = Task.Run(() => new PipeServer(hostPipe, new DeviceReader(), _ => { }, noise: noise,
             studyDevices: devices, soundMeter: meter, manualStudy: manual).RunAsync(stop.Token));
+        int dropReservationReply = 0, offline = 0, offlineReads = 0, startRequests = 0;
+        var transport = Task.Run(() => WorkspaceProxy(pipe, async request =>
+        {
+            if (Volatile.Read(ref offline) != 0 &&
+                (NoiseCalibrationStatusContract.BaseCapability(request.Capability) ?? request.Capability) is "noise.status" or "manual.study.status")
+            {
+                Interlocked.Increment(ref offlineReads);
+                throw new IOException("Fixture transport disconnected.");
+            }
+            bool starts = request.Capability == "manual.study.command" && request.ManualStudy?.Action == "start";
+            if (starts) Interlocked.Increment(ref startRequests);
+            var response = await HostClient.RequestAsync(hostPipe, request, stop.Token);
+            if (starts && response.Outcome == "Succeeded" && Interlocked.Exchange(ref dropReservationReply, 0) != 0)
+            {
+                Volatile.Write(ref offline, 1);
+                throw new IOException("Fixture lost the original successful reply.");
+            }
+            return response;
+        }, stop.Token, supportsCalibrationStatus: true, supportsSchoolMicrophonePolicy: true));
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var main = (MainWindow)typeof(MainWindow).GetConstructors(flags).Single().Invoke([pipe, null, false]);
         void Invoke(string method, params object[] values) => typeof(MainWindow).GetMethod(method, flags)!.Invoke(main, values);
@@ -82,14 +102,81 @@ internal static partial class Program
                 ((TextBox)panel.FindName("ManualStartTime")).Text = "23:45";
                 ((DatePicker)panel.FindName("ManualEndDate")).SelectedDate = future.AddDays(1).Date;
                 ((TextBox)panel.FindName("ManualEndTime")).Text = "00:15";
-                ((Button)panel.FindName("StartButton")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                var idleReturn = Descendants<Expander>(WorkspacePanel.View(panel)!).Single(e => Equals(e.Header, "临时使用电脑后返回"));
+                var scroll = (ScrollViewer)panel.FindName("ManualPageScroll");
+                void Resize(int width, int height)
+                {
+                    main.MinWidth = main.MinHeight = 0;
+                    main.Width = width;
+                    main.Height = height;
+                    scroll.ScrollToTop();
+                    main.UpdateLayout();
+                    PumpUntil(() => Math.Abs(main.ActualWidth - width) < 1 && Math.Abs(main.ActualHeight - height) < 1,
+                        "manual workspace window did not resize");
+                }
+                void InViewport(FrameworkElement control)
+                {
+                    Rect bounds = control.TransformToAncestor(scroll).TransformBounds(new Rect(control.RenderSize));
+                    Assert(control.IsVisible && bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= -1 && bounds.Top >= -1 &&
+                        bounds.Right <= scroll.ViewportWidth + 1 && bounds.Bottom <= scroll.ViewportHeight + 1,
+                        $"{control.Name} is clipped in the manual workspace at {main.Width}x{main.Height}: {bounds.Bottom:0}/{scroll.ViewportHeight:0}");
+                }
+                foreach (var (width, height) in new[] { (1040, 760), (840, 600) })
+                {
+                    Resize(width, height);
+                    Snapshot(owner, $"manual-reservation-draft-{width}-{height}.png");
+                    var side = (FrameworkElement)panel.FindName("ManualSidePanel");
+                    Assert(Grid.GetColumn(side) == (width == 1040 ? 1 : 0),
+                        $"manual workspace layout did not reflow at {width} with a {scroll.ActualWidth:0}-DIP content viewport");
+                    foreach (string name in new[] { "ManualStartDate", "ManualStartTime", "ManualEndDate", "ManualEndTime", "LevelText" })
+                        InViewport((FrameworkElement)panel.FindName(name));
+                    InViewport(idleReturn);
+                    Assert(Window.GetWindow(scroll) == main && !panel.IsVisible &&
+                        new[] { "MinimizeWindow", "MaximizeRestoreWindow", "CloseWindow" }.All(id => Find(main, id) is Button { IsVisible: true }),
+                        "handling a manual reservation changed the native window or lost a main-window caption action");
+                    var primary = Button(panel, "StartButton");
+                    var primaryBounds = primary.TransformToAncestor(main).TransformBounds(new Rect(primary.RenderSize));
+                    Assert(primary.IsVisible && primary.IsEnabled && primaryBounds.Left >= 0 &&
+                        primaryBounds.Right <= main.ActualWidth && primaryBounds.Bottom < main.ActualHeight - 4,
+                        "reservation cannot be saved from the first screen");
+                }
+
+                int previousStarts = Volatile.Read(ref startRequests);
+                Volatile.Write(ref dropReservationReply, 1);
+                Click(panel, "StartButton");
+                PumpUntil(() => Volatile.Read(ref offlineReads) >= 2 && !Button(panel, "StartButton").IsEnabled,
+                    "manual panel did not encounter repeated transport loss after the Host committed the reservation");
+                string uncertain = ((TextBlock)panel.FindName("MessageText")).Text;
+                Assert(uncertain.Contains("待确认") && manual.Status().State == "Waiting",
+                    "a failed status poll erased the unconfirmed original reservation result");
+                var original = manual.Status();
+                Snapshot(owner, "manual-reservation-unconfirmed-840-600.png");
+                Invoke("ShowStudyWorkspace", "School");
+                Invoke("ShowStudyWorkspace", "Manual");
+                Assert(((TextBox)panel.FindName("ManualStartTime")).Text == "23:45" &&
+                    ((TextBox)panel.FindName("ManualEndTime")).Text == "00:15" && !Button(panel, "StartButton").IsEnabled &&
+                    ((TextBlock)panel.FindName("MessageText")).Text.Contains("待确认"),
+                    "returning while disconnected lost the cross-midnight draft or original unconfirmed state");
+                Volatile.Write(ref offline, 0);
                 PumpUntil(() => manual.Status().State == "Waiting" && ((Button)panel.FindName("StopButton")).IsEnabled, "future manual reservation not accepted");
+                Assert(Volatile.Read(ref startRequests) == previousStarts + 1 && manual.Status() == original &&
+                    ((TextBlock)panel.FindName("MessageText")).Text == "",
+                    "recovery replayed the same reservation or left it unconfirmed after reading its original status");
                 Assert(((FrameworkElement)panel.FindName("ManualConfiguration")).Visibility == Visibility.Collapsed &&
                     ((Button)panel.FindName("StopButton")).Content.ToString() == "取消预约", "waiting session still shows a duplicate start form");
                 string booking = ((TextBlock)panel.FindName("ManualStatus")).Text;
                 Assert(booking.Contains($"{future:yyyy-MM-dd} 23:45") && booking.Contains($"{future.AddDays(1):yyyy-MM-dd} 00:15") &&
                     booking.Contains("计划结束") && booking.Contains("尚未开始采集"), "cross-day reservation mislabels the scheduled period or capture status");
                 Snapshot(owner, "workspace-manual-reservation.png");
+                Snapshot(owner, "manual-reservation-confirmed-840-600.png");
+                Resize(1040, 760);
+                Assert(Grid.GetColumn((FrameworkElement)panel.FindName("ManualSidePanel")) == 0,
+                    "the confirmed reservation left an empty form column in the wide window");
+                InViewport((TextBlock)panel.FindName("ManualStatus"));
+                InViewport((TextBlock)panel.FindName("LevelText"));
+                Snapshot(owner, "manual-reservation-confirmed-1040-760.png");
+                Resize(840, 600);
+                Checks.Add("Manual study at 1040x760/840x600: time fields, signal and temporary-use entry fit the first viewport inside the main window. A real cross-midnight reservation survives a dropped reply, repeated failed reads and navigation, with exactly one start write.");
                 devicesGroup.IsExpanded = true;
                 Click(panel, "ManualDeviceLink");
                 var schoolPanel = Field<StudyMonitoringWindow>("_studyMonitoringWindow");
@@ -183,7 +270,7 @@ internal static partial class Program
         }
         finally
         {
-            main.Close(); stop.Cancel(); try { server.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
+            main.Close(); stop.Cancel(); try { Task.WhenAll(server, transport).GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
             manual.DisposeAsync().AsTask().GetAwaiter().GetResult(); noise.DisposeAsync().AsTask().GetAwaiter().GetResult();
             SynchronizationContext.SetSynchronizationContext(previous);
         }

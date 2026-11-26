@@ -5,8 +5,8 @@
     <Setter Property="BorderBrush" Value="{DynamicResource TeacherLineBrush}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="12" />
-    <Setter Property="Padding" Value="18,14" />
-    <Setter Property="Margin" Value="0,0,0,10" />
+    <Setter Property="Padding" Value="14,10" />
+    <Setter Property="Margin" Value="0,0,0,8" />
   </Style>
   <Style x:Key="ManualStudyHint" TargetType="TextBlock">
     <Setter Property="FontSize" Value="13" />
@@ -16,12 +16,21 @@
       <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger>
     </Style.Triggers>
   </Style>
+  <Style x:Key="ManualStudyRowLabel" TargetType="TextBlock">
+    <Setter Property="Width" Value="64" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,0,8,4" />
+  </Style>
   <Style x:Key="ManualStudyChoices" TargetType="Border">
     <Setter Property="Background" Value="{DynamicResource TeacherPageBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource TeacherLineBrush}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="7" />
-    <Setter Property="Padding" Value="3" />
+    <Setter Property="Padding" Value="2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,0,8,4" />
   </Style>
   <!-- Preserve the shared DatePicker editor and Windows calendar behavior. Time fields
        and the surrounding form use the same system-aware teacher brushes. -->
