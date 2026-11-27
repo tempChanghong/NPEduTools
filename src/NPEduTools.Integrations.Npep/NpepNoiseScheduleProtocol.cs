@@ -30,5 +30,5 @@ public interface INpepNoiseSchedules
 {
     void Bind(string? scope, bool eligible);
     JsonObject Observe();
-    void Confirm(JsonObject response);
+    void Confirm(JsonObject response, TimeSpan roundTrip = default);
 }

@@ -6,6 +6,21 @@ namespace NPEduTools.Tests;
 
 public sealed partial class NoiseScheduleHostTests
 {
+    [Fact]
+    public async Task Legacy_schedule_lease_survives_unconfirmed_reply_only_until_original_deadline()
+    {
+        await using var f = new Fixture();
+        f.Scheduler.Confirm(f.Policy(seconds: 5), TimeSpan.FromSeconds(2));
+        Assert.Equal(3, f.Scheduler.Observe()["leaseRemainingSeconds"]!.GetValue<int>());
+        await f.Start();
+        f.Scheduler.Confirm(f.Policy("Disabled", seconds: 1), TimeSpan.FromSeconds(1));
+        f.Scheduler.Confirm(f.Policy("Disabled", confirmed: false));
+        Assert.Equal("Active", f.Noise.Snapshot().State);
+        while (f.Time.Ms < 3000) { f.Captures[0].Sample(); f.Tick(); }
+        await Until(() => f.Noise.Snapshot().State == "Stopped");
+        Assert.Single(f.Captures);
+    }
+
     [Theory]
     [InlineData("revision")] [InlineData("presentation")] [InlineData("homework")]
     [InlineData("threshold")] [InlineData("photos")] [InlineData("other-mode")]

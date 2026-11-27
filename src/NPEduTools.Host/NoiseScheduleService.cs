@@ -123,19 +123,21 @@ public sealed partial class NoiseScheduleService : INpepNoiseSchedules, INpepStu
             }
         }
     }
-    public void Confirm(JsonObject response)
+    public void Confirm(JsonObject response, TimeSpan roundTrip = default)
     {
         NpepNoiseScheduleProtocol.Validate("exchangeResponse", response);
         lock (_sync)
         {
             if (_studySelected || !_eligible || _scope is null || !response["confirmed"]!.GetValue<bool>()) return;
+            double remainingMs = response["leaseSeconds"]!.GetValue<int>() * 1000d - roundTrip.TotalMilliseconds;
+            if (roundTrip < TimeSpan.Zero || remainingMs <= 0) return;
             var p = response["policy"]!.AsObject();
             var rules = p["rules"]!.Deserialize<List<SchoolNoiseRule>>(Json)!;
             string source = p["source"]!.GetValue<string>();
             if (SchoolNoiseSchedule.Validate(new(source is "None" or "Disabled" ? "Disabled" : "Override", rules)) is not null) throw new NpepException("INVALID_RESPONSE");
             _policy = new(source, rules);
             _version = p["version"]!.GetValue<string>();
-            _confirmedAt = Elapsed; _leaseMs = response["leaseSeconds"]!.GetValue<int>() * 1000d;
+            _confirmedAt = Elapsed; _leaseMs = remainingMs;
             if (response["command"] is JsonObject command) Resume(command);
         }
     }

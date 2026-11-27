@@ -19,12 +19,20 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException("NOISE_SCHEDULE_UNSUPPORTED", status);
-        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token, request);
-        if (envelope.Text("protocolVersion") != "0.7" || envelope.Text("requestId") != body.Text("requestId")) throw new NpepException("INVALID_RESPONSE");
+        JsonObject envelope;
+        try { envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token, request); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested && status is 429 or >= 500 and <= 599)
+        { throw UnreadableResponse(response); }
+        if (envelope.Text("protocolVersion") != "0.7" || envelope.Text("requestId") != body.Text("requestId"))
+            throw UnreadableResponse(response);
         if (!response.IsSuccessStatusCode)
         {
-            string code = envelope["error"]?["code"]?.GetValue<string>() ?? "INVALID_RESPONSE";
-            throw new NpepException(code.Length <= 100 ? code : "INVALID_RESPONSE", status);
+            if (envelope["error"] is not JsonObject error || error["code"] is not JsonValue codeValue ||
+                !codeValue.TryGetValue<string>(out string? code) || code.Length is < 1 or > 100)
+                throw UnreadableResponse(response);
+            int? delay = error["retryAfterSeconds"] is JsonValue retry && retry.TryGetValue<int>(out int seconds) &&
+                seconds is >= 1 and <= 3600 ? seconds : null;
+            throw new NpepException(code, status, RetryAfterSeconds(response, delay));
         }
         NpepNoiseScheduleProtocol.Validate("exchangeEnvelope", envelope);
         return envelope["data"]!.AsObject().DeepClone().AsObject();
@@ -33,11 +41,11 @@ public sealed partial class NpepApi
 
 public sealed partial class NpepDevice
 {
-    internal async Task<JsonObject> NoiseScheduleAsync(JsonObject body, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api = Api(); return await api.NoiseScheduleAsync(DeviceBearer, body, token); }
-        catch (NpepException error) { if (error.Status == 401) SuspendIfTerminal(error); throw; }
-        finally { _gate.Release(); }
-    }
+    internal Task<JsonObject> NoiseScheduleAsync(JsonObject body, Action requireOriginalConnection, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, requireCurrent) =>
+        {
+            requireOriginalConnection();
+            requireCurrent();
+            return api.NoiseScheduleAsync(bearer, body, token);
+        }, studyContext: body["context"]?.AsObject() ?? throw new NpepException("INVALID_REQUEST"));
 }
