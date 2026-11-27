@@ -19,7 +19,10 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException("DISPLAY_UNSUPPORTED", status);
-        var envelope = await ReadEnvelopeAsync(response, 8192, deadline.Token, request);
+        JsonObject envelope;
+        try { envelope = await ReadEnvelopeAsync(response, 8192, deadline.Token, request); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested && status is 429 or >= 500 and <= 599)
+        { throw UnreadableResponse(response); }
         if (envelope.Text("protocolVersion") != "0.9" || envelope.Text("requestId") != body.Text("requestId") ||
             !NpepNoiseDisplayProtocol.Utc(envelope["serverTime"])) throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
@@ -31,7 +34,7 @@ public sealed partial class NpepApi
                 error["message"] is not JsonValue message || !message.TryGetValue<string>(out var text) || text.Length > 1000 ||
                 error["retryAfterSeconds"] is { } retry && (!int.TryParse(retry.ToJsonString(), out int seconds) || seconds is < 1 or > 3600))
                 throw new NpepException("INVALID_RESPONSE");
-            throw new NpepException(code, status);
+            throw new NpepException(code, status, RetryAfterSeconds(response, error["retryAfterSeconds"]?.GetValue<int>()));
         }
         if (!NpepNoiseDisplayProtocol.Exact(envelope, "protocolVersion", "requestId", "serverTime", "data") || envelope["data"] is not JsonObject data ||
             envelope["serverTime"] is not JsonValue v || !v.TryGetValue<string>(out var stamp) ||
@@ -44,11 +47,11 @@ public sealed partial class NpepApi
 }
 public sealed partial class NpepDevice
 {
-    internal async Task<JsonObject> NoiseDisplayAsync(string action, JsonObject body, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api = Api(); return await api.NoiseDisplayAsync(DeviceBearer, action, body, token); }
-        catch (NpepException error) { if (error.Status == 401) SuspendIfTerminal(error); throw; }
-        finally { _gate.Release(); }
-    }
+    internal Task<JsonObject> NoiseDisplayAsync(string action, JsonObject body, Action requireOriginalConnection, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, requireCurrent) =>
+        {
+            requireOriginalConnection();
+            requireCurrent();
+            return api.NoiseDisplayAsync(bearer, action, body, token);
+        }, studyContext: body["context"]?.AsObject() ?? throw new NpepException("INVALID_REQUEST"));
 }
