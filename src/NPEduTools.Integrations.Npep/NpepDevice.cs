@@ -10,7 +10,8 @@ public sealed partial class NpepDevice : IDisposable
     private readonly Func<string, NpepApi> _factory;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private volatile JsonObject? _saved;
-    private JsonObject? _sessionRequest, _session;
+    private JsonObject? _sessionRequest;
+    private volatile JsonObject? _session;
     private readonly string _runId = NpepProtocol.Id();
     private long _sequence;
     private volatile bool _suspended;

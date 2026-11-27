@@ -65,6 +65,9 @@ public sealed partial class StudySettingsService
         {
             Tick();
             if (ContinuingOffline && code is "HOMEWORK_OFFLINE" or "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED") return;
+            if (code == "HOMEWORK_REFRESH_UNAVAILABLE" && _homeworkId is not null &&
+                HomeworkContext() is { Eligible: true, Date: { } date } && date == _homeworkDate)
+                return; // Retain the last confirmed snapshot without renewing its age.
             ClearHomework(code == "STUDY_HOMEWORK_UNSUPPORTED" ? "UNSUPPORTED" : "UNAVAILABLE");
         }
     }

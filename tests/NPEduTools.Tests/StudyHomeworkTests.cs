@@ -110,7 +110,16 @@ public sealed class StudyHomeworkTests
         Assert.Equal(bytes, complete.ToArray()); Assert.Equal(snapshot.Items[0].Content, StudyHomeworkContract.Parse(complete.ToArray()).Items[0].Content);
         service.StudyHomeworkFailed("HOMEWORK_OFFLINE"); Assert.Equal("APPLIED", service.Snapshot().PolicyState); Assert.Equal("UNAVAILABLE", service.Snapshot().Homework!.State);
         service.ApplyStudyHomework(JsonNode.Parse(bytes)!.AsObject(), bytes, id);
-        for (int tick=0;tick<120;tick++) { clock.Ms+=500;service.ApplyStudy(config); }
+        for (int tick=0;tick<120;tick++)
+        {
+            clock.Ms+=500;service.ApplyStudy(config);
+            if (tick == 59)
+            {
+                service.StudyHomeworkFailed("HOMEWORK_REFRESH_UNAVAILABLE");
+                Assert.Equal("READY", service.Snapshot().Homework!.State);
+                Assert.Equal(id, service.Snapshot().Homework!.SnapshotId);
+            }
+        }
         Assert.Equal("APPLIED",service.Snapshot().PolicyState);Assert.Null(service.Snapshot().Homework!.SnapshotId);
         service.ApplyStudyHomework(JsonNode.Parse(bytes)!.AsObject(), bytes, id); config["version"] = new string('b', 64); service.ApplyStudy(config);
         Assert.Null(service.Snapshot().Homework!.SnapshotId);

@@ -36,10 +36,11 @@ public sealed partial class NpepDevice
             throw new NpepException("DEVICE_SUSPENDED");
     }
 
-    private async Task<T> WithNotificationConnectionAsync<T>(string? scope, CancellationToken token,
-        Func<NpepApi, string, Action, Task<T>> exchange)
+    private async Task<T> WithBoundSchoolConnectionAsync<T>(CancellationToken token,
+        Func<NpepApi, string, Action, Task<T>> exchange, string? notificationScope = null, JsonObject? studyContext = null)
     {
         JsonObject pairing;
+        JsonObject? session;
         NpepApi api;
         string bearer;
         await _gate.WaitAsync(token);
@@ -47,8 +48,13 @@ public sealed partial class NpepDevice
         {
             RequireNotificationConnection();
             token.ThrowIfCancellationRequested();
-            if (scope is not null && NotificationScope() != scope) throw new NpepException("SESSION_SUPERSEDED");
+            if (notificationScope is not null && NotificationScope() != notificationScope) throw new NpepException("SESSION_SUPERSEDED");
             pairing = Required();
+            session = _session;
+            if (studyContext is not null && (session is null || studyContext.Text("runId") != _runId ||
+                studyContext.Text("sessionId") != session.Text("sessionId") || studyContext.Number("statusEpoch") != session.Number("statusEpoch") ||
+                !JsonNode.DeepEquals(studyContext["identity"], RegistrationIdentity(pairing["registration"]!.AsObject()))))
+                throw new NpepException("SESSION_SUPERSEDED");
             bearer = DeviceBearer;
             api = Api();
         }
@@ -57,7 +63,8 @@ public sealed partial class NpepDevice
         void RequireCurrent()
         {
             token.ThrowIfCancellationRequested();
-            if (_suspended || !ReferenceEquals(_saved, pairing)) throw new NpepException("SESSION_SUPERSEDED");
+            if (_suspended || !ReferenceEquals(_saved, pairing) || (studyContext is not null && !ReferenceEquals(_session, session)))
+                throw new NpepException("SESSION_SUPERSEDED");
         }
 
         // The captured origin and credential are fixed for this exchange. HTTP must not own the device gate.
@@ -69,7 +76,7 @@ public sealed partial class NpepDevice
                 RequireCurrent();
                 result = await exchange(api, bearer, RequireCurrent);
             }
-            catch (NpepException error) when (error.Status is 401 or 403)
+            catch (NpepException error) when (error.Status == 401 || (studyContext is null && error.Status == 403))
             {
                 await _gate.WaitAsync(token);
                 try
@@ -91,7 +98,7 @@ public sealed partial class NpepDevice
     }
 
     internal Task<NpepNotificationSnapshot> FetchNotificationsAsync(CancellationToken token, string? scope = null) =>
-        WithNotificationConnectionAsync<NpepNotificationSnapshot>(scope, token, async (api, bearer, requireCurrent) =>
+        WithBoundSchoolConnectionAsync<NpepNotificationSnapshot>(token, async (api, bearer, requireCurrent) =>
         {
             try { return await ReadNotificationsAsync(api, bearer, requireCurrent, token); }
             catch (NpepException error) when (error.Code is "SNAPSHOT_INVALIDATED" or "SNAPSHOT_EXPIRED")
@@ -99,7 +106,7 @@ public sealed partial class NpepDevice
                 // Start over once with a new cursor chain instead of showing or completing the old partial list.
                 return await ReadNotificationsAsync(api, bearer, requireCurrent, token);
             }
-        });
+        }, notificationScope: scope);
 
     private static async Task<NpepNotificationSnapshot> ReadNotificationsAsync(NpepApi api, string bearer, Action requireCurrent, CancellationToken token)
     {
@@ -145,5 +152,5 @@ public sealed partial class NpepDevice
     }
 
     internal Task<JsonObject> SendNotificationReceiptsAsync(JsonObject body, CancellationToken token, string? scope = null) =>
-        WithNotificationConnectionAsync(scope, token, (api, bearer, _) => api.NotificationsAsync(bearer, null, body, token));
+        WithBoundSchoolConnectionAsync(token, (api, bearer, _) => api.NotificationsAsync(bearer, null, body, token), notificationScope: scope);
 }
