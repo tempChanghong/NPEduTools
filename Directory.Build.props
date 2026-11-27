@@ -9,4 +9,9 @@
     <InformationalVersion Condition="'$(MSBuildProjectName)' == 'NPEduTools.App' Or '$(MSBuildProjectName)' == 'NPEduTools.Host'">v1.1.10 · EVA-02（二号机）</InformationalVersion>
     <NuGetLockFilePath Condition="'$(PackageLockDirectory)' != ''">$(PackageLockDirectory)/$(MSBuildProjectName).lock.json</NuGetLockFilePath>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(NPEduToolsManagedVersion)' != '' And ('$(MSBuildProjectName)' == 'NPEduTools.App' Or '$(MSBuildProjectName)' == 'NPEduTools.Host')">
+    <AssemblyVersion>$(NPEduToolsManagedVersion)</AssemblyVersion>
+    <FileVersion>$(NPEduToolsManagedVersion)</FileVersion>
+    <InformationalVersion>v$(NPEduToolsManagedVersion)</InformationalVersion>
+  </PropertyGroup>
 </Project>

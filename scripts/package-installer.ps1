@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory=$true)][ValidatePattern('^\d+\.\d+\.\d+\.\d+$')][string]$InstallerVersion,
     [string]$OutputRoot = '.artifacts/installers',
     [string]$IsccPath,
+    [switch]$ManagedUpdate,
     [switch]$ValidateOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -18,6 +19,17 @@ $existingTag = @(& git -C $projectRoot tag --list $release)
 if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect local release tags.' }
 if ($existingTag.Count) { throw 'Release tag already exists; use a new candidate version.' }
 if ($manifest.rid -ne 'win-x64' -or $manifest.selfContained -ne $true -or $manifest.recordingToolsBundled -ne $true) { throw 'Installer requires a self-contained win-x64 package with bundled recording tools.' }
+if ($ManagedUpdate) {
+    $expected = [version]$InstallerVersion
+    $hostDll = Join-Path $root 'app/Host/NPEduTools.Host.dll'
+    $hostIdentity = [Reflection.AssemblyName]::GetAssemblyName($hostDll)
+    $reported = [Diagnostics.FileVersionInfo]::GetVersionInfo($hostDll).ProductVersion
+    # The Host sends the informational version up to the first '+' in its status.
+    if ($expected.ToString(4) -cne $InstallerVersion -or $hostIdentity.Name -cne 'NPEduTools.Host' -or
+        $hostIdentity.Version -ne $expected -or $reported.Split('+')[0] -cne "v$InstallerVersion") {
+        throw 'Managed update requires the installer, Host assembly and Host status label to have the same four-part version.'
+    }
+}
 # Verification includes the original license/source archives and every packaged file hash.
 & "$PSScriptRoot/verify-portable-package.ps1" -PackageRoot $root | Write-Host
 foreach ($item in @('LICENSE','NPEduTools-source.zip','third-party/inventory.json','third-party/inno-setup/LICENSE.txt','ClassIsland-plugin/NPEduTools.ClassIsland.Bridge.cipx')) {

@@ -4,14 +4,17 @@ param(
     [string]$RecordingToolsDirectory = '.tools/recording-bundled',
     [string]$ReleaseNotesPath,
     [switch]$Installer,
+    [switch]$ManagedUpdate,
     [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')][string]$InstallerVersion,
     [string]$IsccPath
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+if ($ManagedUpdate -and !$Installer) { throw '-ManagedUpdate requires -Installer.' }
 if ($Installer) {
     if (-not $InstallerVersion) { throw 'Specify -InstallerVersion (four numeric components) when building an installer.' }
     foreach ($part in $InstallerVersion.Split('.')) { if ([long]$part -gt 65535) { throw 'Each installer version component must be 0..65535.' } }
+    if ($ManagedUpdate -and ([version]$InstallerVersion).ToString(4) -cne $InstallerVersion) { throw 'Managed update versions must use canonical four-part notation.' }
     $IsccPath = & (Join-Path $PSScriptRoot 'resolve-inno-setup.ps1') -IsccPath $IsccPath
 }
 if (-not $ReleaseVersion) { throw 'Specify -ReleaseVersion for the next version; no published version is selected by default.' }
@@ -27,7 +30,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $projectRoot $ReleaseNotesPath) -Pat
 $recordingRuntime = [IO.Path]::GetFullPath((Join-Path $projectRoot $RecordingToolsDirectory))
 & (Join-Path $PSScriptRoot 'verify-recording-bundle.ps1') -RuntimeRoot $recordingRuntime
 $recordingManifest = Get-Content (Join-Path $recordingRuntime 'manifest.json') -Raw | ConvertFrom-Json
-$output = [IO.Path]::GetFullPath((Join-Path $projectRoot $OutputRoot))
+$output = if ([IO.Path]::IsPathRooted($OutputRoot)) { [IO.Path]::GetFullPath($OutputRoot) }
+    else { [IO.Path]::GetFullPath((Join-Path $projectRoot $OutputRoot)) }
 $id = 'NPEduTools-' + $ReleaseVersion
 $buildId = $id + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
 $work = Join-Path $output $buildId
@@ -50,9 +54,12 @@ try {
         @{Project='NPEduTools.ClassIsland.Admin';Directory=(Join-Path $app 'Admin')},
         @{Project='NPEduTools.Recorder';Directory=(Join-Path $work 'recorder')},
         @{Project='NPEduTools.Camera';Directory=(Join-Path $app 'Host/Camera')})
+    $managedVersionArgument = @()
+    if ($ManagedUpdate) { $managedVersionArgument = @("-p:NPEduToolsManagedVersion=$InstallerVersion") }
     foreach ($component in $components) {
-        & $runner @('publish',("src/" + $component.Project),'--configuration','Release','--runtime','win-x64','--self-contained','true','--output',$component.Directory,
-            '-m:1','-p:PublishTrimmed=false','-p:PublishSingleFile=false','-p:ExcludeRecordingTools=true',"-p:PackageLockDirectory=$locks")
+        $publishArguments = @('publish',("src/" + $component.Project),'--configuration','Release','--runtime','win-x64','--self-contained','true','--output',$component.Directory,
+            '-m:1','-p:PublishTrimmed=false','-p:PublishSingleFile=false','-p:ExcludeRecordingTools=true',"-p:PackageLockDirectory=$locks") + $managedVersionArgument
+        & $runner @publishArguments
         if ($LASTEXITCODE) { throw "Publish failed: $($component.Project)" }
     }
     $recorder = Join-Path $work 'recorder'
@@ -180,7 +187,7 @@ start "" "%~dp0app\NPEduTools.App.exe"
     $result = @{packageRoot=$package;zip=$zip;sha256=$sha;installerRequested=[bool]$Installer;installer=$null;status='ZIP_READY'}
     $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'result.json') -Encoding utf8
     if ($Installer) {
-        $installerOutput = @(& (Join-Path $PSScriptRoot 'package-installer.ps1') -PackageRoot $package -InstallerVersion $InstallerVersion -IsccPath $IsccPath -OutputRoot $output)
+        $installerOutput = @(& (Join-Path $PSScriptRoot 'package-installer.ps1') -PackageRoot $package -InstallerVersion $InstallerVersion -IsccPath $IsccPath -OutputRoot $output -ManagedUpdate:$ManagedUpdate)
         $installerLine = @($installerOutput | Where-Object { $_ -is [string] -and $_.StartsWith('INSTALLER_RESULT: ') })
         if ($installerLine.Count -ne 1) { throw 'Installer result was not returned.' }
         $result.installer = $installerLine[0].Substring('INSTALLER_RESULT: '.Length)
