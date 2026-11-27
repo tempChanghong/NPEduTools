@@ -10,11 +10,16 @@ public sealed partial class NpepApi
 }
 public sealed partial class NpepDevice
 {
-    internal async Task<JsonObject> SeatingAsync(Func<JsonObject> body, bool chunk, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api = Api(); return await api.SeatingAsync(DeviceBearer, body(), chunk, token); }
-        catch (NpepException e) { if (e.Status == 401) SuspendIfTerminal(e); throw; }
-        finally { _gate.Release(); }
-    }
+    internal Task<JsonObject> ExchangeSeatingManifestAsync(JsonObject context, Func<JsonObject> sample, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, requireCurrent) =>
+        {
+            // Sample presentation only after waiting for the device gate. There is no second gate before sending.
+            var body = sample();
+            requireCurrent();
+            return api.SeatingAsync(bearer, body, false, token);
+        }, studyContext: context);
+
+    internal Task<JsonObject> ReadSeatingChunkAsync(JsonObject body, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, _) => api.SeatingAsync(bearer, body, true, token),
+            studyContext: body["context"]?.AsObject() ?? throw new NpepException("INVALID_REQUEST"));
 }
