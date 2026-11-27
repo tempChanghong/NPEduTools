@@ -48,16 +48,13 @@ public sealed partial class NpepApi
 }
 public sealed partial class NpepDevice
 {
-    internal async Task<JsonObject> StudyPhotoAsync(JsonObject? lease, StudyPhotoPacket? packet, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try
+    internal Task<JsonObject> StudyPhotoAsync(JsonObject context, JsonObject? lease, StudyPhotoPacket? packet,
+        Action requireOriginalConnection, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, requireCurrent) =>
         {
-            RequireNotificationConnection(); using var api = Api();
-            return lease is not null ? await api.PhotoLeaseAsync(DeviceBearer, lease, token)
-                : await api.PhotoUploadAsync(DeviceBearer, packet ?? throw new InvalidDataException(), token);
-        }
-        catch (NpepException e) { if (e.Status == 401) SuspendIfTerminal(e); throw; }
-        finally { _gate.Release(); }
-    }
+            requireOriginalConnection();
+            requireCurrent();
+            return lease is not null ? api.PhotoLeaseAsync(bearer, lease, token)
+                : api.PhotoUploadAsync(bearer, packet ?? throw new InvalidDataException(), token);
+        }, studyContext: context);
 }
