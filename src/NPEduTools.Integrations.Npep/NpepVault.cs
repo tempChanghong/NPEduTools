@@ -37,11 +37,26 @@ public sealed class NpepVault : IDisposable
         {
             using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
             { file.Write(encrypted); file.Flush(true); }
-            if (File.Exists(_path)) File.Replace(temp, _path, null);
+            if (File.Exists(_path)) ReplaceCredential(temp);
             else File.Move(temp, _path);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
+
+    private void ReplaceCredential(string temporary)
+    {
+        const int sharingViolation = unchecked((int)0x80070020);
+        const int unableToRemoveReplaced = unchecked((int)0x80070497);
+        for (int attempt = 0; ; attempt++)
+        {
+            try { File.Replace(temporary, _path, null); return; }
+            // Both names must still be intact. Never retry errors that can move either file.
+            catch (IOException error) when (attempt < 4 && error.HResult is sharingViolation or unableToRemoveReplaced &&
+                File.Exists(temporary) && File.Exists(_path))
+            { Thread.Sleep(50 * (attempt + 1)); }
+        }
+    }
+
     internal void Clear() { if (File.Exists(_path)) File.Delete(_path); }
     public void Dispose() => _lease.Dispose();
 

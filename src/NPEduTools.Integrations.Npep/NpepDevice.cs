@@ -9,11 +9,11 @@ public sealed partial class NpepDevice : IDisposable
     private readonly NpepVault _vault;
     private readonly Func<string, NpepApi> _factory;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private JsonObject? _saved;
+    private volatile JsonObject? _saved;
     private JsonObject? _sessionRequest, _session;
     private readonly string _runId = NpepProtocol.Id();
     private long _sequence;
-    private bool _suspended;
+    private volatile bool _suspended;
     internal string DataDirectory { get; }
     internal Action<NPEduTools.Contracts.NpepConnectionEvent>? Observation { get; set; }
     public NpepDevice(string directory) : this(directory, origin => new(origin)) { }

@@ -130,6 +130,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 if (!_continuingStudyResume) _study?.BindStudy(null);
                 _controlCancellation?.Cancel();
                 _network?.Cancel();
+                _notificationNetwork?.Cancel();
                 _inbox?.Status("WAITING", "正在更新互联状态，完成后重新核对通知。");
                 Interlocked.Exchange(ref _notificationWake, 1);
             }
@@ -321,13 +322,16 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         }
     }
 
-    private void Publish(string connection, string message, string? error = null, string? receivedAt = null, bool statusSampleExpired = false)
+    private void Publish(string connection, string message, string? error = null, string? receivedAt = null, bool statusSampleExpired = false,
+        bool requireSuspended = false)
     {
         SynchronizeActionBinding();
         long? receiptTimestamp = receivedAt is not null ? _receiptTime.GetTimestamp() : null;
         lock (_sync)
         {
             var view = _device!.View(); string stage = view.Text("state");
+            // A heartbeat received just before notification-driven suspension cannot restore an online message.
+            if ((requireSuspended && stage != "SUSPENDED") || (connection == "ONLINE" && stage == "SUSPENDED")) return;
             bool paused = view["reportingPaused"]?.GetValue<bool>() == true;
             bool canReport = stage == "ACTIVE" && !paused && view["suspended"]?.GetValue<bool>() != true;
             // Discarding a local sample gives no new evidence about the school connection.

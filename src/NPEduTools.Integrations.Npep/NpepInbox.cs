@@ -73,6 +73,9 @@ internal sealed class NpepInbox
             Commit(new() { Scope = scope }); _clockAt = 0; _fresh = false;
         }
     }
+    internal bool MatchesScope(string scope)
+    { lock (_sync) return _data.Scope == scope; }
+
     internal void Apply(string scope, NpepNotificationSnapshot snapshot)
     {
         lock (_sync)
