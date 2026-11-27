@@ -67,13 +67,48 @@ public sealed partial class NpepRuntime
     private Task _softwareUpdateLoop = Task.CompletedTask;
     private ManagedUpdateSession? _updates;
     private readonly SemaphoreSlim _updateWake = new(0, 1);
-    public SoftwareUpdateStatus? UpdateStatus() => _updates?.Status;
+    private readonly object _updateBindingLock = new();
+    public SoftwareUpdateStatus? UpdateStatus()
+    {
+        if (_updates is not { } update) return null;
+        string runningVersion = update.Status.RunningVersion;
+        try { ObserveUpdateBinding(update, runningVersion); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        { return new("UNMANAGED", null, false, runningVersion, Reason: "STATE_UNKNOWN"); }
+        return update.Status;
+    }
     public bool AcceptUpdateInvitation(Guid id)
     {
         if (Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", Busy: false, ReportingPaused: false } || _updates?.Accept(id) != true)
             return false;
         try { _updateWake.Release(); } catch (SemaphoreFullException) { }
         return true;
+    }
+
+    private string? ObserveUpdateBinding(ManagedUpdateSession update, string runningVersion)
+    {
+        lock (_updateBindingLock)
+        {
+            var view = _device!.View();
+            var stage = view.Text("state");
+            bool suspended = view["suspended"]?.GetValue<bool>() == true;
+            if (stage != "ACTIVE" || suspended || view["registration"] is not JsonObject registration ||
+                view["origin"] is not JsonValue origin)
+            {
+                update.HideBinding(runningVersion, suspended || stage is "SUSPENDED" or "UNPAIRED" or "UNPAIRING");
+                return null;
+            }
+            var identity = NpepDevice.RegistrationIdentity(registration);
+            var approval = view["approval"];
+            string? Label(string field) => approval?[field]?.GetValue<string>();
+            string? screen = registration["screenBindingId"]?.GetValue<string>();
+            string originText = origin.GetValue<string>();
+            string scope = new JsonArray(originText, identity, screen, Label("approvalId")).ToJsonString();
+            update.Bind(scope, Label("schoolName") ?? Label("schoolId") ?? originText,
+                Label("administrativeClassName") ?? Label("administrativeClassId") ?? screen,
+                Label("screenBindingName") ?? screen ?? identity.Text("deviceId"), identity.Text("deviceId"));
+            return scope;
+        }
     }
 
     private void InitializeUpdates(ISchoolUpdateHost? host)
@@ -87,24 +122,18 @@ public sealed partial class NpepRuntime
             while (!token.IsCancellationRequested)
             {
                 var delay = TimeSpan.FromSeconds(20);
+                string? scope = null;
                 try
                 {
                     var state = Snapshot();
-                    if (state is { State: "ACTIVE", Connection: "ONLINE", Busy: false, ReportingPaused: false })
+                    scope = ObserveUpdateBinding(_updates, host.RunningVersion);
+                    if (scope is not null && state is { State: "ACTIVE", Connection: "ONLINE", Busy: false, ReportingPaused: false })
                     {
                         var context = await StudyContextAsync(token);
-                        var registration = _device.View()["registration"]?.AsObject();
-                        string? binding = registration?["screenBindingId"]?.GetValue<string>();
-                        string scope = new JsonArray(state.Origin, context["identity"]!.DeepClone(),
-                            binding, state.Approval?["approvalId"]?.GetValue<string>()).ToJsonString();
-                        var identity = context["identity"]!.AsObject();
-                        string? Label(string field) => state.Approval?[field]?.GetValue<string>();
-                        _updates.Bind(scope, Label("schoolName") ?? Label("schoolId") ?? state.Origin,
-                            Label("administrativeClassName") ?? Label("administrativeClassId") ?? binding,
-                            Label("screenBindingName") ?? binding ?? identity.Text("deviceId"));
                         async Task<JsonObject> Exchange(Guid? consent, ManagedUpdateReceipt? receipt)
                         {
                             await RequireStudyContextAsync(context, token);
+                            if (ObserveUpdateBinding(_updates, host.RunningVersion) != scope) throw new NpepException("SESSION_SUPERSEDED");
                             var body = NpepProtocol.Body();
                             body["context"] = context.Copy(); body["sequence"] = checked(++sequence);
                             body["runningVersion"] = host.RunningVersion;
@@ -117,12 +146,14 @@ public sealed partial class NpepRuntime
                         }
                         await _updates.CycleAsync(scope, Exchange, token);
                     }
-                    else { _updates.Disconnect(); delay = TimeSpan.FromSeconds(4); }
+                    else { _updates.Disconnect(expectedScope: scope); delay = TimeSpan.FromSeconds(4); }
                 }
                 catch (NpepException e) when (e.Code == "SOFTWARE_UPDATE_UNSUPPORTED")
-                { _updates.Disconnect("SOFTWARE_UPDATE_UNSUPPORTED"); delay = TimeSpan.FromMinutes(2); }
+                { _updates.Disconnect("SOFTWARE_UPDATE_UNSUPPORTED", scope); delay = TimeSpan.FromMinutes(2); }
+                catch (NpepException e) when (e.Status is 401 or 403 || e.Code == "UPDATE_ENROLLMENT_CHANGED")
+                { _updates.ForgetReceipt(scope); _updates.Disconnect(expectedScope: scope); }
                 catch (Exception e) when (Handled(e) || e is InvalidOperationException or FormatException or ArgumentException)
-                { _updates.Disconnect(); }
+                { _updates.Disconnect(expectedScope: scope); }
                 try { await _updateWake.WaitAsync(delay, token); }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
             }

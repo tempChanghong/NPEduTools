@@ -32,12 +32,15 @@ public sealed class ManagedUpdateSessionTests
     public void RecoveryFieldsAreOnlySentOnTheOptInStatusReply()
     {
         var status = new SoftwareUpdateStatus("MANAGED", Guid.NewGuid(), true, "1.1.10.0",
-            State: "FAILED", Reason: "ROLLED_BACK", PreviousVersion: "1.1.10.0", RollbackConfirmed: true);
+            State: "FAILED", Reason: "ROLLED_BACK", PreviousVersion: "1.1.10.0", RollbackConfirmed: true,
+            MaintenanceReceipt: new(Guid.NewGuid(), "screen-id", "School", "Class", "Screen", "FAILED", "ROLLED_BACK",
+                "1.1.10.0", "1.1.11.0", "1.1.10.0", "2026-11-20T08:59:00.000Z", null, "2026-11-20T09:00:00.000Z"));
         foreach (var capability in new[] { "software.update.status", "software.update.consent" })
         {
             var legacy = JsonSerializer.SerializeToElement(status.ForStatusReply(capability), Protocol.Json);
             Assert.False(legacy.TryGetProperty("previousVersion", out _));
             Assert.False(legacy.TryGetProperty("rollbackConfirmed", out _));
+            Assert.False(legacy.TryGetProperty("maintenanceReceipt", out _));
             Assert.Equal("ROLLED_BACK", legacy.GetProperty("reason").GetString());
         }
         const string recovery = "software.update.status.recovery";
@@ -47,6 +50,58 @@ public sealed class ManagedUpdateSessionTests
         var extended = JsonSerializer.SerializeToElement(status.ForStatusReply(recovery), Protocol.Json);
         Assert.True(extended.GetProperty("rollbackConfirmed").GetBoolean());
         Assert.Equal("1.1.10.0", extended.GetProperty("previousVersion").GetString());
+        Assert.False(extended.TryGetProperty("maintenanceReceipt", out _));
+        const string details = "software.update.status.details";
+        Assert.Null(Protocol.Validate(read with { Capability = details }));
+        Assert.Equal(status.MaintenanceReceipt, status.ForStatusReply(details).MaintenanceReceipt);
+    }
+
+    [Fact]
+    public async Task ReopeningOfflineKeepsOnlyLastConfirmedReceiptForTheSameBinding()
+    {
+        using var f = new Scenario();
+        await f.Consent();
+        f.Phase = "FAILED";
+        string? confirmedAt = null;
+        Guid returnedPlan = f.PlanId;
+        async Task<JsonObject> Exchange(Guid? consent, ManagedUpdateReceipt? receipt)
+        {
+            var reply = await f.Exchange(consent, receipt);
+            var plan = reply["plan"]!.AsObject();
+            plan["id"] = returnedPlan.ToString("D");
+            plan["reason"] = "ROLLED_BACK";
+            plan["updatedAt"] = "2026-11-20T08:59:00.000Z";
+            plan["rollbackConfirmedAt"] = confirmedAt;
+            reply["lastSeenAt"] = "2026-11-20T09:00:00.000Z";
+            return reply;
+        }
+        await f.Session.CycleAsync("current-scope", Exchange, default);
+        Assert.Equal(f.PlanId, f.Session.Status.MaintenanceReceipt?.PlanId);
+        Assert.Null(f.Session.Status.MaintenanceReceipt!.RollbackConfirmedAt);
+        confirmedAt = "2026-11-20T09:01:00.000Z";
+        await f.Session.CycleAsync("current-scope", Exchange, default);
+        Assert.Equal(confirmedAt, f.Session.Status.MaintenanceReceipt?.RollbackConfirmedAt);
+
+        f.Session = new(f.Host, f.DirectoryPath);
+        f.Session.Bind("current-scope", "school", "class", "screen", "screen-id");
+        var offline = f.Session.Status;
+        Assert.True(offline.MaintenanceReceipt?.IsHistorical);
+        Assert.Equal(f.PlanId, offline.MaintenanceReceipt?.PlanId);
+        Assert.Equal(confirmedAt, offline.MaintenanceReceipt?.RollbackConfirmedAt);
+        Assert.False(offline.LocalConsent);
+        Assert.False(offline.RollbackConfirmed);
+        Assert.Null(offline.PlanId);
+        Assert.False(f.Session.Accept(f.Invitation));
+
+        returnedPlan = Guid.NewGuid(); confirmedAt = null;
+        await f.Session.CycleAsync("current-scope", Exchange, default);
+        Assert.Equal(returnedPlan, f.Session.Status.MaintenanceReceipt?.PlanId);
+        Assert.Null(f.Session.Status.MaintenanceReceipt?.RollbackConfirmedAt);
+        f.Session.Bind("different-binding", "other school", "class", "screen");
+        Assert.Null(f.Session.Status.MaintenanceReceipt);
+        f.Session.Unpair();
+        f.Session.Bind("current-scope", "school", "class", "screen");
+        Assert.Null(f.Session.Status.MaintenanceReceipt);
     }
 
     [Fact]

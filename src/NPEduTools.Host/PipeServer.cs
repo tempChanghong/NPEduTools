@@ -65,7 +65,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                     if(error=="InvalidNoiseManagementCommand")studyExit?.ObserveAuthorization(request,response);
                 }
-                else if (request.Capability is "software.update.status" or "software.update.status.recovery" or "software.update.consent" or "software.update.desktop-ready")
+                else if (request.Capability is "software.update.status" or "software.update.status.recovery" or "software.update.status.details" or "software.update.consent" or "software.update.desktop-ready")
                 {
                     if (npep?.UpdateStatus() is not { } status || updates is null)
                         response = new(1, request.RequestId, "Rejected", "UPDATE_UNAVAILABLE", "本机暂未支持学校软件维护。");

@@ -100,15 +100,23 @@ public sealed record WebsitePolicyDesktopState(Guid ObservationId, string Source
 public sealed record WebsitePolicyBrowserEvidence(Guid ObservationId, string Host);
 
 public sealed record SoftwareUpdateConsent(Guid EnrollmentId, bool Accepted);
+public sealed record SoftwareMaintenanceReceipt(Guid PlanId, string? DeviceId, string? SchoolName, string? ClassName,
+    string? DeviceName, string State, string? Reason, string PreviousVersion, string TargetVersion,
+    string? RunningVersion, string? UpdatedAt, string? ObservedAt, string? RollbackConfirmedAt, bool IsHistorical = false);
 public sealed record SoftwareUpdateStatus(string Enrollment, Guid? EnrollmentId, bool LocalConsent, string RunningVersion,
     string? SchoolName = null, string? ClassName = null, string? DeviceName = null, string? State = null,
     string? Reason = null, string? TargetVersion = null, Guid? PlanId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PreviousVersion = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RollbackConfirmed = false)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RollbackConfirmed = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SoftwareMaintenanceReceipt? MaintenanceReceipt = null)
 {
-    // Earlier classroom clients reject unknown fields on status and consent replies.
-    public SoftwareUpdateStatus ForStatusReply(string capability) => capability == "software.update.status.recovery"
-        ? this : this with { PreviousVersion = null, RollbackConfirmed = false };
+    // Keep both earlier status shapes intact. The read-only details are opt-in.
+    public SoftwareUpdateStatus ForStatusReply(string capability) => capability switch
+    {
+        "software.update.status.details" => this,
+        "software.update.status.recovery" => this with { MaintenanceReceipt = null },
+        _ => this with { PreviousVersion = null, RollbackConfirmed = false, MaintenanceReceipt = null }
+    };
 }
 
 public sealed record TouchAssistState(bool Running, bool Paused, bool AllowUnmarkedMouse, string State, string? Error = null);
@@ -163,7 +171,7 @@ public static class Protocol
             return Validate(request with { Capability = "host.ping", SoftwareUpdateConsent = null });
         }
         if (request.SoftwareUpdateConsent is not null) return "InvalidSoftwareUpdateConsent";
-        if (request.Capability is "software.update.status" or "software.update.status.recovery" or "software.update.desktop-ready")
+        if (request.Capability is "software.update.status" or "software.update.status.recovery" or "software.update.status.details" or "software.update.desktop-ready")
             return Validate(request with { Capability = "host.ping" });
         if (NoiseCalibrationStatusContract.BaseCapability(request.Capability) is { } calibrationBase)
             return Validate(request with { Capability = calibrationBase });
