@@ -68,24 +68,19 @@ public sealed partial class NpepApi
 
 public sealed partial class NpepDevice
 {
-    internal async Task<JsonObject?> StudyPresentationAsync(Func<JsonObject?> observe, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try
+    internal Task<JsonObject?> StudyPresentationAsync(JsonObject context, Func<JsonObject?> observe, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync<JsonObject?>(token, async (api, bearer, requireCurrent) =>
         {
-            RequireNotificationConnection();
-            // Sample after waiting for the network gate, then reserve the entire 1s HTTP budget.
+            // Sample after capturing the connection, then reserve the entire 1s HTTP budget.
             // A queued old visible sample must not become a fresh server-side claim.
             if (observe() is not { } body) return null;
             var status = body["status"]!.AsObject(); int remaining = Math.Max(0, status["remainingMs"]!.GetValue<int>() - 1000);
             if (remaining == 0 && status.Text("state") is "Visible" or "Hidden")
             { status["state"] = "Unknown"; status["reason"] = "APP_STALE"; status["appInstanceId"] = null; status["pulse"] = null; }
             status["remainingMs"] = remaining;
-            using var api = Api(); return await api.StudyPresentationAsync(DeviceBearer, body, token);
-        }
-        catch (NpepException error) { if (error.Status == 401) SuspendIfTerminal(error); throw; }
-        finally { _gate.Release(); }
-    }
+            requireCurrent();
+            return await api.StudyPresentationAsync(bearer, body, token);
+        }, studyContext: context);
     internal Task<JsonObject> StudyHomeworkAsync(JsonObject body, CancellationToken token) =>
         WithBoundSchoolConnectionAsync(token, (api, bearer, _) => api.StudyHomeworkAsync(bearer, body, token),
             studyContext: body["context"]?.AsObject() ?? throw new NpepException("INVALID_REQUEST"));
