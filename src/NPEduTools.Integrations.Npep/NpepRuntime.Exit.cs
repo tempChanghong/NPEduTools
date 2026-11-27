@@ -11,28 +11,75 @@ public interface INpepStudyExitEvents
 }
 public sealed partial class NpepRuntime
 {
-    private Task _studyExitLoop=Task.CompletedTask;
+    private Task _studyExitLoop = Task.CompletedTask;
     private void InitializeStudyExit(INpepStudySettings study)
     {
-        if(study is not INpepStudyExitEvents {SupportsExitEvents:true} events || _device is null)return;
-        _studyExitLoop=Task.Run(async()=>{
-            long? unsupportedAt=null;
-            try{while(!_lifetime.IsCancellationRequested){
-                Guid? id=null;
-                try {
-                    var state=Snapshot();
-                    if(state is {State:"UNPAIRED" or "SUSPENDED"} or {ReportingPaused:true} || state.Busy && !ContinuingStudyResume)events.ExitFailed("EXIT_NOT_ELIGIBLE");
-                    else if((unsupportedAt is null || System.Diagnostics.Stopwatch.GetElapsedTime(unsupportedAt.Value).TotalSeconds>=60) && state is {State:"ACTIVE",Connection:"ONLINE",Busy:false} && events.PendingExit() is {} packet){
-                        id=Guid.Parse(packet.Metadata.Text("eventId"));var context=await StudyContextAsync(_lifetime.Token);
-                        if(!JsonNode.DeepEquals(JsonNode.Parse(packet.Scope),context["identity"]))throw new NpepException("BINDING_CHANGED");
-                        var body=new JsonObject{["requestId"]=NpepProtocol.Id(),["context"]=context.Copy(),["event"]=packet.Metadata.Copy()};
-                        var reply=await _device.StudyExitAsync(body,_lifetime.Token);await RequireStudyContextAsync(context,_lifetime.Token);
-                        if(reply.Text("eventId")!=id.Value.ToString())throw new NpepException("INVALID_RESPONSE");unsupportedAt=null;events.ExitStored(id.Value);
+        if (study is not INpepStudyExitEvents { SupportsExitEvents: true } events || _device is null) return;
+        _studyExitLoop = Task.Run(async () =>
+        {
+            StudyRetry? retry = null;
+            try
+            {
+                while (!_lifetime.IsCancellationRequested)
+                {
+                    var state = Snapshot();
+                    Guid? eventId = null;
+                    string? scope = null;
+                    try
+                    {
+                        if (state is { State: "UNPAIRED" or "SUSPENDED" })
+                        {
+                            lock (_sync)
+                                if (_state.Revision == state.Revision) events.ExitFailed("EXIT_NOT_ELIGIBLE");
+                        }
+                        else if (state is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } &&
+                            events.PendingExit() is { } packet && !StudyRetryPending(retry, packet.Scope))
+                        {
+                            scope = packet.Scope;
+                            eventId = Guid.Parse(packet.Metadata.Text("eventId"));
+                            await SendStudyExitAsync(events, packet, eventId.Value, state.Revision, _lifetime.Token);
+                            retry = null;
+                        }
                     }
-                }catch(Exception e)when(Handled(e)||e is InvalidDataException){if(e is NpepException {Code:"STUDY_PHOTOS_UNSUPPORTED" or "PROTOCOL_UNSUPPORTED" or "NOT_FOUND"})unsupportedAt=System.Diagnostics.Stopwatch.GetTimestamp();events.ExitFailed(e is NpepException n?n.Code:"EXIT_EVENT_OFFLINE",id);}
-                await Task.Delay(TimeSpan.FromSeconds(3),_lifetime.Token);
-            }}catch(OperationCanceledException)when(_lifetime.IsCancellationRequested){}
+                    catch (Exception e) when (!_lifetime.IsCancellationRequested && (Handled(e) || e is InvalidDataException or FormatException))
+                    {
+                        if (scope is not null && e is NpepException error)
+                        {
+                            if (error.Code is "STUDY_PHOTOS_UNSUPPORTED" or "PROTOCOL_UNSUPPORTED" or "NOT_FOUND")
+                                retry = new(scope, _receiptTime.GetTimestamp(), TimeSpan.FromSeconds(60));
+                            else if (error.Status is 429 or >= 500) retry = NewStudyRetry(scope, error);
+                        }
+                        lock (_sync)
+                            if (_state.Revision == state.Revision)
+                                events.ExitFailed(e is NpepException n ? n.Code : "EXIT_EVENT_OFFLINE", eventId);
+                        if (e is NpepException { Status: 401 } refusal && Snapshot().Revision == state.Revision)
+                            Publish("STOPPED", "设备授权已失效，退出事件同步已停止。", refusal.Code, requireSuspended: true);
+                    }
+                    await Task.Delay(TimeSpan.FromSeconds(3), _lifetime.Token);
+                }
+            }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         });
+    }
+    private async Task SendStudyExitAsync(INpepStudyExitEvents events, StudyExitPacket packet, Guid eventId, long revision, CancellationToken token)
+    {
+        var context = await StudyContextAsync(token);
+        void RequireOriginalConnection()
+        {
+            token.ThrowIfCancellationRequested();
+            if (Snapshot() is not { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } state || state.Revision != revision)
+                throw new NpepException("SESSION_SUPERSEDED");
+        }
+        RequireOriginalConnection();
+        if (!JsonNode.DeepEquals(JsonNode.Parse(packet.Scope), context["identity"])) throw new NpepException("BINDING_CHANGED");
+        var body = new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(), ["event"] = packet.Metadata.Copy() };
+        var reply = await _device!.StudyExitAsync(body, RequireOriginalConnection, token);
+        if (reply.Text("eventId") != eventId.ToString()) throw new NpepException("INVALID_RESPONSE");
+        lock (_sync)
+        {
+            RequireOriginalConnection();
+            events.ExitStored(eventId);
+        }
     }
 }
 public sealed partial class NpepApi
@@ -42,9 +89,10 @@ public sealed partial class NpepApi
 }
 public sealed partial class NpepDevice
 {
-    internal async Task<JsonObject> StudyExitAsync(JsonObject body,CancellationToken token)
-    {
-        await _gate.WaitAsync(token);try{RequireNotificationConnection();using var api=Api();return await api.ExitEventAsync(DeviceBearer,body,token);}
-        catch(NpepException e){if(e.Status==401)SuspendIfTerminal(e);throw;}finally{_gate.Release();}
-    }
+    internal Task<JsonObject> StudyExitAsync(JsonObject body, Action requireOriginalConnection, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, _) =>
+        {
+            requireOriginalConnection();
+            return api.ExitEventAsync(bearer, body, token);
+        }, studyContext: body["context"]?.AsObject() ?? throw new NpepException("INVALID_REQUEST"));
 }

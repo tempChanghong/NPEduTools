@@ -30,12 +30,17 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException("STUDY_PHOTOS_UNSUPPORTED", status);
-        var envelope = await ReadEnvelopeAsync(response, 16384, deadline.Token, request);
+        JsonObject envelope;
+        try { envelope = await ReadEnvelopeAsync(response, 16384, deadline.Token, request); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested && status is 429 or >= 500 and <= 599)
+        { throw UnreadableResponse(response); }
         if (envelope.Text("protocolVersion") != "0.15" || envelope.Text("requestId") != id) throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {
-            string code = envelope["error"]?["code"]?.GetValue<string>() ?? "INVALID_RESPONSE";
-            throw new NpepException(System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Z0-9_]{1,100}$") ? code : "INVALID_RESPONSE", status);
+            var error = envelope["error"]!.AsObject();
+            string code = error.Text("code");
+            throw new NpepException(code.Length <= 100 ? code : "INVALID_RESPONSE", status,
+                RetryAfterSeconds(response, error["retryAfterSeconds"]?.GetValue<int>()));
         }
         if (envelope.Count != 4 || !envelope.ContainsKey("serverTime") || envelope["data"] is not JsonObject data) throw new NpepException("INVALID_RESPONSE");
         NpepPhotoProtocol.Validate(definition, data); return data.Copy();
