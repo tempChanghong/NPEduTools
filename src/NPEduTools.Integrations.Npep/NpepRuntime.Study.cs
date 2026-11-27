@@ -8,7 +8,7 @@ public sealed partial class NpepRuntime
     private INpepStudySettings? _study;
     private long _studySequence, _studyExecutionSequence, _studyResumeSequence;
     private sealed record StudyRetry(string Context, long Started, TimeSpan Delay);
-    private StudyRetry? _studyReadRetry, _studyExchangeRetry;
+    private StudyRetry? _studyReadRetry, _studyExchangeRetry, _studyResumeRetry;
     private void InitializeStudy(INpepStudySettings? study)
     {
         _study = study;
@@ -71,6 +71,7 @@ public sealed partial class NpepRuntime
     }
     internal async Task StudyCycleAsync(INpepStudySettings study, CancellationToken token)
     {
+        long connectionRevision = Snapshot().Revision;
         var context = await StudyContextAsync(token);
         string contextKey = context.ToJsonString();
         if (StudyRetryPending(_studyReadRetry, contextKey)) return;
@@ -89,7 +90,7 @@ public sealed partial class NpepRuntime
         if (StudyRetryPending(_studyExchangeRetry, contextKey)) return;
         try
         {
-            await ExchangeStudyExecutionAsync(study, context, configuration, token);
+            await ExchangeStudyExecutionAsync(study, context, contextKey, configuration, connectionRevision, token);
             _studyExchangeRetry = null;
         }
         catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e))
@@ -127,7 +128,8 @@ public sealed partial class NpepRuntime
     private static bool TransientStudyExchangeFailure(Exception error) => error is HttpRequestException or OperationCanceledException
         || error is NpepException { Code: "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED" };
 
-    private async Task ExchangeStudyExecutionAsync(INpepStudySettings study, JsonObject context, JsonObject configuration, CancellationToken token)
+    private async Task ExchangeStudyExecutionAsync(INpepStudySettings study, JsonObject context, string contextKey,
+        JsonObject configuration, long connectionRevision, CancellationToken token)
     {
         var status = study.ObserveStudy();
         if (status is null) return;
@@ -144,20 +146,67 @@ public sealed partial class NpepRuntime
                 ["sequence"] = ++_studyExecutionSequence, ["version"] = configuration["version"]!.DeepClone(), ["status"] = execution }, token);
             await RequireStudyContextAsync(context, token);
             study.ConfirmStudyExecution(configuration, grant, System.Diagnostics.Stopwatch.GetElapsedTime(sentAt));
-            if (study.SupportsResume)
-            {
-                try
-                {
-                    sentAt = System.Diagnostics.Stopwatch.GetTimestamp();
-                    var resume = await _device.StudyResumeAsync(new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
-                        ["sequence"] = ++_studyResumeSequence, ["version"] = configuration["version"]!.DeepClone(),
-                        ["receipt"] = study.ObserveStudyResumeReceipt() }, token);
-                    await RequireStudyContextAsync(context, token);
-                    if (resume["confirmed"]!.GetValue<bool>() && resume.Text("version") == configuration.Text("version") && resume["command"] is JsonObject command)
-                        study.ApplyStudyResume(configuration, command, System.Diagnostics.Stopwatch.GetElapsedTime(sentAt));
-                }
-                catch (NpepException e) when (e.Code == "STUDY_RESUME_UNSUPPORTED") { } // A 0.10 server retains capture and display compatibility.
-            }
+            if (study.SupportsResume && !StudyRetryPending(_studyResumeRetry, contextKey))
+                await ExchangeStudyResumeAsync(study, context, contextKey, configuration, connectionRevision, token);
         }
+    }
+
+    private async Task ExchangeStudyResumeAsync(INpepStudySettings study, JsonObject context, string contextKey,
+        JsonObject configuration, long connectionRevision, CancellationToken token)
+    {
+        bool IsOriginalConnection() => _state is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } &&
+            _state.Revision == connectionRevision && HasFreshStatusReceipt() && !token.IsCancellationRequested;
+
+        void RequireOriginalConnection()
+        {
+            lock (_sync)
+                if (IsOriginalConnection()) return;
+            token.ThrowIfCancellationRequested();
+            throw new NpepException("SESSION_SUPERSEDED");
+        }
+        RequireOriginalConnection();
+        var sentAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        var body = new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
+            ["sequence"] = ++_studyResumeSequence, ["version"] = configuration["version"]!.DeepClone(),
+            ["receipt"] = study.ObserveStudyResumeReceipt() };
+        JsonObject resume;
+        try { resume = await _device!.StudyResumeAsync(context, body, RequireOriginalConnection, token); }
+        catch (NpepException e) when (e.Code == "STUDY_RESUME_UNSUPPORTED")
+        {
+            RequireOriginalConnection();
+            // Old servers still support policy, capture and display.
+            _studyResumeRetry = new(contextKey, _receiptTime.GetTimestamp(), TimeSpan.FromSeconds(60));
+            return;
+        }
+        catch (NpepException e) when (e.Status == 401)
+        {
+            if (Snapshot().Revision == connectionRevision)
+                Publish("STOPPED", "设备授权已失效，学校自习继续同步已停止。", e.Code, requireSuspended: true);
+            throw;
+        }
+        catch (Exception e) when (!token.IsCancellationRequested && (TransientStudyExchangeFailure(e) ||
+            e is NpepException { Status: 429 or >= 500 } or NpepException { Code: "INVALID_RESPONSE" }))
+        {
+            RequireOriginalConnection();
+            // The command exchange has its own server bucket. Keep policy and execution receipts running.
+            if (e is NpepException { RetryAfterSeconds: not null } or NpepException { Status: 429 })
+                _studyResumeRetry = NewStudyRetry(contextKey, e);
+            return;
+        }
+
+        bool current;
+        lock (_sync)
+        {
+            current = IsOriginalConnection();
+            if (current && resume["confirmed"]!.GetValue<bool>() && resume.Text("version") == configuration.Text("version") &&
+                resume["command"] is JsonObject command)
+                study.ApplyStudyResume(configuration, command, System.Diagnostics.Stopwatch.GetElapsedTime(sentAt));
+        }
+        if (!current)
+        {
+            token.ThrowIfCancellationRequested();
+            throw new NpepException("SESSION_SUPERSEDED");
+        }
+        _studyResumeRetry = null;
     }
 }

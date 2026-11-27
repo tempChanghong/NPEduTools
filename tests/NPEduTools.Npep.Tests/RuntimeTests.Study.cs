@@ -70,7 +70,11 @@ public sealed partial class RuntimeTests
         activeRuntime = runtime;
         await Command(runtime, "inspect"); await Command(runtime, "pair", server); await Command(runtime, "poll"); await Command(runtime, "confirm", server);
         await Until(() => runtime.Snapshot().Connection == "ONLINE");
-        if (resumeMode == "late-pause") Assert.Equal("SESSION_SUPERSEDED", (await Assert.ThrowsAsync<NpepException>(() => runtime.StudyCycleAsync(study, CancellationToken.None))).Code);
+        if (resumeMode == "late-pause")
+        {
+            Assert.Equal("SESSION_SUPERSEDED", (await Assert.ThrowsAsync<NpepException>(() => runtime.StudyCycleAsync(study, CancellationToken.None))).Code);
+            await Until(() => runtime.Snapshot() is { Busy: false, ReportingPaused: true });
+        }
         else if (wrongIdentity || changedPolicy)
             Assert.Equal(wrongIdentity ? "SESSION_SUPERSEDED" : "POLICY_CHANGED", (await Assert.ThrowsAsync<NpepException>(() => runtime.StudyCycleAsync(study, CancellationToken.None))).Code);
         else await runtime.StudyCycleAsync(study, CancellationToken.None);
@@ -99,5 +103,111 @@ public sealed partial class RuntimeTests
             ["version"] = _configuration["version"]!.DeepClone(), ["policyState"] = "APPLIED", ["presentationState"] = "NOT_INTEGRATED",
             ["captureState"] = "NOT_INTEGRATED", ["phase"] = "Blocked", ["reason"] = "SCHOOL_CLOCK_UNAVAILABLE", ["clockReady"] = false,
             ["schoolNow"] = null, ["window"] = null };
+    }
+
+    [Theory]
+    [InlineData(200)] [InlineData(401)]
+    public async Task Slow_study_resume_does_not_hold_heartbeat_or_apply_a_reply_after_pause(int status)
+    {
+        using var dir = new TestDirectory();
+        var server = new FakeServer();
+        var study = new StudyFixture { ExecutionEnabled = true, ResumeEnabled = true };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        NpepDevice? device = null;
+        async Task<HttpResponseMessage> Send(HttpRequestMessage request)
+        {
+            if (!request.RequestUri!.AbsolutePath.EndsWith("/resume-exchange", StringComparison.Ordinal))
+                return await BasicStudyReply(request, server);
+            entered.TrySetResult();
+            await release.Task;
+            return await ResumeReply(request, status);
+        }
+        using (var paired = new NpepDevice(dir.Path, server.Api)) await server.ActivateAsync(paired);
+        await using var runtime = new NpepRuntime(() => device = new(dir.Path, origin => new(origin, new Handler(Send))), "study-resume-slow", Sample);
+        await Until(() => runtime.Snapshot().Connection == "ONLINE");
+        var cycle = runtime.StudyCycleAsync(study, default);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(6));
+            var heartbeat = await device!.ReportAsync(NpepStatusReader.Map(Sample(), "study-resume-slow"), 0).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(2, heartbeat.Number("acceptedSequence"));
+            Assert.True((await Command(runtime, "pause")).ReportingPaused);
+            Assert.False((await Command(runtime, "resume")).ReportingPaused);
+            release.TrySetResult();
+            Assert.Equal("SESSION_SUPERSEDED", (await Assert.ThrowsAsync<NpepException>(() => cycle)).Code);
+            Assert.Equal(0, study.Resumed);
+            Assert.Equal("ACTIVE", device.View().Text("state"));
+        }
+        finally
+        {
+            release.TrySetResult();
+            try { await cycle; } catch (NpepException) { }
+        }
+    }
+
+    [Fact]
+    public async Task Study_resume_retry_after_keeps_policy_and_execution_receipts_fresh()
+    {
+        using var dir = new TestDirectory();
+        var server = new FakeServer();
+        var study = new StudyFixture { ExecutionEnabled = true, ResumeEnabled = true };
+        var time = new ReceiptTime();
+        var resumes = new List<JsonObject>();
+        int configReads = 0;
+        async Task<HttpResponseMessage> Send(HttpRequestMessage request)
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/study-settings", StringComparison.Ordinal)) configReads++;
+            if (!path.EndsWith("/resume-exchange", StringComparison.Ordinal)) return await BasicStudyReply(request, server);
+            resumes.Add(JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject());
+            var reply = await ResumeReply(request, resumes.Count == 1 ? 429 : 200);
+            if (resumes.Count == 1) reply.Headers.RetryAfter = new(TimeSpan.FromSeconds(18));
+            return reply;
+        }
+        using (var paired = new NpepDevice(dir.Path, server.Api)) await server.ActivateAsync(paired);
+        await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new(origin, new Handler(Send))), "study-resume-backoff", Sample, receiptTime: time);
+        await Until(() => runtime.Snapshot().Connection == "ONLINE");
+        await runtime.StudyCycleAsync(study, default);
+        time.Advance(TimeSpan.FromSeconds(16));
+        await runtime.StudyCycleAsync(study, default);
+        Assert.Equal(2, configReads);
+        Assert.Equal(2, study.Granted);
+        Assert.Equal(0, study.Resumed);
+        Assert.Single(resumes);
+        time.Advance(TimeSpan.FromSeconds(2));
+        await runtime.StudyCycleAsync(study, default);
+        Assert.Equal(3, study.Granted);
+        Assert.Equal(1, study.Resumed);
+        Assert.Equal(2, resumes.Count);
+        Assert.NotEqual(resumes[0].Text("requestId"), resumes[1].Text("requestId"));
+        Assert.Equal(resumes[0].Number("sequence") + 1, resumes[1].Number("sequence"));
+        Assert.True(JsonNode.DeepEquals(resumes[0]["receipt"], resumes[1]["receipt"]));
+    }
+
+    private static async Task<HttpResponseMessage> BasicStudyReply(HttpRequestMessage request, FakeServer server)
+    {
+        string path = request.RequestUri!.AbsolutePath;
+        if (!path.Contains("/device/study-settings", StringComparison.Ordinal)) return await server.Send(request);
+        if (path.EndsWith("/study-settings", StringComparison.Ordinal))
+        {
+            var configuration = StudyProtocolTests.Configuration;
+            configuration["identity"] = NpepDevice.RegistrationIdentity(server.Registration());
+            return await HomeworkReply(request, configuration, version: "0.10");
+        }
+        var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();
+        if (path.EndsWith("/execution", StringComparison.Ordinal))
+            return await HomeworkReply(request, new() { ["confirmed"] = true, ["version"] = body["version"]!.DeepClone(), ["leaseSeconds"] = 86400 },
+                version: "0.10");
+        return await HomeworkReply(request, new() { ["confirmed"] = true, ["version"] = body["status"]!["version"]!.DeepClone() }, version: "0.10");
+    }
+
+    private static async Task<HttpResponseMessage> ResumeReply(HttpRequestMessage request, int status)
+    {
+        var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();
+        var data = new JsonObject { ["confirmed"] = true, ["version"] = body["version"]!.DeepClone(),
+            ["command"] = new JsonObject { ["commandId"] = NpepProtocol.Id(), ["version"] = body["version"]!.DeepClone(),
+                ["window"] = JsonNode.Parse("{\"start\":\"2026-10-12T19:00:00.000\",\"end\":\"2026-10-12T21:30:00.000\"}") } };
+        return await HomeworkReply(request, data, status == 429 ? "RATE_LIMITED" : status == 401 ? "AUTH_INVALID" : null, status, "0.11");
     }
 }

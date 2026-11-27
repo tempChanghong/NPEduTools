@@ -84,13 +84,13 @@ public sealed partial class NpepDevice
     internal Task<JsonObject> StudyHomeworkAsync(JsonObject body, CancellationToken token) =>
         WithBoundSchoolConnectionAsync(token, (api, bearer, _) => api.StudyHomeworkAsync(bearer, body, token),
             studyContext: body["context"]?.AsObject() ?? throw new NpepException("INVALID_REQUEST"));
-    internal async Task<JsonObject> StudyResumeAsync(JsonObject body, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api = Api(); return await api.StudyResumeAsync(DeviceBearer, body, token); }
-        catch (NpepException error) { if (error.Status == 401) SuspendIfTerminal(error); throw; }
-        finally { _gate.Release(); }
-    }
+    internal Task<JsonObject> StudyResumeAsync(JsonObject context, JsonObject body, Action requireOriginalConnection, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, requireCurrent) =>
+        {
+            requireOriginalConnection();
+            requireCurrent();
+            return api.StudyResumeAsync(bearer, body, token);
+        }, studyContext: context);
     internal async Task<JsonObject> StudyExecutionAsync(JsonObject body, CancellationToken token)
     {
         await _gate.WaitAsync(token);
