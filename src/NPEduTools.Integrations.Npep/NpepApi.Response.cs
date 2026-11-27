@@ -62,9 +62,13 @@ public sealed partial class NpepApi
         // A received authorization refusal stays terminal even if its body is lost.
         if (status is 401 or 403) return new("AUTH_INVALID", status);
         if (status is not (429 or >= 500 and <= 599)) return new("INVALID_RESPONSE");
+        return new(status == 429 ? "RATE_LIMITED" : "TEMPORARILY_UNAVAILABLE", status, RetryAfterSeconds(response));
+    }
+
+    private static int? RetryAfterSeconds(HttpResponseMessage response, int? secondsFromBody = null)
+    {
         var header = response.Headers.RetryAfter;
         double? seconds = header?.Delta?.TotalSeconds ?? (header?.Date - DateTimeOffset.UtcNow)?.TotalSeconds;
-        int? retry = seconds is { } value ? (int)Math.Clamp(Math.Ceiling(value), 1, 3600) : null;
-        return new(status == 429 ? "RATE_LIMITED" : "TEMPORARILY_UNAVAILABLE", status, retry);
+        return seconds is { } value ? Math.Max(secondsFromBody ?? 0, (int)Math.Clamp(Math.Ceiling(value), 1, 3600)) : secondsFromBody;
     }
 }

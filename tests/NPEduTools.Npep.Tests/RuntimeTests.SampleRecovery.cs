@@ -46,6 +46,7 @@ public sealed partial class RuntimeTests
     [InlineData("CREDENTIAL_EXPIRED", 401)]
     [InlineData("BINDING_CHANGED", 409)]
     [InlineData("SESSION_SUPERSEDED", 409)]
+    [InlineData("SESSION_SUPERSEDED", 408)]
     [InlineData("INSTANCE_MISMATCH", 503)]
     public async Task Verified_terminal_refusal_does_not_auto_resume_even_with_a_transient_status(string code, int status)
     {

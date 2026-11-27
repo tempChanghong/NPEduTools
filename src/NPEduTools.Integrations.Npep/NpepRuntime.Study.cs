@@ -7,6 +7,8 @@ public sealed partial class NpepRuntime
     private Task _studyLoop = Task.CompletedTask;
     private INpepStudySettings? _study;
     private long _studySequence, _studyExecutionSequence, _studyResumeSequence;
+    private sealed record StudyRetry(string Context, long Started, TimeSpan Delay);
+    private StudyRetry? _studyReadRetry, _studyExchangeRetry;
     private void InitializeStudy(INpepStudySettings? study)
     {
         _study = study;
@@ -16,6 +18,7 @@ public sealed partial class NpepRuntime
         InitializeStudyPresentation(study);
         InitializeStudyPhotos(study);
         InitializeStudyExit(study);
+        InitializeSchoolManagement();
         _studyLoop = Task.Run(async () =>
         {
             try
@@ -25,11 +28,7 @@ public sealed partial class NpepRuntime
                     try
                     {
                         if (Snapshot() is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
-                        {
-                            try { await SchoolManagementCycleAsync(_lifetime.Token); }
-                            catch(Exception e) when(Handled(e) || e is InvalidDataException) { /* Keep the durable school credential on transport loss. */ }
                             await StudyCycleAsync(study, _lifetime.Token);
-                        }
                         else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } || Snapshot().Busy && !ContinuingStudyResume) study.BindStudy(null);
                         else study.StudyFailed(StudyConnectionFailureCode());
                     }
@@ -73,20 +72,58 @@ public sealed partial class NpepRuntime
     internal async Task StudyCycleAsync(INpepStudySettings study, CancellationToken token)
     {
         var context = await StudyContextAsync(token);
+        string contextKey = context.ToJsonString();
+        if (StudyRetryPending(_studyReadRetry, contextKey)) return;
         study.BindStudy(context["identity"]!.ToJsonString());
-        var configuration = await _device!.StudyAsync(null, token);
+        JsonObject configuration;
+        try { configuration = await ReadStudyConfigurationAsync(context, token); }
+        catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e))
+        {
+            _studyReadRetry = NewStudyRetry(contextKey, e);
+            throw;
+        }
+        _studyReadRetry = null;
         await RequireStudyContextAsync(context, token);
         if (!JsonNode.DeepEquals(context["identity"], configuration["identity"])) throw new NpepException("SESSION_SUPERSEDED");
         study.ApplyStudy(configuration);
-        try { await ExchangeStudyExecutionAsync(study, context, configuration, token); }
+        if (StudyRetryPending(_studyExchangeRetry, contextKey)) return;
+        try
+        {
+            await ExchangeStudyExecutionAsync(study, context, configuration, token);
+            _studyExchangeRetry = null;
+        }
         catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e))
         {
             // The configuration GET succeeded. A temporary downstream outage does not
             // revoke that download, renew its age, or manufacture an execution grant.
             // Recheck pause/binding/session changes before retaining the fresh policy.
             await RequireStudyContextAsync(context, token);
+            if (e is NpepException { RetryAfterSeconds: not null } or NpepException { Code: "RATE_LIMITED" })
+                _studyExchangeRetry = NewStudyRetry(contextKey, e);
         }
     }
+
+    private async Task<JsonObject> ReadStudyConfigurationAsync(JsonObject context, CancellationToken token)
+    {
+        try { return await _device!.StudyAsync(null, token); }
+        catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e) && !IsTlsFailure(e) &&
+            e is not NpepException { Code: "RATE_LIMITED" } && e is not NpepException { RetryAfterSeconds: not null })
+        {
+            // Only the read gets a quick retry. Release the device gate before waiting and recheck the original session.
+            await Task.Delay(TimeSpan.FromMilliseconds(300), token);
+            using var retry = CancellationTokenSource.CreateLinkedTokenSource(token);
+            retry.CancelAfter(TimeSpan.FromSeconds(3));
+            await RequireStudyContextAsync(context, retry.Token);
+            return await _device!.StudyAsync(null, retry.Token);
+        }
+    }
+
+    private bool StudyRetryPending(StudyRetry? retry, string context) =>
+        retry is not null && retry.Context == context && _receiptTime.GetElapsedTime(retry.Started) < retry.Delay;
+
+    private StudyRetry NewStudyRetry(string context, Exception error) =>
+        new(context, _receiptTime.GetTimestamp(), TimeSpan.FromSeconds((error as NpepException)?.RetryAfterSeconds ?? 6));
+
     private static bool TransientStudyExchangeFailure(Exception error) => error is HttpRequestException or OperationCanceledException
         || error is NpepException { Code: "TEMPORARILY_UNAVAILABLE" or "RATE_LIMITED" };
 

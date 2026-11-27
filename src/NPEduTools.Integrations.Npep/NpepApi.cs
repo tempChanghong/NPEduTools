@@ -38,12 +38,19 @@ public sealed partial class NpepApi : IDisposable
             origin.Contains('\\') || string.IsNullOrWhiteSpace(uri.Host)) throw new NpepException("INVALID_SERVER_ORIGIN");
         return uri.GetLeftPart(UriPartial.Authority);
     }
-    public async Task<JsonObject> SendAsync(string path, string responseDefinition, JsonObject? body = null,
-        string? requestDefinition = null, string? bearer = null, CancellationToken token = default)
+    public Task<JsonObject> SendAsync(string path, string responseDefinition, JsonObject? body = null,
+        string? requestDefinition = null, string? bearer = null, CancellationToken token = default) =>
+        SendCoreAsync(path, responseDefinition, body, requestDefinition, bearer, token, currentDeviceLink: false);
+
+    internal Task<JsonObject> SendDeviceLinkAsync(string path, string responseDefinition, string bearer, CancellationToken token,
+        JsonObject? body = null, string? requestDefinition = null) =>
+        SendCoreAsync(path, responseDefinition, body, requestDefinition, bearer, token, currentDeviceLink: true);
+
+    private async Task<JsonObject> SendCoreAsync(string path, string responseDefinition, JsonObject? body,
+        string? requestDefinition, string? bearer, CancellationToken token, bool currentDeviceLink)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
-        token = deadline.Token;
         // Callers cannot turn this adapter into an arbitrary authenticated URL fetcher.
         if (path is not ("info" or "pairings" or "pairings/claim" or "pairings/apply" or "pairings/password" or "device/me" or "device/sessions" or "device/status" or "device/revoke") &&
             !System.Text.RegularExpressions.Regex.IsMatch(path, "^pairings/[0-9a-f-]{36}(/confirm|/cancel)?$")) throw new NpepException("INVALID_ENDPOINT");
@@ -60,18 +67,36 @@ public sealed partial class NpepApi : IDisposable
             request.Content = new ByteArrayContent(bytes);
             request.Content.Headers.ContentType = new("application/json");
         }
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
-        if ((int)response.StatusCode is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+        int status = (int)response.StatusCode;
+        if (status is >= 300 and < 400)
+        {
+            // Never follow a redirect. An existing device may probe only its original origin on its normal backoff.
+            throw currentDeviceLink ? new NpepException("DEVICE_RESPONSE_UNCONFIRMED", status) : new NpepException("REDIRECT_REJECTED");
+        }
+        try { return await ReadN1ResponseAsync(response, request, responseDefinition, deadline.Token); }
+        catch (NpepException error) when (currentDeviceLink &&
+            (response.IsSuccessStatusCode && error.Code == "INVALID_RESPONSE" ||
+             status == 408 && (error is { Status: 0, Code: "INVALID_RESPONSE" } || !NpepDevice.TerminalConnectionError(error))))
+        {
+            // An unusable reply says nothing about whether the original device is still authorized.
+            throw new NpepException("DEVICE_RESPONSE_UNCONFIRMED", status, RetryAfterSeconds(response, error.RetryAfterSeconds));
+        }
+        catch (OperationCanceledException) when (currentDeviceLink && !token.IsCancellationRequested && deadline.IsCancellationRequested &&
+            status is 401 or 403 or 408 or 429 or >= 500 and <= 599)
+        { throw status == 408 ? new NpepException("DEVICE_RESPONSE_UNCONFIRMED", status, RetryAfterSeconds(response)) : UnreadableResponse(response); }
+    }
+
+    private static async Task<JsonObject> ReadN1ResponseAsync(HttpResponseMessage response, HttpRequestMessage request,
+        string responseDefinition, CancellationToken token)
+    {
         var envelope = await ReadEnvelopeAsync(response, 65536, token, request);
-        if (envelope.Text("requestId") != requestId || envelope.Text("protocolVersion") != "0.1")
-            throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {
             ValidateResponse(response, () => NpepProtocol.Validate("error", envelope));
             var error = (JsonObject)envelope["error"]!;
-            int? retry = error["retryAfterSeconds"]?.GetValue<int>();
-            if (response.Headers.RetryAfter?.Delta is { } delta) retry = Math.Clamp((int)Math.Ceiling(delta.TotalSeconds), 1, 3600);
-            throw new NpepException(error.Text("code"), (int)response.StatusCode, retry);
+            throw new NpepException(error.Text("code"), (int)response.StatusCode,
+                RetryAfterSeconds(response, error["retryAfterSeconds"]?.GetValue<int>()));
         }
         if (responseDefinition == "pairing")
         {

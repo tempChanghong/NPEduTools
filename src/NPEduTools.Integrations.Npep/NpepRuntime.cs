@@ -370,8 +370,9 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         bool tls = IsTlsFailure(e);
         string code = tls ? "TLS_VALIDATION_FAILED" : e is NpepException n ? n.Code : e is HttpRequestException or OperationCanceledException ? "NETWORK_UNAVAILABLE" : "CREDENTIAL_STORE_UNAVAILABLE";
         bool localSampleExpired = e is NpepException { Code: "SAMPLE_TOO_OLD", Status: 0 };
-        bool retry = localSampleExpired || tls || e is HttpRequestException or OperationCanceledException ||
-            e is NpepException problem && !NpepDevice.TerminalConnectionError(problem) && (problem.Status == 429 || problem.Status >= 500);
+        bool unconfirmedDeviceResponse = e is NpepException { Code: "DEVICE_RESPONSE_UNCONFIRMED" };
+        bool retry = localSampleExpired || unconfirmedDeviceResponse || tls || e is HttpRequestException or OperationCanceledException ||
+            e is NpepException problem && !NpepDevice.TerminalConnectionError(problem) && (problem.Status is 429 or >= 500);
         _blocked = !retry;
         _connectionFailed = true;
         _history.Add("Failure", background ? "Status" : "Command", code, (e as NpepException)?.Status is > 0 and <= 599 ? ((NpepException)e).Status : null, retrying: retry);
@@ -398,7 +399,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
             "SESSION_SUPERSEDED" or "REVISION_CONFLICT" => "当前会话已被替换。请检查是否有另一实例使用该配对；此实例不会自动抢回会话。",
             _ => "互联操作未完成或授权已失效，请查看错误并处理；不会自动重新配对。"
         };
-        Publish(retry ? "OFFLINE" : "STOPPED", tls ? "HTTPS 证书验证失败，将持续自动重试，证书恢复后自动连接。请核对学校地址、本机系统时间及服务器证书；每次重试仍严格验证证书。" : retry
+        Publish(retry ? "OFFLINE" : "STOPPED", tls ? "HTTPS 证书验证失败，将持续自动重试，证书恢复后自动连接。请核对学校地址、本机系统时间及服务器证书；每次重试仍严格验证证书。" : unconfirmedDeviceResponse
+            ? "未能核实学校互联回执。后台会保留原配对并自动重试。" : retry
             ? background ? "暂时无法连接学校服务，将自动重试。配对信息保留。" : "网络操作结果尚未确认。请刷新状态，恢复未完成操作或重试检查服务；原候选凭据保留。"
             : stopped, code);
     }
@@ -412,7 +414,7 @@ public sealed partial class NpepRuntime : IAsyncDisposable
         Task command;
         lock (_sync) { _disposed = true; _lifetime.Cancel(); _network?.Cancel(); command = _command; }
         await Task.WhenAll(_loop, command, _notificationLoop, _planLoop, _noiseLoop, _noiseScheduleLoop, _noiseDisplayLoop, _studyLoop, _studySeatingLoop, _studyHomeworkLoop, _studyPresentationLoop, _studyPhotosLoop, _studyExitLoop);
-        await Task.WhenAll(_controlLoop, _softwareUpdateLoop);
+        await Task.WhenAll(_controlLoop, _softwareUpdateLoop, _schoolManagementLoop);
         await _history.DisposeAsync();
         _device?.Dispose(); _work.Dispose(); _updateWake.Dispose(); _lifetime.Dispose();
     }

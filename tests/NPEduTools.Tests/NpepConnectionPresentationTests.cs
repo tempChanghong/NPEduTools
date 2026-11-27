@@ -8,6 +8,7 @@ public sealed class NpepConnectionPresentationTests
     [Theory]
     [InlineData("TEMPORARILY_UNAVAILABLE", "暂时不可用")]
     [InlineData("RATE_LIMITED", "请求频率")]
+    [InlineData("DEVICE_RESPONSE_UNCONFIRMED", "回执无法核实")]
     public void TransientHttpFailuresExplainCauseWithoutClaimingLostPairing(string code, string cause)
     {
         var state = State("ACTIVE", "OFFLINE", code);

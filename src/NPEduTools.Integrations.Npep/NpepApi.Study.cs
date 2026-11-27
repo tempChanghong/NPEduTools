@@ -49,12 +49,17 @@ public sealed partial class NpepApi
         int status = (int)response.StatusCode;
         if (status is >= 300 and < 400) throw new NpepException("REDIRECT_REJECTED");
         if (status is 404 or 426) throw new NpepException(version == "0.14" ? "STUDY_SEATING_UNSUPPORTED" : version == "0.13" ? "STUDY_PRESENTATION_UNSUPPORTED" : version == "0.12" ? "STUDY_HOMEWORK_UNSUPPORTED" : version == "0.11" ? "STUDY_RESUME_UNSUPPORTED" : "STUDY_UNSUPPORTED", status);
-        var envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token, request);
+        JsonObject envelope;
+        try { envelope = await ReadEnvelopeAsync(response, 65536, deadline.Token, request); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested && status is 401 or 403 or 429 or >= 500 and <= 599)
+        { throw UnreadableResponse(response); }
         if (envelope.Text("protocolVersion") != version || envelope.Text("requestId") != requestId) throw new NpepException("INVALID_RESPONSE");
         if (!response.IsSuccessStatusCode)
         {
-            string code = envelope["error"]?["code"]?.GetValue<string>() ?? "INVALID_RESPONSE";
-            throw new NpepException(System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Z0-9_]{1,100}$") ? code : "INVALID_RESPONSE", status);
+            var error = envelope["error"]!.AsObject();
+            string code = error.Text("code");
+            throw new NpepException(code.Length <= 100 ? code : "INVALID_RESPONSE", status,
+                RetryAfterSeconds(response, error["retryAfterSeconds"]?.GetValue<int>()));
         }
         if (envelope.Count != 4 || !envelope.ContainsKey("serverTime") || envelope["data"] is not JsonObject data) throw new NpepException("INVALID_RESPONSE");
         if (version == "0.14") NpepSeatingProtocol.Validate(definition, data); else NpepStudyProtocol.Validate(definition, data); return data.Copy();

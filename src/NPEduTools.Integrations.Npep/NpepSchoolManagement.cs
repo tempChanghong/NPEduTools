@@ -76,18 +76,61 @@ public sealed partial class NpepDevice
         var approval=_saved["approval"]!.AsObject();
         await ConfirmAsync(approval.Text("approvalId"),token);
     }
-    internal async Task<JsonObject> SchoolManagementAsync(JsonObject? receipt,CancellationToken token,
+    internal async Task<JsonObject> SchoolManagementAsync(JsonObject context, JsonObject? receipt, CancellationToken token,
         bool websitePolicyAutomation = false, bool websitePolicyTiming = false)
     {
+        JsonObject pairing, session;
+        NpepApi api;
+        string bearer;
         await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api=Api();return await api.SchoolManagementAsync(DeviceBearer,receipt is null?"device/school-management":"device/school-management/receipt",receipt,token,websitePolicyAutomation,websitePolicyTiming); }
-        catch(NpepException error){if(error.Status==401)SuspendIfTerminal(error);throw;}
-        finally{_gate.Release();}
+        try
+        {
+            RequireNotificationConnection();
+            pairing = Required();
+            if (_session is not { } active || active.Text("sessionId") != context.Text("sessionId") ||
+                !JsonNode.DeepEquals(RegistrationIdentity(pairing["registration"]!.AsObject()), context["identity"]))
+                throw new NpepException("SESSION_SUPERSEDED");
+            session = active;
+            bearer = DeviceBearer;
+            api = Api();
+        }
+        finally { _gate.Release(); }
+
+        // This endpoint has its own polling lane. Slow school-management HTTP must not hold the device gate.
+        using (api)
+        {
+            JsonObject result;
+            try
+            {
+                result = await api.SchoolManagementAsync(bearer, receipt is null ? "device/school-management" : "device/school-management/receipt",
+                    receipt, token, websitePolicyAutomation, websitePolicyTiming);
+            }
+            catch (NpepException error) when (error.Status == 401)
+            {
+                await _gate.WaitAsync(token);
+                try
+                {
+                    // A late rejection for the previous connection cannot suspend the replacement.
+                    if (ReferenceEquals(_saved, pairing) && ReferenceEquals(_session, session)) SuspendIfTerminal(error);
+                }
+                finally { _gate.Release(); }
+                throw;
+            }
+            await _gate.WaitAsync(token);
+            try
+            {
+                RequireNotificationConnection();
+                if (!ReferenceEquals(_saved, pairing) || !ReferenceEquals(_session, session)) throw new NpepException("SESSION_SUPERSEDED");
+                return result;
+            }
+            finally { _gate.Release(); }
+        }
     }
 }
 
 public sealed partial class NpepRuntime
 {
+    private Task _schoolManagementLoop = Task.CompletedTask;
     private INpepSchoolManagement? _schoolManagement;
     private long _schoolSequence;
     private readonly object _actionBindingSync = new();
@@ -95,6 +138,27 @@ public sealed partial class NpepRuntime
     private bool _observedActionBinding;
     private string? _observedWebsiteScope;
     private bool _observedWebsiteBinding;
+
+    private void InitializeSchoolManagement()
+    {
+        if (_schoolManagement is null) return;
+        _schoolManagementLoop = Task.Run(async () =>
+        {
+            try
+            {
+                while (!_lifetime.IsCancellationRequested)
+                {
+                    if (Snapshot() is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
+                    {
+                        try { await SchoolManagementCycleAsync(_lifetime.Token); }
+                        catch (Exception e) when (Handled(e) || e is InvalidDataException) { /* Keep the durable school credential on transport loss. */ }
+                    }
+                    await Task.Delay(TimeSpan.FromSeconds(3), _lifetime.Token);
+                }
+            }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        });
+    }
 
     private void SynchronizeActionBinding()
     {
@@ -124,13 +188,13 @@ public sealed partial class NpepRuntime
         if(_schoolManagement is null) return;
         var context=await StudyContextAsync(token);
         string scope=context["identity"]!.ToJsonString(); _schoolManagement.BindSchool(scope);
-        var policy=await _device!.SchoolManagementAsync(null,token,_schoolManagement.SupportsWebsitePolicyAutomation,
+        var policy=await _device!.SchoolManagementAsync(context,null,token,_schoolManagement.SupportsWebsitePolicyAutomation,
             _schoolManagement.SupportsWebsitePolicyTiming);
         await RequireStudyContextAsync(context,token);
         if(!JsonNode.DeepEquals(context["identity"],policy["identity"]))throw new NpepException("SESSION_SUPERSEDED");
         _schoolManagement.ApplySchool(policy);
         var body=_schoolManagement.ObserveSchool();body["requestId"]=NpepProtocol.Id();body["context"]=context.Copy();body["sequence"]=++_schoolSequence;
-        var reply=await _device.SchoolManagementAsync(body,token);
+        var reply=await _device.SchoolManagementAsync(context,body,token);
         await RequireStudyContextAsync(context,token);
         if(reply["confirmed"]?.GetValue<bool>() != true)throw new NpepException("INVALID_RESPONSE");
     }

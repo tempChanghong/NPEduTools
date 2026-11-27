@@ -327,13 +327,13 @@ public sealed partial class NpepDevice : IDisposable
             using var api = Api();
             if (_sessionRequest is null)
             {
-                var registration = await api.SendAsync("device/me", "registrationResponse", bearer: DeviceBearer, token: token);
+                var registration = await api.SendDeviceLinkAsync("device/me", "registrationResponse", DeviceBearer, token);
                 CheckRegistration(registration);
                 if (registration.Number("statusEpoch") == NpepProtocol.MaxInteger) throw new NpepException("SESSION_EPOCH_EXHAUSTED");
                 var body = IdentityBody(); body["runId"] = _runId; body["expectedStatusEpoch"] = registration["statusEpoch"]!.DeepClone();
                 _sessionRequest = body;
             }
-            var session = await api.SendAsync("device/sessions", "sessionResponse", _sessionRequest, "openSession", DeviceBearer, token);
+            var session = await api.SendDeviceLinkAsync("device/sessions", "sessionResponse", DeviceBearer, token, _sessionRequest, "openSession");
             if (session.Text("runId") != _runId || session.Number("statusEpoch") != _sessionRequest.Number("expectedStatusEpoch") + 1) throw new NpepException("INVALID_RESPONSE");
             _session = session; return session.Copy();
         }
@@ -364,7 +364,7 @@ public sealed partial class NpepDevice : IDisposable
             if (age is < 0 or > 5000) throw new NpepException("SAMPLE_TOO_OLD");
             body["sequence"] = ++_sequence; body["sampleAgeMs"] = age; body["status"] = (current?.Status ?? sampledStatus!).Copy();
             using var api = Api();
-            var receipt = await api.SendAsync("device/status", "statusReceiptResponse", body, "reportStatus", DeviceBearer, token);
+            var receipt = await api.SendDeviceLinkAsync("device/status", "statusReceiptResponse", DeviceBearer, token, body, "reportStatus");
             if (receipt.Number("acceptedSequence") != _sequence) throw new NpepException("INVALID_RESPONSE");
             return receipt;
         }
