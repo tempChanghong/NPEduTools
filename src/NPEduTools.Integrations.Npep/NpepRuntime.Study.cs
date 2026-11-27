@@ -25,15 +25,31 @@ public sealed partial class NpepRuntime
             {
                 while (!_lifetime.IsCancellationRequested)
                 {
+                    var state = Snapshot();
                     try
                     {
-                        if (Snapshot() is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
+                        if (state is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false })
                             await StudyCycleAsync(study, _lifetime.Token);
-                        else if (Snapshot() is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } || Snapshot().Busy && !ContinuingStudyResume) study.BindStudy(null);
-                        else study.StudyFailed(StudyConnectionFailureCode());
+                        else
+                        {
+                            lock (_sync)
+                            {
+                                if (_state.Revision == state.Revision)
+                                {
+                                    if (state is { State: "UNPAIRED" or "SUSPENDED" } or { ReportingPaused: true } || state.Busy && !ContinuingStudyResume)
+                                        study.BindStudy(null);
+                                    else study.StudyFailed(StudyConnectionFailureCode());
+                                }
+                            }
+                        }
                     }
-                    catch (Exception e) when (Handled(e) || e is InvalidDataException)
-                    { study.StudyFailed(e is NpepException n ? n.Code : "STUDY_OFFLINE"); }
+                    catch (Exception e) when (!_lifetime.IsCancellationRequested && (Handled(e) || e is InvalidDataException))
+                    {
+                        lock (_sync)
+                            if (_state.Revision == state.Revision) study.StudyFailed(e is NpepException n ? n.Code : "STUDY_OFFLINE");
+                        if (e is NpepException { Status: 401 } refusal && Snapshot().Revision == state.Revision)
+                            Publish("STOPPED", "设备授权已失效，学校自习同步已停止。", refusal.Code, requireSuspended: true);
+                    }
                     await Task.Delay(TimeSpan.FromSeconds(3), _lifetime.Token);
                 }
             }
@@ -69,24 +85,43 @@ public sealed partial class NpepRuntime
         lock (_sync) return _state.Error is "AUTH_INVALID" or "CREDENTIAL_EXPIRED" or "INSTANCE_MISMATCH" or
             "BINDING_CHANGED" or "SESSION_SUPERSEDED" or "DEVICE_SUSPENDED" ? _state.Error : "STUDY_OFFLINE";
     }
+    // Called under _sync when committing local state, including the heartbeat's freshness bound.
+    private bool IsCurrentStudyCycle(long revision, CancellationToken token) =>
+        _state is { State: "ACTIVE", Connection: "ONLINE", ReportingPaused: false, Busy: false } &&
+        _state.Revision == revision && HasFreshStatusReceipt() && !token.IsCancellationRequested;
+
+    private void UpdateCurrentStudyCycle(long revision, CancellationToken token, Action? update = null)
+    {
+        lock (_sync)
+        {
+            if (IsCurrentStudyCycle(revision, token))
+            {
+                update?.Invoke();
+                return;
+            }
+        }
+        token.ThrowIfCancellationRequested();
+        throw new NpepException("SESSION_SUPERSEDED");
+    }
+
     internal async Task StudyCycleAsync(INpepStudySettings study, CancellationToken token)
     {
         long connectionRevision = Snapshot().Revision;
         var context = await StudyContextAsync(token);
         string contextKey = context.ToJsonString();
         if (StudyRetryPending(_studyReadRetry, contextKey)) return;
-        study.BindStudy(context["identity"]!.ToJsonString());
+        UpdateCurrentStudyCycle(connectionRevision, token, () => study.BindStudy(context["identity"]!.ToJsonString()));
         JsonObject configuration;
-        try { configuration = await ReadStudyConfigurationAsync(context, token); }
+        try { configuration = await ReadStudyConfigurationAsync(context, connectionRevision, token); }
         catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e))
         {
+            UpdateCurrentStudyCycle(connectionRevision, token);
             _studyReadRetry = NewStudyRetry(contextKey, e);
             throw;
         }
         _studyReadRetry = null;
-        await RequireStudyContextAsync(context, token);
         if (!JsonNode.DeepEquals(context["identity"], configuration["identity"])) throw new NpepException("SESSION_SUPERSEDED");
-        study.ApplyStudy(configuration);
+        UpdateCurrentStudyCycle(connectionRevision, token, () => study.ApplyStudy(configuration));
         if (StudyRetryPending(_studyExchangeRetry, contextKey)) return;
         try
         {
@@ -98,15 +133,15 @@ public sealed partial class NpepRuntime
             // The configuration GET succeeded. A temporary downstream outage does not
             // revoke that download, renew its age, or manufacture an execution grant.
             // Recheck pause/binding/session changes before retaining the fresh policy.
-            await RequireStudyContextAsync(context, token);
+            UpdateCurrentStudyCycle(connectionRevision, token);
             if (e is NpepException { RetryAfterSeconds: not null } or NpepException { Code: "RATE_LIMITED" })
                 _studyExchangeRetry = NewStudyRetry(contextKey, e);
         }
     }
 
-    private async Task<JsonObject> ReadStudyConfigurationAsync(JsonObject context, CancellationToken token)
+    private async Task<JsonObject> ReadStudyConfigurationAsync(JsonObject context, long revision, CancellationToken token)
     {
-        try { return await _device!.StudyAsync(null, token); }
+        try { return await _device!.StudyAsync(context, null, token, () => UpdateCurrentStudyCycle(revision, token)); }
         catch (Exception e) when (!token.IsCancellationRequested && TransientStudyExchangeFailure(e) && !IsTlsFailure(e) &&
             e is not NpepException { Code: "RATE_LIMITED" } && e is not NpepException { RetryAfterSeconds: not null })
         {
@@ -114,8 +149,7 @@ public sealed partial class NpepRuntime
             await Task.Delay(TimeSpan.FromMilliseconds(300), token);
             using var retry = CancellationTokenSource.CreateLinkedTokenSource(token);
             retry.CancelAfter(TimeSpan.FromSeconds(3));
-            await RequireStudyContextAsync(context, retry.Token);
-            return await _device!.StudyAsync(null, retry.Token);
+            return await _device!.StudyAsync(context, null, retry.Token, () => UpdateCurrentStudyCycle(revision, retry.Token));
         }
     }
 
@@ -134,18 +168,20 @@ public sealed partial class NpepRuntime
         var status = study.ObserveStudy();
         if (status is null) return;
         var body = new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(), ["sequence"] = ++_studySequence, ["status"] = status };
-        var reply = await _device!.StudyAsync(body, token);
-        await RequireStudyContextAsync(context, token);
+        void RequireOriginalConnection() => UpdateCurrentStudyCycle(connectionRevision, token);
+        var reply = await _device!.StudyAsync(context, body, token, RequireOriginalConnection);
+        RequireOriginalConnection();
         if (!reply["confirmed"]!.GetValue<bool>() || reply.Text("version") != configuration.Text("version")) throw new NpepException("POLICY_CHANGED");
         if (study.SupportsExecution && configuration["effective"]!.AsObject().Text("source") != "None")
         {
             var execution = study.ObserveStudyExecution();
             if (execution is null) throw new NpepException("STUDY_NOT_APPLIED");
             var sentAt = System.Diagnostics.Stopwatch.GetTimestamp();
-            var grant = await _device.StudyExecutionAsync(new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
-                ["sequence"] = ++_studyExecutionSequence, ["version"] = configuration["version"]!.DeepClone(), ["status"] = execution }, token);
-            await RequireStudyContextAsync(context, token);
-            study.ConfirmStudyExecution(configuration, grant, System.Diagnostics.Stopwatch.GetElapsedTime(sentAt));
+            var grant = await _device.StudyExecutionAsync(context, new JsonObject { ["requestId"] = NpepProtocol.Id(), ["context"] = context.Copy(),
+                ["sequence"] = ++_studyExecutionSequence, ["version"] = configuration["version"]!.DeepClone(), ["status"] = execution },
+                RequireOriginalConnection, token);
+            UpdateCurrentStudyCycle(connectionRevision, token,
+                () => study.ConfirmStudyExecution(configuration, grant, System.Diagnostics.Stopwatch.GetElapsedTime(sentAt)));
             if (study.SupportsResume && !StudyRetryPending(_studyResumeRetry, contextKey))
                 await ExchangeStudyResumeAsync(study, context, contextKey, configuration, connectionRevision, token);
         }

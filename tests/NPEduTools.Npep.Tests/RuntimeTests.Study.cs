@@ -202,6 +202,86 @@ public sealed partial class RuntimeTests
         return await HomeworkReply(request, new() { ["confirmed"] = true, ["version"] = body["status"]!["version"]!.DeepClone() }, version: "0.10");
     }
 
+    [Theory]
+    [InlineData("study-settings", 200)] [InlineData("study-settings", 401)]
+    [InlineData("receipt", 200)] [InlineData("receipt", 401)]
+    [InlineData("execution", 200)] [InlineData("execution", 401)]
+    public async Task Slow_study_settings_exchange_allows_heartbeat_and_discards_old_pause_replies(string step, int status)
+    {
+        using var dir = new TestDirectory();
+        var server = new FakeServer();
+        var study = new StudyFixture { ExecutionEnabled = true };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        NpepDevice? device = null;
+        async Task<HttpResponseMessage> Send(HttpRequestMessage request)
+        {
+            if (request.RequestUri!.Segments[^1] == step)
+            {
+                entered.TrySetResult();
+                await release.Task;
+                if (status == 401) return await HomeworkReply(request, new(), "AUTH_INVALID", 401, "0.10");
+            }
+            return await BasicStudyReply(request, server);
+        }
+        using (var paired = new NpepDevice(dir.Path, server.Api)) await server.ActivateAsync(paired);
+        await using var runtime = new NpepRuntime(() => device = new(dir.Path, origin => new(origin, new Handler(Send))), "slow-study-settings", Sample);
+        await Until(() => runtime.Snapshot().Connection == "ONLINE");
+        var cycle = runtime.StudyCycleAsync(study, default);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var heartbeat = await device!.ReportAsync(NpepStatusReader.Map(Sample(), "slow-study-settings"), 0).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(2, heartbeat.Number("acceptedSequence"));
+            Assert.True((await Command(runtime, "pause")).ReportingPaused);
+            Assert.False((await Command(runtime, "resume")).ReportingPaused);
+            release.TrySetResult();
+            Assert.Equal("SESSION_SUPERSEDED", (await Assert.ThrowsAsync<NpepException>(() => cycle)).Code);
+            Assert.Equal(step == "study-settings" ? 0 : 1, study.Applied);
+            Assert.Equal(0, study.Granted);
+            Assert.Equal("ACTIVE", device.View().Text("state"));
+        }
+        finally
+        {
+            release.TrySetResult();
+            try { await cycle; } catch (NpepException) { }
+        }
+    }
+
+    [Theory]
+    [InlineData("study-settings")] [InlineData("receipt")] [InlineData("execution")]
+    public async Task Study_settings_exchange_recovers_loss_without_granting_from_an_unconfirmed_write(string step)
+    {
+        using var dir = new TestDirectory();
+        var server = new FakeServer();
+        var study = new StudyFixture { ExecutionEnabled = true };
+        var attempts = new List<(string Id, long Sequence)>();
+        async Task<HttpResponseMessage> Send(HttpRequestMessage request)
+        {
+            if (request.RequestUri!.Segments[^1] == step)
+            {
+                var body = request.Content is null ? null : JsonNode.Parse(await request.Content.ReadAsStringAsync())!.AsObject();
+                attempts.Add((request.Headers.GetValues("X-Request-Id").Single(), body?.Number("sequence") ?? 0));
+                if (attempts.Count == 1) throw new HttpRequestException("Synthetic lost response");
+            }
+            return await BasicStudyReply(request, server);
+        }
+        using (var paired = new NpepDevice(dir.Path, server.Api)) await server.ActivateAsync(paired);
+        await using var runtime = new NpepRuntime(() => new(dir.Path, origin => new(origin, new Handler(Send))), "study-settings-recovery", Sample);
+        await Until(() => runtime.Snapshot().Connection == "ONLINE");
+        await runtime.StudyCycleAsync(study, default);
+        if (step != "study-settings")
+        {
+            Assert.Single(attempts);
+            Assert.Equal(0, study.Granted);
+            await runtime.StudyCycleAsync(study, default);
+            Assert.Equal(attempts[0].Sequence + 1, attempts[1].Sequence);
+        }
+        Assert.Equal(2, attempts.Count);
+        Assert.NotEqual(attempts[0].Id, attempts[1].Id);
+        Assert.Equal(1, study.Granted);
+    }
+
     private static async Task<HttpResponseMessage> ResumeReply(HttpRequestMessage request, int status)
     {
         var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!.AsObject();

@@ -208,7 +208,9 @@ public sealed class NotificationTests
             var sample = NpepStatusReader.Map(new(1, Guid.NewGuid(), "Succeeded", null, ""), "notification-isolation");
             var receipt = await device.ReportAsync(sample, 0).WaitAsync(TimeSpan.FromSeconds(2));
             Assert.Equal(1, receipt.Number("acceptedSequence"));
-            var study = await device.StudyAsync(null, default).WaitAsync(TimeSpan.FromSeconds(2));
+            var context = await device.ControlContextAsync(Guid.Empty, default);
+            context.Remove("controlEpoch");
+            var study = await device.StudyAsync(context, null, default).WaitAsync(TimeSpan.FromSeconds(2));
             Assert.Equal(StudyProtocolTests.Configuration.Text("version"), study.Text("version"));
             Assert.False(download.IsCompleted);
         }

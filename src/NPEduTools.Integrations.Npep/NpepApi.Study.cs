@@ -91,22 +91,18 @@ public sealed partial class NpepDevice
             requireCurrent();
             return api.StudyResumeAsync(bearer, body, token);
         }, studyContext: context);
-    internal async Task<JsonObject> StudyExecutionAsync(JsonObject body, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try { RequireNotificationConnection(); using var api = Api(); return await api.StudyExecutionAsync(DeviceBearer, body, token); }
-        catch (NpepException error) { if (error.Status == 401) SuspendIfTerminal(error); throw; }
-        finally { _gate.Release(); }
-    }
-    internal async Task<JsonObject> StudyAsync(JsonObject? receipt, CancellationToken token)
-    {
-        await _gate.WaitAsync(token);
-        try
+    internal Task<JsonObject> StudyExecutionAsync(JsonObject context, JsonObject body, Action requireOriginalConnection, CancellationToken token) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, requireCurrent) =>
         {
-            RequireNotificationConnection(); using var api = Api();
-            return receipt is null ? await api.StudySettingsAsync(DeviceBearer, token) : await api.StudyReceiptAsync(DeviceBearer, receipt, token);
-        }
-        catch (NpepException error) { if (error.Status == 401) SuspendIfTerminal(error); throw; }
-        finally { _gate.Release(); }
-    }
+            requireOriginalConnection();
+            requireCurrent();
+            return api.StudyExecutionAsync(bearer, body, token);
+        }, studyContext: context);
+    internal Task<JsonObject> StudyAsync(JsonObject context, JsonObject? receipt, CancellationToken token, Action? requireOriginalConnection = null) =>
+        WithBoundSchoolConnectionAsync(token, (api, bearer, requireCurrent) =>
+        {
+            requireOriginalConnection?.Invoke();
+            requireCurrent();
+            return receipt is null ? api.StudySettingsAsync(bearer, token) : api.StudyReceiptAsync(bearer, receipt, token);
+        }, studyContext: context);
 }

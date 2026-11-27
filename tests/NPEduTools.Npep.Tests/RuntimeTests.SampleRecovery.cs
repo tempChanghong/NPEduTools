@@ -61,7 +61,7 @@ public sealed partial class RuntimeTests
     }
 
     [Fact]
-    public async Task Live_status_is_sampled_only_after_a_slow_study_request_releases_shared_network_gate()
+    public async Task Live_status_is_sampled_and_sent_while_study_configuration_is_still_waiting()
     {
         using var directory = new TestDirectory(); var server = new FakeServer();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -75,15 +75,16 @@ public sealed partial class RuntimeTests
         })));
         await server.ActivateAsync(device); await device.OpenSessionAsync();
         Task<System.Text.Json.Nodes.JsonObject>? report = null;
-        int samples = 0; var pending = device.StudyAsync(null, CancellationToken.None);
+        var context = await device.ControlContextAsync(Guid.Empty, default);
+        context.Remove("controlEpoch");
+        int samples = 0; var pending = device.StudyAsync(context, null, CancellationToken.None);
         try {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
             report = device.ReportAsync(() => { Interlocked.Increment(ref samples); return new(NpepStatusReader.Map(Sample(), "fixture"), System.Diagnostics.Stopwatch.GetTimestamp()); });
-            await Task.Delay(6100);
-            Assert.Equal(0, samples); Assert.False(report.IsCompleted);
+            await report.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(1, samples); Assert.False(pending.IsCompleted);
             release.TrySetResult();
             Assert.Equal("TEMPORARILY_UNAVAILABLE", (await Assert.ThrowsAsync<NpepException>(() => pending)).Code);
-            await report.WaitAsync(TimeSpan.FromSeconds(3));
             Assert.Equal(1, samples); Assert.Equal("ACTIVE", device.View().Text("state"));
             Assert.Single(server.Requests, r => r.Path == "device/status"); Assert.Single(server.Requests, r => r.Path == "device/sessions");
         } finally { release.TrySetResult(); try { await pending; } catch (NpepException) { } if (report is not null) await report; }
@@ -105,13 +106,19 @@ public sealed partial class RuntimeTests
         Assert.Equal("AUTH_INVALID", runtime.Snapshot().Error);
     }
     [Fact]
-    public async Task Actual_runtime_waits_out_the_6100ms_study_queue_before_sampling_and_never_needs_manual_resume()
+    public async Task Actual_runtime_reports_while_study_configuration_waits_and_never_needs_manual_resume()
     {
         using var directory = new TestDirectory(); var server = new FakeServer();
         using (var prepared = new NpepDevice(directory.Path, server.Api)) await server.ActivateAsync(prepared);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         NpepDevice? shared = null; Task<System.Text.Json.Nodes.JsonObject>? slow = null; int samples = 0;
+        async Task<System.Text.Json.Nodes.JsonObject> ReadConfiguration(NpepDevice device)
+        {
+            var context = await device.ControlContextAsync(Guid.Empty, default);
+            context.Remove("controlEpoch");
+            return await device.StudyAsync(context, null, default);
+        }
         var runtime = new NpepRuntime(() => shared = new(directory.Path, origin => new NpepApi(origin, new Handler(async request => {
             string path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("/device/study-settings", StringComparison.Ordinal)) {
@@ -121,18 +128,19 @@ public sealed partial class RuntimeTests
                 response.Content = new StringContent(envelope.ToJsonString()); return response;
             }
             var reply = await server.Send(request);
-            if (path.EndsWith("/device/sessions", StringComparison.Ordinal)) slow = shared!.StudyAsync(null, CancellationToken.None);
+            if (path.EndsWith("/device/sessions", StringComparison.Ordinal)) slow = ReadConfiguration(shared!);
             return reply;
         }))), "actual-queued-runtime", () => { Interlocked.Increment(ref samples); return Sample(); });
         try {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); await Task.Delay(6100);
-            Assert.Equal(0, samples); Assert.DoesNotContain(server.Requests, r => r.Path == "device/status");
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Until(() => runtime.Snapshot().Connection == "ONLINE", TimeSpan.FromSeconds(2));
+            Assert.False(slow!.IsCompleted);
             release.TrySetResult();
-            await Until(() => runtime.Snapshot().Connection == "ONLINE");
+            Assert.Equal("TEMPORARILY_UNAVAILABLE", (await Assert.ThrowsAsync<NpepException>(() => slow)).Code);
             Assert.Equal(1, samples); Assert.Null(runtime.Snapshot().Error); Assert.Equal("ACTIVE", runtime.Snapshot().State);
             Assert.Single(server.Requests, r => r.Path == "device/status"); Assert.Single(server.Requests, r => r.Path == "device/sessions"); Assert.Single(server.Requests, r => r.Path == "pairings");
             var history = runtime.Handle(new(1, Guid.NewGuid(), "npep.diagnostics")).ConnectionHistory!;
-            Assert.Contains(history.Events, e => e.Kind == "QueueWait" && e.Endpoint == "Status" && e.ElapsedMs >= 6000);
+            Assert.DoesNotContain(history.Events, e => e.Kind == "QueueWait" && e.Endpoint == "Status");
             Assert.DoesNotContain(history.Events, e => e.Kind == "Failure");
         } finally { release.TrySetResult(); if (slow is not null) try { await slow; } catch (NpepException) { } await runtime.DisposeAsync(); }
     }
