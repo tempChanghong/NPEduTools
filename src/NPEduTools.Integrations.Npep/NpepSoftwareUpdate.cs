@@ -130,19 +130,24 @@ public sealed partial class NpepRuntime
                     if (scope is not null && state is { State: "ACTIVE", Connection: "ONLINE", Busy: false, ReportingPaused: false })
                     {
                         var context = await StudyContextAsync(token);
-                        async Task<JsonObject> Exchange(Guid? consent, ManagedUpdateReceipt? receipt)
+                        async Task RequireOriginalUpdateConnection()
                         {
                             await RequireStudyContextAsync(context, token);
-                            if (ObserveUpdateBinding(_updates, host.RunningVersion) != scope) throw new NpepException("SESSION_SUPERSEDED");
+                            if (Snapshot().Revision != state.Revision || ObserveUpdateBinding(_updates, host.RunningVersion) != scope)
+                                throw new NpepException("SESSION_SUPERSEDED");
+                        }
+                        async Task<JsonObject> Exchange(Guid? consent, ManagedUpdateReceipt? receipt)
+                        {
+                            await RequireOriginalUpdateConnection();
                             var body = NpepProtocol.Body();
                             body["context"] = context.Copy(); body["sequence"] = checked(++sequence);
                             body["runningVersion"] = host.RunningVersion;
                             body["localConsent"] = consent.HasValue;
                             body["consentEnrollmentId"] = consent?.ToString("D");
                             body["receipt"] = JsonSerializer.SerializeToNode(receipt, Protocol.Json);
-                            var result = await _device.UpdateExchangeAsync(body, token);
-                            await RequireStudyContextAsync(context, token);
-                            return result;
+                            try { return await _device.UpdateExchangeAsync(body, token); }
+                            // Late errors must not revoke receipts for the connection that replaced this one.
+                            finally { await RequireOriginalUpdateConnection(); }
                         }
                         await _updates.CycleAsync(scope, Exchange, token);
                     }

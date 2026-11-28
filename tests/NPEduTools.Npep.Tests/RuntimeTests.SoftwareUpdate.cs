@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json.Nodes;
 using NPEduTools.Integrations.Npep;
 
@@ -54,5 +55,78 @@ public sealed partial class RuntimeTests
         while (runtime.UpdateStatus()?.Enrollment != "INVITED") await Task.Delay(30, timeout.Token);
         Assert.True(runtime.AcceptUpdateInvitation(invitation));
         await accepted.Task.WaitAsync(timeout.Token);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OnlyDenialFromTheCurrentConnectionClearsTheMaintenanceReceipt(bool reconnect)
+    {
+        using var directory = new TestDirectory();
+        var school = new FakeServer();
+        var invitation = Guid.NewGuid();
+        var plan = Guid.NewGuid();
+        var oldReadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOldRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int managedReads = 0;
+        async Task<HttpResponseMessage> Send(HttpRequestMessage request)
+        {
+            if (!request.RequestUri!.AbsolutePath.EndsWith("/device/software-update/exchange", StringComparison.Ordinal))
+                return await school.Send(request);
+            var input = NpepProtocol.Parse(await request.Content!.ReadAsByteArrayAsync());
+            Assert.Null(input["receipt"]);
+            bool managed = input["localConsent"]!.GetValue<bool>();
+            bool late = managed && Interlocked.Increment(ref managedReads) == 2;
+            if (late)
+            {
+                oldReadStarted.TrySetResult();
+                await releaseOldRead.Task;
+            }
+            var data = new JsonObject
+            {
+                ["enrollment"] = managed ? "MANAGED" : "INVITED", ["enrollmentId"] = invitation.ToString("D"),
+                ["managed"] = managed, ["revision"] = 2
+            };
+            ManagedRelease Release(string version) => new(version, $"https://school.example/{version}.zip", new string('a', 64), 123);
+            if (managed)
+                data["plan"] = System.Text.Json.JsonSerializer.SerializeToNode(new ManagedUpdatePlan(plan, "1.1.11.0", "FAILED",
+                    Release("1.1.11.0"), Release("1.1.10.0")), NPEduTools.Contracts.Protocol.Json);
+            var response = Fixtures.Reply(request, data);
+            var envelope = NpepProtocol.Parse(await response.Content.ReadAsByteArrayAsync());
+            envelope["protocolVersion"] = "0.18";
+            response.Content = new StringContent(envelope.ToJsonString());
+            if (late) response.StatusCode = HttpStatusCode.Forbidden;
+            return response;
+        }
+
+        using (var paired = new NpepDevice(directory.Path, school.Api)) await school.ActivateAsync(paired);
+        await using var runtime = new NpepRuntime(() => new(directory.Path, origin => new(origin, new Handler(Send))),
+            "update-reconnect", Sample, updates: new SchoolUpdateProbe());
+        try
+        {
+            await Until(() => runtime.UpdateStatus()?.Enrollment == "INVITED");
+            Assert.True(runtime.AcceptUpdateInvitation(invitation));
+            await Until(() => runtime.UpdateStatus()?.MaintenanceReceipt?.PlanId == plan);
+            await oldReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(27));
+            if (reconnect)
+            {
+                Assert.True((await Command(runtime, "pause")).ReportingPaused);
+                Assert.False((await Command(runtime, "resume")).ReportingPaused);
+                await Until(() => runtime.Snapshot().Connection == "ONLINE");
+            }
+            Assert.True(runtime.UpdateStatus()?.LocalConsent);
+            releaseOldRead.TrySetResult();
+            await Until(() => runtime.UpdateStatus()?.LocalConsent == false);
+            var receipt = runtime.UpdateStatus()?.MaintenanceReceipt;
+            if (reconnect)
+            {
+                Assert.Equal(plan, receipt?.PlanId);
+                Assert.True(receipt?.IsHistorical);
+            }
+            else
+                Assert.Null(receipt);
+            Assert.Equal(2, Volatile.Read(ref managedReads));
+        }
+        finally { releaseOldRead.TrySetResult(); }
     }
 }
