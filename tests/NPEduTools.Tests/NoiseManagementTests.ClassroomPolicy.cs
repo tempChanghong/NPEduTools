@@ -233,6 +233,40 @@ public sealed partial class NoiseManagementTests
     }
 
     [Fact]
+    public async Task Withdrawn_school_verifier_also_blocks_legacy_management_and_calibration()
+    {
+        await using var fixture = new Fixture(false);
+        ApplyCredential(fixture);
+        var store = new NoiseManagementStore(fixture.Path, fixture.Time);
+        var instance = Guid.NewGuid();
+        var session = Guid.NewGuid();
+        var request = Guid.NewGuid();
+        const string purpose = "stop";
+        var command = new NoiseManagementCommand("authorize", Secret: SchoolSecret, InstanceId: instance,
+            SessionId: session, Purpose: purpose, TargetRequestId: request);
+        Assert.Null(store.VerifyCalibration(SchoolSecret));
+        var existing = store.Issue(command, instance, session);
+        Assert.NotNull(existing.Ticket);
+
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", store.ApplySchool(SchoolScope, null));
+        store.SetClassroomPasswordReady(false, withdrawn: true);
+        Assert.False(store.Configured);
+        Assert.False(store.Consume(existing.Ticket, instance, session, purpose, request));
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", store.Issue(command, instance, session).Error);
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", fixture.Noise.ApplySchoolManagement(SchoolScope, null));
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", fixture.Noise.VerifyCalibrationSecret(SchoolSecret));
+
+        store = new(fixture.Path, fixture.Time);
+        Assert.Equal("MANAGEMENT_NOT_CONFIGURED", store.VerifyCalibration(SchoolSecret));
+        Assert.Null(fixture.Noise.ApplySchoolManagement(SchoolScope, CredentialRow(2)));
+        Assert.Null(fixture.Noise.VerifyCalibrationSecret(SchoolSecret));
+        Assert.Equal("POLICY_CHANGED", fixture.Noise.ApplySchoolManagement(SchoolScope, CredentialRow(1)));
+        Assert.Null(fixture.Noise.VerifyCalibrationSecret(SchoolSecret));
+        Assert.Equal("INVALID_RESPONSE", fixture.Noise.ApplySchoolManagement(SchoolScope, null, credentialIncluded: false));
+        Assert.Null(fixture.Noise.VerifyCalibrationSecret(SchoolSecret));
+    }
+
+    [Fact]
     public async Task Scope_mismatch_between_cached_password_and_effective_policy_requires_current_class_credential()
     {
         await using var f = new Fixture(false);

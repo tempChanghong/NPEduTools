@@ -20,7 +20,7 @@ public partial class ClassroomModeWindow : Window
     private Action? _returnToWorkspace;
     private long _workspaceVisit;
     private long _generation;
-    private sealed record PendingSwitch(Guid RequestId, string Target, long Revision);
+    private sealed record PendingSwitch(Guid RequestId, string Target, long Revision, bool SwitchRunning);
     private PendingSwitch? _pendingSwitch;
     public ClassroomModeWindow(string pipe, Action configureClassIsland, Action configureAdmin, Action configureExamAware)
         : this(pipe, configureClassIsland, configureAdmin, configureExamAware, null) { }
@@ -197,7 +197,9 @@ public partial class ClassroomModeWindow : Window
             OperationFeedbackText.Text = "";
             OperationFeedbackText.Visibility = Visibility.Collapsed;
         }
-        if (target is not null) SetOperationFeedback("正在提交切换请求，等待管理验证或后台确认。");
+        if (target is not null) SetOperationFeedback(running
+            ? "正在提交即时切换请求，等待管理验证或后台确认。"
+            : "正在提交设置，等待管理验证或后台确认。");
         _sending = true; Render(_state);
         try
         {
@@ -222,8 +224,9 @@ public partial class ClassroomModeWindow : Window
             if (response.Outcome is "Rejected" or "Failed") ShowOperationFeedback(StatusText.Text);
             else if (response is { Outcome: "Accepted", ClassroomMode: { } accepted } && target is not null)
             {
-                SetOperationFeedback("后台已受理切换请求，正在等待执行结果；尚不能确认切换完成。");
-                _pendingSwitch = new(response.RequestId, target, accepted.Revision);
+                SetOperationFeedback(running ? "后台已受理即时切换，正在等待软件切换结果。"
+                    : "后台已受理设置，正在等待读回。");
+                _pendingSwitch = new(response.RequestId, target, accepted.Revision, running);
                 TrackSwitchResult(accepted);
             }
         }
@@ -273,13 +276,14 @@ public partial class ClassroomModeWindow : Window
         }
         if (state.Busy)
         {
-            SetOperationFeedback("正在切换到" + ModeName(pending.Target) + "：" + state.Message);
+            SetOperationFeedback(SwitchActionName(pending.Target, pending.SwitchRunning) + "进行中：" + state.Message);
             return;
         }
         _pendingSwitch = null;
         if (state.Mode == pending.Target && state.Phase == "Idle" && state.Actual is not null &&
             state.CheckedAt is not null && state.MatchesMode == true)
-            SetOperationFeedback("本次切换已完成：" + ModeName(pending.Target) + "。" + state.Message);
+            SetOperationFeedback((pending.SwitchRunning ? "本次即时切换已完成：" : "本次仅更新设置：") +
+                ModeName(pending.Target) + "。" + state.Message);
         else ShowOperationFeedback(state.Message);
     }
     private async void ExamClicked(object sender, RoutedEventArgs e) => await SwitchAsync("Exam");
@@ -287,6 +291,7 @@ public partial class ClassroomModeWindow : Window
     {
         if (_state is null || _state.Busy || _awaitingVerification) return;
         long visit = _workspaceVisit;
+        bool running = SwitchRunning.IsChecked == true;
         if (!await CheckSetupAsync())
         {
             if (!_closing && visit == _workspaceVisit && WorkspacePanel.Visible(this))
@@ -298,13 +303,11 @@ public partial class ClassroomModeWindow : Window
         long confirmedRevision = _state.Revision;
         string changes = target == "Exam" ? "暂停 ClassIsland 管理员自启动，开启 ExamAware2 自启动，并暂停自动录课。" :
             "开启 ClassIsland 管理员自启动，关闭 ExamAware2 自启动，自动录课恢复按原配置判断。";
-        bool running = SwitchRunning.IsChecked == true;
         string runtimeText = running ? target == "Daily" ?
             "\n\n请先保存并关闭 ExamAware2 的所有编辑器、结束放映。点击确定表示已完成这些操作。随后正常退出考试看板，并通过管理员任务启动 ClassIsland。" :
             "\n\n准备好 ExamAware2 后将正常退出 ClassIsland；请先处理 ClassIsland 的未保存内容或弹窗。" :
-            "\n\n当前软件不会自动退出。为设置自启动，可能打开 ExamAware2。";
-        string action = _state.Mode == target ? "重新应用" : "切换到";
-        if (ConfirmModeAction(changes + runtimeText + "\n可能需要 Windows 管理员授权。", action + ModeName(target)))
+            "\n\n本次仅应用设置，当前软件不会自动退出。为核实自启动登记，可能打开 ExamAware2。";
+        if (ConfirmModeAction(changes + runtimeText + "\n可能需要 Windows 管理员授权。", SwitchActionName(target, running)))
             await SendAsync("classroom.set", target, confirmedRevision, running);
     }
     private async void RetryClicked(object sender, RoutedEventArgs e)

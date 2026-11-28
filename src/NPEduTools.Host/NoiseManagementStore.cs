@@ -8,6 +8,7 @@ namespace NPEduTools.Host;
 public sealed partial class NoiseManagementStore
 {
     private readonly string _path;
+    private readonly string _schoolPathPrefix;
     private readonly TimeProvider _time;
     private Credential? _credential;
     private string? _error;
@@ -20,8 +21,13 @@ public sealed partial class NoiseManagementStore
         ManualStudyCommand? ManualStudyTarget, RecorderCommand? RecordingTarget);
     private const int Iterations = 210000;
     public NoiseManagementStore(string directory, TimeProvider? time = null)
+        : this(directory, time, null, false, null) { }
+
+    internal NoiseManagementStore(string directory, TimeProvider? time, string? schoolPolicyDirectory, bool requireVerifiedPolicy,
+        Func<string, bool>? canUseSchoolScope)
     {
         _path = Path.Combine(directory, "noise-management.json"); _time = time ?? TimeProvider.System;
+        _schoolPathPrefix = schoolPolicyDirectory is null ? _path : Path.Combine(schoolPolicyDirectory, "noise-management.json");
         try
         {
             if (!File.Exists(_path)) return;
@@ -33,9 +39,10 @@ public sealed partial class NoiseManagementStore
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or FormatException)
         { _error = "MANAGEMENT_STORE_UNAVAILABLE"; }
-        finally { LoadSchool(); ReadClassroomPasswordAvailability(); }
+        finally { LoadSchool(requireVerifiedPolicy, canUseSchoolScope); ReadClassroomPasswordAvailability(); }
     }
-    public bool Configured => _credential is not null && _error is null;
+    public bool Configured => _credential is not null && _error is null &&
+        (_schoolScope is null || !_schoolPasswordWithdrawn);
     public string? Error => _error;
     public string? Configure(string? oldSecret, string newSecret, bool protectedSession)
     {
@@ -61,11 +68,12 @@ public sealed partial class NoiseManagementStore
     private string? Verify(string? secret)
     {
         if (_error is not null) return _error;
-        if (_credential is null) return "MANAGEMENT_NOT_CONFIGURED";
+        if (_credential is not { } credential || (_schoolScope is not null && _schoolPasswordWithdrawn))
+            return "MANAGEMENT_NOT_CONFIGURED";
         if (_lockedAt is { } since && _time.GetElapsedTime(since).TotalSeconds < 60) return "MANAGEMENT_RATE_LIMITED";
         if (_lockedAt is not null) { _lockedAt = null; _failures = 0; }
         if (!NoiseManagementContract.SecretValid(secret) || !CryptographicOperations.FixedTimeEquals(
-            Derive(secret!, Convert.FromBase64String(_credential.Salt)), Convert.FromBase64String(_credential.Hash)))
+            Derive(secret!, Convert.FromBase64String(credential.Salt)), Convert.FromBase64String(credential.Hash)))
         {
             if (++_failures >= 5) _lockedAt = _time.GetTimestamp();
             return "MANAGEMENT_SECRET_INVALID";

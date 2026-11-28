@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "NPEduTools.App": {
+      "commandName": "Project"
+    },
+    "隔离调试 App": {
+      "commandName": "Project",
+      "commandLineArgs": "--debug-external-host --pipe NPEduTools.Debug.VisualStudio --classisland-pipe NPEduTools.Debug.VisualStudio.ClassIsland"
+    }
+  }
+}

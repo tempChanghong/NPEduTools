@@ -2,13 +2,15 @@
 
 [文档首页](README.md) · [当前架构](ARCHITECTURE.md) · [测试与验收](TESTING.md)
 
-## 在 Visual Studio 中运行
+## 在 Visual Studio 2026 中调试
 
-1. 安装支持项目 SDK 的 Visual Studio 和“.NET 桌面开发”工作负载。
-2. 安装根目录 [global.json](../global.json) 指定的 SDK。当前基线为 **10.0.400**，允许同系列最新补丁；不要沿用 ClassIsland 本体的 SDK 选择。
-3. 打开 [NPEduTools.sln](../NPEduTools.sln)，等待 NuGet 还原；将 **NPEduTools.App** 设为启动项目。
-4. 选择 **Debug**，按 **F5** 构建并运行。需要调试管理员进程时以管理员身份运行 IDE；主应用正常启动也会请求提权。
-5. 在测试配置中保存外部软件路径，按需要安装插件、连接本地学校服务。软件切换、录屏和麦克风操作会产生实际效果。
+1. 安装 Visual Studio 2026 的「.NET 桌面开发」工作负载和 [global.json](../global.json) 指定的 SDK。当前基线为 **10.0.400**，允许同系列最新补丁。
+2. 以管理员身份开启 Visual Studio，打开 [NPEduTools.sln](../NPEduTools.sln)，选择 **Debug**。在启动下拉列表选 **NPEduTools · App + Host（隔离调试）**，按 **F5**。可以分别在 App 的 `OnStartup` 和 Host 的 `PipeServer` 请求入口下断点。按 **Shift+F5** 停止会话。
+3. 首次启动时在调试实例完成协议确认。App、Host 和 ClassIsland 测试端点均使用专用管道，Host 数据保存在工作区 `.artifacts/visual-studio-debug/host`。Visual Studio 管理两个进程，App 跳过自动启动 Host 和登记守护任务的步骤。
+
+隔离调试适合页面和 IPC 开发。需要长时间停在 Host 建立管道监听之前时，可以先单独调试 **隔离调试 Host**，继续执行到它开始监听，再在项目菜单中调试 **隔离调试 App**。需要调试 Recorder 时，在「调试 → 附加到进程」按 PID 选择本次启动的 Recorder。
+
+要检查正常启动、守护或安装场景，在启动项目 `NPEduTools.App` 下选 **NPEduTools.App** 启动配置。在测试配置中保存外部软件路径，按需安装插件和连接本地学校服务。软件切换、录屏和麦克风操作会产生实际效果。
 
 App 构建会复制所需的 Host、Guard、Admin 和 Recorder 目录，不要单独移动 App EXE。开发机录制组件准备与随包源码见 [FFmpeg 构建](FFMPEG-BUNDLED-BUILD.md)；发行包的内置组件要求见[第三方材料](THIRD-PARTY-MATERIALS.md)。
 

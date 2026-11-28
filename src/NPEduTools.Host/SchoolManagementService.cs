@@ -15,6 +15,8 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
     private readonly StudyDeviceService _cameras;
     private readonly string _path;
     private readonly ClassroomPolicyStore _classroomPolicy;
+    private readonly Func<string, bool>? _canUseSchoolScope;
+    private readonly Func<string, string, bool>? _canUseSchoolOrigin;
     private bool _tracksRegistration;
     private string? _registeredScope;
     private Saved _saved=new(null,0,false,0,null,null,false);
@@ -28,37 +30,50 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
     public SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory)
         : this(noise, cameras, directory, null) { }
 
-    internal SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory, EdgeWebsitePolicy? edgeWebsitePolicy)
+    internal SchoolManagementService(NoiseService noise,StudyDeviceService cameras,string directory, EdgeWebsitePolicy? edgeWebsitePolicy,
+        string? protectedDirectory = null, bool requireVerifiedPolicy = false, Func<string, bool>? canUseSchoolScope = null,
+        Func<string, string, bool>? canUseSchoolOrigin = null)
     {
         _edgeWebsitePolicy = edgeWebsitePolicy;
-        _noise=noise;_cameras=cameras;_path=Path.Combine(directory,"school-equipment.json");
-        _classroomPolicy = new ClassroomPolicyStore(directory, noise);
+        _canUseSchoolScope = canUseSchoolScope;
+        _canUseSchoolOrigin = canUseSchoolOrigin;
+        string policyDirectory = protectedDirectory ?? directory;
+        _noise=noise;_cameras=cameras;_path=Path.Combine(policyDirectory,"school-equipment.json");
+        _classroomPolicy = new ClassroomPolicyStore(policyDirectory, noise, requireVerifiedPolicy, canUseSchoolScope);
+        if (requireVerifiedPolicy) _saved = _saved with { Locked = true };
         try
         {
-            if(File.Exists(_path))
+            var saved = ReadSaved();
+            if (saved.Revision < 0 || saved.Revision > NpepProtocol.MaxInteger || saved.Applied < 0 || saved.Applied > saved.Revision ||
+                saved.Scope is { Length: > 4096 } || saved.Scope is { } knownScope && _canUseSchoolScope?.Invoke(knownScope) == false ||
+                saved.Microphone is not null && !NoiseContract.ValidDeviceId(saved.Microphone) ||
+                saved.Camera is not null && !NoiseContract.ValidDeviceId(saved.Camera) ||
+                saved.LocalMicrophoneOverride is { } local && (!NoiseContract.ValidDeviceId(local) || !saved.AllowLocalMicrophoneChange ||
+                    !saved.Locked || saved.Scope is null || saved.Revision == 0)) throw new InvalidDataException();
+            // Do not publish a partially parsed policy when validation fails.
+            _saved = saved;
+            if (saved.Unlocked)
             {
-                // Three opaque endpoint IDs plus the school identity can each require JSON escaping.
-                if(new FileInfo(_path).Length>65536)throw new InvalidDataException();
-                var saved=JsonSerializer.Deserialize<Saved>(File.ReadAllText(_path))??throw new InvalidDataException();
-                if(saved.Revision<0||saved.Revision>NpepProtocol.MaxInteger||saved.Applied<0||saved.Applied>saved.Revision||saved.Scope is {Length:>4096}||
-                    saved.Microphone is not null && !NoiseContract.ValidDeviceId(saved.Microphone)||saved.Camera is not null && !NoiseContract.ValidDeviceId(saved.Camera) ||
-                    saved.LocalMicrophoneOverride is { } local && (!NoiseContract.ValidDeviceId(local) || !saved.AllowLocalMicrophoneChange ||
-                        !saved.Locked || saved.Scope is null || saved.Revision == 0))throw new InvalidDataException();
-                // Do not publish a partially parsed policy when validation fails.
-                _saved=saved;
-                if (saved.Unlocked)
-                {
-                    // Old clients could leave both devices unlocked across restarts.
-                    _saved = saved with { Unlocked = false, Applied = 0, LocalMicrophoneOverride = null };
-                    Save();
-                }
-                else if (saved.LocalMicrophoneOverride is { } target)
-                    _error = _noise.SelectSchoolMicrophone(target);
+                // Old clients could leave both devices unlocked across restarts.
+                _saved = saved with { Unlocked = false, Applied = 0, LocalMicrophoneOverride = null };
+                Save();
             }
+            else if (saved.LocalMicrophoneOverride is { } target)
+                _error = _noise.SelectSchoolMicrophone(target);
         }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException) { }
         catch(Exception e)when(e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         { _error="EQUIPMENT_STORE_UNAVAILABLE";_saved=_saved with{Locked=true,Unlocked=false}; }
+        if (_saved.Scope is { } trustedScope && _canUseSchoolScope?.Invoke(trustedScope) == true)
+            _edgeWebsitePolicy?.Bind(trustedScope);
         SetLocks();_noise.ReplaceLocalMicrophone=ReplaceMicrophone;
+    }
+
+    private Saved ReadSaved()
+    {
+        using var stream = File.OpenRead(_path);
+        if (stream.Length > 65536) throw new InvalidDataException();
+        return JsonSerializer.Deserialize<Saved>(stream) ?? throw new InvalidDataException();
     }
     private void SetLocks(bool renewToken = false)
     {
@@ -105,16 +120,29 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
     {
         lock(_sync)
         {
+            if (_canUseSchoolScope is not null && (scope is null || !_canUseSchoolScope(scope))) return;
             if (_tracksRegistration && scope is not null && _registeredScope != scope) return;
-            _classroomPolicy.Bind(scope);
-            _noise.BindSchoolManagement(scope);
-            if(_saved.Scope==scope){if(_savePending){Save();SetLocks();}return;}
-            _websitePolicyReceipt = null;
-            _credentialError=null;
-            _extendedReceipt=false;
-            _saved=new(scope,0,scope is not null,0,null,null,false);
-            Save();SetLocks();
+            BindSchoolCore(scope);
         }
+    }
+    private void BindSchoolCore(string? scope)
+    {
+        _classroomPolicy.Bind(scope);
+        if (_canUseSchoolScope is not null) _edgeWebsitePolicy?.Bind(scope);
+        _noise.BindSchoolManagement(scope);
+        if (_saved.Scope == scope) { if (_savePending) { Save(); SetLocks(); } return; }
+        _websitePolicyReceipt = null;
+        _credentialError = null;
+        _extendedReceipt = false;
+        _saved = new(scope, 0, scope is not null, 0, null, null, false);
+        Save();
+        SetLocks();
+    }
+
+    public void ConfirmSchoolBindingRevoked(string scope)
+    {
+        lock (_sync)
+            if (_canUseSchoolScope?.Invoke(scope) == true && _saved.Scope == scope) BindSchoolCore(null);
     }
     public void ObserveActionBinding(string? scope)
     {
@@ -123,22 +151,26 @@ public sealed partial class SchoolManagementService : INpepSchoolManagement
             if (_registeredScope != scope) _websitePolicyReceipt = null;
             _tracksRegistration = true;
             _registeredScope = scope;
-            _classroomPolicy.Bind(scope);
+            if (_canUseSchoolScope is null || scope is not null && _canUseSchoolScope(scope)) _classroomPolicy.Bind(scope);
         }
     }
-    public void ApplySchool(JsonObject policy)
+    public void ApplySchool(JsonObject policy) => ApplySchoolFrom(policy, "");
+
+    public void ApplySchoolFrom(JsonObject policy, string origin)
     {
         lock(_sync)
         {
             try
             {
                 if(_saved.Scope is null || !JsonNode.DeepEquals(policy["identity"],JsonNode.Parse(_saved.Scope)))throw new NpepException("SESSION_SUPERSEDED");
+                if (_canUseSchoolScope is not null && !_canUseSchoolScope(_saved.Scope)) throw new NpepException("SESSION_SUPERSEDED");
+                if (_canUseSchoolOrigin?.Invoke(_saved.Scope, origin) == false) throw new NpepException("SESSION_SUPERSEDED");
                 if (_tracksRegistration && _saved.Scope != _registeredScope) throw new NpepException("SESSION_SUPERSEDED");
                 ReceiveWebsitePolicy(_saved.Scope, policy["websitePolicy"]);
                 // Credential and equipment acknowledgements are independent; a durable
                 // equipment write cannot erase a rejected credential update.
                 _error = null;
-                try { _credentialError = _noise.ApplySchoolManagement(_saved.Scope, policy["credential"]); }
+                try { _credentialError = _noise.ApplySchoolManagement(_saved.Scope, policy["credential"], policy.ContainsKey("credential")); }
                 catch (Exception e) when (policy.ContainsKey("actionPolicy") &&
                     e is InvalidOperationException or FormatException or NullReferenceException or JsonException)
                 {

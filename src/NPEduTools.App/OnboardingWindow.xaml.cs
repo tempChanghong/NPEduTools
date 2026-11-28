@@ -27,6 +27,7 @@ public partial class OnboardingWindow : Window
     private DateOnly? _confirmedDate;
     private Guid _bridgeInstance;
     private long _epoch;
+    private bool _schoolPresetRead;
     private bool _schoolAdvanceBusy, _deviceAdvanceBusy, _deviceReadinessFailed;
 
     internal OnboardingWindow(string endpoint, OnboardingState state, Action<OnboardingState> save, NpepConnectionSession schoolConnection,
@@ -169,7 +170,17 @@ public partial class OnboardingWindow : Window
         ShortcutHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Shortcuts) ? Visibility.Visible : Visibility.Collapsed;
         TouchHelp.Visibility = _state.Features.HasFlag(OnboardingFeatures.Touch) ? Visibility.Visible : Visibility.Collapsed;
         if (_state.Step is "classroom" or "noise" or "secrandom") _ = RefreshPreparationAsync();
-        if (_state.Step == "school") _ = _schoolConnection.RefreshAsync();
+        if (_state.Step == "school")
+        {
+            if (!_schoolPresetRead)
+            {
+                _schoolPresetRead = true;
+                // An isolated debug or test pipe must not import the installed user's draft.
+                if (StringComparer.Ordinal.Equals(_endpoint, PipeEndpoint.DefaultName))
+                    _schoolConnection.OfferSchoolAccessPreset(SchoolAccessPreset.ReadForOnboarding());
+            }
+            _ = _schoolConnection.RefreshAsync();
+        }
         if (_state.Step == "preferences") RefreshPreferences();
         if (_state.Step == "classisland")
         {

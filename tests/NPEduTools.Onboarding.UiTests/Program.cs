@@ -44,7 +44,7 @@ internal static partial class Program
         bool manualOnly = args.Length == 2 && args[1] is "--manual-recording" or "--manual-recording-start-policy";
         bool secRandomOnly = args.Length == 2 && args[1] == "--secrandom-status";
         bool examAwareOnly = args.Length == 2 && args[1] == "--examaware-status";
-        bool classroomOnly = args.Length == 2 && args[1] == "--classroom-status";
+        bool classroomOnly = args.Length == 2 && args[1] is "--classroom-status" or "--classroom-hot-switch";
         bool studyMemoryOnly = args.Length == 2 && args[1] == "--study-display-memory";
         bool studySoakOnly = args.Length == 2 && args[1] is "--study-display-soak" or "--study-display-soak-probe";
         bool studyReportOnly = args.Length == 2 && args[1] == "--study-report";
@@ -197,7 +197,8 @@ internal static partial class Program
             }
             if (classroomOnly)
             {
-                RunClassroomStatusChecks();
+                if (args[1] == "--classroom-hot-switch") RunClassroomHotSwitchCheck();
+                else RunClassroomStatusChecks();
                 WriteResult("PASSED", null); return 0;
             }
             if (scheduledDisplayOnly)

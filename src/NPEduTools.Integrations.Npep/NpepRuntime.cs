@@ -33,8 +33,11 @@ public sealed partial class NpepRuntime : IAsyncDisposable
     private readonly NpepConnectionJournal _history;
     private bool _connectionFailed;
 
-    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null, ISchoolUpdateHost? updates = null)
-        : this(() => new NpepDevice(directory), appVersion, sample, control, plans, noise, schedules, study, schoolManagement, updates: updates) { }
+    public NpepRuntime(string directory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null, ISchoolUpdateHost? updates = null,
+        Action<JsonObject>? observeUninstallBinding = null)
+        : this(() => new NpepDevice(directory) { BeforeUninstallBindingChange = observeUninstallBinding },
+            appVersion, sample, control, plans, noise, schedules, study, schoolManagement, updates: updates)
+    { }
     internal NpepRuntime(Func<NpepDevice> factory, string appVersion, Func<HostResponse> sample, INpepRuntimeControl? control = null, INpepExamPlans? plans = null, INpepNoise? noise = null, INpepNoiseSchedules? schedules = null, INpepStudySettings? study = null, INpepSchoolManagement? schoolManagement = null, TimeProvider? receiptTime = null, ISchoolUpdateHost? updates = null)
     {
         _sample = sample; _appVersion = appVersion; _schoolManagement = schoolManagement;
@@ -249,6 +252,8 @@ public sealed partial class NpepRuntime : IAsyncDisposable
                 bool cancellingCandidate = leaving["pairingSource"]?.GetValue<string>() == "REPLACEMENT" &&
                     leaving.Text("state") is "CREATING" or "PENDING" or "APPROVED";
                 string outcome = await _device!.UnpairAsync(token);
+                if (outcome == "REVOKED" && leaving["registration"] is JsonObject revokedRegistration)
+                    _schoolManagement?.ConfirmSchoolBindingRevoked(NpepDevice.RegistrationIdentity(revokedRegistration).ToJsonString());
                 _updates?.Unpair();
                 _schoolManagement?.BindSchool(null);
                 _verified = null; _verifiedOrigin = null; _catalogue = null;

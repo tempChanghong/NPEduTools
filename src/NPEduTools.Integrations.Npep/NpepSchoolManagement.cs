@@ -8,9 +8,11 @@ public interface INpepSchoolManagement
     // The durable pairing identity is available before the first online school poll.
     void ObserveActionBinding(string? scope) { }
     void ObserveWebsiteBinding(string? scope) { }
+    void ConfirmSchoolBindingRevoked(string scope) { }
     bool SupportsWebsitePolicyAutomation => false;
     bool SupportsWebsitePolicyTiming => false;
     void ApplySchool(JsonObject policy);
+    void ApplySchoolFrom(JsonObject policy, string origin) => ApplySchool(policy);
     JsonObject ObserveSchool();
 }
 
@@ -76,7 +78,7 @@ public sealed partial class NpepDevice
         var approval=_saved["approval"]!.AsObject();
         await ConfirmAsync(approval.Text("approvalId"),token);
     }
-    internal async Task<JsonObject> SchoolManagementAsync(JsonObject context, JsonObject? receipt, CancellationToken token,
+    internal async Task<(JsonObject Data, string Origin)> SchoolManagementAsync(JsonObject context, JsonObject? receipt, CancellationToken token,
         bool websitePolicyAutomation = false, bool websitePolicyTiming = false)
     {
         JsonObject pairing, session;
@@ -121,7 +123,7 @@ public sealed partial class NpepDevice
             {
                 RequireNotificationConnection();
                 if (!ReferenceEquals(_saved, pairing) || !ReferenceEquals(_session, session)) throw new NpepException("SESSION_SUPERSEDED");
-                return result;
+                return (result, api.Origin);
             }
             finally { _gate.Release(); }
         }
@@ -188,13 +190,13 @@ public sealed partial class NpepRuntime
         if(_schoolManagement is null) return;
         var context=await StudyContextAsync(token);
         string scope=context["identity"]!.ToJsonString(); _schoolManagement.BindSchool(scope);
-        var policy=await _device!.SchoolManagementAsync(context,null,token,_schoolManagement.SupportsWebsitePolicyAutomation,
+        var (policy, origin)=await _device!.SchoolManagementAsync(context,null,token,_schoolManagement.SupportsWebsitePolicyAutomation,
             _schoolManagement.SupportsWebsitePolicyTiming);
         await RequireStudyContextAsync(context,token);
         if(!JsonNode.DeepEquals(context["identity"],policy["identity"]))throw new NpepException("SESSION_SUPERSEDED");
-        _schoolManagement.ApplySchool(policy);
+        _schoolManagement.ApplySchoolFrom(policy, origin);
         var body=_schoolManagement.ObserveSchool();body["requestId"]=NpepProtocol.Id();body["context"]=context.Copy();body["sequence"]=++_schoolSequence;
-        var reply=await _device.SchoolManagementAsync(context,body,token);
+        var (reply, _)=await _device.SchoolManagementAsync(context,body,token);
         await RequireStudyContextAsync(context,token);
         if(reply["confirmed"]?.GetValue<bool>() != true)throw new NpepException("INVALID_RESPONSE");
     }

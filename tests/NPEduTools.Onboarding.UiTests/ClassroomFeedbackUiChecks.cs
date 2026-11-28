@@ -100,7 +100,7 @@ internal static partial class Program
                 var state = accepted!;
                 if (!scenario.StartsWith("fast-", StringComparison.Ordinal))
                 {
-                    Assert(Text().Contains("正在切换") && !Text().Contains("已完成"), "acceptance falsely claims completion or gives no progress");
+                    Assert(Text().Contains("设置进行中") && !Text().Contains("本次仅更新设置"), "acceptance falsely claims completion or gives no progress");
                     state = state with { Revision = scenario == "older" ? 7 : 9, Phase = "Idle", Mode = "Daily",
                         Actual = startup, CheckedAt = DateTimeOffset.UtcNow, MatchesMode = true, Message = "已核实并完成" };
                     if (scenario == "failure") state = state with { Mode = "Unconfigured", Actual = null,
@@ -110,10 +110,10 @@ internal static partial class Program
                     if (scenario == "superseded") state = state with { RecentRequests = [state.RecentRequests![0], Guid.NewGuid()] };
                     ShowClassroom(window, state);
                 }
-                if (scenario is "success" or "fast-success") Assert(Text().Contains("本次切换已完成"), "confirmed result lacks completion feedback");
+                if (scenario is "success" or "fast-success") Assert(Text().Contains("本次仅更新设置"), "settings-only result lacks scoped completion feedback");
                 else if (scenario is "failure" or "fast-failure" or "incomplete") Assert(Text().Contains("未完成") && Text().Contains("隔离"), "async failure loses its cause");
                 else if (scenario == "superseded") Assert(Text().Contains("待核对") && !Text().Contains("已完成"), "another request completed the wrong switch");
-                else Assert(Text().Contains("正在切换") && !Text().Contains("已完成"), "older snapshot completed the switch");
+                else Assert(Text().Contains("设置进行中") && !Text().Contains("本次仅更新设置"), "older snapshot completed the switch");
                 ShowClassroom(window, state);
                 Assert(((TextBlock)window.FindName("OperationFeedbackText")).Visibility == Visibility.Visible, "ordinary rendering hides operation result");
                 Checks.Add(scenario + ": post-confirmation/private Host exchange reports progress and request-bound completion or failure; no external software or capture");

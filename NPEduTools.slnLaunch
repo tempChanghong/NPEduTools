@@ -1,0 +1,17 @@
+[
+  {
+    "Name": "NPEduTools · App + Host（隔离调试）",
+    "Projects": [
+      {
+        "Path": "src\\NPEduTools.Host\\NPEduTools.Host.csproj",
+        "Action": "Start",
+        "DebugTarget": "隔离调试 Host"
+      },
+      {
+        "Path": "src\\NPEduTools.App\\NPEduTools.App.csproj",
+        "Action": "Start",
+        "DebugTarget": "隔离调试 App"
+      }
+    ]
+  }
+]

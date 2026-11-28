@@ -16,6 +16,11 @@
 #endif
 #define ProductId "{{B76C0D58-1319-4D53-AC50-D607C7B578A8}"
 #define MaintenanceHash GetSHA256OfFile(SourcePath + "guard-maintenance.ps1")
+#ifndef InstallerTestId
+#define ManagedUninstallExeHash GetSHA256OfFile(PackageRoot + "\app\Host\NPEduTools.Host.exe")
+#define ManagedUninstallHostHash GetSHA256OfFile(PackageRoot + "\app\Host\NPEduTools.Host.dll")
+#define ManagedUninstallNpepHash GetSHA256OfFile(PackageRoot + "\app\Host\NPEduTools.Integrations.Npep.dll")
+#endif
 #ifdef InstallerTestId
   ; Only the isolated regression script defines this. Production wrapper never does.
   #define ProductId "NPEduTools-InstallerTest-" + InstallerTestId
@@ -71,6 +76,9 @@ Source: "{#PackageRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 Source: "guard-maintenance.ps1"; DestDir: "{app}\maintenance"; Flags: ignoreversion
 
 #ifndef InstallerTestId
+[Dirs]
+Name: "{app}\school-policy-state"; Flags: uninsneveruninstall
+
 [Icons]
 Name: "{group}\NPEduTools"; Filename: "{app}\app\NPEduTools.App.exe"; WorkingDir: "{app}\app"
 Name: "{group}\桥接插件与使用说明"; Filename: "{app}"
@@ -85,6 +93,9 @@ Filename: "{app}\app\NPEduTools.App.exe"; WorkingDir: "{app}\app"; Description: 
 Root: HKCU; Subkey: "Software\NPEduTools\InstallerTest\{#InstallerTestId}"; ValueType: string; ValueName: "InstallerVersion"; ValueData: "{#InstallerVersion}"; Flags: uninsdeletevalue uninsdeletekeyifempty
 #else
 Root: HKLM; Subkey: "Software\NPEduTools\Installer"; ValueType: string; ValueName: "InstallerVersion"; ValueData: "{#InstallerVersion}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKLM; Subkey: "Software\NPEduTools\Installer"; ValueType: dword; ValueName: "SchoolAccessProvisioningVersion"; ValueData: "1"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "Software\NPEduTools\Installer"; ValueType: dword; ValueName: "ManagedUninstallProtocol"; ValueData: "1"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "Software\NPEduTools\Installer"; ValueType: string; ValueName: "ManagedUninstallRoot"; ValueData: "{app}"; Flags: uninsdeletevalue
 #endif
 
 [Code]
@@ -99,7 +110,7 @@ const
 
 var
   MaintenanceScript, MaintenanceDirectory, MaintenanceFailure: String;
-  MaintenanceActive, MaintenanceCompleted: Boolean;
+  MaintenanceActive, MaintenanceCompleted, ManagedUninstallFresh, ManagedUninstallLegacyUpgrade: Boolean;
 
 function InstallationProblem(AllowGuardian: Boolean): String;
 var
@@ -287,13 +298,34 @@ begin
   end;
 end;
 
+#ifndef InstallerTestId
+function ProtectedInstallProblem: String;
+begin
+  Result := '';
+  if not MaintenanceCommand('ValidateInstallRoot') then
+    Result := '安装目录或其程序文件无法确认为管理员专用。本次不会继续。请使用 Program Files 或另一个受管理员保护的本地目录。';
+end;
+#endif
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   OldVersion: String;
   Previous, Incoming: Int64;
+#ifndef InstallerTestId
+  LegacyPending: Cardinal;
+#endif
 begin
   Result := InstallationProblem(True);
   if Result <> '' then Exit;
+  ManagedUninstallFresh := not RegValueExists(VersionRoot, VersionKey, 'InstallerVersion') and
+    not FileExists(ExpandConstant('{app}\app\Host\NPEduTools.Host.exe'));
+#ifndef InstallerTestId
+  ManagedUninstallLegacyUpgrade := RegValueExists(VersionRoot, VersionKey, 'InstallerVersion') and
+    not RegValueExists(VersionRoot, VersionKey, 'ManagedUninstallBinding') and
+    (not RegValueExists(VersionRoot, VersionKey, 'ManagedUninstallProtocol') or
+     (RegQueryDWordValue(VersionRoot, VersionKey, 'ManagedUninstallLegacyUpgradePending', LegacyPending) and (LegacyPending = 1))) and
+    FileExists(ExpandConstant('{app}\app\Host\NPEduTools.Host.exe'));
+#endif
   if RegValueExists(VersionRoot, VersionKey, 'InstallerVersion') then begin
     if not RegQueryStringValue(VersionRoot, VersionKey, 'InstallerVersion', OldVersion) then begin
       Result := '已有安装的版本记录无法读取，请先核查，不覆盖安装。';
@@ -308,12 +340,92 @@ begin
   if not MaintenanceHelperReady(False) then begin
     Result := '守护维护助手完整性检查失败，本次不继续。'; Exit;
   end;
+#ifndef InstallerTestId
+  Result := ProtectedInstallProblem;
+  if Result <> '' then Exit;
+#endif
   Result := PrepareGuardian;
+#ifndef InstallerTestId
+  if (Result = '') and ManagedUninstallLegacyUpgrade then
+    if not RegWriteDWordValue(VersionRoot, VersionKey, 'ManagedUninstallLegacyUpgradePending', 1) then
+      Result := '无法保留原绑定的升级状态，本次不继续。';
+#endif
 end;
+
+#ifndef InstallerTestId
+function ManagedUninstallCommand(Action, Argument: String): Boolean;
+var
+  ResultCode: Integer;
+  HostDir: String;
+begin
+  Result := False;
+  HostDir := ExpandConstant('{app}\app\Host\');
+  try
+    if (CompareText(GetSHA256OfFile(HostDir + 'NPEduTools.Host.exe'), '{#ManagedUninstallExeHash}') <> 0) or
+       (CompareText(GetSHA256OfFile(HostDir + 'NPEduTools.Host.dll'), '{#ManagedUninstallHostHash}') <> 0) or
+       (CompareText(GetSHA256OfFile(HostDir + 'NPEduTools.Integrations.Npep.dll'), '{#ManagedUninstallNpepHash}') <> 0) then Exit;
+  except
+    Exit;
+  end;
+  Result := Exec(HostDir + 'NPEduTools.Host.exe',
+    '--managed-uninstall ' + Action + ' ' + Argument, ExpandConstant('{sys}'), SW_HIDE, ewWaitUntilTerminated, ResultCode)
+    and (ResultCode = 0);
+end;
+
+procedure InitializeManagedUninstallBinding;
+var InstallationKind: String;
+begin
+  InstallationKind := 'upgrade';
+  if ManagedUninstallFresh then InstallationKind := 'fresh';
+  if ManagedUninstallLegacyUpgrade then InstallationKind := 'legacy-upgrade';
+  if not ManagedUninstallCommand('initialize', InstallationKind) then
+    RaiseException('无法保存学校绑定的升级状态。请使用同一完整安装包修复，本次不启动应用。');
+  RegDeleteValue(VersionRoot, VersionKey, 'ManagedUninstallLegacyUpgradePending');
+end;
+
+function ManagedUninstallProblem(Action: String): String;
+var
+  Attempt: String;
+  Index: Integer;
+begin
+  Result := '无法确认本机可卸载。受学校管理的设备，请用原配对 Windows 账号打开 NPEduTools，并在 NPDownloader 联网验证。';
+  Attempt := ExpandConstant('{param:NPUNINSTALLATTEMPT|-}');
+  if Attempt <> '-' then begin
+    if Length(Attempt) <> 36 then Exit;
+    for Index := 1 to Length(Attempt) do
+      if Pos(Attempt[Index], '0123456789abcdefABCDEF-') = 0 then Exit;
+  end;
+  if ManagedUninstallCommand(Action, Attempt) then Result := '';
+end;
+
+procedure DeliverSchoolAccess;
+var
+  Preset: String;
+  Index, ResultCode: Integer;
+begin
+  Preset := ExpandConstant('{param:NPSCHOOLACCESS|}');
+  if (Length(Preset) = 0) or (Length(Preset) > 10923) then Exit;
+  for Index := 1 to Length(Preset) do
+    if Pos(Preset[Index], 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_') = 0 then Exit;
+  if not Exec(ExpandConstant('{app}\app\NPEduTools.App.exe'), '--provision-school-access ' + Preset,
+              ExpandConstant('{sys}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    Log('School access preset could not be delivered.');
+end;
+#endif
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then CompleteGuardian;
+  if CurStep = ssPostInstall then begin
+#ifndef InstallerTestId
+    if not MaintenanceCommand('SecureSchoolPolicyState') then
+      RaiseException('安装后的程序目录未能通过保护检查，未启动任何已安装组件。');
+#endif
+    CompleteGuardian;
+#ifndef InstallerTestId
+    InitializeManagedUninstallBinding;
+    DeliverSchoolAccess;
+#endif
+  end;
 end;
 
 procedure DeinitializeSetup;
@@ -354,8 +466,12 @@ function InitializeUninstall: Boolean;
 var Problem: String;
 begin
   Problem := InstallationProblem(True);
-  if Problem = '' then Problem := StartupProblem;
   if (Problem = '') and (not MaintenanceHelperReady(True)) then Problem := '守护维护助手缺失或被修改，本次不卸载，请使用新版完整安装包修复。';
+#ifndef InstallerTestId
+  if Problem = '' then Problem := ProtectedInstallProblem;
+  if Problem = '' then Problem := ManagedUninstallProblem('probe');
+#endif
+  if Problem = '' then Problem := StartupProblem;
   Result := Problem = '';
   if not Result then SuppressibleMsgBox(Problem, mbError, MB_OK, IDOK);
 end;
@@ -366,10 +482,40 @@ begin
   if CurUninstallStep = usUninstall then begin
     Problem := InstallationProblem(True);
     if Problem = '' then Problem := StartupProblem;
+#ifndef InstallerTestId
+    if Problem = '' then Problem := ProtectedInstallProblem;
+    if Problem = '' then Problem := ManagedUninstallProblem('consume');
+#endif
     if Problem = '' then Problem := PrepareGuardian;
     if Problem <> '' then RaiseException(Problem);
   end;
-  if CurUninstallStep = usPostUninstall then CompleteGuardian;
+  if CurUninstallStep = usPostUninstall then begin
+    CompleteGuardian;
+#ifndef InstallerTestId
+    { The old school latch must stay until the authorized uninstall actually completes. }
+    DeleteFile(ExpandConstant('{app}\school-policy-state\classroom-action-policy.json'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\school-equipment.json'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\noise-management.json.school'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\noise-management.json.classroom-password-unavailable'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\classroom-action-policy.json.tmp'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\school-equipment.json.tmp'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\noise-management.json.school.tmp'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\noise-management.json.classroom-password-unavailable.tmp'));
+    DeleteFile(ExpandConstant('{app}\school-policy-state\host.lock'));
+    RemoveDir(ExpandConstant('{app}\school-policy-state'));
+    if RegValueExists(VersionRoot, VersionKey, 'ManagedUninstallGrant') then
+      if not RegDeleteValue(VersionRoot, VersionKey, 'ManagedUninstallGrant') then begin
+        Log('Managed uninstall grant cleanup failed; old binding retained.');
+        Exit;
+      end;
+    if RegValueExists(VersionRoot, VersionKey, 'ManagedUninstallBinding') then
+      if not RegDeleteValue(VersionRoot, VersionKey, 'ManagedUninstallBinding') then
+        Log('Managed uninstall binding cleanup failed.');
+    RegDeleteValue(VersionRoot, VersionKey, 'SchoolPolicyAuthority');
+    RegDeleteValue(VersionRoot, VersionKey, 'ManagedUninstallLegacyCandidates');
+    RegDeleteValue(VersionRoot, VersionKey, 'ManagedUninstallLegacyUpgradePending');
+#endif
+  end;
 end;
 
 procedure DeinitializeUninstall;

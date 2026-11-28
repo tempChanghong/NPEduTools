@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "隔离调试 Host": {
+      "commandName": "Project",
+      "workingDirectory": "$(ProjectDir)..\\..",
+      "commandLineArgs": "--pipe NPEduTools.Debug.VisualStudio --classisland-pipe NPEduTools.Debug.VisualStudio.ClassIsland --data-dir .artifacts\\visual-studio-debug\\host"
+    }
+  }
+}

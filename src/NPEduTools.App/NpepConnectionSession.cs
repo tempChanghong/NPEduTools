@@ -32,6 +32,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     internal int ProviderRevision { get; private set; }
     private string? _feedbackCode;
     private Guid? _feedbackRequestId;
+    private SchoolAccessPreset? _pendingSchoolPreset, _appliedSchoolPreset;
     private bool _working, _mutating, _originEdited, _serverConfirmed, _bindingConfirmed, _admissionReplyUnconfirmed;
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Changed() => PropertyChanged?.Invoke(this, new(""));
@@ -45,6 +46,7 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
             _originEdited = true;
             if (_origin == value) return;
             _origin = value;
+            _pendingSchoolPreset = _appliedSchoolPreset = null;
             ResetProviderDrafts();
             Changed();
         }
@@ -64,6 +66,8 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         {
             if (_serverConfirmed == value) return;
             _serverConfirmed = value;
+            if (value && _appliedSchoolPreset is { } preset && ShowClassLookup && _schoolQuery.Length == 0)
+                _schoolQuery = preset.SchoolCode ?? preset.SchoolName;
             if (!value)
             {
                 ResetClassSelection();
@@ -82,6 +86,17 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
     public string RefreshLabel => _admissionReplyUnconfirmed ? "核对原申请" : "刷新";
     public bool ShowAddressEditor => ShowCreate || _state is null && !_admissionReplyUnconfirmed;
     public bool ShowCurrentAddress => _state is not null && !ShowAddressEditor;
+    internal void OfferSchoolAccessPreset(SchoolAccessPreset? preset)
+    {
+        if (!_originEdited && _appliedSchoolPreset is null && !_admissionReplyUnconfirmed)
+            _pendingSchoolPreset = preset;
+    }
+
+    public string SchoolAccessPresetLabel => ShowCreate && _appliedSchoolPreset is { } preset
+        ? $"NPDownloader 预填 · {preset.SchoolName}" +
+            (preset.SchoolCode is { } code ? $"（{code}）" : "") + "。请核对服务，再选择本班大屏。"
+        : "";
+
     public string ProviderHint => _state is null ? "后台状态尚未确认，可先填写地址；恢复后台连接后再检查服务。"
         : ShowCreate ? "请填写学校提供的服务地址，然后检查服务。"
         : "此地址属于当前申请或绑定。更换提供商需先取消申请或解除绑定，再输入新地址并重新配对。";
@@ -380,6 +395,22 @@ public sealed class NpepConnectionSession(Func<HostRequest, CancellationToken, T
         }
         if (approval != _approvalSeen) { _approvalSeen = approval; _bindingConfirmed = false; }
         if (!_originEdited && _state?.Origin is { } saved) _origin = saved;
+        if (command is null && response.Outcome == "Succeeded" && _state is { Busy: false } &&
+            _pendingSchoolPreset is { } preset)
+        {
+            if (_state.State == "UNPAIRED" && string.IsNullOrEmpty(_state.Origin) &&
+                !_originEdited && _origin.Length == 0 && _state.Server is null)
+            {
+                _origin = preset.BackendUrl;
+                _originEdited = true;
+                _appliedSchoolPreset = preset;
+                ResetProviderDrafts();
+                _pendingSchoolPreset = null;
+            }
+            else if (_state.State is "ACTIVE" or "CREATING" or "PENDING" or "APPROVED" or "CONFIRMING")
+                _pendingSchoolPreset = null;
+        }
+
         _feedback = response.Outcome == "Rejected" || response.Npep is null ? response.Message : null;
         _feedbackCode = _feedback is null ? null : response.ErrorCode;
         _feedbackRequestId = _feedbackCode is null ? null : response.RequestId;

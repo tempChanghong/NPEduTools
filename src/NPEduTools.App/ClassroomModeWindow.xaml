@@ -65,7 +65,7 @@
    </Border>
 
    <!-- 二、即时切换开关贴近双模式影响对比区（宽窗并列，窄窗由 ModeSizeChanged 纵向单列） -->
-   <CheckBox x:Name="SwitchRunning" Content="同时切换当前运行的软件" Style="{StaticResource Switch}" IsChecked="False"
+   <CheckBox x:Name="SwitchRunning" Content="同时即时切换当前运行的软件" Style="{StaticResource Switch}" IsChecked="False"
              Checked="SwitchOptionsChanged" Unchecked="SwitchOptionsChanged" Margin="2,0,2,8"
              AutomationProperties.AutomationId="ClassroomSwitchRunning"/>
 
@@ -86,7 +86,7 @@
       </StackPanel>
       <TextBlock Grid.Row="2" x:Name="DailyRuntimePreview" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,8"
                  AutomationProperties.AutomationId="DailyRuntimePreview"/>
-      <Button Grid.Row="3" x:Name="DailyButton" Content="切换到日常模式" Click="DailyClicked" Style="{StaticResource TeacherButton}"
+      <Button Grid.Row="3" x:Name="DailyButton" Content="应用日常设置" Click="DailyClicked" Style="{StaticResource TeacherButton}"
               HorizontalAlignment="Left" AutomationProperties.AutomationId="ClassroomDaily" IsEnabled="False"/>
      </Grid>
     </Border>
@@ -104,7 +104,7 @@
       </StackPanel>
       <TextBlock Grid.Row="2" x:Name="ExamRuntimePreview" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TeacherMutedBrush}" Margin="0,0,0,8"
                  AutomationProperties.AutomationId="ExamRuntimePreview"/>
-      <Button Grid.Row="3" x:Name="ExamButton" Content="切换到考试模式" Click="ExamClicked" Style="{StaticResource TeacherButton}"
+      <Button Grid.Row="3" x:Name="ExamButton" Content="应用考试设置" Click="ExamClicked" Style="{StaticResource TeacherButton}"
               HorizontalAlignment="Left" AutomationProperties.AutomationId="ClassroomExam" IsEnabled="False"/>
      </Grid>
     </Border>

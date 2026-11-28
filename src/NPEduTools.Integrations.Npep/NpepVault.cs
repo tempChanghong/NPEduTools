@@ -10,6 +10,7 @@ public sealed class NpepVault : IDisposable
 {
     private readonly string _path;
     private readonly FileStream _lease;
+    internal string? LoadedFingerprint { get; private set; }
     public NpepVault(string directory)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
@@ -22,8 +23,15 @@ public sealed class NpepVault : IDisposable
     {
         if (!File.Exists(_path)) return null;
         if (new FileInfo(_path).Length > 131072) throw new NpepException("CREDENTIAL_STORE_INVALID");
-        byte[] clear = Protect(File.ReadAllBytes(_path), false);
-        try { return NpepProtocol.Parse(clear); }
+        byte[] encrypted = File.ReadAllBytes(_path);
+        if (encrypted.Length > 131072) throw new NpepException("CREDENTIAL_STORE_INVALID");
+        byte[] clear = Protect(encrypted, false);
+        try
+        {
+            var record = NpepProtocol.Parse(clear);
+            LoadedFingerprint = Convert.ToHexStringLower(SHA256.HashData(encrypted));
+            return record;
+        }
         finally { CryptographicOperations.ZeroMemory(clear); }
     }
     internal void Save(JsonObject value)
@@ -59,6 +67,8 @@ public sealed class NpepVault : IDisposable
 
     internal void Clear() { if (File.Exists(_path)) File.Delete(_path); }
     public void Dispose() => _lease.Dispose();
+
+    public static byte[] ProtectUninstallGrant(byte[] bytes, bool encrypt) => Protect(bytes, encrypt);
 
     [StructLayout(LayoutKind.Sequential)] private struct Blob { public int Size; public IntPtr Data; }
     [DllImport("crypt32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

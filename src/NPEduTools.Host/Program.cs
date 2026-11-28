@@ -18,6 +18,18 @@ if (args.Contains("--help"))
     return 0;
 }
 
+if (args is ["--managed-uninstall", "initialize", "fresh" or "upgrade" or "legacy-upgrade"])
+{
+    try { return ManagedUninstall.Initialize(args[2]); }
+    catch (Exception error) when (ManagedUninstall.CheckFailure(error)) { return 1; }
+}
+if (args is ["--managed-uninstall", "probe" or "consume", var uninstallAttempt])
+{
+    if (uninstallAttempt != "-" && !Guid.TryParseExact(uninstallAttempt, "D", out _)) return 1;
+    try { return await ManagedUninstall.NativeGateAsync(args[1], uninstallAttempt == "-" ? null : Guid.Parse(uninstallAttempt)); }
+    catch (Exception error) when (ManagedUninstall.CheckFailure(error)) { return 1; }
+}
+
 if (args.SequenceEqual(["--powerpoint-worker"]))
 {
     var thread = new Thread(() => { if (OperatingSystem.IsWindows()) NPEduTools.PowerPoint.Diagnostics.PowerPointTouchAssist.RunProbeWorker(); });
@@ -94,6 +106,23 @@ if (workerMode || scheduleMode || calendarMode)
 }
 
 if (options.ContainsKey("--observe-ms") || options.ContainsKey("--school-date")) return 2;
+var managedUninstall = ManagedUninstall.IsInstalled() ? new ManagedUninstall() : null;
+if (managedUninstall is not null && (pipeName != PipeEndpoint.DefaultName || options.ContainsKey("--data-dir")))
+{
+    Console.Error.WriteLine("The installed Host requires its registered endpoint and policy location.");
+    return 2;
+}
+FileStream? machinePolicyLease;
+try { machinePolicyLease = managedUninstall?.AcquirePolicyLease(); }
+catch (Exception error) when (ManagedUninstall.CheckFailure(error))
+{
+    Console.Error.WriteLine("The installed Host cannot open its protected policy store or another session owns it.");
+    return 3;
+}
+using var heldMachinePolicy = machinePolicyLease;
+bool verifySchoolPolicy = managedUninstall?.RequiresVerifiedPolicy() == true;
+Func<string, bool>? canUseSchoolScope = managedUninstall is null ? null :
+    scope => OperatingSystem.IsWindows() && managedUninstall.AllowsPolicyScope(scope);
 string dataDirectory = options.GetValueOrDefault("--data-dir", GuardFiles.DataDirectory(pipeName));
 HostCrashReport.Register(dataDirectory);
 using var instance = new Mutex(false, $@"Local\{pipeName}.Host", out bool createdNew);
@@ -144,7 +173,7 @@ await using var touch = new TouchAssistService(() =>
 var classroomStore = new ClassroomModeStore(dataDirectory);
 // Load the independent N3 protection before the scheduler. No remote execute entry is exposed yet.
 var remoteExamStore = new RemoteExamStore(dataDirectory);
-var noiseManagement = new NoiseManagementStore(dataDirectory);
+var noiseManagement = new NoiseManagementStore(dataDirectory, null, managedUninstall?.PolicyDirectory, verifySchoolPolicy, canUseSchoolScope);
 NoiseService? meterNoise = null;
 var soundMeter = new SoundMeterService(() => OperatingSystem.IsWindows() ? new WindowsSoundMeterHid() : throw new PlatformNotSupportedException(),
     secret => meterNoise is null ? "MANAGEMENT_NOT_CONFIGURED" : meterNoise.VerifyCalibrationSecret(secret), () => meterNoise?.MeterUnavailable == true);
@@ -165,7 +194,9 @@ var noiseTransport = new NoiseTransport(noise, Path.Combine(dataDirectory, "npep
 var edgeWebsitePolicy = OperatingSystem.IsWindows() ? new EdgeWebsitePolicy(dataDirectory, () =>
     OperatingSystem.IsWindows() ? new EdgeWebsitePolicyStore() : throw new PlatformNotSupportedException(),
     monitor.WebsitePhase) : null;
-var schoolManagement=new SchoolManagementService(noise,studyDevices,Path.Combine(dataDirectory,"npep"),edgeWebsitePolicy);
+var schoolManagement = new SchoolManagementService(noise, studyDevices, Path.Combine(dataDirectory, "npep"), edgeWebsitePolicy,
+    managedUninstall?.PolicyDirectory, verifySchoolPolicy, canUseSchoolScope,
+    managedUninstall is null ? null : (scope, origin) => OperatingSystem.IsWindows() && managedUninstall.AllowsPolicyScope(scope, origin));
 var studyClock = new StudyModeClock(() => classroom.Snapshot.Mode, schoolClock.Snapshot);
 Func<bool> studyPaused = () => classroom.Snapshot.Phase != "Idle" || runtimeGate.Switching || runtimeGate.ExamRequested;
 Func<bool> projecting = () => StudyProjection.Active(examAware.Snapshot());
@@ -270,14 +301,29 @@ await using var npep = new NpepRuntime(Path.Combine(dataDirectory, "npep"), npep
     () => new(Protocol.Version, Guid.Empty, "Succeeded", null, "已有本地缓存", SchoolClock: schoolClock.PeekSnapshot(),
         Recording: recording.State, Automatic: recording.Automatic, ExamAware: examAware.Snapshot(), ClassroomMode: classroom.Snapshot),
     new RemoteExamTransport(remoteExam, remoteExamActions, recording, classroom),
-    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement, updates);
+    new ExamPlanTransport(examAware, recording, classroom, new WindowsRemoteExamPlatform()), noiseTransport, noiseSchedules, studySettings,schoolManagement, updates,
+    managedUninstall is null ? null : managedUninstall.ObserveBinding);
+async Task RecoverLegacyUninstall()
+{
+    if (managedUninstall is null || npep.LegacyUninstallFingerprint is null) return;
+    using var retry = new PeriodicTimer(TimeSpan.FromSeconds(15));
+    do
+    {
+        try { await managedUninstall.RecoverLegacyBindingAsync(npep, shutdown.Token); return; }
+        catch (NpepException error) when (error.Code is "UNINSTALL_LEGACY_EVIDENCE_REQUIRED" or "UNINSTALL_BINDING_CHANGED") { return; }
+        catch (Exception error) when (ManagedUninstall.CheckFailure(error)) { }
+        try { if (!await retry.WaitForNextTickAsync(shutdown.Token)) return; }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { return; }
+    } while (!shutdown.IsCancellationRequested);
+}
+var legacyRecovery = RecoverLegacyUninstall();
 var seatingUploads = new StudySeatingUploadService(pipeName, () => studySettings.DisplaySnapshot().State, npep.PrepareSeatingUploadAsync,
     npep.PublishSeatingAsync, verifyBinding: npep.VerifySeatingBindingAsync);
 var websiteClock = schoolManagement.RunWebsitePolicyClockAsync(shutdown.Token);
 try
 {
     var serving = new PipeServer(pipeName, reader, Console.Error.WriteLine, monitor, shutdown.Cancel, launch, touch, schoolClock, recording, examAware, classroom, npep,
-        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads,updates,schoolManagement).RunAsync(shutdown.Token);
+        runtimeGate, remoteExam, noise, secRandom, noiseDisplay, PrepareGuardStop, studySettings, studyDisplay, studyDevices, soundMeter, studyPhotos, studyExit, studyReport, manualStudy,studyRecovery,seatingUploads,updates,schoolManagement,managedUninstall).RunAsync(shutdown.Token);
     // RunAsync binds the accept loops before yielding. Do not announce failed startup as ready.
     if (!serving.IsCompleted) Console.WriteLine($"Host ready: {pipeName}");
     await serving;
@@ -292,4 +338,5 @@ finally
 {
     await shutdown.CancelAsync();
     await websiteClock;
+    await legacyRecovery;
 }

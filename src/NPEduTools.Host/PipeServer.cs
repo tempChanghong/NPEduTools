@@ -17,7 +17,7 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
     RuntimeOperationGate? runtimeGate = null, RemoteExamExecutor? remoteExam = null, NoiseService? noise = null, SecRandomService? secRandom = null, NoiseDisplayService? noiseDisplay = null,
     Func<bool>? prepareStop = null, StudySettingsService? study = null, StudyDisplayService? studyDisplay = null, StudyDeviceService? studyDevices = null,
     SoundMeterService? soundMeter = null, StudyPhotoService? studyPhotos = null, StudyExitService? studyExit = null, StudyReportService? studyReport = null, ManualStudyService? manualStudy=null, StudyRecoveryService? studyRecovery=null, StudySeatingUploadService? seatingUploads=null,
-    SchoolUpdateMaintenance? updates = null, SchoolManagementService? schoolManagement = null)
+    SchoolUpdateMaintenance? updates = null, SchoolManagementService? schoolManagement = null, ManagedUninstall? uninstall = null)
 {
     private readonly SemaphoreSlim _subscriptions = new(2, 2);
     private readonly TaskCompletionSource _watchStopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -64,6 +64,26 @@ public sealed partial class PipeServer(string pipeName, ILessonStatusReader read
                 {
                     response = new(Protocol.Version, request.RequestId, "Rejected", error, "请求无效或协议不兼容。");
                     if(error=="InvalidNoiseManagementCommand")studyExit?.ObserveAuthorization(request,response);
+                }
+                else if (request.Capability is "software.uninstall.check" or "software.uninstall.authorize")
+                {
+                    if (uninstall is null || npep is null ||
+                        !IsClientExecutable(pipe, SchoolUpdateWorker.ProductPath("NPDownloader.exe")))
+                        response = new(1, request.RequestId, "Rejected", "UNINSTALL_UNAVAILABLE", "需要从本机已安装的 NPDownloader 核对卸载。");
+                    else
+                    {
+                        try
+                        {
+                            var current = await uninstall.ExchangeAsync(npep, request.UninstallInput, token);
+                            response = new(1, request.RequestId, "Succeeded", null, "本机卸载验证状态。", UninstallStatus: current);
+                        }
+                        catch (Exception failure) when (ManagedUninstall.CheckFailure(failure))
+                        {
+                            response = new(1, request.RequestId, "Rejected", failure is NpepException problem ? problem.Code :
+                                failure is HttpRequestException or OperationCanceledException ? "UNINSTALL_NETWORK_UNAVAILABLE" :
+                                "UNINSTALL_CHECK_UNAVAILABLE", "无法核对学校卸载策略。");
+                        }
+                    }
                 }
                 else if (request.Capability is "software.update.status" or "software.update.status.recovery" or "software.update.status.details" or "software.update.consent" or "software.update.desktop-ready")
                 {

@@ -13,10 +13,12 @@ internal static class StartupElevation
 {
     // Keep an asInvoker bootstrap so the existing Windows login entry can start it. All UI,
     // credentials and workers are initialized only after this check passes in the elevated copy.
-    public static bool Ensure(string[] args)
+    public static bool Ensure(string[] args, bool relaunch = true)
     {
         using var identity = WindowsIdentity.GetCurrent();
         if (new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)) return true;
+        if (!relaunch)
+            throw new InvalidOperationException("请以管理员身份启动 Visual Studio，再运行隔离调试。");
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("无法确定程序位置。");
         if (!Path.GetFileName(executable).Equals("NPEduTools.App.exe", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("请通过 NPEduTools.App.exe 启动应用，或使用管理员权限的 Visual Studio 调试。");

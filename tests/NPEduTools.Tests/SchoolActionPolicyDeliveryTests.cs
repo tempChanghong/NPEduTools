@@ -23,17 +23,21 @@ public sealed class SchoolActionPolicyDeliveryTests
     {
         private readonly JsonObject _credential;
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "classroom-actions-" + Guid.NewGuid().ToString("N"));
+        private readonly bool _installed;
         public NoiseService Noise { get; private set; }
         public SchoolManagementService School { get; private set; }
-        public string PolicyCache => Path.Combine(_directory, "classroom-action-policy.json");
+        public string PolicyCache => Path.Combine(_installed ? ProtectedDirectory : _directory, "classroom-action-policy.json");
+        public string ProtectedDirectory => Path.Combine(_directory, "machine");
+        public string LegacyPolicyCache => Path.Combine(_directory, "classroom-action-policy.json");
         public readonly JsonObject Identity = new()
         {
             ["serverInstanceId"] = Guid.NewGuid().ToString(), ["deploymentEpoch"] = Guid.NewGuid().ToString(),
             ["deviceId"] = Guid.NewGuid().ToString(), ["bindingRevision"] = 1L, ["credentialGeneration"] = 1L
         };
 
-        public Screen()
+        public Screen(bool installed = false)
         {
+            _installed = installed;
             var salt = RandomNumberGenerator.GetBytes(16);
             _credential = new JsonObject { ["revision"] = 1L, ["verifier"] = new JsonObject { ["iterations"] = 210000,
                 ["salt"] = Convert.ToBase64String(salt), ["hash"] = Convert.ToBase64String(Rfc2898DeriveBytes.Pbkdf2(
@@ -44,9 +48,12 @@ public sealed class SchoolActionPolicyDeliveryTests
 
         private (NoiseService, SchoolManagementService) Load()
         {
+            string? machine = _installed ? ProtectedDirectory : null;
+            Func<string, bool>? authorize = _installed ? scope => scope == Identity.ToJsonString() : null;
             var noise = new NoiseService(_ => throw new InvalidOperationException("No classroom hardware in fixture"), () => [],
-                directory: _directory, management: new NoiseManagementStore(_directory));
-            return (noise, new SchoolManagementService(noise, new StudyDeviceService(() => [], _directory), _directory));
+                directory: _directory, management: new NoiseManagementStore(_directory, null, machine, _installed, authorize));
+            return (noise, new SchoolManagementService(noise, new StudyDeviceService(() => [], _directory), _directory,
+                null, machine, _installed, authorize, _installed ? (_, origin) => origin == "https://fixture.example" : null));
         }
 
         // Recreate services from disk before making any simulated network reads.
@@ -88,6 +95,67 @@ public sealed class SchoolActionPolicyDeliveryTests
             await Noise.DisposeAsync();
             if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
         }
+    }
+
+    [Fact]
+    public void Legacy_uninstall_evidence_requires_the_single_candidate_frozen_by_setup()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var one = new Dictionary<string, string> { ["original-user"] = FirstId };
+        Assert.True(ManagedUninstall.MatchesLegacyEvidence(one, "original-user", FirstId));
+        Assert.False(ManagedUninstall.MatchesLegacyEvidence(one, "other-user", FirstId));
+        Assert.False(ManagedUninstall.MatchesLegacyEvidence(one, "original-user", SecondId));
+        Assert.False(ManagedUninstall.MatchesLegacyEvidence(one, "original-user", null));
+        Assert.False(ManagedUninstall.MatchesLegacyEvidence(null, "original-user", FirstId));
+        one.Add("other-user", SecondId);
+        Assert.False(ManagedUninstall.MatchesLegacyEvidence(one, "original-user", FirstId));
+    }
+
+    [Fact]
+    public void An_unresolved_or_locally_detached_binding_does_not_release_policy_authority()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        Assert.False(ManagedUninstall.CanUpdatePolicyAuthority("UNKNOWN", "UNKNOWN", false, false));
+        Assert.False(ManagedUninstall.CanUpdatePolicyAuthority("UNKNOWN", "MANAGED", false, true));
+        Assert.False(ManagedUninstall.CanUpdatePolicyAuthority("MANAGED", "MANAGED", false, false));
+        Assert.True(ManagedUninstall.CanUpdatePolicyAuthority("MANAGED", "MANAGED", false, true));
+        Assert.True(ManagedUninstall.CanUpdatePolicyAuthority("MANAGED", "MANAGED", true, false));
+        Assert.True(ManagedUninstall.CanUpdatePolicyAuthority("PENDING", "PENDING", false, false));
+    }
+
+    [Fact]
+    public async Task Installed_host_ignores_legacy_user_cache_and_restarts_offline_with_machine_policy()
+    {
+        await using var screen = new Screen(installed: true);
+        var original = screen.Identity.ToJsonString();
+        var open = Policy(100, SecondId, "CLASS", Rule("ALLOW"), Rule("ALLOW"));
+        var forged = System.Text.Json.JsonSerializer.Serialize(new { SchemaVersion = 1, Scope = original, Policy = open, Hold = false });
+        File.WriteAllText(screen.LegacyPolicyCache, forged);
+
+        await screen.ReloadOffline();
+        Assert.Equal("deny", screen.Status()!.ExitHost);
+        Assert.NotNull(screen.Noise.VerifyCalibrationSecret("fixture-class-secret"));
+        screen.School.ObserveActionBinding(original);
+        screen.School.BindSchool(original);
+        screen.School.ApplySchoolFrom(screen.Envelope(Policy(12, FirstId, "CLASS", Rule("DENY"), Rule("VERIFY", "CLASS_PASSWORD"))),
+            "https://fixture.example");
+        Assert.Equal("password", screen.Status()!.ExitHost);
+        Assert.Null(screen.Noise.VerifyCalibrationSecret("fixture-class-secret"));
+
+        File.WriteAllText(screen.LegacyPolicyCache, forged);
+        await screen.ReloadOffline();
+        // An unreadable, absent or mismatched profile is not a new authorization.
+        screen.School.ObserveActionBinding(null);
+        screen.School.BindSchool(null);
+        Assert.Equal("password", screen.Status()!.ExitHost);
+        Assert.Equal("deny", screen.Status()!.StopScheduled);
+        screen.School.ObserveActionBinding("{}");
+        screen.School.BindSchool("{}");
+        Assert.Equal("password", screen.Status()!.ExitHost);
+        Assert.Throws<NpepException>(() => screen.School.ApplySchoolFrom(screen.Envelope(open), "https://fixture.example"));
+        screen.School.ObserveActionBinding(original);
+        Assert.Throws<NpepException>(() => screen.School.ApplySchoolFrom(screen.Envelope(open), "https://other.example"));
+        Assert.Equal("password", screen.Status()!.ExitHost);
     }
 
     [Fact]

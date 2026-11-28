@@ -4,14 +4,15 @@
   <PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup>
   <ItemGroup><InternalsVisibleTo Include="NPEduTools.Tests" /></ItemGroup>
   <ItemGroup><PackageReference Include="NAudio.Wasapi" Version="2.2.1" /></ItemGroup>
+  <!-- Bundled Windows projects select their own target framework so the solution builds each once. -->
   <ItemGroup><Compile Include="../NPEduTools.Recorder/ProcessJob.cs" Link="Camera/ProcessJob.cs" />
-    <ProjectReference Include="../NPEduTools.Camera/NPEduTools.Camera.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
+    <ProjectReference Include="../NPEduTools.Camera/NPEduTools.Camera.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../NPEduTools.Integrations.SecRandom/NPEduTools.Integrations.SecRandom.csproj" />
     <ProjectReference Include="../NPEduTools.Integrations.Npep/NPEduTools.Integrations.Npep.csproj" />
     <ProjectReference Include="../NPEduTools.ClassIsland.Admin/NPEduTools.ClassIsland.Admin.csproj" />
-    <ProjectReference Include="../NPEduTools.Recorder/NPEduTools.Recorder.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" SetTargetFramework="TargetFramework=net10.0-windows" />
+    <ProjectReference Include="../NPEduTools.Recorder/NPEduTools.Recorder.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
     <ProjectReference Include="../NPEduTools.Core/NPEduTools.Core.csproj" />
     <ProjectReference Include="../NPEduTools.PowerPoint.Diagnostics/NPEduTools.PowerPoint.Diagnostics.csproj" />
     <ProjectReference Include="../NPEduTools.Contracts/NPEduTools.Contracts.csproj" />

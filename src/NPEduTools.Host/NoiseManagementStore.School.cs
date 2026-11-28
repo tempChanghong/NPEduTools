@@ -5,16 +5,16 @@ namespace NPEduTools.Host;
 
 public sealed partial class NoiseManagementStore
 {
-    private string SchoolPath => _path + ".school";
+    private string SchoolPath => _schoolPathPrefix + ".school";
     private string? _schoolScope;
     private long _schoolRevision;
     private sealed record SchoolCredential(int Version, string? Scope, long Revision, Credential? Credential);
     public string Source => _schoolScope is null ? "Local" : "School";
     public long SchoolRevision => _schoolRevision;
     internal bool MatchesSchool(string scope) => _schoolScope == scope;
-    private void LoadSchool()
+    private void LoadSchool(bool requireVerifiedPolicy, Func<string, bool>? canUseSchoolScope)
     {
-        if (!File.Exists(SchoolPath)) return;
+        if (!requireVerifiedPolicy && !File.Exists(SchoolPath)) return;
         // A durable latch prevents a stale local password from coming back after a restart or unpair.
         _credential = null; _schoolScope = "UNAVAILABLE";
         try
@@ -22,11 +22,14 @@ public sealed partial class NoiseManagementStore
             if (new FileInfo(SchoolPath).Length > 8192) throw new InvalidDataException();
             var saved = JsonSerializer.Deserialize<SchoolCredential>(File.ReadAllText(SchoolPath)) ?? throw new InvalidDataException();
             if (saved.Version != 1 || saved.Revision < 0 || saved.Revision > NPEduTools.Integrations.Npep.NpepProtocol.MaxInteger || saved.Scope is {Length: > 4096} ||
+                saved.Scope is { } scope && canUseSchoolScope?.Invoke(scope) == false ||
                 saved.Credential is { } c && (c.Version != 1 || string.IsNullOrWhiteSpace(c.Salt) || string.IsNullOrWhiteSpace(c.Hash) ||
                     Convert.FromBase64String(c.Salt).Length != 16 || Convert.FromBase64String(c.Hash).Length != 32))
                 throw new InvalidDataException();
             _schoolScope = saved.Scope; _schoolRevision = saved.Revision; _credential = saved.Credential; _error = null;
         }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        { _error = "MANAGEMENT_NOT_CONFIGURED"; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or FormatException)
         { _error = "MANAGEMENT_STORE_UNAVAILABLE"; }
     }
@@ -58,7 +61,7 @@ public sealed partial class NoiseManagementStore
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(SchoolPath)!);
             using(var stream = new FileStream(SchoolPath + ".tmp", FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
             { JsonSerializer.Serialize(stream, new SchoolCredential(1, _schoolScope, _schoolRevision, _credential)); stream.Flush(true); }
             File.Move(SchoolPath + ".tmp", SchoolPath, true);

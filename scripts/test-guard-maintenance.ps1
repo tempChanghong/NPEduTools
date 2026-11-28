@@ -19,6 +19,15 @@ function Throws([string]$Name,[scriptblock]$Work,[string]$Pattern) {
     try { & $Work | Out-Null } catch { $errorMessage=$_.Exception.Message }
     Check $Name ($null -ne $errorMessage -and $errorMessage -match $Pattern)
 }
+$newProtectedRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) ('NPEduTools-PathTest-' + [guid]::NewGuid().ToString('N'))
+AssertProtectedInstallerTree $newProtectedRoot
+Check 'a fresh Program Files destination passes without creating a directory' (-not [IO.Directory]::Exists($newProtectedRoot))
+Throws 'a user-owned install root is rejected before starting an elevated helper' {
+    AssertProtectedInstallerTree $env:LOCALAPPDATA
+} 'not administrator-owned|writable by a non-administrator'
+Throws 'a volume root cannot become the installation root' {
+    AssertProtectedInstallerTree ([IO.Path]::GetPathRoot($newProtectedRoot))
+} 'requires a local subdirectory'
 function TaskXml([string]$Role,[string]$Root,[string]$Pipe,[string]$Sid) {
     $exe=switch($Role) { 'App' {Join-Path $Root 'app\NPEduTools.App.exe'} 'Host' {Join-Path $Root 'app\Host\NPEduTools.Host.exe'} default {Join-Path $Root 'app\Guard\svchost.exe'} }
     $args=if ($Pipe -eq 'default') { if ($Role -in @('Guard','Login')) { '--default-pipe' } else { '' } } else { '--pipe "'+$Pipe+'"' }

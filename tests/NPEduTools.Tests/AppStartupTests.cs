@@ -75,12 +75,33 @@ public sealed class AppStartupTests
         Assert.False(AppLaunchOptions.Parse(["--startup"], "default").GuardRecovery);
     }
 
+    [Fact]
+    public void External_host_debugging_requires_a_debug_build()
+    {
+        string[] args = ["--debug-external-host", "--pipe", "NPEduTools.Debug.App", "--classisland-pipe", "NPEduTools.Debug.Peer"];
+#if DEBUG
+        var options = AppLaunchOptions.Parse(args, "default");
+        Assert.True(options.DebugExternalHost);
+        Assert.Equal("NPEduTools.Debug.App", options.Pipe);
+        Assert.Equal("NPEduTools.Debug.Peer", options.Upstream);
+#else
+        Assert.Throws<ArgumentException>(() => AppLaunchOptions.Parse(args, "default"));
+#endif
+    }
+
     [Theory]
     [InlineData("--startup --startup")]
     [InlineData("--pipe --startup")]
     [InlineData("--unknown")]
     [InlineData("--pipe invalid/name")]
     [InlineData("--pipe a --pipe b")]
+    [InlineData("--debug-external-host --classisland-pipe NPEduTools.Debug.Peer")]
+    [InlineData("--debug-external-host --pipe default --classisland-pipe NPEduTools.Debug.Peer")]
+    [InlineData("--debug-external-host --pipe NPEduTools.Debug.App")]
+    [InlineData("--debug-external-host --pipe NPEduTools.Debug.App --classisland-pipe ClassIsland.IPC.v2.Server")]
+    [InlineData("--debug-external-host --pipe NPEduTools.Debug.Peer --classisland-pipe NPEduTools.Debug.peer")]
+    [InlineData("--debug-external-host --pipe NPEduTools.Debug.App --classisland-pipe NPEduTools.Debug.Peer --startup")]
+    [InlineData("--debug-external-host --pipe NPEduTools.Debug.App --classisland-pipe NPEduTools.Debug.Peer --guard-recovery")]
     public void MalformedArgumentsCannotStartAnotherEndpoint(string arguments) =>
         Assert.Throws<ArgumentException>(() => AppLaunchOptions.Parse(arguments.Split(' '), "default"));
 }

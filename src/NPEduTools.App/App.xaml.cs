@@ -28,6 +28,11 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length > 0 && e.Args[0] == SchoolAccessPreset.ProvisionArgument)
+        {
+            Shutdown(e.Args.Length == 2 ? SchoolAccessPreset.ProvisionMachine(e.Args[1]) : 2);
+            return;
+        }
         SetTeacherContrast(Resources, SystemParameters.HighContrast);
         SystemParameters.StaticPropertyChanged += TeacherSystemSettingsChanged;
         AppLaunchOptions options;
@@ -41,7 +46,7 @@ public partial class App : Application
         string pipe = options.Pipe;
         try
         {
-            if (!StartupElevation.Ensure(e.Args)) { Shutdown(); return; }
+            if (!StartupElevation.Ensure(e.Args, relaunch: !options.DebugExternalHost)) { Shutdown(); return; }
             await StartupElevation.CheckExistingHostAsync(pipe);
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or System.IO.IOException or
@@ -75,7 +80,7 @@ public partial class App : Application
         ShutdownMode = ShutdownMode.OnMainWindowClose;
         _activationWait = ThreadPool.RegisterWaitForSingleObject(_activation, (_, _) =>
             Dispatcher.BeginInvoke(() => ((MainWindow)MainWindow).RestoreWindow()), null, Timeout.Infinite, false);
-        ((MainWindow)MainWindow).Start(options.AtLogin, options.GuardRecovery);
+        ((MainWindow)MainWindow).Start(options.AtLogin, options.GuardRecovery, options.DebugExternalHost);
         _websitePolicy = new DesktopWebsitePolicy(pipe);
         _websitePolicy.Start();
     }

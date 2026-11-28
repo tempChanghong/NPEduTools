@@ -110,8 +110,8 @@ public sealed partial class ClassroomModeService(ClassroomModeStore store, IClas
             SaveObservation(after, store.State with { Mode = target }, "Idle",
                 restore ? recovery.PreviousPause : target == "Exam", null,
                 restore ? "已恢复切换前的自启动设置和录课模式。" :
-                target == "Exam" ? "考试模式已生效。自动录课已暂停，原计划保留。" :
-                "日常模式已生效。自动录课恢复按原计划判断，仍需保持录制已启用和学校时间可用。");
+                target == "Exam" ? "已核实自启动设置，未执行软件即时切换。自动录课已暂停，原计划保留。" :
+                "已核实自启动设置，未执行软件即时切换。自动录课恢复按原计划判断，仍需保持录制已启用和学校时间可用。");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

@@ -10,6 +10,7 @@ public sealed partial class NpepDevice : IDisposable
     private readonly Func<string, NpepApi> _factory;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private volatile JsonObject? _saved;
+    private readonly JsonObject? _legacyRecoveryCandidate;
     private JsonObject? _sessionRequest;
     private volatile JsonObject? _session;
     private readonly string _runId = NpepProtocol.Id();
@@ -22,7 +23,12 @@ public sealed partial class NpepDevice : IDisposable
     {
         DataDirectory = Path.GetFullPath(directory);
         _vault = new(directory);
-        try { _saved = _vault.Load(); _suspended = _saved?.Text("stage") is "SUSPENDED" or "UNPAIRING"; }
+        try
+        {
+            _saved = _vault.Load();
+            _suspended = _saved?.Text("stage") is "SUSPENDED" or "UNPAIRING";
+            if (_saved?.Text("stage") == "ACTIVE") _legacyRecoveryCandidate = _saved.Copy();
+        }
         catch { _vault.Dispose(); throw; }
         _factory = factory;
     }
@@ -53,7 +59,21 @@ public sealed partial class NpepDevice : IDisposable
         if (saved?["pairingError"] is JsonNode error) view["pairingError"] = error.DeepClone();
         return view;
     }
-    private void Save(JsonObject next) { _vault.Save(next); _saved = next; }
+    private void Save(JsonObject next)
+    {
+        bool newRegistration = next["registration"] is not null && !JsonNode.DeepEquals(next["registration"], _saved?["registration"]);
+        string? nextStage = next["stage"]?.GetValue<string>();
+        bool stateChanges = (nextStage is "CONFIRMING" or "UNPAIRING" or "SUSPENDED") && _saved?["stage"]?.GetValue<string>() != nextStage;
+        if (newRegistration || stateChanges) BeforeUninstallBindingChange?.Invoke(UninstallBindingView(next));
+        _vault.Save(next);
+        _saved = next;
+    }
+
+    private static JsonObject UninstallBindingView(JsonObject saved) => new()
+    {
+        ["state"] = saved["stage"]?.DeepClone(), ["origin"] = saved["origin"]?.DeepClone(),
+        ["registration"] = saved["registration"]?.DeepClone()
+    };
     private JsonObject Required() => _saved ?? throw new NpepException("NOT_PAIRED");
     private string PairBearer => "npepp1." + ((JsonObject)Required()["pairing"]!).Text("pairingId") + "." + Required().Text("pairingSecret");
     private string DeviceBearer => "npep1." + Required().Text("credentialId") + "." + Required().Text("deviceSecret");
@@ -420,6 +440,9 @@ public sealed partial class NpepDevice : IDisposable
                         var body = NpepProtocol.Body(); body["expectedBindingRevision"] = registered["bindingRevision"]!.DeepClone();
                         var reply = await api.SendAsync("device/revoke", "revokedDeviceResponse", body, "revokeDevice", DeviceBearer, token);
                         if (reply.Text("deviceId") != registered.Text("deviceId")) throw new NpepException("INVALID_RESPONSE");
+                        var revoked = UninstallBindingView(Required());
+                        revoked["state"] = "REVOKED";
+                        BeforeUninstallBindingChange?.Invoke(revoked);
                         outcome = "REVOKED";
                     }
                     else if (_saved["pairing"] is JsonObject pairing)

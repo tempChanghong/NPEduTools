@@ -127,6 +127,16 @@
             <TextBlock Style="{StaticResource Hint}" Text="ExamAware2 桥接：在考试看板页面打开插件设置，安装程序包 ExamAware2-plugin 文件夹内的 .ea2x 插件（也可从发行资源下载）；导出本机配对文件后，在 ExamAware 中导入。需要远程放映时，还要在 ExamAware 插件中配置对应权限。" />
           </StackPanel>
           <StackPanel x:Name="SchoolPage" Visibility="Collapsed">
+            <TextBlock Text="{Binding DataContext.SchoolAccessPresetLabel, ElementName=SchoolConnection}"
+                       AutomationProperties.AutomationId="OobeSchoolAccessPreset">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource Hint}">
+                  <Style.Triggers>
+                    <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
             <local:NpepConnectionControl x:Name="SchoolConnection" />
             <TextBlock Text="等待学校批准时可以稍后继续，申请会保留。连接后使用学校管理口令，原本机口令失效。">
               <TextBlock.Style>

@@ -112,6 +112,7 @@ internal sealed class ClassroomPolicyStore
     private sealed record Saved(int SchemaVersion, string? Scope, JsonObject? Policy, bool Hold);
     private readonly string _path;
     private readonly NoiseService _noise;
+    private readonly Func<string, bool>? _canUseSchoolScope;
     private readonly ClassroomUsbPresence _usb = new();
     private string? _scope;
     private ClassroomPolicy? _current;
@@ -119,9 +120,11 @@ internal sealed class ClassroomPolicyStore
     private bool _hold, _advertised, _dirty;
     private string? _error;
 
-    internal ClassroomPolicyStore(string directory, NoiseService noise)
+    internal ClassroomPolicyStore(string directory, NoiseService noise, bool requireVerifiedPolicy = false,
+        Func<string, bool>? canUseSchoolScope = null)
     {
         _noise = noise;
+        _canUseSchoolScope = canUseSchoolScope;
         _path = Path.Combine(directory, "classroom-action-policy.json");
         try
         {
@@ -129,13 +132,21 @@ internal sealed class ClassroomPolicyStore
             if (input.Length > 131072) throw new InvalidDataException();
             var state = JsonSerializer.Deserialize<Saved>(input);
             if (state is not { SchemaVersion: 1 } || state.Scope is { Length: > 4096 or 0 } ||
-                (state.Policy is null ? !state.Hold : state.Hold || state.Scope is null))
+                (state.Policy is null ? !state.Hold : state.Hold || state.Scope is null) ||
+                state.Scope is { } scope && _canUseSchoolScope?.Invoke(scope) == false)
                 throw new InvalidDataException();
             _scope = state.Scope;
             _current = state.Policy is null ? null : ClassroomPolicy.Parse(state.Policy);
             _hold = state.Hold;
         }
-        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException) { }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            if (requireVerifiedPolicy)
+            {
+                _error = "CLASSROOM_POLICY_AWAITING_VERIFICATION";
+                _hold = true;
+            }
+        }
         catch (Exception e) when (StorageOrDataError(e))
         {
             _error = "CLASSROOM_POLICY_STORE_UNAVAILABLE";
@@ -149,7 +160,7 @@ internal sealed class ClassroomPolicyStore
         if (_scope == scope && !_dirty) return;
         if (_scope != scope)
         {
-            _hold |= _current is { Source: not "LEGACY" };
+            _hold |= _current is { Source: not "LEGACY" } || scope is not null && _canUseSchoolScope is not null;
             _current = null;
             _awaitingSave = null;
             _scope = scope;

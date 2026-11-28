@@ -30,13 +30,16 @@ public partial class MainWindow
         RefreshLoginStartup();
     }
 
-    public void Start(bool atLogin, bool guardRecovery = false)
+    public void Start(bool atLogin, bool guardRecovery = false, bool debugExternalHost = false)
     {
         if (guardRecovery) _startupTouchPending = false;
-        StartGuard();
-        try { EnsureHostStarted(); }
-        catch (Exception e) when (NPEduTools.Core.GuardTasks.StartupError(e))
-        { HomeMessage.Text = "后台未启动：" + e.Message; }
+        if (!debugExternalHost)
+        {
+            StartGuard();
+            try { EnsureHostStarted(); }
+            catch (Exception e) when (NPEduTools.Core.GuardTasks.StartupError(e))
+            { HomeMessage.Text = "后台未启动：" + e.Message; }
+        }
         // Initialize the edge and services without ever showing the main window on a quiet login.
         _quick = new QuickAccessWindow(_pipe, () => TouchPowerClicked(this, new RoutedEventArgs()),
             () => TouchPauseClicked(this, new RoutedEventArgs()), () => StartClicked(this, new RoutedEventArgs()), ShowSettings,

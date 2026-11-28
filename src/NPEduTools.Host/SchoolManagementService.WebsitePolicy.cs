@@ -16,7 +16,8 @@ public sealed partial class SchoolManagementService
 
     public void ObserveWebsiteBinding(string? scope)
     {
-        lock (_sync) _edgeWebsitePolicy?.Bind(scope);
+        lock (_sync)
+            if (_canUseSchoolScope is null || scope is not null && _canUseSchoolScope(scope)) _edgeWebsitePolicy?.Bind(scope);
     }
 
     private void ReceiveWebsitePolicy(string scope, JsonNode? payload)

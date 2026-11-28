@@ -37,8 +37,7 @@ public partial class ClassroomModeWindow
         ApplyActionStyle(RefreshButton, "TeacherQuiet");
         ApplyActionStyle(RetryButton);
         ApplyActionStyle(RestoreButton);
-        DailyButton.Content = state?.Mode == "Daily" ? "重新应用日常模式" : "切换到日常模式";
-        ExamButton.Content = state?.Mode == "Exam" ? "重新应用考试模式" : "切换到考试模式";
+        UpdateSwitchActionLabels();
         RestoreButton.Visibility = state?.Recovery is null ? Visibility.Collapsed : Visibility.Visible;
         string badge = state is null || state.Busy || ClassroomModePresentation.From(state).Attention
             ? "TeacherWarningBrush" : state.MatchesMode == true ? "TeacherSuccessBrush" : "TeacherMutedBrush";
@@ -48,15 +47,34 @@ public partial class ClassroomModeWindow
         void ApplyActionStyle(Button button, string secondary = "TeacherButton") =>
             button.SetResourceReference(StyleProperty, button == primary ? "TeacherPrimary" : secondary);
     }
-    private void SwitchOptionsChanged(object sender, RoutedEventArgs e) => RenderSwitchPreview();
+    private void SwitchOptionsChanged(object sender, RoutedEventArgs e)
+    {
+        UpdateSwitchActionLabels();
+        RenderSwitchPreview();
+    }
+
+    private void UpdateSwitchActionLabels()
+    {
+        if (DailyButton is null || ExamButton is null) return;
+        bool running = SwitchRunning.IsChecked == true;
+        DailyButton.Content = SwitchActionName("Daily", running);
+        ExamButton.Content = SwitchActionName("Exam", running);
+    }
+
+    private static string SwitchActionName(string target, bool running)
+    {
+        string name = target == "Daily" ? "日常" : "考试";
+        return running ? $"即时切换到{name}模式" : $"应用{name}设置";
+    }
+
     private void RenderSwitchPreview()
     {
         if (DailyRuntimePreview is null || ExamRuntimePreview is null) return;
         bool running = SwitchRunning.IsChecked == true;
         DailyRuntimePreview.Text = running ? "当前软件：正常退出考试看板，再通过管理员任务启动 ClassIsland。请先结束放映、保存并关闭编辑器。" :
-            "当前软件：不自动退出；为设置自启动，可能打开考试看板。";
+            "仅应用自启动和录课设置；为核实自启动登记，可能打开考试看板。";
         ExamRuntimePreview.Text = running ? "当前软件：准备好考试看板，再正常退出 ClassIsland。请先处理未保存内容与弹窗。" :
-            "当前软件：不自动退出；为设置自启动，可能打开考试看板。";
+            "仅应用自启动和录课设置；为核实自启动登记，可能打开考试看板。";
     }
     private void RenderActualResults(ClassroomModeState? state)
     {

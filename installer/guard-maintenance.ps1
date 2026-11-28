@@ -1,6 +1,6 @@
 # Windows PowerShell 5.1; invoked only by the installer, never by the client UI.
 param(
-    [ValidateSet('Prepare','Restore','Complete')][string]$Action,
+    [ValidateSet('ValidateInstallRoot','SecureSchoolPolicyState','Prepare','Restore','Complete')][string]$Action,
     [string]$InstallRoot,
     [string]$TransactionDirectory
 )
@@ -15,6 +15,69 @@ function GuardHash([string]$Text) {
     finally { $sha.Dispose() }
 }
 function GuardPath([string]$Path) { return [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+function AssertProtectedInstallerItem($Item, [bool]$MayWriteChildren) {
+    if (($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Installation path is a reparse point.' }
+    $privileged = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+    $sidType = [Security.Principal.SecurityIdentifier]
+    $acl = Microsoft.PowerShell.Security\Get-Acl -LiteralPath $Item.FullName
+    if ($acl.GetOwner($sidType).Value -notin $privileged) { throw 'Installation path is not administrator-owned.' }
+    # Ancestors may permit creating unrelated siblings, but must protect this child from replacement.
+    $rights = 0x100D0040 # GENERIC_ALL, DELETE, WRITE_DAC, WRITE_OWNER, DELETE_CHILD
+    if ($MayWriteChildren) { $rights = $rights -bor 0x40000116 } # GENERIC_WRITE and write/create/attributes
+    foreach ($entry in $acl.GetAccessRules($true, $true, $sidType)) {
+        if ($entry.AccessControlType -ne 'Allow' -or $entry.IdentityReference.Value -in $privileged) { continue }
+        if ($entry.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) {
+            # This standard Program Files entry resolves to the owner of a newly created item.
+            if (-not $MayWriteChildren -or $entry.IdentityReference.Value -eq 'S-1-3-0') { continue }
+        }
+        if (([int]$entry.FileSystemRights -band $rights) -ne 0) { throw 'Installation path is writable by a non-administrator.' }
+    }
+}
+function AssertProtectedInstallerTree([string]$Path) {
+    $root = [IO.DirectoryInfo]::new($Path)
+    if ($root.Root.FullName.StartsWith('\\') -or $root.FullName -eq $root.Root.FullName) { throw 'Installation requires a local subdirectory.' }
+    $directory = $root
+    while (-not $directory.Exists) {
+        try { $null = [IO.File]::GetAttributes($directory.FullName); throw 'Installation path is not a directory.' }
+        catch [IO.FileNotFoundException] { }
+        catch [IO.DirectoryNotFoundException] { }
+        $directory = $directory.Parent
+    }
+    AssertProtectedInstallerItem $directory $true
+    for ($parent = $directory.Parent; $null -ne $parent; $parent = $parent.Parent) { AssertProtectedInstallerItem $parent $false }
+    if (-not $root.Exists) { return }
+    $pending = [Collections.Generic.Stack[IO.FileSystemInfo]]::new()
+    foreach ($name in @('app', 'maintenance', 'school-policy-state')) {
+        $child = Join-Path $root.FullName $name
+        try { $attributes = [IO.File]::GetAttributes($child) }
+        catch [IO.FileNotFoundException] { continue }
+        catch [IO.DirectoryNotFoundException] { continue }
+        if (($attributes -band [IO.FileAttributes]::Directory) -eq 0) { throw 'Installation component path is not a directory.' }
+        $pending.Push([IO.DirectoryInfo]::new($child))
+    }
+    while ($pending.Count -gt 0) {
+        $item = $pending.Pop()
+        AssertProtectedInstallerItem $item $true
+        if ($item -is [IO.DirectoryInfo]) {
+            foreach ($child in $item.EnumerateFileSystemInfos()) { $pending.Push($child) }
+        }
+    }
+}
+function ProtectSchoolPolicyDirectory([string]$InstallRoot) {
+    AssertProtectedInstallerTree $InstallRoot
+    $path = Join-Path $InstallRoot 'school-policy-state'
+    $directory = [IO.DirectoryInfo]::new($path)
+    AssertProtectedInstallerItem $directory $true
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new($sid), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    }
+    Microsoft.PowerShell.Security\Set-Acl -LiteralPath $path -AclObject $security
+    AssertProtectedInstallerItem $directory $true
+}
 function ReadGuardJson([string]$Path) {
     if (-not [IO.File]::Exists($Path)) { return $null }
     if ((Get-Item -LiteralPath $Path).Length -gt 1048576) { throw 'Maintenance record too large.' }
@@ -290,6 +353,8 @@ function WriteGuardResult([string]$Directory,[string]$Operation,[string]$Message
 # Tests dot-source the same ownership and transaction code with private scheduler fixtures.
 if ($MyInvocation.InvocationName -eq '.') { return }
 try {
+    if ($Action -eq 'ValidateInstallRoot') { AssertProtectedInstallerTree $InstallRoot; exit 0 }
+    if ($Action -eq 'SecureSchoolPolicyState') { ProtectSchoolPolicyDirectory $InstallRoot; exit 0 }
     if (-not $Action -or -not $InstallRoot -or -not $TransactionDirectory) { throw 'Missing maintenance arguments.' }
     $root=GuardPath $InstallRoot;$directory=GuardPath $TransactionDirectory
     if ($directory -ieq $root -or $directory.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Maintenance journal must be outside installation.' }
@@ -331,7 +396,7 @@ try {
     WriteGuardResult $directory $Action 'OK'
     exit 0
 } catch {
-    if ($TransactionDirectory -and [IO.Directory]::Exists($TransactionDirectory)) {
+    if ($Action -in @('Prepare','Restore','Complete') -and $TransactionDirectory -and [IO.Directory]::Exists($TransactionDirectory)) {
         WriteGuardResult $TransactionDirectory $Action $_.Exception.Message
     }
     Write-Error $_ -ErrorAction Continue
