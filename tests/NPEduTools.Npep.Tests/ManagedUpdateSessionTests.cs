@@ -197,6 +197,57 @@ public sealed class ManagedUpdateSessionTests
         await f.Cycle();
         Assert.Equal(1, f.Host.Applied);
     }
+
+    [Theory]
+    [InlineData("{")]
+    [InlineData("{\"Scope\":\"current-scope\",\"EnrollmentId\":\"incomplete\"}")]
+    [InlineData("{\"Scope\":\"current-scope\",\"EnrollmentId\":\"00000000-0000-0000-0000-000000000000\"}")]
+    public async Task DamagedConsentCanBeReplacedOnlyThroughExplicitLocalConsent(string damaged)
+    {
+        using var f = new Scenario();
+        await f.Consent();
+        var path = Path.Combine(f.DirectoryPath, "software-update-consent.json");
+        File.WriteAllText(path, damaged);
+        async Task<JsonObject> ReadInvitationWithoutConsent(Guid? consent, ManagedUpdateReceipt? receipt)
+        {
+            Assert.Null(consent);
+            Assert.Null(receipt);
+            return await f.Exchange(consent, receipt);
+        }
+
+        await f.Session.CycleAsync("current-scope", ReadInvitationWithoutConsent, default);
+        Assert.Equal("INVITED", f.Session.Status.Enrollment);
+        Assert.False(f.Session.Status.LocalConsent);
+        Assert.Equal(0, f.Host.Prepared);
+
+        f.Session = new(f.Host, f.DirectoryPath);
+        f.Session.Bind("current-scope", "school", "class", "screen");
+        await f.Session.CycleAsync("current-scope", ReadInvitationWithoutConsent, default);
+        Assert.Equal("INVITED", f.Session.Status.Enrollment);
+        Assert.False(f.Session.Accept(Guid.NewGuid()));
+        Assert.True(f.Session.Accept(f.Invitation));
+        f.Host.Busy = "RECORDING_ACTIVE";
+        await f.Cycle();
+        Assert.True(f.Session.Status.LocalConsent);
+        Assert.Equal(new(f.PlanId, "DEFERRED", "RECORDING_ACTIVE"), Assert.Single(f.Receipts));
+        Assert.Equal(0, f.Host.Applied);
+    }
+
+    [Fact]
+    public async Task LockedConsentIsNotMistakenForMissingConsent()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var f = new Scenario();
+        await f.Consent();
+        var path = Path.Combine(f.DirectoryPath, "software-update-consent.json");
+        using (File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None))
+            await Assert.ThrowsAsync<IOException>(f.Cycle);
+        Assert.Equal(0, f.Host.Prepared);
+        f.Host.Busy = "RECORDING_ACTIVE";
+        await f.Cycle();
+        Assert.True(f.Session.Status.LocalConsent);
+        Assert.Equal("DEFERRED", Assert.Single(f.Receipts).State);
+    }
     [Fact]
     public async Task LostGrantReplyNeverRunsWorkerAndRecreatedHostResolvesUnsentHandoff()
     {

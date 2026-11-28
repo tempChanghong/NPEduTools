@@ -72,9 +72,17 @@ internal sealed partial class ManagedUpdateSession(ISchoolUpdateHost host, strin
     }
     private Guid? ConsentId(string scope)
     {
-        if (!File.Exists(_path) || new FileInfo(_path).Length > 8192) return null;
-        var saved = JsonSerializer.Deserialize<Consent>(File.ReadAllText(_path));
-        return saved?.Scope == scope ? saved.EnrollmentId : null;
+        try
+        {
+            using var file = File.OpenRead(_path);
+            if (file.Length > 8192) return null;
+            var saved = JsonSerializer.Deserialize<Consent>(file);
+            return saved?.Scope == scope && saved.EnrollmentId != Guid.Empty ? saved.EnrollmentId : null;
+        }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException or JsonException)
+        {
+            return null;
+        }
     }
     public bool Accept(Guid id)
     {
